@@ -34,8 +34,12 @@ class TwoPartyRpcConnection implements RpcConnection {
   final StreamSink<Uint8List> _outgoing;
   final bool _isClient;
 
-  // Exports: capabilities we have sent to the peer. Key = export ID.
-  final Map<int, Capability> _exports = {};
+  // Exports: capabilities we have sent to the peer.
+  // Key = export ID; value tracks the remote reference count so we know
+  // when the peer has released all references and we can dispose the cap.
+  final Map<int, _ExportEntry> _exports = {};
+  // Reverse map: capability object → its export ID (for dedup on re-export).
+  final Map<Capability, int> _exportIds = {};
   // Bootstrap is registered at export ID 0; subsequent exports start at 1.
   int _nextExportId = 1;
 
@@ -46,6 +50,11 @@ class TwoPartyRpcConnection implements RpcConnection {
   // Imports: remote capabilities we hold. Key = import ID (= peer's export ID).
   // We track refcounts to know when to send Release.
   final Map<int, int> _importRefCounts = {};
+
+  // Answers: incoming calls whose Return has been sent.
+  // Key = question ID from the peer; value = export IDs included in the Return.
+  // Used to release result caps when the peer sends Finish(releaseResultCaps: true).
+  final Map<int, List<int>> _answers = {};
 
   // Set to a non-null error once the connection is closed.
   Object? _closedError;
@@ -83,7 +92,8 @@ class TwoPartyRpcConnection implements RpcConnection {
   }) {
     final conn = TwoPartyRpcConnection._(incoming, outgoing, false);
     // Register bootstrap as export 0.
-    conn._exports[0] = bootstrap;
+    conn._exports[0] = _ExportEntry(bootstrap);
+    conn._exportIds[bootstrap] = 0;
     return conn;
   }
 
@@ -137,12 +147,11 @@ class TwoPartyRpcConnection implements RpcConnection {
   }) async {
     if (_closedError != null) throw RpcException('connection is closed');
 
-    // Register any capabilities being sent as params as new exports.
+    // Register any capabilities being sent as params as exports.
+    // Reuse existing export ID if we have already exported this capability.
     final capExportIds = <int>[];
     for (final cap in paramsCapabilities) {
-      final eid = _nextExportId++;
-      _exports[eid] = cap;
-      capExportIds.add(eid);
+      capExportIds.add(_getOrCreateExportId(cap));
     }
 
     final importId = await importIdFuture;
@@ -214,8 +223,7 @@ class TwoPartyRpcConnection implements RpcConnection {
       case RpcMessageType.return_:
         _handleReturn(msg);
       case RpcMessageType.finish:
-        // For Level 1, Finish is acknowledged but we don't track answers.
-        break;
+        _handleFinish(msg);
       case RpcMessageType.release:
         _handleRelease(msg);
       case RpcMessageType.abort:
@@ -236,9 +244,9 @@ class TwoPartyRpcConnection implements RpcConnection {
 
   void _handleCall(RpcMessage msg) {
     final exportId = msg.targetImportId;
-    final cap = _exports[exportId];
+    final entry = _exports[exportId];
 
-    if (cap == null) {
+    if (entry == null) {
       _sendRaw(buildReturnExceptionMessage(
         answerId: msg.questionId,
         reason: 'unknown export id: $exportId',
@@ -264,38 +272,49 @@ class TwoPartyRpcConnection implements RpcConnection {
           paramsCapabilities.add(_ImportedCapability.resolved(this, id));
         case 3: // receiverHosted: we (the receiver) export this cap
           final hosted = _exports[id];
-          paramsCapabilities.add(hosted ?? NullCapability());
+          paramsCapabilities.add(hosted?.capability ?? NullCapability());
         default: // senderPromise, thirdPartyHosted, or unknown — placeholder
           paramsCapabilities.add(NullCapability());
       }
     }
 
-    cap.dispatch(iid, mid, params, paramsCapabilities: paramsCapabilities).then((result) {
+    entry.capability
+        .dispatch(iid, mid, params, paramsCapabilities: paramsCapabilities)
+        .then((result) {
+      final resultExportIds = <int>[];
       if (result.caps.isEmpty) {
         _sendRaw(buildReturnResultsMessage(
           answerId: qid,
           resultsBytes: result.bytes,
         ));
       } else {
-        // Register returned capabilities as new exports.
-        final exportIds = <int>[];
+        // Register returned capabilities as exports; reuse IDs for dedup.
         for (final cap in result.caps) {
-          final eid = _nextExportId++;
-          _exports[eid] = cap;
-          exportIds.add(eid);
+          resultExportIds.add(_getOrCreateExportId(cap));
         }
         _sendRaw(buildReturnResultsWithCapsMessage(
           answerId: qid,
           resultsBytes: result.bytes,
-          exportIds: exportIds,
+          exportIds: resultExportIds,
         ));
       }
+      // Track which export IDs were returned so Finish can release them.
+      _answers[qid] = resultExportIds;
     }).catchError((Object err) {
+      _answers[qid] = const [];
       _sendRaw(buildReturnExceptionMessage(
         answerId: qid,
         reason: err is RpcException ? err.message : err.toString(),
       ));
     });
+  }
+
+  void _handleFinish(RpcMessage msg) {
+    final resultExportIds = _answers.remove(msg.questionId);
+    if (resultExportIds == null || !msg.releaseResultCaps) return;
+    for (final eid in resultExportIds) {
+      _releaseExport(eid);
+    }
   }
 
   void _handleReturn(RpcMessage msg) {
@@ -325,19 +344,46 @@ class TwoPartyRpcConnection implements RpcConnection {
   }
 
   void _handleRelease(RpcMessage msg) {
-    final id = msg.releaseId;
-    final refCount = msg.referenceCount;
-    final current = _exportRefCount(id) - refCount;
-    if (current <= 0) {
-      _exports.remove(id);
+    final entry = _exports[msg.releaseId];
+    if (entry == null) return;
+    entry.remoteRefCount -= msg.referenceCount;
+    if (entry.remoteRefCount <= 0) {
+      _exports.remove(msg.releaseId);
+      _exportIds.remove(entry.capability);
+      entry.capability.dispose();
     }
   }
-
-  int _exportRefCount(int id) => _exports.containsKey(id) ? 1 : 0;
 
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
+
+  /// Returns the existing export ID for [cap] (incrementing its remote ref
+  /// count), or allocates a new export ID if this is the first export.
+  int _getOrCreateExportId(Capability cap) {
+    final existing = _exportIds[cap];
+    if (existing != null) {
+      _exports[existing]!.remoteRefCount++;
+      return existing;
+    }
+    final eid = _nextExportId++;
+    _exports[eid] = _ExportEntry(cap);
+    _exportIds[cap] = eid;
+    return eid;
+  }
+
+  /// Decrements the remote ref count for [eid] and disposes the capability
+  /// if no remote references remain.
+  void _releaseExport(int eid) {
+    final entry = _exports[eid];
+    if (entry == null) return;
+    entry.remoteRefCount--;
+    if (entry.remoteRefCount <= 0) {
+      _exports.remove(eid);
+      _exportIds.remove(entry.capability);
+      entry.capability.dispose();
+    }
+  }
 
   void _sendRaw(Uint8List bytes) {
     if (_closedError != null) return;
@@ -366,6 +412,14 @@ class TwoPartyRpcConnection implements RpcConnection {
       _bootstrapCompleter!.completeError(err);
     }
 
+    // Dispose all exported capabilities.
+    for (final entry in _exports.values) {
+      entry.capability.dispose();
+    }
+    _exports.clear();
+    _exportIds.clear();
+    _answers.clear();
+
     try {
       await _outgoing.close();
     } catch (_) {}
@@ -381,6 +435,18 @@ class TwoPartyRpcConnection implements RpcConnection {
 
   /// A future that completes when the connection is closed.
   Future<void> get done => _closedCompleter.future;
+}
+
+// ---------------------------------------------------------------------------
+// _ExportEntry: tracks a locally-exported capability and its remote ref count
+// ---------------------------------------------------------------------------
+
+class _ExportEntry {
+  final Capability capability;
+  // How many times the peer holds a reference to this export.
+  // Incremented on every export (or re-export); decremented on Release.
+  int remoteRefCount;
+  _ExportEntry(this.capability) : remoteRefCount = 1;
 }
 
 // ---------------------------------------------------------------------------

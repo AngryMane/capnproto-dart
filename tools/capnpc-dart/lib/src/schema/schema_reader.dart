@@ -348,6 +348,7 @@ SchemaNodeBody _buildNodeBody(_NodeReader r) {
         for (int i = 0; i < ml.length; i++) {
           methods.add(SchemaMethod(
             name: ml[i].name ?? '',
+            ordinal: i,
             paramStructTypeId: ml[i].paramStructTypeId,
             resultStructTypeId: ml[i].resultStructTypeId,
           ));

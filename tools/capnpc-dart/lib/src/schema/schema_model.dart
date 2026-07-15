@@ -63,6 +63,10 @@ class EnumBody extends SchemaNodeBody {
 class SchemaMethod {
   final String name;
 
+  /// Wire-level method ID used in Cap'n Proto Call messages.
+  /// Equals the method's position in the interface's ordinal-ordered method list.
+  final int ordinal;
+
   /// Node ID of the auto-generated parameter struct.
   final int paramStructTypeId;
 
@@ -71,6 +75,7 @@ class SchemaMethod {
 
   const SchemaMethod({
     required this.name,
+    required this.ordinal,
     required this.paramStructTypeId,
     required this.resultStructTypeId,
   });

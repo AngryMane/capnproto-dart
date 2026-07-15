@@ -119,7 +119,7 @@ void _writeInterface(
 
   // Collect all methods including inherited ones (depth-first from ancestors).
   final allMethods =
-      <({SchemaNode ifaceNode, int methodIdx, SchemaMethod method})>[];
+      <({SchemaNode ifaceNode, SchemaMethod method})>[];
   _collectAllMethods(node, body, nodeMap, allMethods, {});
 
   // ---- Client stub ----
@@ -130,7 +130,7 @@ void _writeInterface(
   sb.writeln('  ${name}Client(this._cap);');
 
   for (final m in allMethods) {
-    _writeClientMethod(sb, m.ifaceNode, m.methodIdx, m.method, nodeMap);
+    _writeClientMethod(sb, m.ifaceNode, m.method, nodeMap);
   }
 
   sb.writeln();
@@ -153,13 +153,13 @@ void _writeInterface(
 }
 
 /// Depth-first collection of all methods reachable via inheritance.
-/// Each method retains its defining interface node and its own method index
-/// (ordinal within that interface's OWN method list).
+/// Each method retains its defining interface node; the wire-level method ID
+/// is carried in `method.ordinal`.
 void _collectAllMethods(
   SchemaNode ifaceNode,
   InterfaceBody body,
   Map<int, SchemaNode> nodeMap,
-  List<({SchemaNode ifaceNode, int methodIdx, SchemaMethod method})> result,
+  List<({SchemaNode ifaceNode, SchemaMethod method})> result,
   Set<int> seen,
 ) {
   if (seen.contains(ifaceNode.id)) return;
@@ -172,15 +172,14 @@ void _collectAllMethods(
         scNode, scNode.body as InterfaceBody, nodeMap, result, seen);
   }
 
-  for (int i = 0; i < body.methods.length; i++) {
-    result.add((ifaceNode: ifaceNode, methodIdx: i, method: body.methods[i]));
+  for (final method in body.methods) {
+    result.add((ifaceNode: ifaceNode, method: method));
   }
 }
 
 void _writeClientMethod(
   StringBuffer sb,
   SchemaNode ifaceNode,
-  int methodIdx,
   SchemaMethod method,
   Map<int, SchemaNode> nodeMap,
 ) {
@@ -189,6 +188,7 @@ void _writeClientMethod(
   final resultsNode = nodeMap[method.resultStructTypeId];
   final paramsName = _dartClassName(paramsNode?.displayName ?? 'Unknown');
   final ifaceId = _hexId(ifaceNode.id);
+  final ordinal = method.ordinal;
 
   final capParams = _collectCapParams(paramsNode);
   final capField = _singleCapabilityField(resultsNode, nodeMap);
@@ -205,7 +205,7 @@ void _writeClientMethod(
       sb.writeln('    final mb = MessageBuilder();');
       sb.writeln('    build(mb.initRoot(${_lcfirst(paramsName)}Factory));');
       sb.writeln(
-          '    final f = _cap.dispatch($ifaceId, $methodIdx, mb.serialize());');
+          '    final f = _cap.dispatch($ifaceId, $ordinal, mb.serialize());');
       sb.writeln(
           '    return ${capIfaceName}Client(PipelinedCapability(f.then((r) => r.caps[0])));');
       sb.writeln('  }');
@@ -217,7 +217,7 @@ void _writeClientMethod(
       sb.writeln('    final mb = MessageBuilder();');
       sb.writeln('    build(mb.initRoot(${_lcfirst(paramsName)}Factory));');
       sb.writeln(
-          '    final result = await _cap.dispatch($ifaceId, $methodIdx, mb.serialize());');
+          '    final result = await _cap.dispatch($ifaceId, $ordinal, mb.serialize());');
       sb.writeln(
           '    return MessageReader.deserialize(result.bytes).getRoot(${_lcfirst(resultsName)}Factory);');
       sb.writeln('  }');
@@ -240,7 +240,7 @@ void _writeClientMethod(
       }
       sb.writeln('    build(b);');
       sb.writeln(
-          '    final f = _cap.dispatch($ifaceId, $methodIdx, mb.serialize(), paramsCapabilities: [$capsList]);');
+          '    final f = _cap.dispatch($ifaceId, $ordinal, mb.serialize(), paramsCapabilities: [$capsList]);');
       sb.writeln(
           '    return ${capIfaceName}Client(PipelinedCapability(f.then((r) => r.caps[0])));');
       sb.writeln('  }');
@@ -256,7 +256,7 @@ void _writeClientMethod(
       }
       sb.writeln('    build(b);');
       sb.writeln(
-          '    final result = await _cap.dispatch($ifaceId, $methodIdx, mb.serialize(), paramsCapabilities: [$capsList]);');
+          '    final result = await _cap.dispatch($ifaceId, $ordinal, mb.serialize(), paramsCapabilities: [$capsList]);');
       sb.writeln(
           '    return MessageReader.deserialize(result.bytes).getRoot(${_lcfirst(resultsName)}Factory);');
       sb.writeln('  }');
@@ -300,7 +300,7 @@ bool _isVoidResultStruct(SchemaNode? resultsNode) {
 void _writeServerStub(
   StringBuffer sb,
   SchemaNode node,
-  List<({SchemaNode ifaceNode, int methodIdx, SchemaMethod method})> allMethods,
+  List<({SchemaNode ifaceNode, SchemaMethod method})> allMethods,
   Map<int, SchemaNode> nodeMap,
 ) {
   final name = _dartClassName(node.displayName);
@@ -335,7 +335,7 @@ void _writeServerStub(
   if (allMethods.isNotEmpty) {
     // Group by defining interface ID.
     final byIface =
-        <int, List<({SchemaNode ifaceNode, int methodIdx, SchemaMethod method})>>{};
+        <int, List<({SchemaNode ifaceNode, SchemaMethod method})>>{};
     for (final m in allMethods) {
       (byIface[m.ifaceNode.id] ??= []).add(m);
     }
@@ -352,7 +352,7 @@ void _writeServerStub(
             _dartClassName(paramsNode?.displayName ?? 'Unknown');
         final isVoid = _isVoidResultStruct(resultsNode);
 
-        sb.writeln('          case ${m.methodIdx}:');
+        sb.writeln('          case ${m.method.ordinal}:');
         sb.writeln('            final p = MessageReader.deserialize(params)');
         sb.writeln(
             '                .getRoot(${_lcfirst(paramsName)}Factory);');

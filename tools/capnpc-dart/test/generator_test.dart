@@ -332,6 +332,7 @@ void main() {
       final iface = interfaceNode(ifaceId, 'Greeter', [
         SchemaMethod(
           name: 'greet',
+          ordinal: 0,
           paramStructTypeId: paramsId,
           resultStructTypeId: resultsId,
         ),
