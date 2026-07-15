@@ -1,0 +1,37 @@
+# Scope
+
+This repository contains two components in a single codebase. They may be separated into individual repositories in the future if needed.
+
+---
+
+## Component 1: CLI Tool (build-time)
+
+Used by developers to generate Dart code from `.capnp` schema files.
+
+| ID | Feature | Description |
+|---|---|---|
+| F-03 | `.capnp` schema parser | Delegated to the official `capnp` compiler via its plugin mechanism. Not implemented in this repository. |
+| F-04 | Dart code generator (`capnpc-dart`) | Receives `CodeGeneratorRequest` from the official compiler via stdin and generates Dart source files. Also handles F-08 via an option flag. Implementation language is not restricted to Dart. |
+| F-08 | Schema compatibility check | Built into `capnpc-dart` as an option mode (`-o dart:check=<old.capnp>`). No separate binary. |
+
+---
+
+## Component 2: Runtime Library (application-level)
+
+A pure Dart library embedded in Flutter/Dart applications. The generated code (Component 1) depends on this library.
+
+| ID | Feature | Description |
+|---|---|---|
+| F-01 | Cap'n Proto binary encoding | Serialize Dart objects into Cap'n Proto binary format |
+| F-02 | Cap'n Proto binary decoding | Deserialize Cap'n Proto binary data into Dart objects |
+| F-05 | Cap'n Proto RPC | Remote procedure calls between client and server over a network |
+| F-06 | Packed encoding | Reduce data size by compressing zero bytes |
+| F-07 | Streaming support | Send and receive large messages in segments |
+
+---
+
+## Out of Scope
+
+- Bindings to existing C++ or Rust Cap'n Proto libraries via FFI
+- Interoperability testing with non-Dart Cap'n Proto implementations (may be added later)
+- Schema IDE integration (e.g., language server, syntax highlighting)

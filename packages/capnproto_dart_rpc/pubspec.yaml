@@ -1,0 +1,16 @@
+name: capnproto_dart_rpc
+description: Cap'n Proto RPC (Level 1) support for Dart, built on capnproto_dart.
+version: 0.1.0
+publish_to: none
+# repository: https://github.com/my_org/capnproto-dart
+
+environment:
+  sdk: ^3.7.2
+
+dependencies:
+  capnproto_dart:
+    path: ../capnproto_dart
+
+dev_dependencies:
+  lints: ^5.0.0
+  test: ^1.24.0

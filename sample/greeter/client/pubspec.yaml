@@ -1,0 +1,10 @@
+name: greeter_client
+description: Sample Dart client demonstrating Dart↔Rust Cap'n Proto RPC interop.
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  capnproto_dart_rpc:
+    path: ../../../packages/capnproto_dart_rpc
