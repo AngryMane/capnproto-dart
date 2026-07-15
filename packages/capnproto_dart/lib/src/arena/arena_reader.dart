@@ -294,6 +294,17 @@ class ArenaReader {
       final structDataWords = tagHi & 0xFFFF;
       final structPtrWords = (tagHi >> 16) & 0xFFFF;
 
+      // Verify tag layout is consistent with the declared total word count.
+      // elementCount × (dataWords + ptrWords) must equal totalWords exactly;
+      // any mismatch means elements would be read outside the checked region.
+      final wordsPerElement = structDataWords + structPtrWords;
+      if (elementCount * wordsPerElement != totalWords) {
+        throw DecodeException(
+            'composite list tag mismatch: declared $totalWords words but '
+            'tag implies ${elementCount * wordsPerElement} '
+            '($elementCount elements × $wordsPerElement words/element)');
+      }
+
       return RawListReader(
         segment: dataSeg,
         arena: this,

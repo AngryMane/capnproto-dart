@@ -263,4 +263,90 @@ void main() {
       );
     });
   });
+
+  // ---- RUNTIME-002: composite list tag vs declared totalWords consistency ----
+  //
+  // Segment layout used by the helper below:
+  //   word 0: root struct pointer (offset=0, dw=0, pw=1)
+  //   word 1: list pointer (offset=0, elementSize=composite, totalWords=N)
+  //   word 2: tag word — struct-pointer format where the "offset" field holds
+  //           elementCount, and hi-word holds (ptrWords<<16|dataWords)
+  //   words 3..2+N: element data (zeroed)
+  group('ArenaReader composite list tag validation (RUNTIME-002)', () {
+    Uint8List buildCompositeListMessage({
+      required int totalWords,
+      required int elementCount,
+      required int tagDataWords,
+      required int tagPtrWords,
+    }) {
+      final segWords = 3 + totalWords;
+      final seg = ByteData(segWords * bytesPerWord);
+
+      StructPointer(offset: 0, dataWords: 0, ptrWords: 1).encode(seg, 0);
+      ListPointer(
+        offset: 0,
+        elementSize: ListElementSize.composite,
+        elementCountOrWordCount: totalWords,
+      ).encode(seg, 1);
+
+      // Tag word: struct-pointer format, offset field = elementCount.
+      writeUint32(seg, 2 * bytesPerWord, (elementCount << 2) | 0);
+      writeUint32(seg, 2 * bytesPerWord + 4,
+          (tagPtrWords << 16) | tagDataWords);
+
+      final out = Uint8List(8 + segWords * bytesPerWord);
+      final hdr = ByteData.view(out.buffer);
+      writeUint32(hdr, 0, 0); // 1 segment
+      writeUint32(hdr, 4, segWords);
+      out.setRange(8, 8 + segWords * bytesPerWord,
+          seg.buffer.asUint8List(0, segWords * bytesPerWord));
+      return out;
+    }
+
+    void resolveCompositeList(Uint8List bytes) {
+      final arena = ArenaReader.fromBytes(bytes, const MessageReaderOptions());
+      final raw = arena.getRootRaw();
+      arena.resolveListAt(raw.segment, raw.ptrWordOffset, arena.nestingLimit);
+    }
+
+    test('inflated elementCount throws DecodeException', () {
+      // totalWords=2, but elementCount × wordsPerElement = 1000×1 = 1000
+      final bytes = buildCompositeListMessage(
+        totalWords: 2, elementCount: 1000, tagDataWords: 1, tagPtrWords: 0,
+      );
+      expect(() => resolveCompositeList(bytes), throwsA(isA<DecodeException>()));
+    });
+
+    test('inflated wordsPerElement throws DecodeException', () {
+      // totalWords=10, but 1 × (5+6) = 11
+      final bytes = buildCompositeListMessage(
+        totalWords: 10, elementCount: 1, tagDataWords: 5, tagPtrWords: 6,
+      );
+      expect(() => resolveCompositeList(bytes), throwsA(isA<DecodeException>()));
+    });
+
+    test('zero wordsPerElement with non-zero totalWords throws DecodeException', () {
+      // elementCount × 0 = 0 ≠ 1
+      final bytes = buildCompositeListMessage(
+        totalWords: 1, elementCount: 5, tagDataWords: 0, tagPtrWords: 0,
+      );
+      expect(() => resolveCompositeList(bytes), throwsA(isA<DecodeException>()));
+    });
+
+    test('valid layout does not throw', () {
+      // 2 elements × (1 data + 2 ptr) = 6 == totalWords
+      final bytes = buildCompositeListMessage(
+        totalWords: 6, elementCount: 2, tagDataWords: 1, tagPtrWords: 2,
+      );
+      expect(() => resolveCompositeList(bytes), returnsNormally);
+    });
+
+    test('zero-size elements with zero totalWords is valid', () {
+      // elementCount × 0 = 0 == totalWords=0
+      final bytes = buildCompositeListMessage(
+        totalWords: 0, elementCount: 5, tagDataWords: 0, tagPtrWords: 0,
+      );
+      expect(() => resolveCompositeList(bytes), returnsNormally);
+    });
+  });
 }
