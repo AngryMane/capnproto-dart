@@ -89,6 +89,10 @@ class _NodeReader extends StructReader {
   // interface.superclasses @31 shares ptr slot 4 with const.value @17
   ListReader<_SuperclassReader>? get interfaceSuperclasses =>
       getStructListFieldWith(4, (r) => _SuperclassReader(r));
+
+  // parameters @32 at ptr slot 5 — non-empty for generic nodes
+  ListReader<_ParameterReader>? get parameters =>
+      getStructListFieldWith(5, (r) => _ParameterReader(r));
 }
 
 // ---- Node.NestedNode @0xdebb25476f7ebf4d (dataWords=1, ptrWords=1) ----
@@ -144,18 +148,22 @@ class _FieldReader extends StructReader {
 // ---- Type @0xd07378ede1f9cc87 (dataWords=3, ptrWords=1) ----
 //
 // Ordinal-first layout: the union discriminant (@0=void, lowest ordinal)
-// occupies the first UInt16 slot. The UInt64 typeId fields (enums @16, structs
-// @17, interfaces @18) follow at bytes 8-15.
+// occupies the first UInt16 slot. The UInt64 typeId fields (enums @15, structs
+// @16, interfaces @17) follow at bytes 8-15.
 //
 // Data section:
 //   bytes  0- 1 : main union discriminant (UInt16)
 //                 0=Void 1=Bool 2=Int8 3=Int16 4=Int32 5=Int64
 //                 6=UInt8 7=UInt16 8=UInt32 9=UInt64 10=Float32 11=Float64
 //                 12=Text 13=Data 14=List 15=Enum 16=Struct 17=Interface
-//                 18=AnyPointer
-//   bytes  8-15 : typeId — shared by enum/struct/interface variants
+//                 18=AnyPointer (anyKind @18)
+//   bytes  2- 3 : anyPointer inner union disc (when main=18)
+//                 0=unconstrained, 1=parameter, 2=implicitMethodParameter
+//   bytes  4- 5 : unconstrained inner-inner disc (main=18, inner=0) OR
+//                 parameterIndex (main=18, inner=1 or 2)
+//   bytes  8-15 : typeId (enum/struct/interface) / scopeId (anyPointer.parameter)
 // Pointer section:
-//   ptr 0 : list.elementType (Type) / enum.brand / struct.brand / ...
+//   ptr 0 : list.elementType (Type) / struct|enum|interface brand (Brand) / ...
 
 class _TypeReader extends StructReader {
   _TypeReader(super.raw);
@@ -163,7 +171,46 @@ class _TypeReader extends StructReader {
   int get _disc => getUint16Field(0);
   int get typeId => getUint64Field(8);
 
+  // anyPointer sub-discriminant: 0=unconstrained, 1=parameter, 2=implicitMethodParameter
+  int get _anyPtrDisc => getUint16Field(2);
+  bool get isTypeParameter => _disc == 18 && _anyPtrDisc == 1;
+  int get typeParameterIndex => getUint16Field(4);  // bytes 4-5
+  int get typeParameterScopeId => getUint64Field(8); // bytes 8-15 (same slot as typeId)
+
+  // ptr 0: listElementType (list variant) OR brand (struct/enum/interface variant)
   _TypeReader? get listElementType => getStructFieldWith(0, (r) => _TypeReader(r));
+  _BrandReader? get brand => getStructFieldWith(0, (r) => _BrandReader(r));
+}
+
+// ---- Brand @0x903455f06065422b (dataWords=0, ptrWords=1) ----
+//   ptr 0 : scopes (List(Scope))
+class _BrandReader extends StructReader {
+  _BrandReader(super.raw);
+  ListReader<_BrandScopeReader>? get scopes =>
+      getStructListFieldWith(0, (r) => _BrandScopeReader(r));
+}
+
+// ---- Brand.Scope @0xabd73485a9636bc9 (dataWords=2, ptrWords=1) ----
+//   bytes 0-7 : scopeId (UInt64, @0)
+//   bytes 8-9 : union disc — 0=bind, 1=inherit
+//   ptr 0     : bind = List(Binding)
+class _BrandScopeReader extends StructReader {
+  _BrandScopeReader(super.raw);
+  int get scopeId => getUint64Field(0);
+  int get _disc => getUint16Field(8);
+  bool get isBind => _disc == 0;
+  ListReader<_BrandBindingReader>? get bindings =>
+      getStructListFieldWith(0, (r) => _BrandBindingReader(r));
+}
+
+// ---- Brand.Scope.Binding @0xc863cd16969ee7fc (dataWords=1, ptrWords=1) ----
+//   bytes 0-1 : union disc — 0=unbound, 1=type
+//   ptr 0     : type (Type, when disc=1)
+class _BrandBindingReader extends StructReader {
+  _BrandBindingReader(super.raw);
+  int get _disc => getUint16Field(0);
+  bool get isType => _disc == 1;
+  _TypeReader? get type => getStructFieldWith(0, (r) => _TypeReader(r));
 }
 
 // ---- Enumerant @0x978a7cebdc549a4d (dataWords=1, ptrWords=2) ----
@@ -234,6 +281,13 @@ class _MethodReader extends StructReader {
 class _SuperclassReader extends StructReader {
   _SuperclassReader(super.raw);
   int get id => getUint64Field(0);
+}
+
+// ---- Node.Parameter @0xb9521bccf10fa3b1 (dataWords=0, ptrWords=1) ----
+//   ptr 0 : name (Text, @0)
+class _ParameterReader extends StructReader {
+  _ParameterReader(super.raw);
+  String? get name => getTextField(0);
 }
 
 // ---- CodeGeneratorRequest @0xbfc546f6210ad7ce (dataWords=0, ptrWords=4) ----
@@ -327,6 +381,14 @@ SchemaNode _buildNode(_NodeReader r) {
     }
   }
 
+  final parameters = <String>[];
+  final pl = r.parameters;
+  if (pl != null) {
+    for (int i = 0; i < pl.length; i++) {
+      parameters.add(pl[i].name ?? '');
+    }
+  }
+
   final body = _buildNodeBody(r);
 
   return SchemaNode(
@@ -336,6 +398,7 @@ SchemaNode _buildNode(_NodeReader r) {
     scopeId: r.scopeId,
     nestedNodes: nestedNodes,
     body: body,
+    parameters: parameters,
   );
 }
 
@@ -460,8 +523,37 @@ SchemaType _buildType(_TypeReader? r) {
     case 13: return const DataType();
     case 14: return ListType(_buildType(r.listElementType));
     case 15: return EnumRefType(r.typeId);
-    case 16: return StructRefType(r.typeId);
-    case 17: return InterfaceRefType(r.typeId);
+    case 16:
+      final typeArgs16 = _readBrandTypeArgs(r.brand, r.typeId);
+      return StructRefType(r.typeId, typeArgs: typeArgs16);
+    case 17:
+      final typeArgs17 = _readBrandTypeArgs(r.brand, r.typeId);
+      return InterfaceRefType(r.typeId, typeArgs: typeArgs17);
+    case 18:
+      if (r.isTypeParameter) return TypeParameterRefType(r.typeParameterIndex);
+      return const AnyPointerType();
     default: return const AnyPointerType();
   }
+}
+
+/// Extract the concrete type arguments for [targetScopeId] from a Brand.
+/// Returns an empty list if the brand has no binding scope for the target.
+List<SchemaType> _readBrandTypeArgs(_BrandReader? brand, int targetScopeId) {
+  if (brand == null) return const [];
+  final scopes = brand.scopes;
+  if (scopes == null) return const [];
+  for (int i = 0; i < scopes.length; i++) {
+    final scope = scopes[i];
+    if (scope.scopeId == targetScopeId && scope.isBind) {
+      final bindings = scope.bindings;
+      if (bindings == null || bindings.isEmpty) return const [];
+      final result = <SchemaType>[];
+      for (int j = 0; j < bindings.length; j++) {
+        final b = bindings[j];
+        result.add(b.isType ? _buildType(b.type) : const AnyPointerType());
+      }
+      return result;
+    }
+  }
+  return const [];
 }

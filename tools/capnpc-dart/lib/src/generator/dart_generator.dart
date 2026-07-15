@@ -50,6 +50,17 @@ String generateDartFile(
     sb.writeln();
   }
 
+  // Pre-collect all concrete generic instantiations and emit specialized readers.
+  final specializations = <String, ({int nodeId, List<SchemaType> typeArgs})>{};
+  final allStructNodes = [...structs, ...groups];
+  for (final node in allStructNodes) {
+    _collectNodeFieldSpecializations(node, nodeMap, specializations);
+  }
+  for (final entry in specializations.entries) {
+    _writeSpecializedStruct(sb, entry.key, entry.value.nodeId, entry.value.typeArgs, nodeMap);
+    sb.writeln();
+  }
+
   return sb.toString();
 }
 
@@ -623,7 +634,7 @@ void _writeBuilderPointerField(
   } else if (type is ListType) {
     _writeListBuilderField(
         sb, fname, type, offset, nodeMap, setDisc, hasDisc);
-  } else if (type is AnyPointerType) {
+  } else if (type is AnyPointerType || type is TypeParameterRefType) {
     sb.writeln('  set $fname(Uint8List? v) {');
     if (hasDisc) sb.write(setDisc);
     sb.writeln('    if (v != null) setAnyPointerFromMessage($offset, v);');
@@ -676,6 +687,16 @@ String _defaultSuffix(Object? v) {
   Object? fieldDefault,
 ]) {
   final ds = _defaultSuffix(fieldDefault);
+  // TypeParameterRef is treated as opaque AnyPointer in the template class.
+  if (type is TypeParameterRefType) {
+    return ('Uint8List?', 'getAnyPointerAsMessageBytes($offset)');
+  }
+  // Concrete generic instantiation: use the specialized reader name.
+  if (type is StructRefType && _allConcrete(type.typeArgs)) {
+    final specName = _specializedName(type.typeId, type.typeArgs, nodeMap);
+    return ('${specName}Reader?',
+        'getStructFieldWith($offset, (r) => ${specName}Reader(r))');
+  }
   return switch (type) {
     VoidType() => ('void', '{}'),
     BoolType() => ('bool', 'getBoolField($offset$ds)'),
@@ -726,6 +747,12 @@ String _defaultSuffix(Object? v) {
 
 (String, String) _listReaderGetter(
     SchemaType elem, int ptrIndex, Map<int, SchemaNode> nodeMap) {
+  // Concrete generic instantiation: use the specialized reader name.
+  if (elem is StructRefType && _allConcrete(elem.typeArgs)) {
+    final specName = _specializedName(elem.typeId, elem.typeArgs, nodeMap);
+    return ('ListReader<${specName}Reader>?',
+        'getStructListFieldWith($ptrIndex, (r) => ${specName}Reader(r))');
+  }
   return switch (elem) {
     BoolType() => ('ListReader<bool>?', 'getBoolListField($ptrIndex)'),
     Int8Type() => ('ListReader<int>?', 'getInt8ListField($ptrIndex)'),
@@ -841,7 +868,8 @@ bool _isPointerType(SchemaType t) => switch (t) {
       StructRefType() ||
       ListType() ||
       InterfaceRefType() ||
-      AnyPointerType() =>
+      AnyPointerType() ||
+      TypeParameterRefType() =>
         true,
       _ => false,
     };
@@ -881,4 +909,171 @@ String _hexId(int id) {
   final hi = id >>> 32;
   final lo = id & 0xFFFFFFFF;
   return '0x${hi.toRadixString(16).padLeft(8, '0')}${lo.toRadixString(16).padLeft(8, '0')}';
+}
+
+// ---------------------------------------------------------------------------
+// Generic specialization helpers
+// ---------------------------------------------------------------------------
+
+bool _hasTypeParam(SchemaType t) => switch (t) {
+      TypeParameterRefType() => true,
+      ListType(:final elementType) => _hasTypeParam(elementType),
+      StructRefType(:final typeArgs) => typeArgs.any(_hasTypeParam),
+      InterfaceRefType(:final typeArgs) => typeArgs.any(_hasTypeParam),
+      _ => false,
+    };
+
+bool _allConcrete(List<SchemaType> args) =>
+    args.isNotEmpty && args.every((t) => !_hasTypeParam(t));
+
+String _typeArgName(SchemaType t, Map<int, SchemaNode> nodeMap) => switch (t) {
+      VoidType() => 'Void',
+      BoolType() => 'Bool',
+      Int8Type() => 'Int8',
+      Int16Type() => 'Int16',
+      Int32Type() => 'Int32',
+      Int64Type() => 'Int64',
+      UInt8Type() => 'UInt8',
+      UInt16Type() => 'UInt16',
+      UInt32Type() => 'UInt32',
+      UInt64Type() => 'UInt64',
+      Float32Type() => 'Float32',
+      Float64Type() => 'Float64',
+      TextType() => 'Text',
+      DataType() => 'Data',
+      AnyPointerType() => 'AnyPointer',
+      EnumRefType(:final typeId) => nodeMap[typeId]?.shortName ?? 'Unknown',
+      StructRefType(:final typeId, :final typeArgs) => typeArgs.isEmpty
+          ? (nodeMap[typeId]?.shortName ?? 'Unknown')
+          : (nodeMap[typeId]?.shortName ?? 'Unknown') +
+              typeArgs.map((a) => _typeArgName(a, nodeMap)).join(),
+      InterfaceRefType(:final typeId, :final typeArgs) => typeArgs.isEmpty
+          ? (nodeMap[typeId]?.shortName ?? 'Unknown')
+          : (nodeMap[typeId]?.shortName ?? 'Unknown') +
+              typeArgs.map((a) => _typeArgName(a, nodeMap)).join(),
+      ListType(:final elementType) =>
+        'List${_typeArgName(elementType, nodeMap)}',
+      _ => 'Unknown',
+    };
+
+String _specializedName(
+    int nodeId, List<SchemaType> typeArgs, Map<int, SchemaNode> nodeMap) {
+  final node = nodeMap[nodeId];
+  final baseName = _dartClassName(node?.displayName ?? 'Unknown');
+  final suffix = typeArgs.map((t) => _typeArgName(t, nodeMap)).join();
+  return '$baseName$suffix';
+}
+
+SchemaType _substituteType(SchemaType t, List<SchemaType> typeArgs) {
+  return switch (t) {
+    TypeParameterRefType(:final parameterIndex) =>
+      parameterIndex < typeArgs.length ? typeArgs[parameterIndex] : t,
+    ListType(:final elementType) =>
+      ListType(_substituteType(elementType, typeArgs)),
+    StructRefType(:final typeId, typeArgs: final ta) when ta.isNotEmpty =>
+      StructRefType(typeId,
+          typeArgs: ta.map((a) => _substituteType(a, typeArgs)).toList()),
+    InterfaceRefType(:final typeId, typeArgs: final ta) when ta.isNotEmpty =>
+      InterfaceRefType(typeId,
+          typeArgs: ta.map((a) => _substituteType(a, typeArgs)).toList()),
+    _ => t,
+  };
+}
+
+SchemaField _substituteFieldType(SchemaField field, List<SchemaType> typeArgs) {
+  if (field.body is! SlotField) return field;
+  final sf = field.body as SlotField;
+  final newType = _substituteType(sf.type, typeArgs);
+  if (identical(newType, sf.type)) return field;
+  return SchemaField(
+    name: field.name,
+    codeOrder: field.codeOrder,
+    discriminantValue: field.discriminantValue,
+    body: SlotField(
+      offset: sf.offset,
+      type: newType,
+      hadExplicitDefault: sf.hadExplicitDefault,
+      defaultValue: sf.defaultValue,
+    ),
+  );
+}
+
+void _collectTypeSpecializations(
+  SchemaType type,
+  Map<int, SchemaNode> nodeMap,
+  Map<String, ({int nodeId, List<SchemaType> typeArgs})> result,
+) {
+  if (type is ListType) {
+    _collectTypeSpecializations(type.elementType, nodeMap, result);
+    return;
+  }
+  if (type is StructRefType && _allConcrete(type.typeArgs)) {
+    final specName = _specializedName(type.typeId, type.typeArgs, nodeMap);
+    if (!result.containsKey(specName)) {
+      result[specName] = (nodeId: type.typeId, typeArgs: type.typeArgs);
+      // Recurse into the specialized fields to find further nested specializations.
+      _collectNodeFieldSpecializationsWithArgs(
+          type.typeId, type.typeArgs, nodeMap, result);
+    }
+  }
+}
+
+void _collectNodeFieldSpecializations(
+  SchemaNode node,
+  Map<int, SchemaNode> nodeMap,
+  Map<String, ({int nodeId, List<SchemaType> typeArgs})> result,
+) {
+  final body = node.body;
+  if (body is! StructBody) return;
+  for (final field in body.fields) {
+    if (field.body is! SlotField) continue;
+    _collectTypeSpecializations((field.body as SlotField).type, nodeMap, result);
+  }
+}
+
+void _collectNodeFieldSpecializationsWithArgs(
+  int nodeId,
+  List<SchemaType> typeArgs,
+  Map<int, SchemaNode> nodeMap,
+  Map<String, ({int nodeId, List<SchemaType> typeArgs})> result,
+) {
+  final node = nodeMap[nodeId];
+  if (node == null) return;
+  final body = node.body;
+  if (body is! StructBody) return;
+  for (final field in body.fields) {
+    if (field.body is! SlotField) continue;
+    final sf = field.body as SlotField;
+    _collectTypeSpecializations(
+        _substituteType(sf.type, typeArgs), nodeMap, result);
+  }
+}
+
+/// Generates a read-only specialized reader for a concrete generic instantiation.
+void _writeSpecializedStruct(
+  StringBuffer sb,
+  String specName,
+  int nodeId,
+  List<SchemaType> typeArgs,
+  Map<int, SchemaNode> nodeMap,
+) {
+  final node = nodeMap[nodeId];
+  if (node == null || node.body is! StructBody) return;
+  final body = node.body as StructBody;
+  final fields = [...body.fields]
+    ..sort((a, b) => a.codeOrder.compareTo(b.codeOrder));
+
+  sb.writeln('final class ${specName}Reader extends StructReader {');
+  sb.writeln('  ${specName}Reader(super.raw);');
+
+  if (body.discriminantCount > 0) {
+    final discByteOffset = body.discriminantOffset * 2;
+    sb.writeln();
+    sb.writeln('  int get which => getUint16Field($discByteOffset);');
+  }
+
+  for (final field in fields) {
+    _writeReaderField(sb, _substituteFieldType(field, typeArgs), nodeMap);
+  }
+  sb.writeln('}');
 }

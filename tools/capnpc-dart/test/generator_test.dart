@@ -464,6 +464,110 @@ void main() {
     });
   });
 
+  group('generateDartFile — generic structs (GEN-008)', () {
+    // A 2-pointer template struct KeyValue with TypeParameterRef fields.
+    SchemaNode keyValueTemplate() => structNode(
+          100,
+          'KeyValue',
+          0,
+          2,
+          [
+            ptrField('key', 0, 0, const TypeParameterRefType(0)),
+            ptrField('value', 1, 1, const TypeParameterRefType(1)),
+          ],
+        );
+
+    test('TypeParameterRefType field generates Uint8List? AnyPointer getter in template', () {
+      final kv = keyValueTemplate();
+      final file = fileNode(1, [SchemaNestedNode(name: 'KeyValue', id: 100)]);
+      final src = generateDartFile(file, [file, kv]);
+
+      expect(src, contains('KeyValueReader'));
+      expect(src, contains('Uint8List? get key => getAnyPointerAsMessageBytes(0)'));
+      expect(src, contains('Uint8List? get value => getAnyPointerAsMessageBytes(1)'));
+    });
+
+    test('TypeParameterRefType field generates AnyPointer setter in template builder', () {
+      final kv = keyValueTemplate();
+      final file = fileNode(1, [SchemaNestedNode(name: 'KeyValue', id: 100)]);
+      final src = generateDartFile(file, [file, kv]);
+
+      expect(src, contains('set key(Uint8List? v)'));
+      expect(src, contains('set value(Uint8List? v)'));
+      expect(src, contains('setAnyPointerFromMessage(0, v)'));
+    });
+
+    test('concrete StructRefType with typeArgs generates specialized reader class', () {
+      final kv = keyValueTemplate();
+      final outer = structNode(
+        200,
+        'Wrapper',
+        0,
+        1,
+        [
+          ptrField('pair', 0, 0,
+              StructRefType(100, typeArgs: [const TextType(), const TextType()])),
+        ],
+      );
+      final file = fileNode(1, [
+        SchemaNestedNode(name: 'KeyValue', id: 100),
+        SchemaNestedNode(name: 'Wrapper', id: 200),
+      ]);
+      final src = generateDartFile(file, [file, kv, outer]);
+
+      expect(src, contains('final class KeyValueTextTextReader extends StructReader'));
+      expect(src, contains("String? get key => getTextField(0)"));
+      expect(src, contains("String? get value => getTextField(1)"));
+      expect(src,
+          contains('KeyValueTextTextReader? get pair => getStructFieldWith(0, (r) => KeyValueTextTextReader(r))'));
+    });
+
+    test('concrete StructRefType in List field generates specialized list reader', () {
+      final kv = keyValueTemplate();
+      final outer = structNode(
+        200,
+        'Config',
+        0,
+        1,
+        [
+          ptrField('entries', 0, 0,
+              ListType(StructRefType(100, typeArgs: [const TextType(), const TextType()]))),
+        ],
+      );
+      final file = fileNode(1, [
+        SchemaNestedNode(name: 'KeyValue', id: 100),
+        SchemaNestedNode(name: 'Config', id: 200),
+      ]);
+      final src = generateDartFile(file, [file, kv, outer]);
+
+      expect(src, contains('final class KeyValueTextTextReader extends StructReader'));
+      expect(src,
+          contains('ListReader<KeyValueTextTextReader>? get entries => getStructListFieldWith(0, (r) => KeyValueTextTextReader(r))'));
+    });
+
+    test('template class is still generated alongside specialized class', () {
+      final kv = keyValueTemplate();
+      final outer = structNode(
+        200,
+        'Wrapper',
+        0,
+        1,
+        [
+          ptrField('pair', 0, 0,
+              StructRefType(100, typeArgs: [const TextType(), const TextType()])),
+        ],
+      );
+      final file = fileNode(1, [
+        SchemaNestedNode(name: 'KeyValue', id: 100),
+        SchemaNestedNode(name: 'Wrapper', id: 200),
+      ]);
+      final src = generateDartFile(file, [file, kv, outer]);
+
+      expect(src, contains('final class KeyValueReader extends StructReader'));
+      expect(src, contains('final class KeyValueTextTextReader extends StructReader'));
+    });
+  });
+
   group('generateDartFiles — codegen entrypoint', () {
     test('maps .capnp filename to .capnp.dart', () {
       final sNode = structNode(20, 'Msg', 1, 0, [

@@ -6,6 +6,8 @@ class SchemaNode {
   final int scopeId;
   final List<SchemaNestedNode> nestedNodes;
   final SchemaNodeBody body;
+  /// Names of generic type parameters; empty for non-generic nodes.
+  final List<String> parameters;
 
   const SchemaNode({
     required this.id,
@@ -14,6 +16,7 @@ class SchemaNode {
     required this.scopeId,
     required this.nestedNodes,
     required this.body,
+    this.parameters = const [],
   });
 
   /// Short name: the portion after the prefix (e.g., "Foo" not "schema.Foo").
@@ -169,6 +172,13 @@ class TextType extends SchemaType { const TextType(); }
 class DataType extends SchemaType { const DataType(); }
 class AnyPointerType extends SchemaType { const AnyPointerType(); }
 
+/// Represents a generic type parameter (e.g., `Key` in `struct KeyValue(Key, Value)`).
+/// Used in template struct nodes; replaced by concrete types in specializations.
+class TypeParameterRefType extends SchemaType {
+  final int parameterIndex;
+  const TypeParameterRefType(this.parameterIndex);
+}
+
 class ListType extends SchemaType {
   final SchemaType elementType;
   const ListType(this.elementType);
@@ -176,7 +186,9 @@ class ListType extends SchemaType {
 
 class StructRefType extends SchemaType {
   final int typeId;
-  const StructRefType(this.typeId);
+  /// Non-empty when this reference is a concrete generic instantiation (e.g., KeyValue(Text, Text)).
+  final List<SchemaType> typeArgs;
+  const StructRefType(this.typeId, {this.typeArgs = const []});
 }
 
 class EnumRefType extends SchemaType {
@@ -186,7 +198,9 @@ class EnumRefType extends SchemaType {
 
 class InterfaceRefType extends SchemaType {
   final int typeId;
-  const InterfaceRefType(this.typeId);
+  /// Non-empty when this reference is a concrete generic instantiation.
+  final List<SchemaType> typeArgs;
+  const InterfaceRefType(this.typeId, {this.typeArgs = const []});
 }
 
 /// The complete request received from the capnp compiler.
