@@ -412,7 +412,9 @@ void _writeEnum(StringBuffer sb, SchemaNode node, EnumBody body) {
   }
   sb.writeln('}');
   sb.writeln();
-  sb.writeln('$name ${_lcfirst(name)}FromUint16(int v) => $name.values[v];');
+  sb.writeln(
+      '$name? ${_lcfirst(name)}FromUint16(int v) => '
+      'v < $name.values.length ? $name.values[v] : null;');
   sb.writeln('int ${_lcfirst(name)}ToUint16($name v) => v.index;');
 }
 
@@ -683,7 +685,8 @@ void _writeListBuilderField(
     int typeId, int byteOffset, Map<int, SchemaNode> nodeMap) {
   final node = nodeMap[typeId];
   final name = _dartClassName(node?.displayName ?? 'UnknownEnum');
-  return (name, '${_lcfirst(name)}FromUint16(getUint16Field($byteOffset))');
+  // fromUint16 returns $name? to handle unknown values from newer schemas.
+  return ('$name?', '${_lcfirst(name)}FromUint16(getUint16Field($byteOffset))');
 }
 
 (String, String) _structReaderGetter(

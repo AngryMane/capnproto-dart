@@ -115,7 +115,7 @@ void main() {
       expect(src, contains('red,'));
       expect(src, contains('green,'));
       expect(src, contains('blue,'));
-      expect(src, contains('Color colorFromUint16(int v)'));
+      expect(src, contains('Color? colorFromUint16(int v)'));
       expect(src, contains('int colorToUint16(Color v)'));
     });
 
@@ -310,7 +310,7 @@ void main() {
       ]);
       final src = generateDartFile(file, [file, sNode, colorNode]);
 
-      expect(src, contains('Color get color => colorFromUint16(getUint16Field(0))'));
+      expect(src, contains('Color? get color => colorFromUint16(getUint16Field(0))'));
       expect(src, contains('set color(Color v)'));
       expect(src, contains('setUint16Field(0, colorToUint16(v))'));
     });

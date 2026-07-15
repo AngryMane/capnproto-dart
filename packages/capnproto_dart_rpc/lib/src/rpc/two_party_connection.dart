@@ -100,16 +100,21 @@ class TwoPartyRpcConnection implements RpcConnection {
       throw RpcException('bootstrap() must be called on the client side');
     }
 
+    // Return the cached capability if the bootstrap exchange already completed
+    // or is in progress.  bootstrap() is idempotent per connection.
+    if (_bootstrapCap != null) {
+      return factory.fromCapability(_bootstrapCap!);
+    }
+
     // Send Bootstrap message.
     final qid = _nextQuestionId++;
     _bootstrapQuestionId = qid;
-    _bootstrapCompleter ??= Completer<int>();
+    _bootstrapCompleter = Completer<int>();
     _questions[qid] = Completer<RpcMessage>();
 
     _sendRaw(buildBootstrapMessage(qid));
 
-    // Create a lazy imported capability that waits for the bootstrap to resolve.
-    _bootstrapCap ??= _ImportedCapability(this, _bootstrapCompleter!.future);
+    _bootstrapCap = _ImportedCapability(this, _bootstrapCompleter!.future);
     return factory.fromCapability(_bootstrapCap!);
   }
 
@@ -247,6 +252,10 @@ class TwoPartyRpcConnection implements RpcConnection {
     final params = msg.paramsBytes ?? _emptyResultBytes;
 
     // Resolve capabilities from the incoming capTable.
+    // Each entry in the list must correspond 1-to-1 with the capTable index,
+    // because capability pointers in the params struct reference these indices.
+    // Unsupported or unresolvable descriptors get a NullCapability placeholder
+    // so subsequent indices remain correct.
     final paramsCapabilities = <Capability>[];
     for (final (disc, id) in msg.paramsCapTable) {
       switch (disc) {
@@ -255,7 +264,9 @@ class TwoPartyRpcConnection implements RpcConnection {
           paramsCapabilities.add(_ImportedCapability.resolved(this, id));
         case 3: // receiverHosted: we (the receiver) export this cap
           final hosted = _exports[id];
-          if (hosted != null) paramsCapabilities.add(hosted);
+          paramsCapabilities.add(hosted ?? NullCapability());
+        default: // senderPromise, thirdPartyHosted, or unknown — placeholder
+          paramsCapabilities.add(NullCapability());
       }
     }
 

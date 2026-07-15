@@ -12,7 +12,7 @@ enum Color {
   transparent,
 }
 
-Color colorFromUint16(int v) => Color.values[v];
+Color? colorFromUint16(int v) => v < Color.values.length ? Color.values[v] : null;
 int colorToUint16(Color v) => v.index;
 
 enum Status {
@@ -24,7 +24,7 @@ enum Status {
   failed,
 }
 
-Status statusFromUint16(int v) => Status.values[v];
+Status? statusFromUint16(int v) => v < Status.values.length ? Status.values[v] : null;
 int statusToUint16(Status v) => v.index;
 
 enum Relationship {
@@ -37,7 +37,7 @@ enum Relationship {
   other,
 }
 
-Relationship relationshipFromUint16(int v) => Relationship.values[v];
+Relationship? relationshipFromUint16(int v) => v < Relationship.values.length ? Relationship.values[v] : null;
 int relationshipToUint16(Relationship v) => v.index;
 
 final class EmptyReader extends StructReader {
@@ -123,7 +123,7 @@ final class AllScalarsReader extends StructReader {
 
   Uint8List? get dataValue => getDataField(1);
 
-  Color get color => colorFromUint16(getUint16Field(36));
+  Color? get color => colorFromUint16(getUint16Field(36));
 }
 
 final class AllScalarsBuilder extends StructBuilder {
@@ -353,9 +353,9 @@ final class PersonReader extends StructReader {
 
   String? get email => getTextField(2);
 
-  Status get status => statusFromUint16(getUint16Field(0));
+  Status? get status => statusFromUint16(getUint16Field(0));
 
-  Color get favoriteColor => colorFromUint16(getUint16Field(2));
+  Color? get favoriteColor => colorFromUint16(getUint16Field(2));
 
   TimestampReader? get createdAt => getStructFieldWith(3, (r) => TimestampReader(r));
 
@@ -503,7 +503,7 @@ final class RelatedPersonReader extends StructReader {
 
   PersonReader? get person => getStructFieldWith(0, (r) => PersonReader(r));
 
-  Relationship get relationship => relationshipFromUint16(getUint16Field(0));
+  Relationship? get relationship => relationshipFromUint16(getUint16Field(0));
 }
 
 final class RelatedPersonBuilder extends StructBuilder {
@@ -2937,7 +2937,7 @@ final class ComplexResponseReader extends StructReader {
 
   bool get accepted => getBoolField(0);
 
-  Status get status => statusFromUint16(getUint16Field(2));
+  Status? get status => statusFromUint16(getUint16Field(2));
 
   String? get message => getTextField(1);
 
