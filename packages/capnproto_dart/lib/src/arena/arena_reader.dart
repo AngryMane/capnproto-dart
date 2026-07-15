@@ -234,15 +234,28 @@ class ArenaReader {
 
     if (ptr is FarPointer) {
       final targetSeg = getSegment(ptr.segmentId);
-      if (ptr.isDoubleFar) {
-        throw DecodeException('double-far list pointer not yet supported');
+      if (!ptr.isDoubleFar) {
+        if (!targetSeg.containsInterval(ptr.landingPadOffset, 1)) {
+          throw DecodeException('far pointer landing pad out of bounds');
+        }
+        final inner = WirePointer.decode(targetSeg.data, ptr.landingPadOffset);
+        return _resolveListPointerAt(
+            targetSeg, ptr.landingPadOffset, inner, nestingLimit);
       }
-      if (!targetSeg.containsInterval(ptr.landingPadOffset, 1)) {
-        throw DecodeException('far pointer landing pad out of bounds');
+      // Double-far: two-word landing pad.
+      if (!targetSeg.containsInterval(ptr.landingPadOffset, 2)) {
+        throw DecodeException('double-far landing pad out of bounds');
       }
       final inner = WirePointer.decode(targetSeg.data, ptr.landingPadOffset);
-      return _resolveListPointerAt(
-          targetSeg, ptr.landingPadOffset, inner, nestingLimit);
+      if (inner is! FarPointer || inner.isDoubleFar) {
+        throw DecodeException('invalid double-far inner pointer');
+      }
+      final tag = WirePointer.decode(targetSeg.data, ptr.landingPadOffset + 1);
+      if (tag is! ListPointer) {
+        throw DecodeException('double-far tag is not a list pointer');
+      }
+      final dataSeg = getSegment(inner.segmentId);
+      return _buildListReaderDirect(dataSeg, inner.landingPadOffset, tag, nestingLimit);
     }
 
     if (ptr is! ListPointer) {
@@ -250,19 +263,30 @@ class ArenaReader {
           'expected list pointer, got ${ptr.runtimeType}');
     }
 
-    final dataWordOffset = wordOffset + 1 + ptr.offset;
+    return _buildListReaderDirect(
+        seg, wordOffset + 1 + ptr.offset, ptr, nestingLimit);
+  }
 
+  /// Builds a [RawListReader] given a segment, the word offset of the first
+  /// element (for composite: word offset of the tag word), and a list pointer
+  /// tag that describes element size and count.
+  RawListReader _buildListReaderDirect(
+    SegmentReader dataSeg,
+    int dataWordOffset,
+    ListPointer ptr,
+    int nestingLimit,
+  ) {
     if (ptr.elementSize == ListElementSize.composite) {
       final totalWords = ptr.elementCountOrWordCount;
       // +1 for the tag word that precedes element data.
-      if (!seg.containsInterval(dataWordOffset, 1 + totalWords)) {
+      if (!dataSeg.containsInterval(dataWordOffset, 1 + totalWords)) {
         throw DecodeException('composite list out of segment bounds');
       }
       chargeTraversal(1 + totalWords);
 
       // Tag word: struct-pointer format with "offset" field = element count.
-      final tagLo = readUint32(seg.data, dataWordOffset * bytesPerWord);
-      final tagHi = readUint32(seg.data, dataWordOffset * bytesPerWord + 4);
+      final tagLo = readUint32(dataSeg.data, dataWordOffset * bytesPerWord);
+      final tagHi = readUint32(dataSeg.data, dataWordOffset * bytesPerWord + 4);
       if ((tagLo & 3) != 0) {
         throw DecodeException('invalid composite list tag word');
       }
@@ -271,7 +295,7 @@ class ArenaReader {
       final structPtrWords = (tagHi >> 16) & 0xFFFF;
 
       return RawListReader(
-        segment: seg,
+        segment: dataSeg,
         arena: this,
         dataByteOffset: (dataWordOffset + 1) * bytesPerWord,
         elementSize: ListElementSize.composite,
@@ -286,13 +310,13 @@ class ArenaReader {
     final elementCount = ptr.elementCountOrWordCount;
     final wordCount = listDataWordCount(ptr.elementSize, elementCount);
 
-    if (wordCount > 0 && !seg.containsInterval(dataWordOffset, wordCount)) {
+    if (wordCount > 0 && !dataSeg.containsInterval(dataWordOffset, wordCount)) {
       throw DecodeException('list data out of segment bounds');
     }
     chargeTraversal(wordCount == 0 ? 1 : wordCount);
 
     return RawListReader(
-      segment: seg,
+      segment: dataSeg,
       arena: this,
       dataByteOffset: dataWordOffset * bytesPerWord,
       elementSize: ptr.elementSize,
@@ -353,34 +377,56 @@ class ArenaReader {
   ) {
     if (ptr is FarPointer) {
       final targetSeg = getSegment(ptr.segmentId);
-      if (ptr.isDoubleFar) {
-        throw DecodeException('double-far list pointer not yet supported');
+      if (!ptr.isDoubleFar) {
+        if (!targetSeg.containsInterval(ptr.landingPadOffset, 1)) {
+          throw DecodeException('far pointer landing pad out of bounds');
+        }
+        final inner = WirePointer.decode(targetSeg.data, ptr.landingPadOffset);
+        return _resolveByteListPointer(targetSeg, ptr.landingPadOffset, inner);
       }
-      if (!targetSeg.containsInterval(ptr.landingPadOffset, 1)) {
-        throw DecodeException('far pointer landing pad out of bounds');
+      // Double-far: two-word landing pad.
+      if (!targetSeg.containsInterval(ptr.landingPadOffset, 2)) {
+        throw DecodeException('double-far landing pad out of bounds');
       }
       final inner = WirePointer.decode(targetSeg.data, ptr.landingPadOffset);
-      return _resolveByteListPointer(targetSeg, ptr.landingPadOffset, inner);
+      if (inner is! FarPointer || inner.isDoubleFar) {
+        throw DecodeException('invalid double-far inner pointer');
+      }
+      final tag = WirePointer.decode(targetSeg.data, ptr.landingPadOffset + 1);
+      if (tag is! ListPointer) {
+        throw DecodeException('double-far tag is not a list pointer');
+      }
+      final dataSeg = getSegment(inner.segmentId);
+      return _buildByteListDirect(dataSeg, inner.landingPadOffset, tag);
     }
 
     if (ptr is ListPointer) {
-      if (ptr.elementSize != ListElementSize.byte) {
-        throw DecodeException(
-            'expected byte list (text/data), got ${ptr.elementSize}');
-      }
-      final elementCount = ptr.elementCountOrWordCount;
-      final wordCount = (elementCount + bytesPerWord - 1) ~/ bytesPerWord;
-      final dataWordOffset = wordOffset + 1 + ptr.offset;
-
-      chargeTraversal(wordCount == 0 ? 1 : wordCount);
-      if (wordCount > 0 && !seg.containsInterval(dataWordOffset, wordCount)) {
-        throw DecodeException('list data out of segment bounds');
-      }
-      return (seg, dataWordOffset * bytesPerWord, elementCount);
+      return _buildByteListDirect(seg, wordOffset + 1 + ptr.offset, ptr);
     }
 
     throw DecodeException(
         'expected list pointer for text/data, got ${ptr.runtimeType}');
+  }
+
+  /// Builds the (segment, byteOffset, elementCount) triple for a byte-list
+  /// (Text or Data) given the segment and word offset where element data begins.
+  (SegmentReader, int, int) _buildByteListDirect(
+    SegmentReader dataSeg,
+    int dataWordOffset,
+    ListPointer ptr,
+  ) {
+    if (ptr.elementSize != ListElementSize.byte) {
+      throw DecodeException(
+          'expected byte list (text/data), got ${ptr.elementSize}');
+    }
+    final elementCount = ptr.elementCountOrWordCount;
+    final wordCount = (elementCount + bytesPerWord - 1) ~/ bytesPerWord;
+
+    chargeTraversal(wordCount == 0 ? 1 : wordCount);
+    if (wordCount > 0 && !dataSeg.containsInterval(dataWordOffset, wordCount)) {
+      throw DecodeException('list data out of segment bounds');
+    }
+    return (dataSeg, dataWordOffset * bytesPerWord, elementCount);
   }
 
   /// Parses the Cap'n Proto framing header and constructs an [ArenaReader].

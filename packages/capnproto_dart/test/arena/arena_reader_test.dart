@@ -94,6 +94,107 @@ void main() {
     });
   });
 
+  group('double-far pointer resolution', () {
+    // Build a 3-segment message where the root struct's first pointer field
+    // goes through a double-far pointer to a list/text/data in segment 2.
+    //
+    // Segment 0: [root struct ptr (dW=0, pW=1)] [double-far to seg1 word 0]
+    // Segment 1: [single-far to seg2 word 0]    [list tag pointer]
+    // Segment 2: <actual data>
+    Uint8List buildDoubleFarMessage({
+      required WirePointer listTag,
+      required List<int> dataBytes,
+    }) {
+      final paddedLen = ((dataBytes.length + 7) ~/ bytesPerWord) * bytesPerWord;
+      final paddedData = Uint8List(paddedLen)
+        ..setRange(0, dataBytes.length, dataBytes);
+      final dataWords = paddedLen ~/ bytesPerWord;
+
+      // 3 segments (odd) → header is 4 + 3×4 = 16 bytes, no padding word.
+      final out = Uint8List(16 + (2 + 2 + dataWords) * bytesPerWord);
+      final bd = ByteData.view(out.buffer);
+
+      // Header
+      writeUint32(bd, 0, 2);          // numSegments - 1 = 2
+      writeUint32(bd, 4, 2);          // seg0: 2 words
+      writeUint32(bd, 8, 2);          // seg1: 2 words
+      writeUint32(bd, 12, dataWords); // seg2
+
+      // Segment 0
+      final seg0 = ByteData.view(out.buffer, 16);
+      StructPointer(offset: 0, dataWords: 0, ptrWords: 1).encode(seg0, 0);
+      FarPointer(isDoubleFar: true, landingPadOffset: 0, segmentId: 1)
+          .encode(seg0, 1);
+
+      // Segment 1 (landing pad)
+      final seg1 = ByteData.view(out.buffer, 16 + 2 * bytesPerWord);
+      FarPointer(isDoubleFar: false, landingPadOffset: 0, segmentId: 2)
+          .encode(seg1, 0);
+      listTag.encode(seg1, 1);
+
+      // Segment 2 (data)
+      out.setRange(16 + 4 * bytesPerWord, 16 + 4 * bytesPerWord + paddedLen,
+          paddedData);
+
+      return out;
+    }
+
+    test('Text field via double-far pointer', () {
+      final msg = buildDoubleFarMessage(
+        listTag: ListPointer(
+          offset: 0,
+          elementSize: ListElementSize.byte,
+          elementCountOrWordCount: 6, // "hello\0" = 6 bytes
+        ),
+        dataBytes: [0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x00], // "hello\0"
+      );
+      final arena = ArenaReader.fromBytes(msg, const MessageReaderOptions());
+      final raw = arena.getRootRaw();
+      final text = arena.resolveTextAt(raw.segment, raw.ptrWordOffset);
+      expect(text, equals('hello'));
+    });
+
+    test('Data field via double-far pointer', () {
+      final msg = buildDoubleFarMessage(
+        listTag: ListPointer(
+          offset: 0,
+          elementSize: ListElementSize.byte,
+          elementCountOrWordCount: 3,
+        ),
+        dataBytes: [0x01, 0x02, 0x03],
+      );
+      final arena = ArenaReader.fromBytes(msg, const MessageReaderOptions());
+      final raw = arena.getRootRaw();
+      final data = arena.resolveDataAt(raw.segment, raw.ptrWordOffset);
+      expect(data, equals([0x01, 0x02, 0x03]));
+    });
+
+    test('uint32 List field via double-far pointer', () {
+      final msg = buildDoubleFarMessage(
+        listTag: ListPointer(
+          offset: 0,
+          elementSize: ListElementSize.fourBytes,
+          elementCountOrWordCount: 3,
+        ),
+        dataBytes: [
+          42, 0, 0, 0, // uint32 42
+          100, 0, 0, 0, // uint32 100
+          255, 0, 0, 0, // uint32 255
+          0, 0, 0, 0, // padding to word boundary
+        ],
+      );
+      final arena = ArenaReader.fromBytes(msg, const MessageReaderOptions());
+      final raw = arena.getRootRaw();
+      final list =
+          arena.resolveListAt(raw.segment, raw.ptrWordOffset, arena.nestingLimit);
+      expect(list, isNotNull);
+      expect(list!.elementCount, equals(3));
+      expect(list.elementSize, equals(ListElementSize.fourBytes));
+      // Verify element data byte offsets point into segment 2.
+      expect(list.dataByteOffset, equals(0)); // seg2 starts at offset 0
+    });
+  });
+
   group('ArenaReader.getRootRaw', () {
     test('resolves direct struct pointer', () {
       const dataWords = 2;
