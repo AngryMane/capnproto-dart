@@ -129,11 +129,15 @@ class SlotField extends SchemaFieldBody {
   final int offset;
   final SchemaType type;
   final bool hadExplicitDefault;
+  /// The default value for this field, or null if zero/false/absent.
+  /// Stored as [int] for integer/enum types, [bool] for Bool, [double] for floats.
+  final Object? defaultValue;
 
   const SlotField({
     required this.offset,
     required this.type,
     required this.hadExplicitDefault,
+    this.defaultValue,
   });
 }
 

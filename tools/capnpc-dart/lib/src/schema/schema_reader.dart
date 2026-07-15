@@ -132,6 +132,7 @@ class _FieldReader extends StructReader {
   bool get slotHadExplicitDefault => getBoolField(112); // byte 14, bit 0
 
   _TypeReader? get slotType => getStructFieldWith(2, (r) => _TypeReader(r));
+  _ValueReader? get slotDefaultValue => getStructFieldWith(3, (r) => _ValueReader(r));
 
   // group field
   int get groupTypeId => getUint64Field(16);
@@ -173,6 +174,35 @@ class _EnumerantReader extends StructReader {
   _EnumerantReader(super.raw);
   String? get name => getTextField(0);
   int get codeOrder => getUint16Field(0);
+}
+
+// ---- Value @0xce23dcd2310250fa (dataWords=2, ptrWords=1) ----
+//
+// Data section:
+//   bytes 0-1 : discriminant (UInt16)
+//               0=void 1=bool 2=int8 3=int16 4=int32 5=int64
+//               6=uint8 7=uint16 8=uint32 9=uint64 10=float32 11=float64
+//               12=text 13=data 14=list 15=enum 16=struct 17=interface 18=anyPointer
+//   byte  2   : bool value (bit 16) / int8 / uint8
+//   bytes 2-3 : int16 / uint16 / enum (uint16)
+//   bytes 4-7 : int32 / uint32 / float32
+//   bytes 8-15: int64 / uint64 / float64
+// Pointer section:
+//   ptr 0 : text/data/list/struct/anyPointer
+class _ValueReader extends StructReader {
+  _ValueReader(super.raw);
+  int get disc => getUint16Field(0);
+  bool get boolValue => getBoolField(16); // byte 2, bit 0
+  int get int8Value => getInt8Field(2);
+  int get int16Value => getInt16Field(2);
+  int get int32Value => getInt32Field(4);
+  int get int64Value => getInt64Field(8);
+  int get uint8Value => getUint8Field(2);
+  int get uint16Value => getUint16Field(2);
+  int get uint32Value => getUint32Field(4);
+  int get uint64Value => getUint64Field(8);
+  double get float32Value => getFloat32Field(4);
+  double get float64Value => getFloat64Field(8);
 }
 
 // ---- Method @0x9500cce23b334d80 (dataWords=3, ptrWords=5) ----
@@ -372,11 +402,34 @@ SchemaNodeBody _buildNodeBody(_NodeReader r) {
 }
 
 SchemaField _buildField(_FieldReader r) {
+  Object? defaultValue;
+  if (r.slotHadExplicitDefault) {
+    final dv = r.slotDefaultValue;
+    if (dv != null) {
+      defaultValue = switch (dv.disc) {
+        1 => dv.boolValue,
+        2 => dv.int8Value,
+        3 => dv.int16Value,
+        4 => dv.int32Value,
+        5 => dv.int64Value,
+        6 => dv.uint8Value,
+        7 => dv.uint16Value,
+        8 => dv.uint32Value,
+        9 => dv.uint64Value,
+        10 => dv.float32Value,
+        11 => dv.float64Value,
+        15 => dv.uint16Value, // enum stored as uint16
+        _ => null,
+      };
+    }
+  }
+
   final body = r.isSlot
       ? SlotField(
           offset: r.slotOffset,
           type: _buildType(r.slotType),
           hadExplicitDefault: r.slotHadExplicitDefault,
+          defaultValue: defaultValue,
         )
       : GroupField(typeId: r.groupTypeId);
 

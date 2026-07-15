@@ -515,7 +515,8 @@ void _writeReaderField(
     return;
   }
 
-  final (dartType, getter) = _readerGetter(type, offset, nodeMap);
+  final (dartType, getter) =
+      _readerGetter(type, offset, nodeMap, sf.defaultValue);
   sb.writeln('  $dartType get $fname => $getter;');
 }
 
@@ -557,8 +558,8 @@ void _writeBuilderField(
     _writeBuilderPointerField(sb, fname, type, offset, nodeMap, hasDisc,
         discVal, discByteOffset);
   } else {
-    _writeBuilderDataField(
-        sb, fname, type, offset, nodeMap, hasDisc, discVal, discByteOffset);
+    _writeBuilderDataField(sb, fname, type, offset, nodeMap, hasDisc, discVal,
+        discByteOffset, sf.defaultValue);
   }
 }
 
@@ -570,9 +571,10 @@ void _writeBuilderDataField(
   Map<int, SchemaNode> nodeMap,
   bool hasDisc,
   int discVal,
-  int discByteOffset,
-) {
-  final (dartType, setter) = _builderDataSetter(type, offset, nodeMap);
+  int discByteOffset, [
+  Object? defaultValue,
+]) {
+  final (dartType, setter) = _builderDataSetter(type, offset, nodeMap, defaultValue);
   sb.writeln('  set $fname($dartType v) {');
   if (hasDisc) {
     sb.writeln('    setUint16Field($discByteOffset, $discVal);');
@@ -658,29 +660,41 @@ void _writeListBuilderField(
 // Helpers: type mapping
 // ---------------------------------------------------------------------------
 
+/// Returns a named-parameter suffix for a non-trivial explicit default value.
+String _defaultSuffix(Object? v) {
+  if (v == null) return '';
+  if (v is int && v == 0) return '';
+  if (v is bool && !v) return '';
+  if (v is double && v == 0.0) return '';
+  return ', defaultValue: $v';
+}
+
 (String, String) _readerGetter(
   SchemaType type,
   int offset,
-  Map<int, SchemaNode> nodeMap,
-) {
+  Map<int, SchemaNode> nodeMap, [
+  Object? fieldDefault,
+]) {
+  final ds = _defaultSuffix(fieldDefault);
   return switch (type) {
     VoidType() => ('void', '{}'),
-    BoolType() => ('bool', 'getBoolField($offset)'),
-    Int8Type() => ('int', 'getInt8Field($offset)'),
-    Int16Type() => ('int', 'getInt16Field(${offset * 2})'),
-    Int32Type() => ('int', 'getInt32Field(${offset * 4})'),
-    Int64Type() => ('int', 'getInt64Field(${offset * 8})'),
-    UInt8Type() => ('int', 'getUint8Field($offset)'),
-    UInt16Type() => ('int', 'getUint16Field(${offset * 2})'),
-    UInt32Type() => ('int', 'getUint32Field(${offset * 4})'),
-    UInt64Type() => ('int', 'getUint64Field(${offset * 8})'),
-    Float32Type() => ('double', 'getFloat32Field(${offset * 4})'),
-    Float64Type() => ('double', 'getFloat64Field(${offset * 8})'),
+    BoolType() => ('bool', 'getBoolField($offset$ds)'),
+    Int8Type() => ('int', 'getInt8Field($offset$ds)'),
+    Int16Type() => ('int', 'getInt16Field(${offset * 2}$ds)'),
+    Int32Type() => ('int', 'getInt32Field(${offset * 4}$ds)'),
+    Int64Type() => ('int', 'getInt64Field(${offset * 8}$ds)'),
+    UInt8Type() => ('int', 'getUint8Field($offset$ds)'),
+    UInt16Type() => ('int', 'getUint16Field(${offset * 2}$ds)'),
+    UInt32Type() => ('int', 'getUint32Field(${offset * 4}$ds)'),
+    UInt64Type() => ('int', 'getUint64Field(${offset * 8}$ds)'),
+    Float32Type() => ('double', 'getFloat32Field(${offset * 4}$ds)'),
+    Float64Type() => ('double', 'getFloat64Field(${offset * 8}$ds)'),
     TextType() => ('String?', 'getTextField($offset)'),
     DataType() => ('Uint8List?', 'getDataField($offset)'),
     AnyPointerType() => ('Uint8List?', 'getAnyPointerAsMessageBytes($offset)'),
     EnumRefType(:final typeId) =>
-      _enumReaderGetter(typeId, offset * 2, nodeMap),
+      _enumReaderGetter(typeId, offset * 2, nodeMap,
+          fieldDefault is int ? fieldDefault : null),
     StructRefType(:final typeId) =>
       _structReaderGetter(typeId, offset, nodeMap),
     ListType(:final elementType) =>
@@ -692,11 +706,14 @@ void _writeListBuilderField(
 }
 
 (String, String) _enumReaderGetter(
-    int typeId, int byteOffset, Map<int, SchemaNode> nodeMap) {
+    int typeId, int byteOffset, Map<int, SchemaNode> nodeMap,
+    [int? defaultVal]) {
   final node = nodeMap[typeId];
   final name = _dartClassName(node?.displayName ?? 'UnknownEnum');
+  final ds = _defaultSuffix(defaultVal);
   // fromUint16 returns $name? to handle unknown values from newer schemas.
-  return ('$name?', '${_lcfirst(name)}FromUint16(getUint16Field($byteOffset))');
+  return ('$name?',
+      '${_lcfirst(name)}FromUint16(getUint16Field($byteOffset$ds))');
 }
 
 (String, String) _structReaderGetter(
@@ -741,30 +758,35 @@ void _writeListBuilderField(
 }
 
 (String, String) _builderDataSetter(
-    SchemaType type, int offset, Map<int, SchemaNode> nodeMap) {
+    SchemaType type, int offset, Map<int, SchemaNode> nodeMap,
+    [Object? fieldDefault]) {
+  final ds = _defaultSuffix(fieldDefault);
   return switch (type) {
-    BoolType() => ('bool', 'setBoolField($offset, v)'),
-    Int8Type() => ('int', 'setInt8Field($offset, v)'),
-    Int16Type() => ('int', 'setInt16Field(${offset * 2}, v)'),
-    Int32Type() => ('int', 'setInt32Field(${offset * 4}, v)'),
-    Int64Type() => ('int', 'setInt64Field(${offset * 8}, v)'),
-    UInt8Type() => ('int', 'setUint8Field($offset, v)'),
-    UInt16Type() => ('int', 'setUint16Field(${offset * 2}, v)'),
-    UInt32Type() => ('int', 'setUint32Field(${offset * 4}, v)'),
-    UInt64Type() => ('int', 'setUint64Field(${offset * 8}, v)'),
-    Float32Type() => ('double', 'setFloat32Field(${offset * 4}, v)'),
-    Float64Type() => ('double', 'setFloat64Field(${offset * 8}, v)'),
+    BoolType() => ('bool', 'setBoolField($offset, v$ds)'),
+    Int8Type() => ('int', 'setInt8Field($offset, v$ds)'),
+    Int16Type() => ('int', 'setInt16Field(${offset * 2}, v$ds)'),
+    Int32Type() => ('int', 'setInt32Field(${offset * 4}, v$ds)'),
+    Int64Type() => ('int', 'setInt64Field(${offset * 8}, v$ds)'),
+    UInt8Type() => ('int', 'setUint8Field($offset, v$ds)'),
+    UInt16Type() => ('int', 'setUint16Field(${offset * 2}, v$ds)'),
+    UInt32Type() => ('int', 'setUint32Field(${offset * 4}, v$ds)'),
+    UInt64Type() => ('int', 'setUint64Field(${offset * 8}, v$ds)'),
+    Float32Type() => ('double', 'setFloat32Field(${offset * 4}, v$ds)'),
+    Float64Type() => ('double', 'setFloat64Field(${offset * 8}, v$ds)'),
     EnumRefType(:final typeId) =>
-      _enumBuilderSetter(typeId, offset * 2, nodeMap),
+      _enumBuilderSetter(typeId, offset * 2, nodeMap,
+          fieldDefault is int ? fieldDefault : null),
     _ => ('dynamic', '/* unsupported data type */'),
   };
 }
 
 (String, String) _enumBuilderSetter(
-    int typeId, int byteOffset, Map<int, SchemaNode> nodeMap) {
+    int typeId, int byteOffset, Map<int, SchemaNode> nodeMap,
+    [int? defaultVal]) {
   final node = nodeMap[typeId];
   final name = _dartClassName(node?.displayName ?? 'UnknownEnum');
-  return (name, 'setUint16Field($byteOffset, ${_lcfirst(name)}ToUint16(v))');
+  final ds = _defaultSuffix(defaultVal);
+  return (name, 'setUint16Field($byteOffset, ${_lcfirst(name)}ToUint16(v)$ds)');
 }
 
 (String, String) _listInitCall(

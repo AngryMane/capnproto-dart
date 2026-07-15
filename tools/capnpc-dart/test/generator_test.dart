@@ -86,6 +86,20 @@ SchemaField ptrField(String name, int codeOrder, int offset, SchemaType type) =>
       body: SlotField(offset: offset, type: type, hadExplicitDefault: false),
     );
 
+SchemaField defaultedField(
+        String name, int codeOrder, int offset, SchemaType type,
+        Object? defaultValue) =>
+    SchemaField(
+      name: name,
+      codeOrder: codeOrder,
+      discriminantValue: 0xFFFF,
+      body: SlotField(
+          offset: offset,
+          type: type,
+          hadExplicitDefault: true,
+          defaultValue: defaultValue),
+    );
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -366,6 +380,87 @@ void main() {
     test('generates factory', () {
       expect(src, contains('class GreeterClientFactory extends CapabilityFactory<GreeterClient>'));
       expect(src, contains('GreeterClient fromCapability(Capability cap)'));
+    });
+  });
+
+  group('generateDartFile — explicit defaults', () {
+    test('uint32 field with non-zero default emits defaultValue: arg', () {
+      final sNode = structNode(20, 'S', 1, 0, [
+        defaultedField('x', 0, 0, const UInt32Type(), 42),
+      ]);
+      final file = fileNode(1, [SchemaNestedNode(name: 'S', id: 20)]);
+      final src = generateDartFile(file, [file, sNode]);
+
+      expect(src, contains('getUint32Field(0, defaultValue: 42)'));
+      expect(src, contains('setUint32Field(0, v, defaultValue: 42)'));
+    });
+
+    test('bool field with default true emits defaultValue: true', () {
+      final sNode = structNode(20, 'S', 1, 0, [
+        defaultedField('flag', 0, 0, const BoolType(), true),
+      ]);
+      final file = fileNode(1, [SchemaNestedNode(name: 'S', id: 20)]);
+      final src = generateDartFile(file, [file, sNode]);
+
+      expect(src, contains('getBoolField(0, defaultValue: true)'));
+      expect(src, contains('setBoolField(0, v, defaultValue: true)'));
+    });
+
+    test('zero/false default does not emit defaultValue: arg', () {
+      final sNode = structNode(20, 'S', 1, 0, [
+        defaultedField('x', 0, 0, const UInt32Type(), 0),
+        defaultedField('flag', 1, 1, const BoolType(), false),
+      ]);
+      final file = fileNode(1, [SchemaNestedNode(name: 'S', id: 20)]);
+      final src = generateDartFile(file, [file, sNode]);
+
+      expect(src, isNot(contains('defaultValue:')));
+    });
+
+    test('null defaultValue does not emit defaultValue: arg', () {
+      final sNode = structNode(20, 'S', 1, 0, [
+        SchemaField(
+          name: 'x',
+          codeOrder: 0,
+          discriminantValue: 0xFFFF,
+          body: const SlotField(
+              offset: 0, type: UInt32Type(), hadExplicitDefault: true),
+        ),
+      ]);
+      final file = fileNode(1, [SchemaNestedNode(name: 'S', id: 20)]);
+      final src = generateDartFile(file, [file, sNode]);
+
+      expect(src, isNot(contains('defaultValue:')));
+    });
+
+    test('float32 field with non-zero default emits defaultValue:', () {
+      final sNode = structNode(20, 'S', 1, 0, [
+        defaultedField('ratio', 0, 0, const Float32Type(), 0.5),
+      ]);
+      final file = fileNode(1, [SchemaNestedNode(name: 'S', id: 20)]);
+      final src = generateDartFile(file, [file, sNode]);
+
+      expect(src, contains('getFloat32Field(0, defaultValue: 0.5)'));
+      expect(src, contains('setFloat32Field(0, v, defaultValue: 0.5)'));
+    });
+
+    test('enum field with non-zero default emits defaultValue: inside getUint16', () {
+      const colorId = 50;
+      final colorNode = enumNode(colorId, 'Color', [
+        const SchemaEnumerant(name: 'red', codeOrder: 0),
+        const SchemaEnumerant(name: 'blue', codeOrder: 1),
+      ]);
+      final sNode = structNode(20, 'S', 1, 0, [
+        defaultedField('color', 0, 0, EnumRefType(colorId), 1),
+      ]);
+      final file = fileNode(1, [
+        SchemaNestedNode(name: 'S', id: 20),
+        SchemaNestedNode(name: 'Color', id: colorId),
+      ]);
+      final src = generateDartFile(file, [file, sNode, colorNode]);
+
+      expect(src, contains('colorFromUint16(getUint16Field(0, defaultValue: 1))'));
+      expect(src, contains('setUint16Field(0, colorToUint16(v), defaultValue: 1)'));
     });
   });
 
