@@ -507,6 +507,14 @@ void _writeReaderField(
   final type = sf.type;
   final offset = sf.offset;
 
+  // Capability pointer fields expose the cap-table index so callers can
+  // look up the capability from DispatchResult.caps.
+  if (type is InterfaceRefType) {
+    sb.writeln(
+        '  int get ${fname}CapIndex => getCapabilityField($offset);');
+    return;
+  }
+
   final (dartType, getter) = _readerGetter(type, offset, nodeMap);
   sb.writeln('  $dartType get $fname => $getter;');
 }
@@ -677,6 +685,8 @@ void _writeListBuilderField(
       _structReaderGetter(typeId, offset, nodeMap),
     ListType(:final elementType) =>
       _listReaderGetter(elementType, offset, nodeMap),
+    InterfaceRefType() =>
+      ('int', 'getCapabilityField($offset)'),
     _ => ('dynamic', 'null /* unsupported type */'),
   };
 }

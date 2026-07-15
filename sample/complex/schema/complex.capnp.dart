@@ -1767,7 +1767,7 @@ final repositoryOpenCursorParamsFactory = _RepositoryOpenCursorParamsFactory();
 final class RepositoryOpenCursorResultsReader extends StructReader {
   RepositoryOpenCursorResultsReader(super.raw);
 
-  dynamic get cursor => null /* unsupported type */;
+  int get cursorCapIndex => getCapabilityField(0);
 }
 
 final class RepositoryOpenCursorResultsBuilder extends StructBuilder {
@@ -1796,7 +1796,7 @@ final repositoryOpenCursorResultsFactory = _RepositoryOpenCursorResultsFactory()
 final class RepositoryWatchParamsReader extends StructReader {
   RepositoryWatchParamsReader(super.raw);
 
-  dynamic get observer => null /* unsupported type */;
+  int get observerCapIndex => getCapabilityField(0);
 }
 
 final class RepositoryWatchParamsBuilder extends StructBuilder {
@@ -1825,7 +1825,7 @@ final repositoryWatchParamsFactory = _RepositoryWatchParamsFactory();
 final class RepositoryWatchResultsReader extends StructReader {
   RepositoryWatchResultsReader(super.raw);
 
-  dynamic get subscription => null /* unsupported type */;
+  int get subscriptionCapIndex => getCapabilityField(0);
 }
 
 final class RepositoryWatchResultsBuilder extends StructBuilder {
@@ -2016,7 +2016,7 @@ final byteSinkAbortResultsFactory = _ByteSinkAbortResultsFactory();
 final class ByteSourcePumpToParamsReader extends StructReader {
   ByteSourcePumpToParamsReader(super.raw);
 
-  dynamic get sink => null /* unsupported type */;
+  int get sinkCapIndex => getCapabilityField(0);
 
   int get chunkSize => getUint32Field(0);
 }
@@ -2109,7 +2109,7 @@ final capabilityFactoryNewCellParamsFactory = _CapabilityFactoryNewCellParamsFac
 final class CapabilityFactoryNewCellResultsReader extends StructReader {
   CapabilityFactoryNewCellResultsReader(super.raw);
 
-  dynamic get cell => null /* unsupported type */;
+  int get cellCapIndex => getCapabilityField(0);
 }
 
 final class CapabilityFactoryNewCellResultsBuilder extends StructBuilder {
@@ -2161,7 +2161,7 @@ final capabilityFactoryNewEmptyCellParamsFactory = _CapabilityFactoryNewEmptyCel
 final class CapabilityFactoryNewEmptyCellResultsReader extends StructReader {
   CapabilityFactoryNewEmptyCellResultsReader(super.raw);
 
-  dynamic get cell => null /* unsupported type */;
+  int get cellCapIndex => getCapabilityField(0);
 }
 
 final class CapabilityFactoryNewEmptyCellResultsBuilder extends StructBuilder {
@@ -2213,7 +2213,7 @@ final capabilityFactoryNewRepositoryParamsFactory = _CapabilityFactoryNewReposit
 final class CapabilityFactoryNewRepositoryResultsReader extends StructReader {
   CapabilityFactoryNewRepositoryResultsReader(super.raw);
 
-  dynamic get repository => null /* unsupported type */;
+  int get repositoryCapIndex => getCapabilityField(0);
 }
 
 final class CapabilityFactoryNewRepositoryResultsBuilder extends StructBuilder {
@@ -2619,7 +2619,7 @@ final pipelineTargetGetChildParamsFactory = _PipelineTargetGetChildParamsFactory
 final class PipelineTargetGetChildResultsReader extends StructReader {
   PipelineTargetGetChildResultsReader(super.raw);
 
-  dynamic get child => null /* unsupported type */;
+  int get childCapIndex => getCapabilityField(0);
 }
 
 final class PipelineTargetGetChildResultsBuilder extends StructBuilder {
@@ -2671,7 +2671,7 @@ final pipelineTargetGetRepositoryParamsFactory = _PipelineTargetGetRepositoryPar
 final class PipelineTargetGetRepositoryResultsReader extends StructReader {
   PipelineTargetGetRepositoryResultsReader(super.raw);
 
-  dynamic get repository => null /* unsupported type */;
+  int get repositoryCapIndex => getCapabilityField(0);
 }
 
 final class PipelineTargetGetRepositoryResultsBuilder extends StructBuilder {
@@ -2758,7 +2758,7 @@ final pipelineTargetPingResultsFactory = _PipelineTargetPingResultsFactory();
 final class CapabilityBundleReader extends StructReader {
   CapabilityBundleReader(super.raw);
 
-  dynamic get primary => null /* unsupported type */;
+  int get primaryCapIndex => getCapabilityField(0);
 
   OptionalReader? get optionalObserver => getStructFieldWith(1, (r) => OptionalReader(r));
 
@@ -2945,7 +2945,7 @@ final class ComplexResponseReader extends StructReader {
 
   ResultReader? get result => getStructFieldWith(3, (r) => ResultReader(r));
 
-  dynamic get serverCapability => null /* unsupported type */;
+  int get serverCapabilityCapIndex => getCapabilityField(4);
 
   Uint8List? get extra => getAnyPointerAsMessageBytes(5);
 }
@@ -3453,7 +3453,7 @@ final complexTestServiceExchangeCapabilitiesResultsFactory = _ComplexTestService
 final class ComplexTestServiceCallObserverParamsReader extends StructReader {
   ComplexTestServiceCallObserverParamsReader(super.raw);
 
-  dynamic get observer => null /* unsupported type */;
+  int get observerCapIndex => getCapabilityField(0);
 
   ListReader<PersonReader>? get events => getStructListFieldWith(1, (r) => PersonReader(r));
 }
@@ -3546,7 +3546,7 @@ final complexTestServiceMakePipelineParamsFactory = _ComplexTestServiceMakePipel
 final class ComplexTestServiceMakePipelineResultsReader extends StructReader {
   ComplexTestServiceMakePipelineResultsReader(super.raw);
 
-  dynamic get target => null /* unsupported type */;
+  int get targetCapIndex => getCapabilityField(0);
 }
 
 final class ComplexTestServiceMakePipelineResultsBuilder extends StructBuilder {
@@ -3610,7 +3610,7 @@ final complexTestServiceOpenUploadParamsFactory = _ComplexTestServiceOpenUploadP
 final class ComplexTestServiceOpenUploadResultsReader extends StructReader {
   ComplexTestServiceOpenUploadResultsReader(super.raw);
 
-  dynamic get sink => null /* unsupported type */;
+  int get sinkCapIndex => getCapabilityField(0);
 }
 
 final class ComplexTestServiceOpenUploadResultsBuilder extends StructBuilder {
@@ -3671,7 +3671,7 @@ final complexTestServiceOpenDownloadParamsFactory = _ComplexTestServiceOpenDownl
 final class ComplexTestServiceOpenDownloadResultsReader extends StructReader {
   ComplexTestServiceOpenDownloadResultsReader(super.raw);
 
-  dynamic get source => null /* unsupported type */;
+  int get sourceCapIndex => getCapabilityField(0);
 
   ListReader<KeyValueReader>? get metadata => getStructListFieldWith(1, (r) => KeyValueReader(r));
 }
@@ -3729,7 +3729,7 @@ final complexTestServiceGetRepositoryParamsFactory = _ComplexTestServiceGetRepos
 final class ComplexTestServiceGetRepositoryResultsReader extends StructReader {
   ComplexTestServiceGetRepositoryResultsReader(super.raw);
 
-  dynamic get repository => null /* unsupported type */;
+  int get repositoryCapIndex => getCapabilityField(0);
 }
 
 final class ComplexTestServiceGetRepositoryResultsBuilder extends StructBuilder {
@@ -3781,7 +3781,7 @@ final complexTestServiceGetFactoryParamsFactory = _ComplexTestServiceGetFactoryP
 final class ComplexTestServiceGetFactoryResultsReader extends StructReader {
   ComplexTestServiceGetFactoryResultsReader(super.raw);
 
-  dynamic get factory => null /* unsupported type */;
+  int get factoryCapIndex => getCapabilityField(0);
 }
 
 final class ComplexTestServiceGetFactoryResultsBuilder extends StructBuilder {
@@ -3810,7 +3810,7 @@ final complexTestServiceGetFactoryResultsFactory = _ComplexTestServiceGetFactory
 final class ComplexTestServiceUseDiamondParamsReader extends StructReader {
   ComplexTestServiceUseDiamondParamsReader(super.raw);
 
-  dynamic get diamond => null /* unsupported type */;
+  int get diamondCapIndex => getCapabilityField(0);
 
   int get value => getInt32Field(0);
 }

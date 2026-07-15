@@ -118,6 +118,15 @@ abstract class StructReader {
     return WirePointer.decode(_raw.segment.data, wordOffset) is! NullPointer;
   }
 
+  /// Returns the capability-table index stored in the capability pointer at
+  /// [ptrIndex], or -1 if the pointer is absent or not a capability pointer.
+  int getCapabilityField(int ptrIndex) {
+    if (ptrIndex >= _raw.ptrWords) return -1;
+    final wordOffset = _raw.ptrWordOffset + ptrIndex;
+    final wp = WirePointer.decode(_raw.segment.data, wordOffset);
+    return wp is CapabilityPointer ? wp.capabilityIndex : -1;
+  }
+
   /// Reads a Text (UTF-8 string) from the pointer at [ptrIndex].
   /// Returns null if the pointer is null.
   String? getTextField(int ptrIndex) {
