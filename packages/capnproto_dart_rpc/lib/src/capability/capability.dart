@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:capnproto_dart/capnproto_dart.dart';
+
 import '../rpc/rpc_exception.dart';
 
 /// The result of a [Capability.dispatch] call.
@@ -76,8 +78,34 @@ class _DeferredCapCall implements CapCall {
   _DeferredCapCall(this.result);
 
   @override
-  Capability pipelineResult(int ptrIndex) =>
-      DeferredCapability(result.then((r) => r.caps[ptrIndex]));
+  Capability pipelineResult(int ptrIndex) => DeferredCapability(
+      result.then((r) => capabilityFromResult(r, ptrIndex) ?? NullCapability()));
+}
+
+/// Resolves the capability at pointer slot [ptrIndex] of a [DispatchResult].
+///
+/// Deserializes [result.bytes], reads the [CapabilityPointer] at [ptrIndex] of
+/// the root struct, and returns the corresponding entry from [result.caps].
+/// Returns null when [ptrIndex] is out of range, the pointer is not a
+/// [CapabilityPointer], or the cap table index is out of range.
+///
+/// Used by both [_DeferredCapCall] (local pipelining) and the RPC layer's
+/// `_WirePipelinedCapability` (wire-level pipelining) so they share the same
+/// pointer-slot → cap-table-index mapping logic.
+Capability? capabilityFromResult(DispatchResult result, int ptrIndex) {
+  if (result.caps.isEmpty) return null;
+  try {
+    final root = MessageReader.deserialize(result.bytes).getRootRaw();
+    if (ptrIndex >= root.ptrWords) return null;
+    final ptr =
+        WirePointer.decode(root.segment.data, root.ptrWordOffset + ptrIndex);
+    if (ptr is! CapabilityPointer) return null;
+    final capIdx = ptr.capabilityIndex;
+    if (capIdx >= result.caps.length) return null;
+    return result.caps[capIdx];
+  } catch (_) {
+    return null;
+  }
 }
 
 /// Represents an in-progress dispatch call.

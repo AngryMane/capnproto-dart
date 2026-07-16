@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:capnproto_dart/capnproto_dart.dart';
 
 import '../capability/capability.dart'
-    show CapCall, Capability, DispatchResult, NullCapability;
+    show CapCall, Capability, DispatchResult, NullCapability, capabilityFromResult;
 import '../capability/capability_factory.dart';
 import 'rpc_exception.dart';
 import 'rpc_proto.dart';
@@ -398,26 +398,10 @@ class TwoPartyRpcConnection implements RpcConnection {
     });
   }
 
-  /// Resolves the capability at pointer slot [ptrIndex] of the result struct
-  /// encoded in [resolved].
-  ///
-  /// Returns null if [ptrIndex] is out of range, the pointer at that slot is
-  /// not a [CapabilityPointer], or the cap table index is out of range.
-  Capability? _capFromPtrIndex(_ResolvedAnswer resolved, int ptrIndex) {
-    if (resolved.caps.isEmpty) return null;
-    try {
-      final root = MessageReader.deserialize(resolved.resultBytes).getRootRaw();
-      if (ptrIndex >= root.ptrWords) return null;
-      final ptr = WirePointer.decode(
-          root.segment.data, root.ptrWordOffset + ptrIndex);
-      if (ptr is! CapabilityPointer) return null;
-      final capIdx = ptr.capabilityIndex;
-      if (capIdx >= resolved.caps.length) return null;
-      return resolved.caps[capIdx];
-    } catch (_) {
-      return null;
-    }
-  }
+  Capability? _capFromPtrIndex(_ResolvedAnswer resolved, int ptrIndex) =>
+      capabilityFromResult(
+          DispatchResult(bytes: resolved.resultBytes, caps: resolved.caps),
+          ptrIndex);
 
   void _dispatchToCapability(RpcMessage msg, Capability cap) {
     final qid = msg.questionId;
@@ -729,27 +713,10 @@ class _WirePipelinedCapability extends Capability {
   _WirePipelinedCapability(
       this._conn, this._parentQid, this._ptrIndex, Future<DispatchResult> parentResult) {
     parentResult.then((result) {
-      _resolved = _capFromDispatchResult(result, _ptrIndex) ?? NullCapability();
+      _resolved = capabilityFromResult(result, _ptrIndex) ?? NullCapability();
     }).catchError((_) {
       _resolved = NullCapability();
     });
-  }
-
-  /// Reads the capability at pointer slot [ptrIndex] from a [DispatchResult].
-  static Capability? _capFromDispatchResult(DispatchResult result, int ptrIndex) {
-    if (result.caps.isEmpty) return null;
-    try {
-      final root = MessageReader.deserialize(result.bytes).getRootRaw();
-      if (ptrIndex >= root.ptrWords) return null;
-      final ptr =
-          WirePointer.decode(root.segment.data, root.ptrWordOffset + ptrIndex);
-      if (ptr is! CapabilityPointer) return null;
-      final capIdx = ptr.capabilityIndex;
-      if (capIdx >= result.caps.length) return null;
-      return result.caps[capIdx];
-    } catch (_) {
-      return null;
-    }
   }
 
   @override
