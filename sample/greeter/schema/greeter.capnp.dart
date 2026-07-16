@@ -224,6 +224,15 @@ abstract class GreetSessionServer extends Capability {
 }
 
 
+final class GreeterNewSessionResult {
+  GreeterNewSessionResult._(DispatchResult dispatchResult)
+      :     session = GreetSessionClient(requireCapabilityFromResult(dispatchResult, 0)),
+    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(greeterNewSessionResultsFactory);
+
+  final GreeterNewSessionResultsReader result;
+  final GreetSessionClient session;
+}
+
 final class GreeterNewSessionPipeline {
   GreeterNewSessionPipeline._(CapCall call)
       :     session = GreetSessionClient(call.pipelineResult(0)),
@@ -245,11 +254,11 @@ class GreeterClient extends Capability {
     return MessageReader.deserialize(result.bytes).getRoot(greeterGreetResultsFactory);
   }
 
-  Future<GreeterNewSessionResultsReader> newSession(void Function(GreeterNewSessionParamsBuilder) build) async {
+  Future<GreeterNewSessionResult> newSession(void Function(GreeterNewSessionParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(greeterNewSessionParamsFactory));
     final result = await _cap.dispatch(0xd41d8cd98f00b204, 1, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(greeterNewSessionResultsFactory);
+    return GreeterNewSessionResult._(result);
   }
 
   GreeterNewSessionPipeline newSessionPipeline(void Function(GreeterNewSessionParamsBuilder) build) {

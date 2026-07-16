@@ -16,7 +16,8 @@ export 'src/capability/capability.dart'
         DeferredCapability,
         DispatchResult,
         NullCapability,
-        PipelinedCapability;
+        PipelinedCapability,
+        requireCapabilityFromResult;
 export 'src/capability/capability_factory.dart';
 export 'src/rpc/rpc_exception.dart';
 export 'src/rpc/rpc_server.dart';

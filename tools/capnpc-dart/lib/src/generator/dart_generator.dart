@@ -57,7 +57,13 @@ String generateDartFile(
     _collectNodeFieldSpecializations(node, nodeMap, specializations);
   }
   for (final entry in specializations.entries) {
-    _writeSpecializedStruct(sb, entry.key, entry.value.nodeId, entry.value.typeArgs, nodeMap);
+    _writeSpecializedStruct(
+      sb,
+      entry.key,
+      entry.value.nodeId,
+      entry.value.typeArgs,
+      nodeMap,
+    );
     sb.writeln();
   }
 
@@ -84,7 +90,10 @@ void _collectNodes(
       interfaces.add(node);
       final iface = node.body as InterfaceBody;
       for (final method in iface.methods) {
-        for (final id in [method.paramStructTypeId, method.resultStructTypeId]) {
+        for (final id in [
+          method.paramStructTypeId,
+          method.resultStructTypeId,
+        ]) {
           final ms = nodeMap[id];
           if (ms != null && ms.body is StructBody) {
             final sb = ms.body as StructBody;
@@ -152,13 +161,16 @@ void _writeInterface(
     return '${_lcfirst(shortIface)}${_ucfirst(camel)}';
   }
 
-  final allMethods = rawMethods
-      .map((m) => (
-            ifaceNode: m.ifaceNode,
-            method: m.method,
-            dartName: resolveDartName(m.ifaceNode, m.method),
-          ))
-      .toList();
+  final allMethods =
+      rawMethods
+          .map(
+            (m) => (
+              ifaceNode: m.ifaceNode,
+              method: m.method,
+              dartName: resolveDartName(m.ifaceNode, m.method),
+            ),
+          )
+          .toList();
 
   // ---- Pipeline classes (one per method whose result has interface fields) ----
   for (final m in allMethods) {
@@ -184,10 +196,12 @@ void _writeInterface(
 
   // ---- Factory ----
   sb.writeln(
-      'class ${name}ClientFactory extends CapabilityFactory<${name}Client> {');
+    'class ${name}ClientFactory extends CapabilityFactory<${name}Client> {',
+  );
   sb.writeln('  @override');
   sb.writeln(
-      '  ${name}Client fromCapability(Capability cap) => ${name}Client(cap);');
+    '  ${name}Client fromCapability(Capability cap) => ${name}Client(cap);',
+  );
   sb.writeln('}');
   sb.writeln();
 
@@ -212,7 +226,12 @@ void _collectAllMethods(
     final scNode = nodeMap[scId];
     if (scNode == null || scNode.body is! InterfaceBody) continue;
     _collectAllMethods(
-        scNode, scNode.body as InterfaceBody, nodeMap, result, seen);
+      scNode,
+      scNode.body as InterfaceBody,
+      nodeMap,
+      result,
+      seen,
+    );
   }
 
   for (final method in body.methods) {
@@ -240,18 +259,27 @@ void _writeClientMethod(
   final capResults = _collectCapResults(resultsNode);
   final hasPipeline = capResults.isNotEmpty;
 
-  final namedParams = capParams.isEmpty
-      ? ''
-      : ', {${capParams.map((p) => 'required Capability ${p.$2}').join(', ')}}';
+  final namedParams =
+      capParams.isEmpty
+          ? ''
+          : ', {${capParams.map((p) => 'required Capability ${p.$2}').join(', ')}}';
   final capsList = capParams.map((p) => p.$2).join(', ');
   final dispatchCaps =
       capParams.isEmpty ? '' : ', paramsCapabilities: [$capsList]';
 
   sb.writeln();
 
-  // ---- Normal async method (always returns Future<XxxResultsReader>) ----
+  // ---- Normal async method ----
+  // Methods with capability results return a wrapper that keeps the returned
+  // cap table attached to the results reader. Methods without capability
+  // results keep returning the reader directly.
+  final asyncReturnType =
+      hasPipeline
+          ? '$ifaceName${_ucfirst(methodName)}Result'
+          : '${resultsName}Reader';
   sb.writeln(
-      '  Future<${resultsName}Reader> $methodName(void Function(${paramsName}Builder) build$namedParams) async {');
+    '  Future<$asyncReturnType> $methodName(void Function(${paramsName}Builder) build$namedParams) async {',
+  );
   sb.writeln('    final mb = MessageBuilder();');
   if (capParams.isEmpty) {
     sb.writeln('    build(mb.initRoot(${_lcfirst(paramsName)}Factory));');
@@ -263,17 +291,25 @@ void _writeClientMethod(
     sb.writeln('    build(b);');
   }
   sb.writeln(
-      '    final result = await _cap.dispatch($ifaceId, $ordinal, mb.serialize()$dispatchCaps);');
-  sb.writeln(
-      '    return MessageReader.deserialize(result.bytes).getRoot(${_lcfirst(resultsName)}Factory);');
+    '    final result = await _cap.dispatch($ifaceId, $ordinal, mb.serialize()$dispatchCaps);',
+  );
+  if (hasPipeline) {
+    final resultName = '$ifaceName${_ucfirst(methodName)}Result';
+    sb.writeln('    return $resultName._(result);');
+  } else {
+    sb.writeln(
+      '    return MessageReader.deserialize(result.bytes).getRoot(${_lcfirst(resultsName)}Factory);',
+    );
+  }
   sb.writeln('  }');
 
   // ---- Pipeline method (only when result has interface fields) ----
   if (hasPipeline) {
-    final pipelineName = '${ifaceName}${_ucfirst(methodName)}Pipeline';
+    final pipelineName = '$ifaceName${_ucfirst(methodName)}Pipeline';
     sb.writeln();
     sb.writeln(
-        '  $pipelineName ${methodName}Pipeline(void Function(${paramsName}Builder) build$namedParams) {');
+      '  $pipelineName ${methodName}Pipeline(void Function(${paramsName}Builder) build$namedParams) {',
+    );
     sb.writeln('    final mb = MessageBuilder();');
     if (capParams.isEmpty) {
       sb.writeln('    build(mb.initRoot(${_lcfirst(paramsName)}Factory));');
@@ -285,7 +321,8 @@ void _writeClientMethod(
       sb.writeln('    build(b);');
     }
     sb.writeln(
-        '    return $pipelineName._(_cap.beginDispatch($ifaceId, $ordinal, mb.serialize()$dispatchCaps));');
+      '    return $pipelineName._(_cap.beginDispatch($ifaceId, $ordinal, mb.serialize()$dispatchCaps));',
+    );
     sb.writeln('  }');
   }
 }
@@ -326,7 +363,8 @@ bool _isVoidResultStruct(SchemaNode? resultsNode) {
 void _writeServerStub(
   StringBuffer sb,
   SchemaNode node,
-  List<({SchemaNode ifaceNode, SchemaMethod method, String dartName})> allMethods,
+  List<({SchemaNode ifaceNode, SchemaMethod method, String dartName})>
+  allMethods,
   Map<int, SchemaNode> nodeMap,
 ) {
   final name = _dartClassName(node.displayName);
@@ -344,24 +382,30 @@ void _writeServerStub(
     sb.writeln();
     if (isVoid) {
       sb.writeln(
-          '  Future<void> $methodName(${paramsName}Reader params, List<Capability> paramsCapabilities);');
+        '  Future<void> $methodName(${paramsName}Reader params, List<Capability> paramsCapabilities);',
+      );
     } else {
       sb.writeln(
-          '  Future<DispatchResult> $methodName(${paramsName}Reader params, List<Capability> paramsCapabilities);');
+        '  Future<DispatchResult> $methodName(${paramsName}Reader params, List<Capability> paramsCapabilities);',
+      );
     }
   }
 
   sb.writeln();
   sb.writeln('  @override');
   sb.writeln(
-      '  Future<DispatchResult> dispatch(int interfaceId, int methodId, Uint8List params, {');
+    '  Future<DispatchResult> dispatch(int interfaceId, int methodId, Uint8List params, {',
+  );
   sb.writeln('    List<Capability> paramsCapabilities = const [],');
   sb.writeln('  }) async {');
 
   if (allMethods.isNotEmpty) {
     // Group by defining interface ID.
     final byIface =
-        <int, List<({SchemaNode ifaceNode, SchemaMethod method, String dartName})>>{};
+        <
+          int,
+          List<({SchemaNode ifaceNode, SchemaMethod method, String dartName})>
+        >{};
     for (final m in allMethods) {
       (byIface[m.ifaceNode.id] ??= []).add(m);
     }
@@ -374,20 +418,19 @@ void _writeServerStub(
         final paramsNode = nodeMap[m.method.paramStructTypeId];
         final resultsNode = nodeMap[m.method.resultStructTypeId];
         final methodName = m.dartName;
-        final paramsName =
-            _dartClassName(paramsNode?.displayName ?? 'Unknown');
+        final paramsName = _dartClassName(paramsNode?.displayName ?? 'Unknown');
         final isVoid = _isVoidResultStruct(resultsNode);
 
         sb.writeln('          case ${m.method.ordinal}:');
         sb.writeln('            final p = MessageReader.deserialize(params)');
-        sb.writeln(
-            '                .getRoot(${_lcfirst(paramsName)}Factory);');
+        sb.writeln('                .getRoot(${_lcfirst(paramsName)}Factory);');
         if (isVoid) {
           sb.writeln('            await $methodName(p, paramsCapabilities);');
           sb.writeln('            return DispatchResult.empty;');
         } else {
           sb.writeln(
-              '            return await $methodName(p, paramsCapabilities);');
+            '            return await $methodName(p, paramsCapabilities);',
+          );
         }
       }
       sb.writeln('          default:');
@@ -399,7 +442,8 @@ void _writeServerStub(
     sb.writeln('    }');
   }
   sb.writeln(
-      '    return super.dispatch(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities);');
+    '    return super.dispatch(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities);',
+  );
   sb.writeln('  }');
   sb.writeln();
   sb.writeln('  @override');
@@ -420,15 +464,19 @@ List<(int, String, int)> _collectCapResults(SchemaNode? resultsNode) {
     if (field.body is! SlotField) continue;
     final sf = field.body as SlotField;
     if (sf.type is InterfaceRefType) {
-      result.add((sf.offset, _camel(field.name), (sf.type as InterfaceRefType).typeId));
+      result.add((
+        sf.offset,
+        _camel(field.name),
+        (sf.type as InterfaceRefType).typeId,
+      ));
     }
   }
   return result;
 }
 
-/// Emits an `XxxPipeline` class for [method] if its result struct has any
-/// interface fields.  Each interface field becomes a typed `XxxClient` getter
-/// using the correct pointer slot index (fixing the hardcoded-0 bug).
+/// Emits `XxxResult` and `XxxPipeline` classes for [method] if its result
+/// struct has any interface fields. Each interface field becomes a typed
+/// `XxxClient` getter using the correct pointer slot index.
 void _writeResultsPipeline(
   StringBuffer sb,
   String ifaceName,
@@ -442,24 +490,53 @@ void _writeResultsPipeline(
 
   final methodName = dartName;
   final resultsName = _dartClassName(resultsNode?.displayName ?? 'Unknown');
-  final pipelineName = '${ifaceName}${_ucfirst(methodName)}Pipeline';
+  final resultName = '$ifaceName${_ucfirst(methodName)}Result';
+  final pipelineName = '$ifaceName${_ucfirst(methodName)}Pipeline';
+
+  sb.writeln();
+  sb.writeln('final class $resultName {');
+  sb.writeln('  $resultName._(DispatchResult dispatchResult)');
+  final resultFieldInits = capResults
+      .map((r) {
+        final capIfaceName = _dartClassName(
+          nodeMap[r.$3]?.displayName ?? 'Unknown',
+        );
+        return '    ${r.$2} = ${capIfaceName}Client(requireCapabilityFromResult(dispatchResult, ${r.$1}))';
+      })
+      .join(',\n');
+  final readerInit =
+      '    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(${_lcfirst(resultsName)}Factory)';
+  sb.writeln('      : $resultFieldInits,\n$readerInit;');
+  sb.writeln();
+  sb.writeln('  final ${resultsName}Reader result;');
+  for (final (_, fname, typeId) in capResults) {
+    final capIfaceName = _dartClassName(
+      nodeMap[typeId]?.displayName ?? 'Unknown',
+    );
+    sb.writeln('  final ${capIfaceName}Client $fname;');
+  }
+  sb.writeln('}');
 
   sb.writeln();
   sb.writeln('final class $pipelineName {');
   sb.writeln('  $pipelineName._(CapCall call)');
-  final fieldInits = capResults.map((r) {
-    final capIfaceName =
-        _dartClassName(nodeMap[r.$3]?.displayName ?? 'Unknown');
-    return '    ${r.$2} = ${capIfaceName}Client(call.pipelineResult(${r.$1}))';
-  }).join(',\n');
+  final fieldInits = capResults
+      .map((r) {
+        final capIfaceName = _dartClassName(
+          nodeMap[r.$3]?.displayName ?? 'Unknown',
+        );
+        return '    ${r.$2} = ${capIfaceName}Client(call.pipelineResult(${r.$1}))';
+      })
+      .join(',\n');
   final resultInit =
       '    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(${_lcfirst(resultsName)}Factory))';
   sb.writeln('      : $fieldInits,\n$resultInit;');
   sb.writeln();
   sb.writeln('  final Future<${resultsName}Reader> result;');
   for (final (_, fname, typeId) in capResults) {
-    final capIfaceName =
-        _dartClassName(nodeMap[typeId]?.displayName ?? 'Unknown');
+    final capIfaceName = _dartClassName(
+      nodeMap[typeId]?.displayName ?? 'Unknown',
+    );
     sb.writeln('  final ${capIfaceName}Client $fname;');
   }
   sb.writeln('}');
@@ -481,8 +558,9 @@ void _writeEnum(StringBuffer sb, SchemaNode node, EnumBody body) {
   sb.writeln('}');
   sb.writeln();
   sb.writeln(
-      '$name? ${_lcfirst(name)}FromUint16(int v) => '
-      'v < $name.values.length ? $name.values[v] : null;');
+    '$name? ${_lcfirst(name)}FromUint16(int v) => '
+    'v < $name.values.length ? $name.values[v] : null;',
+  );
   sb.writeln('int ${_lcfirst(name)}ToUint16($name v) => v.index;');
 }
 
@@ -529,7 +607,9 @@ void _writeStruct(
   if (body.discriminantCount > 0) {
     final discByteOffset = body.discriminantOffset * 2;
     sb.writeln();
-    sb.writeln('  void _setWhich(int v) => setUint16Field($discByteOffset, v);');
+    sb.writeln(
+      '  void _setWhich(int v) => setUint16Field($discByteOffset, v);',
+    );
   }
 
   for (final field in fields) {
@@ -545,10 +625,12 @@ void _writeStruct(
   sb.writeln('  @override int get ptrWords => $ptrWords;');
   sb.writeln('  @override');
   sb.writeln(
-      '  ${name}Reader fromRawReader(RawStructReader r) => ${name}Reader(r);');
+    '  ${name}Reader fromRawReader(RawStructReader r) => ${name}Reader(r);',
+  );
   sb.writeln('  @override');
   sb.writeln(
-      '  ${name}Builder fromRawBuilder(RawStructBuilder r) => ${name}Builder(r);');
+    '  ${name}Builder fromRawBuilder(RawStructBuilder r) => ${name}Builder(r);',
+  );
   sb.writeln('}');
   sb.writeln();
   sb.writeln('final ${_lcfirst(name)}Factory = _${name}Factory();');
@@ -581,13 +663,16 @@ void _writeReaderField(
   // Capability pointer fields expose the cap-table index so callers can
   // look up the capability from DispatchResult.caps.
   if (type is InterfaceRefType) {
-    sb.writeln(
-        '  int get ${fname}CapIndex => getCapabilityField($offset);');
+    sb.writeln('  int get ${fname}CapIndex => getCapabilityField($offset);');
     return;
   }
 
-  final (dartType, getter) =
-      _readerGetter(type, offset, nodeMap, sf.defaultValue);
+  final (dartType, getter) = _readerGetter(
+    type,
+    offset,
+    nodeMap,
+    sf.defaultValue,
+  );
   sb.writeln('  $dartType get $fname => $getter;');
 }
 
@@ -639,11 +724,28 @@ void _writeBuilderField(
   sb.writeln();
 
   if (_isPointerType(type)) {
-    _writeBuilderPointerField(sb, fname, type, offset, nodeMap, hasDisc,
-        discVal, discByteOffset);
+    _writeBuilderPointerField(
+      sb,
+      fname,
+      type,
+      offset,
+      nodeMap,
+      hasDisc,
+      discVal,
+      discByteOffset,
+    );
   } else {
-    _writeBuilderDataField(sb, fname, type, offset, nodeMap, hasDisc, discVal,
-        discByteOffset, sf.defaultValue);
+    _writeBuilderDataField(
+      sb,
+      fname,
+      type,
+      offset,
+      nodeMap,
+      hasDisc,
+      discVal,
+      discByteOffset,
+      sf.defaultValue,
+    );
   }
 }
 
@@ -658,7 +760,12 @@ void _writeBuilderDataField(
   int discByteOffset, [
   Object? defaultValue,
 ]) {
-  final (dartType, setter) = _builderDataSetter(type, offset, nodeMap, defaultValue);
+  final (dartType, setter) = _builderDataSetter(
+    type,
+    offset,
+    nodeMap,
+    defaultValue,
+  );
   sb.writeln('  set $fname($dartType v) {');
   if (hasDisc) {
     sb.writeln('    setUint16Field($discByteOffset, $discVal);');
@@ -705,8 +812,7 @@ void _writeBuilderPointerField(
     sb.writeln();
     sb.writeln('  bool has$ucfname() => hasPointerField($offset);');
   } else if (type is ListType) {
-    _writeListBuilderField(
-        sb, fname, type, offset, nodeMap, setDisc, hasDisc);
+    _writeListBuilderField(sb, fname, type, offset, nodeMap, setDisc, hasDisc);
   } else if (type is AnyPointerType || type is TypeParameterRefType) {
     sb.writeln('  set $fname(Uint8List? v) {');
     if (hasDisc) sb.write(setDisc);
@@ -767,8 +873,10 @@ String _defaultSuffix(Object? v) {
   // Concrete generic instantiation: use the specialized reader name.
   if (type is StructRefType && _allConcrete(type.typeArgs)) {
     final specName = _specializedName(type.typeId, type.typeArgs, nodeMap);
-    return ('${specName}Reader?',
-        'getStructFieldWith($offset, (r) => ${specName}Reader(r))');
+    return (
+      '${specName}Reader?',
+      'getStructFieldWith($offset, (r) => ${specName}Reader(r))',
+    );
   }
   return switch (type) {
     VoidType() => ('void', '{}'),
@@ -786,45 +894,68 @@ String _defaultSuffix(Object? v) {
     TextType() => ('String?', 'getTextField($offset)'),
     DataType() => ('Uint8List?', 'getDataField($offset)'),
     AnyPointerType() => ('Uint8List?', 'getAnyPointerAsMessageBytes($offset)'),
-    EnumRefType(:final typeId) =>
-      _enumReaderGetter(typeId, offset * 2, nodeMap,
-          fieldDefault is int ? fieldDefault : null),
-    StructRefType(:final typeId) =>
-      _structReaderGetter(typeId, offset, nodeMap),
-    ListType(:final elementType) =>
-      _listReaderGetter(elementType, offset, nodeMap),
-    InterfaceRefType() =>
-      ('int', 'getCapabilityField($offset)'),
+    EnumRefType(:final typeId) => _enumReaderGetter(
+      typeId,
+      offset * 2,
+      nodeMap,
+      fieldDefault is int ? fieldDefault : null,
+    ),
+    StructRefType(:final typeId) => _structReaderGetter(
+      typeId,
+      offset,
+      nodeMap,
+    ),
+    ListType(:final elementType) => _listReaderGetter(
+      elementType,
+      offset,
+      nodeMap,
+    ),
+    InterfaceRefType() => ('int', 'getCapabilityField($offset)'),
     _ => ('dynamic', 'null /* unsupported type */'),
   };
 }
 
 (String, String) _enumReaderGetter(
-    int typeId, int byteOffset, Map<int, SchemaNode> nodeMap,
-    [int? defaultVal]) {
+  int typeId,
+  int byteOffset,
+  Map<int, SchemaNode> nodeMap, [
+  int? defaultVal,
+]) {
   final node = nodeMap[typeId];
   final name = _dartClassName(node?.displayName ?? 'UnknownEnum');
   final ds = _defaultSuffix(defaultVal);
   // fromUint16 returns $name? to handle unknown values from newer schemas.
-  return ('$name?',
-      '${_lcfirst(name)}FromUint16(getUint16Field($byteOffset$ds))');
+  return (
+    '$name?',
+    '${_lcfirst(name)}FromUint16(getUint16Field($byteOffset$ds))',
+  );
 }
 
 (String, String) _structReaderGetter(
-    int typeId, int ptrIndex, Map<int, SchemaNode> nodeMap) {
+  int typeId,
+  int ptrIndex,
+  Map<int, SchemaNode> nodeMap,
+) {
   final node = nodeMap[typeId];
   final name = _dartClassName(node?.displayName ?? 'UnknownStruct');
-  return ('${name}Reader?',
-      'getStructFieldWith($ptrIndex, (r) => ${name}Reader(r))');
+  return (
+    '${name}Reader?',
+    'getStructFieldWith($ptrIndex, (r) => ${name}Reader(r))',
+  );
 }
 
 (String, String) _listReaderGetter(
-    SchemaType elem, int ptrIndex, Map<int, SchemaNode> nodeMap) {
+  SchemaType elem,
+  int ptrIndex,
+  Map<int, SchemaNode> nodeMap,
+) {
   // Concrete generic instantiation: use the specialized reader name.
   if (elem is StructRefType && _allConcrete(elem.typeArgs)) {
     final specName = _specializedName(elem.typeId, elem.typeArgs, nodeMap);
-    return ('ListReader<${specName}Reader>?',
-        'getStructListFieldWith($ptrIndex, (r) => ${specName}Reader(r))');
+    return (
+      'ListReader<${specName}Reader>?',
+      'getStructListFieldWith($ptrIndex, (r) => ${specName}Reader(r))',
+    );
   }
   return switch (elem) {
     BoolType() => ('ListReader<bool>?', 'getBoolListField($ptrIndex)'),
@@ -836,46 +967,66 @@ String _defaultSuffix(Object? v) {
     UInt16Type() => ('ListReader<int>?', 'getUint16ListField($ptrIndex)'),
     UInt32Type() => ('ListReader<int>?', 'getUint32ListField($ptrIndex)'),
     UInt64Type() => ('ListReader<int>?', 'getUint64ListField($ptrIndex)'),
-    Float32Type() =>
-      ('ListReader<double>?', 'getFloat32ListField($ptrIndex)'),
-    Float64Type() =>
-      ('ListReader<double>?', 'getFloat64ListField($ptrIndex)'),
+    Float32Type() => ('ListReader<double>?', 'getFloat32ListField($ptrIndex)'),
+    Float64Type() => ('ListReader<double>?', 'getFloat64ListField($ptrIndex)'),
     TextType() => ('ListReader<String?>?', 'getTextListField($ptrIndex)'),
-    DataType() =>
-      ('ListReader<Uint8List?>?', 'getDataListField($ptrIndex)'),
-    StructRefType(:final typeId) =>
-      _structListReaderGetter(typeId, ptrIndex, nodeMap),
+    DataType() => ('ListReader<Uint8List?>?', 'getDataListField($ptrIndex)'),
+    StructRefType(:final typeId) => _structListReaderGetter(
+      typeId,
+      ptrIndex,
+      nodeMap,
+    ),
     VoidType() => ('ListReader<Null>?', 'getVoidListField($ptrIndex)'),
-    EnumRefType(:final typeId) =>
-      _enumListReaderGetter(typeId, ptrIndex, nodeMap),
-    InterfaceRefType() =>
-      ('ListReader<int>?', 'getCapabilityListField($ptrIndex)'),
-    ListType(:final elementType) =>
-      _nestedListReaderGetter(elementType, ptrIndex, nodeMap),
+    EnumRefType(:final typeId) => _enumListReaderGetter(
+      typeId,
+      ptrIndex,
+      nodeMap,
+    ),
+    InterfaceRefType() => (
+      'ListReader<int>?',
+      'getCapabilityListField($ptrIndex)',
+    ),
+    ListType(:final elementType) => _nestedListReaderGetter(
+      elementType,
+      ptrIndex,
+      nodeMap,
+    ),
     _ => ('ListReader<dynamic>?', 'null /* unsupported list element */'),
   };
 }
 
 (String, String) _enumListReaderGetter(
-    int typeId, int ptrIndex, Map<int, SchemaNode> nodeMap) {
+  int typeId,
+  int ptrIndex,
+  Map<int, SchemaNode> nodeMap,
+) {
   final node = nodeMap[typeId];
   final name = _dartClassName(node?.displayName ?? 'UnknownEnum');
-  return ('ListReader<$name?>?',
-      'getEnumListField($ptrIndex, ${_lcfirst(name)}FromUint16)');
+  return (
+    'ListReader<$name?>?',
+    'getEnumListField($ptrIndex, ${_lcfirst(name)}FromUint16)',
+  );
 }
 
 (String, String) _nestedListReaderGetter(
-    SchemaType elem, int ptrIndex, Map<int, SchemaNode> nodeMap) {
+  SchemaType elem,
+  int ptrIndex,
+  Map<int, SchemaNode> nodeMap,
+) {
   final (innerType, lambdaExpr) = _listFromRawExpr(elem, nodeMap);
   // innerType is the Dart element type that the lambda produces (e.g. 'double').
   // getNestedListField returns ListReader<ListReader<T>?>?, so wrap accordingly.
-  return ('ListReader<ListReader<$innerType>?>?',
-      'getNestedListField($ptrIndex, $lambdaExpr)');
+  return (
+    'ListReader<ListReader<$innerType>?>?',
+    'getNestedListField($ptrIndex, $lambdaExpr)',
+  );
 }
 
 /// Returns (Dart element type, lambda expression `(raw) => <ListReader>`).
 (String, String) _listFromRawExpr(
-    SchemaType elem, Map<int, SchemaNode> nodeMap) {
+  SchemaType elem,
+  Map<int, SchemaNode> nodeMap,
+) {
   return switch (elem) {
     VoidType() => ('Null?', 'voidListFromRaw'),
     BoolType() => ('bool', 'boolListFromRaw'),
@@ -894,45 +1045,68 @@ String _defaultSuffix(Object? v) {
     StructRefType(:final typeId) => _structListFromRawExpr(typeId, nodeMap),
     EnumRefType(:final typeId) => _enumListFromRawExpr(typeId, nodeMap),
     InterfaceRefType() => ('int', 'capabilityListFromRaw'),
-    ListType(:final elementType) => _nestedNestedListFromRawExpr(elementType, nodeMap),
+    ListType(:final elementType) => _nestedNestedListFromRawExpr(
+      elementType,
+      nodeMap,
+    ),
     _ => ('dynamic', '(raw) => null /* unsupported nested list element */'),
   };
 }
 
 (String, String) _structListFromRawExpr(
-    int typeId, Map<int, SchemaNode> nodeMap) {
+  int typeId,
+  Map<int, SchemaNode> nodeMap,
+) {
   final node = nodeMap[typeId];
   final name = _dartClassName(node?.displayName ?? 'UnknownStruct');
-  return ('${name}Reader',
-      '(raw) => structListFromRaw(raw, (r) => ${name}Reader(r))');
+  return (
+    '${name}Reader',
+    '(raw) => structListFromRaw(raw, (r) => ${name}Reader(r))',
+  );
 }
 
 (String, String) _enumListFromRawExpr(
-    int typeId, Map<int, SchemaNode> nodeMap) {
+  int typeId,
+  Map<int, SchemaNode> nodeMap,
+) {
   final node = nodeMap[typeId];
   final name = _dartClassName(node?.displayName ?? 'UnknownEnum');
-  return ('$name?',
-      '(raw) => enumListFromRaw(raw, ${_lcfirst(name)}FromUint16)');
+  return (
+    '$name?',
+    '(raw) => enumListFromRaw(raw, ${_lcfirst(name)}FromUint16)',
+  );
 }
 
 (String, String) _nestedNestedListFromRawExpr(
-    SchemaType elem, Map<int, SchemaNode> nodeMap) {
+  SchemaType elem,
+  Map<int, SchemaNode> nodeMap,
+) {
   final (innerType, innerLambda) = _listFromRawExpr(elem, nodeMap);
-  return ('ListReader<$innerType>?',
-      '(raw) => NestedListReader<$innerType>(raw, $innerLambda)');
+  return (
+    'ListReader<$innerType>?',
+    '(raw) => NestedListReader<$innerType>(raw, $innerLambda)',
+  );
 }
 
 (String, String) _structListReaderGetter(
-    int typeId, int ptrIndex, Map<int, SchemaNode> nodeMap) {
+  int typeId,
+  int ptrIndex,
+  Map<int, SchemaNode> nodeMap,
+) {
   final node = nodeMap[typeId];
   final name = _dartClassName(node?.displayName ?? 'UnknownStruct');
-  return ('ListReader<${name}Reader>?',
-      'getStructListFieldWith($ptrIndex, (r) => ${name}Reader(r))');
+  return (
+    'ListReader<${name}Reader>?',
+    'getStructListFieldWith($ptrIndex, (r) => ${name}Reader(r))',
+  );
 }
 
 (String, String) _builderDataSetter(
-    SchemaType type, int offset, Map<int, SchemaNode> nodeMap,
-    [Object? fieldDefault]) {
+  SchemaType type,
+  int offset,
+  Map<int, SchemaNode> nodeMap, [
+  Object? fieldDefault,
+]) {
   final ds = _defaultSuffix(fieldDefault);
   return switch (type) {
     BoolType() => ('bool', 'setBoolField($offset, v$ds)'),
@@ -946,16 +1120,22 @@ String _defaultSuffix(Object? v) {
     UInt64Type() => ('int', 'setUint64Field(${offset * 8}, v$ds)'),
     Float32Type() => ('double', 'setFloat32Field(${offset * 4}, v$ds)'),
     Float64Type() => ('double', 'setFloat64Field(${offset * 8}, v$ds)'),
-    EnumRefType(:final typeId) =>
-      _enumBuilderSetter(typeId, offset * 2, nodeMap,
-          fieldDefault is int ? fieldDefault : null),
+    EnumRefType(:final typeId) => _enumBuilderSetter(
+      typeId,
+      offset * 2,
+      nodeMap,
+      fieldDefault is int ? fieldDefault : null,
+    ),
     _ => ('dynamic', '/* unsupported data type */'),
   };
 }
 
 (String, String) _enumBuilderSetter(
-    int typeId, int byteOffset, Map<int, SchemaNode> nodeMap,
-    [int? defaultVal]) {
+  int typeId,
+  int byteOffset,
+  Map<int, SchemaNode> nodeMap, [
+  int? defaultVal,
+]) {
   final node = nodeMap[typeId];
   final name = _dartClassName(node?.displayName ?? 'UnknownEnum');
   final ds = _defaultSuffix(defaultVal);
@@ -963,107 +1143,207 @@ String _defaultSuffix(Object? v) {
 }
 
 (String, String) _listInitCall(
-    SchemaType elem, int ptrIndex, Map<int, SchemaNode> nodeMap) {
+  SchemaType elem,
+  int ptrIndex,
+  Map<int, SchemaNode> nodeMap,
+) {
   return switch (elem) {
     BoolType() => ('initBoolListField($ptrIndex, length)', 'ListBuilder<bool>'),
-    Int8Type() =>
-      ('initInt8ListField($ptrIndex, length)', 'ListBuilder<int>'),
-    Int16Type() =>
-      ('initInt16ListField($ptrIndex, length)', 'ListBuilder<int>'),
-    Int32Type() =>
-      ('initInt32ListField($ptrIndex, length)', 'ListBuilder<int>'),
-    Int64Type() =>
-      ('initInt64ListField($ptrIndex, length)', 'ListBuilder<int>'),
-    UInt8Type() =>
-      ('initUint8ListField($ptrIndex, length)', 'ListBuilder<int>'),
-    UInt16Type() =>
-      ('initUint16ListField($ptrIndex, length)', 'ListBuilder<int>'),
-    UInt32Type() =>
-      ('initUint32ListField($ptrIndex, length)', 'ListBuilder<int>'),
-    UInt64Type() =>
-      ('initUint64ListField($ptrIndex, length)', 'ListBuilder<int>'),
-    Float32Type() =>
-      ('initFloat32ListField($ptrIndex, length)', 'ListBuilder<double>'),
-    Float64Type() =>
-      ('initFloat64ListField($ptrIndex, length)', 'ListBuilder<double>'),
-    TextType() =>
-      ('initTextListField($ptrIndex, length)', 'ListBuilder<String?>'),
-    DataType() =>
-      ('initDataListField($ptrIndex, length)', 'ListBuilder<Uint8List?>'),
-    StructRefType(:final typeId) =>
-      _structListInitCall(typeId, ptrIndex, nodeMap),
-    VoidType() =>
-      ('initVoidListField($ptrIndex, length)', 'ListBuilder<Null>'),
-    EnumRefType(:final typeId) =>
-      _enumListInitCall(typeId, ptrIndex, nodeMap),
-    InterfaceRefType() =>
-      ('initCapabilityListField($ptrIndex, length)', 'ListBuilder<int>'),
-    ListType(:final elementType) =>
-      _nestedListInitCall(elementType, ptrIndex, nodeMap),
+    Int8Type() => ('initInt8ListField($ptrIndex, length)', 'ListBuilder<int>'),
+    Int16Type() => (
+      'initInt16ListField($ptrIndex, length)',
+      'ListBuilder<int>',
+    ),
+    Int32Type() => (
+      'initInt32ListField($ptrIndex, length)',
+      'ListBuilder<int>',
+    ),
+    Int64Type() => (
+      'initInt64ListField($ptrIndex, length)',
+      'ListBuilder<int>',
+    ),
+    UInt8Type() => (
+      'initUint8ListField($ptrIndex, length)',
+      'ListBuilder<int>',
+    ),
+    UInt16Type() => (
+      'initUint16ListField($ptrIndex, length)',
+      'ListBuilder<int>',
+    ),
+    UInt32Type() => (
+      'initUint32ListField($ptrIndex, length)',
+      'ListBuilder<int>',
+    ),
+    UInt64Type() => (
+      'initUint64ListField($ptrIndex, length)',
+      'ListBuilder<int>',
+    ),
+    Float32Type() => (
+      'initFloat32ListField($ptrIndex, length)',
+      'ListBuilder<double>',
+    ),
+    Float64Type() => (
+      'initFloat64ListField($ptrIndex, length)',
+      'ListBuilder<double>',
+    ),
+    TextType() => (
+      'initTextListField($ptrIndex, length)',
+      'ListBuilder<String?>',
+    ),
+    DataType() => (
+      'initDataListField($ptrIndex, length)',
+      'ListBuilder<Uint8List?>',
+    ),
+    StructRefType(:final typeId) => _structListInitCall(
+      typeId,
+      ptrIndex,
+      nodeMap,
+    ),
+    VoidType() => ('initVoidListField($ptrIndex, length)', 'ListBuilder<Null>'),
+    EnumRefType(:final typeId) => _enumListInitCall(typeId, ptrIndex, nodeMap),
+    InterfaceRefType() => (
+      'initCapabilityListField($ptrIndex, length)',
+      'ListBuilder<int>',
+    ),
+    ListType(:final elementType) => _nestedListInitCall(
+      elementType,
+      ptrIndex,
+      nodeMap,
+    ),
     _ => ('/* unsupported */', 'dynamic'),
   };
 }
 
 (String, String) _nestedListInitCall(
-    SchemaType innerElem, int ptrIndex, Map<int, SchemaNode> nodeMap) {
+  SchemaType innerElem,
+  int ptrIndex,
+  Map<int, SchemaNode> nodeMap,
+) {
   if (innerElem is ListType) {
-    final (fromRaw, elemSize, extraArgs, dartT) =
-        _innerListBuilderExpr(innerElem.elementType, nodeMap);
+    final (fromRaw, elemSize, extraArgs, dartT) = _innerListBuilderExpr(
+      innerElem.elementType,
+      nodeMap,
+    );
     return (
       'initBiNestedListField($ptrIndex, length, $fromRaw, $elemSize$extraArgs)',
-      'NestedListBuilder<NestedListBuilder<ListBuilder<$dartT>>>'
+      'NestedListBuilder<NestedListBuilder<ListBuilder<$dartT>>>',
     );
   }
-  final (fromRaw, elemSize, extraArgs, dartT) =
-      _innerListBuilderExpr(innerElem, nodeMap);
+  final (fromRaw, elemSize, extraArgs, dartT) = _innerListBuilderExpr(
+    innerElem,
+    nodeMap,
+  );
   return (
     'initNestedListField($ptrIndex, length, $fromRaw, $elemSize$extraArgs)',
-    'NestedListBuilder<ListBuilder<$dartT>>'
+    'NestedListBuilder<ListBuilder<$dartT>>',
   );
 }
 
 /// Returns `(fromRawExpr, ListElementSize, extraNamedArgs, dartType)` for
 /// the innermost list element type, used when generating nested list inits.
 (String, String, String, String) _innerListBuilderExpr(
-    SchemaType elem, Map<int, SchemaNode> nodeMap) {
+  SchemaType elem,
+  Map<int, SchemaNode> nodeMap,
+) {
   return switch (elem) {
-    VoidType() => ('voidListBuilderFromRaw', 'ListElementSize.void_', '', 'Null'),
+    VoidType() => (
+      'voidListBuilderFromRaw',
+      'ListElementSize.void_',
+      '',
+      'Null',
+    ),
     BoolType() => ('boolListBuilderFromRaw', 'ListElementSize.bit', '', 'bool'),
     Int8Type() => ('int8ListBuilderFromRaw', 'ListElementSize.byte', '', 'int'),
-    Int16Type() =>
-      ('int16ListBuilderFromRaw', 'ListElementSize.twoBytes', '', 'int'),
-    Int32Type() =>
-      ('int32ListBuilderFromRaw', 'ListElementSize.fourBytes', '', 'int'),
-    Int64Type() =>
-      ('int64ListBuilderFromRaw', 'ListElementSize.eightBytes', '', 'int'),
-    UInt8Type() =>
-      ('uint8ListBuilderFromRaw', 'ListElementSize.byte', '', 'int'),
-    UInt16Type() =>
-      ('uint16ListBuilderFromRaw', 'ListElementSize.twoBytes', '', 'int'),
-    UInt32Type() =>
-      ('uint32ListBuilderFromRaw', 'ListElementSize.fourBytes', '', 'int'),
-    UInt64Type() =>
-      ('uint64ListBuilderFromRaw', 'ListElementSize.eightBytes', '', 'int'),
-    Float32Type() =>
-      ('float32ListBuilderFromRaw', 'ListElementSize.fourBytes', '', 'double'),
-    Float64Type() =>
-      ('float64ListBuilderFromRaw', 'ListElementSize.eightBytes', '', 'double'),
-    TextType() =>
-      ('textListBuilderFromRaw', 'ListElementSize.pointer', '', 'String?'),
-    DataType() =>
-      ('dataListBuilderFromRaw', 'ListElementSize.pointer', '', 'Uint8List?'),
-    EnumRefType(:final typeId) =>
-      _enumInnerListBuilderExpr(typeId, nodeMap),
-    StructRefType(:final typeId) =>
-      _structInnerListBuilderExpr(typeId, nodeMap),
-    InterfaceRefType() =>
-      ('capabilityListBuilderFromRaw', 'ListElementSize.pointer', '', 'int'),
-    _ => ('(raw) => throw UnimplementedError()', 'ListElementSize.void_', '', 'dynamic'),
+    Int16Type() => (
+      'int16ListBuilderFromRaw',
+      'ListElementSize.twoBytes',
+      '',
+      'int',
+    ),
+    Int32Type() => (
+      'int32ListBuilderFromRaw',
+      'ListElementSize.fourBytes',
+      '',
+      'int',
+    ),
+    Int64Type() => (
+      'int64ListBuilderFromRaw',
+      'ListElementSize.eightBytes',
+      '',
+      'int',
+    ),
+    UInt8Type() => (
+      'uint8ListBuilderFromRaw',
+      'ListElementSize.byte',
+      '',
+      'int',
+    ),
+    UInt16Type() => (
+      'uint16ListBuilderFromRaw',
+      'ListElementSize.twoBytes',
+      '',
+      'int',
+    ),
+    UInt32Type() => (
+      'uint32ListBuilderFromRaw',
+      'ListElementSize.fourBytes',
+      '',
+      'int',
+    ),
+    UInt64Type() => (
+      'uint64ListBuilderFromRaw',
+      'ListElementSize.eightBytes',
+      '',
+      'int',
+    ),
+    Float32Type() => (
+      'float32ListBuilderFromRaw',
+      'ListElementSize.fourBytes',
+      '',
+      'double',
+    ),
+    Float64Type() => (
+      'float64ListBuilderFromRaw',
+      'ListElementSize.eightBytes',
+      '',
+      'double',
+    ),
+    TextType() => (
+      'textListBuilderFromRaw',
+      'ListElementSize.pointer',
+      '',
+      'String?',
+    ),
+    DataType() => (
+      'dataListBuilderFromRaw',
+      'ListElementSize.pointer',
+      '',
+      'Uint8List?',
+    ),
+    EnumRefType(:final typeId) => _enumInnerListBuilderExpr(typeId, nodeMap),
+    StructRefType(:final typeId) => _structInnerListBuilderExpr(
+      typeId,
+      nodeMap,
+    ),
+    InterfaceRefType() => (
+      'capabilityListBuilderFromRaw',
+      'ListElementSize.pointer',
+      '',
+      'int',
+    ),
+    _ => (
+      '(raw) => throw UnimplementedError()',
+      'ListElementSize.void_',
+      '',
+      'dynamic',
+    ),
   };
 }
 
 (String, String, String, String) _enumInnerListBuilderExpr(
-    int typeId, Map<int, SchemaNode> nodeMap) {
+  int typeId,
+  Map<int, SchemaNode> nodeMap,
+) {
   final node = nodeMap[typeId];
   final name = _dartClassName(node?.displayName ?? 'UnknownEnum');
   return (
@@ -1075,7 +1355,9 @@ String _defaultSuffix(Object? v) {
 }
 
 (String, String, String, String) _structInnerListBuilderExpr(
-    int typeId, Map<int, SchemaNode> nodeMap) {
+  int typeId,
+  Map<int, SchemaNode> nodeMap,
+) {
   final node = nodeMap[typeId];
   final name = _dartClassName(node?.displayName ?? 'UnknownStruct');
   final body = node?.body;
@@ -1090,36 +1372,44 @@ String _defaultSuffix(Object? v) {
 }
 
 (String, String) _enumListInitCall(
-    int typeId, int ptrIndex, Map<int, SchemaNode> nodeMap) {
+  int typeId,
+  int ptrIndex,
+  Map<int, SchemaNode> nodeMap,
+) {
   final node = nodeMap[typeId];
   final name = _dartClassName(node?.displayName ?? 'UnknownEnum');
-  return ('initEnumListField($ptrIndex, length, ${_lcfirst(name)}ToUint16)',
-      'ListBuilder<$name>');
+  return (
+    'initEnumListField($ptrIndex, length, ${_lcfirst(name)}ToUint16)',
+    'ListBuilder<$name>',
+  );
 }
 
 (String, String) _structListInitCall(
-    int typeId, int ptrIndex, Map<int, SchemaNode> nodeMap) {
+  int typeId,
+  int ptrIndex,
+  Map<int, SchemaNode> nodeMap,
+) {
   final node = nodeMap[typeId];
   final name = _dartClassName(node?.displayName ?? 'UnknownStruct');
   final body = node?.body;
   final dw = body is StructBody ? body.dataWordCount : 0;
   final pw = body is StructBody ? body.pointerCount : 0;
-  final initCall = 'initStructListFieldWith($ptrIndex, length, '
+  final initCall =
+      'initStructListFieldWith($ptrIndex, length, '
       '(r) => ${name}Builder(r), $dw, $pw)';
   return (initCall, 'ListBuilder<${name}Builder>');
 }
 
 bool _isPointerType(SchemaType t) => switch (t) {
-      TextType() ||
-      DataType() ||
-      StructRefType() ||
-      ListType() ||
-      InterfaceRefType() ||
-      AnyPointerType() ||
-      TypeParameterRefType() =>
-        true,
-      _ => false,
-    };
+  TextType() ||
+  DataType() ||
+  StructRefType() ||
+  ListType() ||
+  InterfaceRefType() ||
+  AnyPointerType() ||
+  TypeParameterRefType() => true,
+  _ => false,
+};
 
 // ---------------------------------------------------------------------------
 // Identifier helpers
@@ -1163,48 +1453,52 @@ String _hexId(int id) {
 // ---------------------------------------------------------------------------
 
 bool _hasTypeParam(SchemaType t) => switch (t) {
-      TypeParameterRefType() => true,
-      ListType(:final elementType) => _hasTypeParam(elementType),
-      StructRefType(:final typeArgs) => typeArgs.any(_hasTypeParam),
-      InterfaceRefType(:final typeArgs) => typeArgs.any(_hasTypeParam),
-      _ => false,
-    };
+  TypeParameterRefType() => true,
+  ListType(:final elementType) => _hasTypeParam(elementType),
+  StructRefType(:final typeArgs) => typeArgs.any(_hasTypeParam),
+  InterfaceRefType(:final typeArgs) => typeArgs.any(_hasTypeParam),
+  _ => false,
+};
 
 bool _allConcrete(List<SchemaType> args) =>
     args.isNotEmpty && args.every((t) => !_hasTypeParam(t));
 
 String _typeArgName(SchemaType t, Map<int, SchemaNode> nodeMap) => switch (t) {
-      VoidType() => 'Void',
-      BoolType() => 'Bool',
-      Int8Type() => 'Int8',
-      Int16Type() => 'Int16',
-      Int32Type() => 'Int32',
-      Int64Type() => 'Int64',
-      UInt8Type() => 'UInt8',
-      UInt16Type() => 'UInt16',
-      UInt32Type() => 'UInt32',
-      UInt64Type() => 'UInt64',
-      Float32Type() => 'Float32',
-      Float64Type() => 'Float64',
-      TextType() => 'Text',
-      DataType() => 'Data',
-      AnyPointerType() => 'AnyPointer',
-      EnumRefType(:final typeId) => nodeMap[typeId]?.shortName ?? 'Unknown',
-      StructRefType(:final typeId, :final typeArgs) => typeArgs.isEmpty
-          ? (nodeMap[typeId]?.shortName ?? 'Unknown')
-          : (nodeMap[typeId]?.shortName ?? 'Unknown') +
-              typeArgs.map((a) => _typeArgName(a, nodeMap)).join(),
-      InterfaceRefType(:final typeId, :final typeArgs) => typeArgs.isEmpty
-          ? (nodeMap[typeId]?.shortName ?? 'Unknown')
-          : (nodeMap[typeId]?.shortName ?? 'Unknown') +
-              typeArgs.map((a) => _typeArgName(a, nodeMap)).join(),
-      ListType(:final elementType) =>
-        'List${_typeArgName(elementType, nodeMap)}',
-      _ => 'Unknown',
-    };
+  VoidType() => 'Void',
+  BoolType() => 'Bool',
+  Int8Type() => 'Int8',
+  Int16Type() => 'Int16',
+  Int32Type() => 'Int32',
+  Int64Type() => 'Int64',
+  UInt8Type() => 'UInt8',
+  UInt16Type() => 'UInt16',
+  UInt32Type() => 'UInt32',
+  UInt64Type() => 'UInt64',
+  Float32Type() => 'Float32',
+  Float64Type() => 'Float64',
+  TextType() => 'Text',
+  DataType() => 'Data',
+  AnyPointerType() => 'AnyPointer',
+  EnumRefType(:final typeId) => nodeMap[typeId]?.shortName ?? 'Unknown',
+  StructRefType(:final typeId, :final typeArgs) =>
+    typeArgs.isEmpty
+        ? (nodeMap[typeId]?.shortName ?? 'Unknown')
+        : (nodeMap[typeId]?.shortName ?? 'Unknown') +
+            typeArgs.map((a) => _typeArgName(a, nodeMap)).join(),
+  InterfaceRefType(:final typeId, :final typeArgs) =>
+    typeArgs.isEmpty
+        ? (nodeMap[typeId]?.shortName ?? 'Unknown')
+        : (nodeMap[typeId]?.shortName ?? 'Unknown') +
+            typeArgs.map((a) => _typeArgName(a, nodeMap)).join(),
+  ListType(:final elementType) => 'List${_typeArgName(elementType, nodeMap)}',
+  _ => 'Unknown',
+};
 
 String _specializedName(
-    int nodeId, List<SchemaType> typeArgs, Map<int, SchemaNode> nodeMap) {
+  int nodeId,
+  List<SchemaType> typeArgs,
+  Map<int, SchemaNode> nodeMap,
+) {
   final node = nodeMap[nodeId];
   final baseName = _dartClassName(node?.displayName ?? 'Unknown');
   final suffix = typeArgs.map((t) => _typeArgName(t, nodeMap)).join();
@@ -1215,14 +1509,19 @@ SchemaType _substituteType(SchemaType t, List<SchemaType> typeArgs) {
   return switch (t) {
     TypeParameterRefType(:final parameterIndex) =>
       parameterIndex < typeArgs.length ? typeArgs[parameterIndex] : t,
-    ListType(:final elementType) =>
-      ListType(_substituteType(elementType, typeArgs)),
+    ListType(:final elementType) => ListType(
+      _substituteType(elementType, typeArgs),
+    ),
     StructRefType(:final typeId, typeArgs: final ta) when ta.isNotEmpty =>
-      StructRefType(typeId,
-          typeArgs: ta.map((a) => _substituteType(a, typeArgs)).toList()),
+      StructRefType(
+        typeId,
+        typeArgs: ta.map((a) => _substituteType(a, typeArgs)).toList(),
+      ),
     InterfaceRefType(:final typeId, typeArgs: final ta) when ta.isNotEmpty =>
-      InterfaceRefType(typeId,
-          typeArgs: ta.map((a) => _substituteType(a, typeArgs)).toList()),
+      InterfaceRefType(
+        typeId,
+        typeArgs: ta.map((a) => _substituteType(a, typeArgs)).toList(),
+      ),
     _ => t,
   };
 }
@@ -1260,7 +1559,11 @@ void _collectTypeSpecializations(
       result[specName] = (nodeId: type.typeId, typeArgs: type.typeArgs);
       // Recurse into the specialized fields to find further nested specializations.
       _collectNodeFieldSpecializationsWithArgs(
-          type.typeId, type.typeArgs, nodeMap, result);
+        type.typeId,
+        type.typeArgs,
+        nodeMap,
+        result,
+      );
     }
   }
 }
@@ -1274,7 +1577,11 @@ void _collectNodeFieldSpecializations(
   if (body is! StructBody) return;
   for (final field in body.fields) {
     if (field.body is! SlotField) continue;
-    _collectTypeSpecializations((field.body as SlotField).type, nodeMap, result);
+    _collectTypeSpecializations(
+      (field.body as SlotField).type,
+      nodeMap,
+      result,
+    );
   }
 }
 
@@ -1292,7 +1599,10 @@ void _collectNodeFieldSpecializationsWithArgs(
     if (field.body is! SlotField) continue;
     final sf = field.body as SlotField;
     _collectTypeSpecializations(
-        _substituteType(sf.type, typeArgs), nodeMap, result);
+      _substituteType(sf.type, typeArgs),
+      nodeMap,
+      result,
+    );
   }
 }
 

@@ -20,7 +20,8 @@ class _ObserverImpl extends ObserverServer {
 
   @override
   Future<void> onNext(ObserverOnNextParamsReader params,
-      List<Capability> paramsCapabilities) async => nextCount++;
+          List<Capability> paramsCapabilities) async =>
+      nextCount++;
 
   @override
   Future<void> onError(ObserverOnErrorParamsReader params,
@@ -28,23 +29,24 @@ class _ObserverImpl extends ObserverServer {
 
   @override
   Future<void> onComplete(ObserverOnCompleteParamsReader params,
-      List<Capability> paramsCapabilities) async => completed = true;
+          List<Capability> paramsCapabilities) async =>
+      completed = true;
 }
 
 class _DiamondImpl extends DiamondServer {
   @override
   Future<DispatchResult> getName(ParentGetNameParamsReader params,
-      List<Capability> paramsCapabilities) =>
+          List<Capability> paramsCapabilities) =>
       Future.error(RpcException('not implemented'));
 
   @override
-  Future<DispatchResult> left(LeftLeftParamsReader params,
-      List<Capability> paramsCapabilities) =>
+  Future<DispatchResult> left(
+          LeftLeftParamsReader params, List<Capability> paramsCapabilities) =>
       Future.error(RpcException('not implemented'));
 
   @override
-  Future<DispatchResult> right(RightRightParamsReader params,
-      List<Capability> paramsCapabilities) =>
+  Future<DispatchResult> right(
+          RightRightParamsReader params, List<Capability> paramsCapabilities) =>
       Future.error(RpcException('not implemented'));
 
   @override
@@ -88,10 +90,12 @@ void skip(String label) {
 void check(String label, bool ok, [String? detail]) =>
     ok ? pass(label) : fail(label, detail);
 
-void checkEq<T>(String label, T actual, T expected) =>
-    actual == expected ? pass(label) : fail(label, 'got $actual, want $expected');
+void checkEq<T>(String label, T actual, T expected) => actual == expected
+    ? pass(label)
+    : fail(label, 'got $actual, want $expected');
 
-void checkNear(String label, double actual, double expected, {double eps = 1e-6}) =>
+void checkNear(String label, double actual, double expected,
+        {double eps = 1e-6}) =>
     (actual - expected).abs() < eps
         ? pass(label)
         : fail(label, 'got $actual, want $expected');
@@ -143,7 +147,9 @@ Future<void> _run() async {
   await _s28_resourceManagement(svc, conn);
 
   // Shutdown
-  try { await svc.shutdown((_) {}); } catch (_) {}
+  try {
+    await svc.shutdown((_) {});
+  } catch (_) {}
 
   print('\n══════════════════════════════════════════════');
   print('PASSED: $_pass   FAILED: $_fail   SKIPPED: $_skip');
@@ -179,12 +185,15 @@ Future<void> _s01_codeGeneration() async {
   checkEq('Status.failed index', statusToUint16(Status.failed), 5);
 
   // Method ordinals are correct (verified by Dart calling the right methods)
-  check('echoScalars is method 1', true); // interface ordinal baked into dispatch
+  check(
+      'echoScalars is method 1', true); // interface ordinal baked into dispatch
 
   // Nested types are accessible
   check('Person.Relationship enum exists', Relationship.values.isNotEmpty);
-  checkEq('Relationship.parent index', relationshipToUint16(Relationship.parent), 0);
-  checkEq('Relationship.other index', relationshipToUint16(Relationship.other), 6);
+  checkEq('Relationship.parent index',
+      relationshipToUint16(Relationship.parent), 0);
+  checkEq(
+      'Relationship.other index', relationshipToUint16(Relationship.other), 6);
 
   // Annotation-annotated items compile (annotation values are not generated)
   check('annotation processed without error', true);
@@ -262,10 +271,12 @@ Future<void> _s02_allScalars(ComplexTestServiceClient svc) async {
     ('float64 +0', 0.0),
     ('float64 -0', -0.0),
   ]) {
-    final rr = await svc.echoScalars((b) => b.initValue().float64Value = pair.$2);
+    final rr =
+        await svc.echoScalars((b) => b.initValue().float64Value = pair.$2);
     checkEq(pair.$1, rr.value!.float64Value, pair.$2);
   }
-  final rNaN = await svc.echoScalars((b) => b.initValue().float64Value = double.nan);
+  final rNaN =
+      await svc.echoScalars((b) => b.initValue().float64Value = double.nan);
   check('float64 NaN', rNaN.value!.float64Value.isNaN);
 
   // 2d: Empty text and empty data
@@ -330,25 +341,41 @@ Future<void> _s03_allLists(ComplexTestServiceClient svc) async {
   final r1 = await svc.echoLists((b) {
     final v = b.initValue();
     final bools = v.initBools(3);
-    bools[0] = true; bools[1] = false; bools[2] = true;
+    bools[0] = true;
+    bools[1] = false;
+    bools[2] = true;
     final i8s = v.initInt8s(4);
-    i8s[0] = -128; i8s[1] = 0; i8s[2] = 1; i8s[3] = 127;
+    i8s[0] = -128;
+    i8s[1] = 0;
+    i8s[2] = 1;
+    i8s[3] = 127;
     final i16s = v.initInt16s(2);
-    i16s[0] = -32768; i16s[1] = 32767;
+    i16s[0] = -32768;
+    i16s[1] = 32767;
     final i32s = v.initInt32s(3);
-    i32s[0] = -2147483648; i32s[1] = 0; i32s[2] = 2147483647;
+    i32s[0] = -2147483648;
+    i32s[1] = 0;
+    i32s[2] = 2147483647;
     final i64s = v.initInt64s(2);
-    i64s[0] = -9223372036854775807; i64s[1] = 9223372036854775807;
+    i64s[0] = -9223372036854775807;
+    i64s[1] = 9223372036854775807;
     final u8s = v.initUint8s(3);
-    u8s[0] = 0; u8s[1] = 128; u8s[2] = 255;
+    u8s[0] = 0;
+    u8s[1] = 128;
+    u8s[2] = 255;
     final u16s = v.initUint16s(2);
-    u16s[0] = 0; u16s[1] = 65535;
+    u16s[0] = 0;
+    u16s[1] = 65535;
     final u32s = v.initUint32s(2);
-    u32s[0] = 0; u32s[1] = 4294967295;
+    u32s[0] = 0;
+    u32s[1] = 4294967295;
     final u64s = v.initUint64s(2);
-    u64s[0] = 0; u64s[1] = 9223372036854775807;
+    u64s[0] = 0;
+    u64s[1] = 9223372036854775807;
     final f32s = v.initFloat32s(3);
-    f32s[0] = -1.0; f32s[1] = 0.0; f32s[2] = 1.0;
+    f32s[0] = -1.0;
+    f32s[1] = 0.0;
+    f32s[2] = 1.0;
     final f64s = v.initFloat64s(3);
     f64s[0] = double.negativeInfinity;
     f64s[1] = 0.0;
@@ -376,7 +403,9 @@ Future<void> _s03_allLists(ComplexTestServiceClient svc) async {
   final r2 = await svc.echoLists((b) {
     final v = b.initValue();
     final texts = v.initTexts(3);
-    texts[0] = 'alpha'; texts[1] = ''; texts[2] = 'こんにちは';
+    texts[0] = 'alpha';
+    texts[1] = '';
+    texts[2] = 'こんにちは';
     final blobs = v.initBlobs(2);
     blobs[0] = Uint8List.fromList([1, 2, 3]);
     blobs[1] = Uint8List(0);
@@ -488,7 +517,8 @@ Future<void> _s04_nestedStructs(ComplexTestServiceClient svc) async {
   });
   final p3 = r3.value!.people![0];
   checkEq('partial struct name', p3.name, 'Dan');
-  check('partial struct email null-or-empty', p3.email == null || p3.email!.isEmpty);
+  check('partial struct email null-or-empty',
+      p3.email == null || p3.email!.isEmpty);
 
   // 4c: Employment nested struct
   final r4 = await svc.echoLists((b) {
@@ -578,7 +608,8 @@ Future<void> _s05_unions(ComplexTestServiceClient svc) async {
     pp[0].initId().selectAbsent();
   });
   final id = r6.value!.people![0].id!;
-  checkEq('optional/absent which', id.getUint16Field(8), 3); // absent discriminant
+  checkEq(
+      'optional/absent which', id.getUint16Field(8), 3); // absent discriminant
 
   // 5h: IdentifierBuilder.textual
   final r7 = await svc.echoLists((b) {
@@ -673,8 +704,8 @@ Future<void> _s07_genericStructs(ComplexTestServiceClient svc) async {
   final r1 = await svc.echoLists((b) {
     final pp = b.initValue().initPeople(1);
     final attrs = pp[0].initAttributes(2);
-    attrs[0].setTextField(0, 'role');   // key @0 :Key (Text)
-    attrs[0].setTextField(1, 'admin');  // value @1 :Value (Text)
+    attrs[0].setTextField(0, 'role'); // key @0 :Key (Text)
+    attrs[0].setTextField(1, 'admin'); // value @1 :Value (Text)
     attrs[1].setTextField(0, 'lang');
     attrs[1].setTextField(1, 'dart');
   });
@@ -694,12 +725,16 @@ Future<void> _s07_genericStructs(ComplexTestServiceClient svc) async {
   final r2 = await svc.echoLists((b) {
     final pp = b.initValue().initPeople(1);
     final attrs = pp[0].initAttributes(3);
-    attrs[0].setTextField(0, 'a'); attrs[0].setTextField(1, '1');
-    attrs[1].setTextField(0, 'b'); attrs[1].setTextField(1, '2');
-    attrs[2].setTextField(0, 'c'); attrs[2].setTextField(1, '3');
+    attrs[0].setTextField(0, 'a');
+    attrs[0].setTextField(1, '1');
+    attrs[1].setTextField(0, 'b');
+    attrs[1].setTextField(1, '2');
+    attrs[2].setTextField(0, 'c');
+    attrs[2].setTextField(1, '3');
   });
   checkEq('nested generic length', r2.value!.people![0].attributes?.length, 3);
-  checkEq('nested generic [2].key', r2.value!.people![0].attributes?[2].getTextField(0), 'c');
+  checkEq('nested generic [2].key',
+      r2.value!.people![0].attributes?[2].getTextField(0), 'c');
 }
 
 // ─── 8. Recursive Structure ────────────────────────────────────────────────────
@@ -718,7 +753,8 @@ Future<void> _s08_recursive(ComplexTestServiceClient svc) async {
   final alice = r1.value!.people![0];
   checkEq('recursive depth-1 name', alice.name, 'Alice');
   checkEq('recursive related name', alice.related![0].person?.name, 'Bob');
-  checkEq('recursive related rel', alice.related![0].relationship, Relationship.friend);
+  checkEq('recursive related rel', alice.related![0].relationship,
+      Relationship.friend);
 
   // 8b: Person with related having their own related (depth 2)
   final r2 = await svc.echoLists((b) {
@@ -733,7 +769,8 @@ Future<void> _s08_recursive(ComplexTestServiceClient svc) async {
   final a = r2.value!.people![0];
   checkEq('depth-2 root', a.name, 'A');
   checkEq('depth-2 child', a.related![0].person?.name, 'B');
-  checkEq('depth-2 grandchild', a.related![0].person?.related?[0].person?.name, 'C');
+  checkEq('depth-2 grandchild', a.related![0].person?.related?[0].person?.name,
+      'C');
 
   // 8c: Wide tree (many siblings)
   final r3 = await svc.echoLists((b) {
@@ -746,8 +783,10 @@ Future<void> _s08_recursive(ComplexTestServiceClient svc) async {
     }
   });
   checkEq('wide tree count', r3.value!.people![0].related?.length, 10);
-  checkEq('wide tree [0]', r3.value!.people![0].related?[0].person?.name, 'Child0');
-  checkEq('wide tree [9]', r3.value!.people![0].related?[9].person?.name, 'Child9');
+  checkEq(
+      'wide tree [0]', r3.value!.people![0].related?[0].person?.name, 'Child0');
+  checkEq(
+      'wide tree [9]', r3.value!.people![0].related?[9].person?.name, 'Child9');
 
   // 8d: ErrorInfo.cause recursive
   // Not directly sendable without echo method that returns ErrorInfo
@@ -786,8 +825,8 @@ Future<void> _s10_basicRpc(ComplexTestServiceClient svc) async {
   }
 
   // 10e: parallel calls (10 concurrent)
-  final futures = List.generate(10, (i) =>
-      svc.echoScalars((b) => b.initValue().int32Value = i));
+  final futures = List.generate(
+      10, (i) => svc.echoScalars((b) => b.initValue().int32Value = i));
   final results = await Future.wait(futures);
   for (int i = 0; i < 10; i++) {
     checkEq('parallel[$i]', results[i].value!.int32Value, i);
@@ -816,8 +855,10 @@ Future<void> _s11_complexEcho(ComplexTestServiceClient svc) async {
     req.initChoice().payload.scalar = 999;
   });
   check('echo response accepted', r.response?.accepted == true);
-  check('echo status set', r.response?.status == Status.running ||
-      r.response?.status == Status.unknown); // server may not set it
+  check(
+      'echo status set',
+      r.response?.status == Status.running ||
+          r.response?.status == Status.unknown); // server may not set it
   check('echo message not empty', r.response?.message?.isNotEmpty == true);
 
   // 11b: Result.ok (Person result)
@@ -857,27 +898,41 @@ Future<void> _s12_capabilityArgs(ComplexTestServiceClient svc) async {
 Future<void> _s13_capabilityReturns(ComplexTestServiceClient svc) async {
   section(13, 'Capability Return Values');
 
-  // 13a: getRepository returns a Repository capability
+  // 13a: awaited getRepository returns a Repository capability
+  final repoResult13 = await svc.getRepository((_) {});
+  final repo13 = repoResult13.repository;
+  check('awaited getRepository returns cap', true);
+
+  // 13b: pipelined getRepository returns a Repository capability
   final repoPipeline13 = svc.getRepositoryPipeline((_) {});
-  final repo13 = repoPipeline13.repository;
-  check('getRepository returns cap', true); // no exception = success
+  final pipelinedRepo13 = repoPipeline13.repository;
+  check('pipelined getRepository returns cap', true);
 
-  // 13b: getFactory returns a CapabilityFactory capability
+  // 13c: awaited getFactory returns a CapabilityFactory capability
+  final factoryResult13 = await svc.getFactory((_) {});
+  final factory13 = factoryResult13.factory;
+  check('awaited getFactory returns cap', true);
+
+  // 13d: pipelined getFactory returns a CapabilityFactory capability
   final factoryPipeline13 = svc.getFactoryPipeline((_) {});
-  final factory13 = factoryPipeline13.factory;
-  check('getFactory returns cap', true);
+  final pipelinedFactory13 = factoryPipeline13.factory;
+  check('pipelined getFactory returns cap', true);
 
-  // 13c: Capabilities can be called (tested more in sections 16, 17, 19)
+  // 13e: Capabilities can be called (tested more in sections 16, 17, 19)
   // Basic sanity: list is callable even on empty repo
   try {
     await repo13.list((_) {});
-    check('repository.list() callable', true);
+    check('awaited repository.list() callable', true);
+    await pipelinedRepo13.list((_) {});
+    check('pipelined repository.list() callable', true);
   } catch (e) {
     fail('repository.list() callable', e.toString());
   }
 
   await repo13.dispose();
+  await pipelinedRepo13.dispose();
   await factory13.dispose();
+  await pipelinedFactory13.dispose();
 }
 
 // ─── 14. Capability in Struct ─────────────────────────────────────────────────
@@ -922,20 +977,23 @@ Future<void> _s15_pipelining(ComplexTestServiceClient svc) async {
   // 15a: direct pipeline call on returned cap
   final targetPipeline15 = svc.makePipelinePipeline((b) => b.depth = 3);
   final target15 = targetPipeline15.target;
-  final pingR15 = await target15.ping((b) => b.payload = Uint8List.fromList([42]));
+  final pingR15 =
+      await target15.ping((b) => b.payload = Uint8List.fromList([42]));
   checkEq('pipeline ping', pingR15.payload?[0], 42);
 
   // 15b: getChild chaining
   final child1Pipeline = target15.getChildPipeline((b) => b.name = 'alpha');
   final child1 = child1Pipeline.child;
   check('getChild returns cap', true);
-  final childPing = await child1.ping((b) => b.payload = Uint8List.fromList([1, 2]));
+  final childPing =
+      await child1.ping((b) => b.payload = Uint8List.fromList([1, 2]));
   check('child ping', childPing.payload?.length == 2);
 
   // 15c: multi-level pipeline
   final child2Pipeline = child1.getChildPipeline((b) => b.name = 'beta');
   final child2 = child2Pipeline.child;
-  final deepPing = await child2.ping((b) => b.payload = Uint8List.fromList([99]));
+  final deepPing =
+      await child2.ping((b) => b.payload = Uint8List.fromList([99]));
   checkEq('deep pipeline ping', deepPing.payload?[0], 99);
 
   // 15d: Multiple pipeline calls in flight (async)
@@ -961,7 +1019,8 @@ Future<void> _s15_pipelining(ComplexTestServiceClient svc) async {
     });
     fail('pipeline failure not thrown');
   } catch (e) {
-    check('pipeline failure propagated', e.toString().contains('pipeline failure test'));
+    check('pipeline failure propagated',
+        e.toString().contains('pipeline failure test'));
   }
 }
 
@@ -971,8 +1030,9 @@ Future<void> _s16_genericInterface(ComplexTestServiceClient svc) async {
   section(16, 'Generic Interface');
 
   // Repository<Text, Person> is a generic interface
-  final repoPipeline16 = svc.getRepositoryPipeline((_) {});
-  final repo16 = repoPipeline16.repository;
+  final repoResult16 = await svc.getRepository((_) {});
+  final repo16 = repoResult16.repository;
+  check('awaited Repository capability obtained', true);
 
   // Put a person (using underlying raw methods for generic key/value)
   final putR = await repo16.put((b) {
@@ -1066,8 +1126,9 @@ Future<void> _s18_interfaceInheritance(ComplexTestServiceClient svc) async {
 Future<void> _s19_repositoryOps(ComplexTestServiceClient svc) async {
   section(19, 'Repository Operations');
 
-  final repoPipeline19 = svc.getRepositoryPipeline((_) {});
-  final repo19 = repoPipeline19.repository;
+  final repoResult19 = await svc.getRepository((_) {});
+  final repo19 = repoResult19.repository;
+  check('awaited repository capability obtained', true);
 
   // 19a: put and get
   await repo19.put((b) {
@@ -1077,7 +1138,10 @@ Future<void> _s19_repositoryOps(ComplexTestServiceClient svc) async {
   });
   final g1 = await repo19.get((b) => b.setTextField(0, 'k1'));
   checkEq('get k1 is some', g1.result?.getUint16Field(0), 1);
-  checkEq('get k1 name', g1.result?.getStructFieldWith(0, (r) => PersonReader(r))?.name, 'Person1');
+  checkEq(
+      'get k1 name',
+      g1.result?.getStructFieldWith(0, (r) => PersonReader(r))?.name,
+      'Person1');
 
   // 19b: revision increments
   final p1 = await repo19.put((b) {
@@ -1127,7 +1191,8 @@ Future<void> _s19_repositoryOps(ComplexTestServiceClient svc) async {
 
   // 19f: cursor - not implemented in server (error surfaces via pipelining)
   final cursorPipeline19 = repo19.openCursorPipeline((_) {});
-  cursorPipeline19.result.ignore(); // openCursor is unimplemented; avoid zone error
+  cursorPipeline19.result
+      .ignore(); // openCursor is unimplemented; avoid zone error
   final cursor19 = cursorPipeline19.cursor;
   try {
     await cursor19.next((_) {});
@@ -1184,12 +1249,11 @@ Future<void> _s21_streaming(ComplexTestServiceClient svc) async {
 
   // 21d: openDownload → results struct (ByteSource cap is at ptr 0)
   try {
-    await svc.openDownload((b) {
+    final download = await svc.openDownload((b) {
       b.initResourceId().textual = 'test-resource';
     });
     check('openDownload RPC call succeeds', true);
-    // The ByteSource capability is in the cap table (ptr field in results struct).
-    // The generated getter returns null (unsupported type), so pumpTo is inaccessible.
+    await download.source.dispose();
     skip('pumpTo - ByteSource cap not yet accessible from generated results');
   } catch (e) {
     fail('openDownload', e.toString());
@@ -1212,7 +1276,8 @@ Future<void> _s22_errorHandling(ComplexTestServiceClient svc) async {
     fail('expected exception not thrown');
   } catch (e) {
     check('server exception received', e.toString().isNotEmpty);
-    check('error message in exception', e.toString().contains('resource not found'));
+    check('error message in exception',
+        e.toString().contains('resource not found'));
   }
 
   // 22b: Different error codes
@@ -1250,19 +1315,23 @@ Future<void> _s23_nullValues(ComplexTestServiceClient svc) async {
   // AllScalars.textValue has a default but XOR masking for defaults is not implemented.
   // The field returns null when unset, which is consistent with pointer-null behavior.
   final r1 = await svc.echoScalars((b) => b.initValue());
-  check('unset text returns null (no default XOR in Dart codegen)', r1.value!.textValue == null);
+  check('unset text returns null (no default XOR in Dart codegen)',
+      r1.value!.textValue == null);
 
   // 23b: Null text set explicitly
   final r2 = await svc.echoScalars((b) {
     b.initValue().textValue = null;
   });
-  check('null text round-trips as null', r2.value!.textValue == null || r2.value!.textValue!.isEmpty);
+  check('null text round-trips as null',
+      r2.value!.textValue == null || r2.value!.textValue!.isEmpty);
 
   // 23c: Unset pointer field (data) → null
   final r3 = await svc.echoScalars((b) => b.initValue());
   // Data field with no explicit set
-  check('unset data field', r3.value!.dataValue == null ||
-      r3.value!.dataValue!.isNotEmpty); // may have default
+  check(
+      'unset data field',
+      r3.value!.dataValue == null ||
+          r3.value!.dataValue!.isNotEmpty); // may have default
 
   // 23d: Unset struct field → null
   final r4 = await svc.echoLists((b) {
@@ -1275,12 +1344,12 @@ Future<void> _s23_nullValues(ComplexTestServiceClient svc) async {
   // 23e: Empty text vs null text
   final r5 = await svc.echoScalars((b) => b.initValue().textValue = '');
   final r6 = await svc.echoScalars((b) => b.initValue().textValue = null);
-  check('empty text != null text (different)', r5.value!.textValue != r6.value!.textValue ||
-      r5.value!.textValue == '');
+  check('empty text != null text (different)',
+      r5.value!.textValue != r6.value!.textValue || r5.value!.textValue == '');
 
   // 23f: Optional.none (which == 0)
-  final repoPipeline23 = svc.getRepositoryPipeline((_) {});
-  final repo23 = repoPipeline23.repository;
+  final repoResult23 = await svc.getRepository((_) {});
+  final repo23 = repoResult23.repository;
   final g = await repo23.get((b) => b.setTextField(0, 'nonexistent_key_xyz'));
   checkEq('Optional.none which', g.result?.getUint16Field(0), 0);
   await repo23.dispose();
@@ -1325,7 +1394,8 @@ Future<void> _s24_segmentation(ComplexTestServiceClient svc) async {
   final largeData = Uint8List(largeSize);
   for (int i = 0; i < largeSize; i++) largeData[i] = i & 0xFF;
   try {
-    final r4 = await svc.echoScalars((b) => b.initValue().dataValue = largeData);
+    final r4 =
+        await svc.echoScalars((b) => b.initValue().dataValue = largeData);
     checkEq('data 10KB length', r4.value!.dataValue?.length, largeSize);
     check('data 10KB [0]', r4.value!.dataValue![0] == 0);
     check('data 10KB [255]', r4.value!.dataValue![255] == (255 & 0xFF));
@@ -1343,7 +1413,8 @@ void _s25_bidirectional() {
   // capability serving which is not yet implemented.
   pass('Dart→Rust calls work (verified throughout)');
   pass('Rust-returned caps callable from Dart (verified in s13/s16/s19/s21)');
-  skip('callObserver: Rust→Dart callback - requires server-side Dart capability');
+  skip(
+      'callObserver: Rust→Dart callback - requires server-side Dart capability');
   skip('Observer.onNext/onError/onComplete from Rust - not yet supported');
 }
 
@@ -1366,8 +1437,8 @@ Future<void> _s27_concurrency(ComplexTestServiceClient svc) async {
   section(27, 'Load and Concurrency');
 
   // 27a: 100 parallel scalar echo calls
-  final futs = List.generate(100, (i) =>
-      svc.echoScalars((b) => b.initValue().int32Value = i));
+  final futs = List.generate(
+      100, (i) => svc.echoScalars((b) => b.initValue().int32Value = i));
   final results = await Future.wait(futs);
   bool allOk = true;
   for (int i = 0; i < 100; i++) {
@@ -1376,10 +1447,12 @@ Future<void> _s27_concurrency(ComplexTestServiceClient svc) async {
   check('100 parallel calls all correct', allOk);
 
   // 27b: 50 parallel list echo calls
-  final listFuts = List.generate(50, (i) => svc.echoLists((b) {
-    final texts = b.initValue().initTexts(10);
-    for (int j = 0; j < 10; j++) texts[j] = 'batch${i}_item$j';
-  }));
+  final listFuts = List.generate(
+      50,
+      (i) => svc.echoLists((b) {
+            final texts = b.initValue().initTexts(10);
+            for (int j = 0; j < 10; j++) texts[j] = 'batch${i}_item$j';
+          }));
   final listResults = await Future.wait(listFuts);
   bool allListOk = true;
   for (int i = 0; i < 50; i++) {
@@ -1389,8 +1462,10 @@ Future<void> _s27_concurrency(ComplexTestServiceClient svc) async {
 
   // 27c: Sequential interleaved with parallel
   for (int round = 0; round < 3; round++) {
-    final batchFuts = List.generate(20, (i) =>
-        svc.echoScalars((b) => b.initValue().int32Value = round * 100 + i));
+    final batchFuts = List.generate(
+        20,
+        (i) =>
+            svc.echoScalars((b) => b.initValue().int32Value = round * 100 + i));
     final batchR = await Future.wait(batchFuts);
     bool batchOk = true;
     for (int i = 0; i < 20; i++) {
@@ -1409,7 +1484,8 @@ Future<void> _s28_resourceManagement(
   // 28a: Dispose capability after use
   final targetPipeline28a = svc.makePipelinePipeline((b) => b.depth = 0);
   final target28a = targetPipeline28a.target;
-  final alive = await target28a.ping((b) => b.payload = Uint8List.fromList([1]));
+  final alive =
+      await target28a.ping((b) => b.payload = Uint8List.fromList([1]));
   check('cap works before dispose', alive.payload?[0] == 1);
   await target28a.dispose();
   pass('capability disposed without error');
@@ -1422,8 +1498,8 @@ Future<void> _s28_resourceManagement(
   skip('calling disposed cap - may abort connection (protocol limitation)');
 
   // 28c: Repository lifecycle: open, use, dispose
-  final repoPipeline28c = svc.getRepositoryPipeline((_) {});
-  final repo28c = repoPipeline28c.repository;
+  final repoResult28c = await svc.getRepository((_) {});
+  final repo28c = repoResult28c.repository;
   await repo28c.put((b) {
     b.setTextField(0, 'lifecycle_test');
     b.initStructFieldWith(1, (r) => PersonBuilder(r), 1, 10).name = 'Temp';

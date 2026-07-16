@@ -27,7 +27,9 @@ Future<void> main() async {
 
   // newSession: obtain a GreetSession capability and use it.
   print('[client] calling newSession("Session User")');
-  final session = await greeter.newSession((b) => b.name = 'Session User');
+  final sessionResult =
+      await greeter.newSession((b) => b.name = 'Session User');
+  final session = sessionResult.session;
   print('[client] session capability obtained');
 
   for (int i = 1; i <= 3; i++) {

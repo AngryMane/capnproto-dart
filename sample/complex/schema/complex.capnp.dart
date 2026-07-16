@@ -4693,6 +4693,15 @@ abstract class CursorServer extends Capability {
 }
 
 
+final class RepositoryOpenCursorResult {
+  RepositoryOpenCursorResult._(DispatchResult dispatchResult)
+      :     cursor = CursorClient(requireCapabilityFromResult(dispatchResult, 0)),
+    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(repositoryOpenCursorResultsFactory);
+
+  final RepositoryOpenCursorResultsReader result;
+  final CursorClient cursor;
+}
+
 final class RepositoryOpenCursorPipeline {
   RepositoryOpenCursorPipeline._(CapCall call)
       :     cursor = CursorClient(call.pipelineResult(0)),
@@ -4700,6 +4709,15 @@ final class RepositoryOpenCursorPipeline {
 
   final Future<RepositoryOpenCursorResultsReader> result;
   final CursorClient cursor;
+}
+
+final class RepositoryWatchResult {
+  RepositoryWatchResult._(DispatchResult dispatchResult)
+      :     subscription = SubscriptionClient(requireCapabilityFromResult(dispatchResult, 0)),
+    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(repositoryWatchResultsFactory);
+
+  final RepositoryWatchResultsReader result;
+  final SubscriptionClient subscription;
 }
 
 final class RepositoryWatchPipeline {
@@ -4744,11 +4762,11 @@ class RepositoryClient extends Capability {
     return MessageReader.deserialize(result.bytes).getRoot(repositoryListResultsFactory);
   }
 
-  Future<RepositoryOpenCursorResultsReader> openCursor(void Function(RepositoryOpenCursorParamsBuilder) build) async {
+  Future<RepositoryOpenCursorResult> openCursor(void Function(RepositoryOpenCursorParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(repositoryOpenCursorParamsFactory));
     final result = await _cap.dispatch(0xff065518e00ba453, 4, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(repositoryOpenCursorResultsFactory);
+    return RepositoryOpenCursorResult._(result);
   }
 
   RepositoryOpenCursorPipeline openCursorPipeline(void Function(RepositoryOpenCursorParamsBuilder) build) {
@@ -4757,13 +4775,13 @@ class RepositoryClient extends Capability {
     return RepositoryOpenCursorPipeline._(_cap.beginDispatch(0xff065518e00ba453, 4, mb.serialize()));
   }
 
-  Future<RepositoryWatchResultsReader> watch(void Function(RepositoryWatchParamsBuilder) build, {required Capability observer}) async {
+  Future<RepositoryWatchResult> watch(void Function(RepositoryWatchParamsBuilder) build, {required Capability observer}) async {
     final mb = MessageBuilder();
     final b = mb.initRoot(repositoryWatchParamsFactory);
     b.setObserver(0);
     build(b);
     final result = await _cap.dispatch(0xff065518e00ba453, 5, mb.serialize(), paramsCapabilities: [observer]);
-    return MessageReader.deserialize(result.bytes).getRoot(repositoryWatchResultsFactory);
+    return RepositoryWatchResult._(result);
   }
 
   RepositoryWatchPipeline watchPipeline(void Function(RepositoryWatchParamsBuilder) build, {required Capability observer}) {
@@ -4972,12 +4990,30 @@ abstract class ByteSourceServer extends Capability {
 }
 
 
+final class CapabilityFactoryNewCellResult {
+  CapabilityFactoryNewCellResult._(DispatchResult dispatchResult)
+      :     cell = ReadWriteClient(requireCapabilityFromResult(dispatchResult, 0)),
+    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(capabilityFactoryNewCellResultsFactory);
+
+  final CapabilityFactoryNewCellResultsReader result;
+  final ReadWriteClient cell;
+}
+
 final class CapabilityFactoryNewCellPipeline {
   CapabilityFactoryNewCellPipeline._(CapCall call)
       :     cell = ReadWriteClient(call.pipelineResult(0)),
     result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(capabilityFactoryNewCellResultsFactory));
 
   final Future<CapabilityFactoryNewCellResultsReader> result;
+  final ReadWriteClient cell;
+}
+
+final class CapabilityFactoryNewEmptyCellResult {
+  CapabilityFactoryNewEmptyCellResult._(DispatchResult dispatchResult)
+      :     cell = ReadWriteClient(requireCapabilityFromResult(dispatchResult, 0)),
+    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(capabilityFactoryNewEmptyCellResultsFactory);
+
+  final CapabilityFactoryNewEmptyCellResultsReader result;
   final ReadWriteClient cell;
 }
 
@@ -4988,6 +5024,15 @@ final class CapabilityFactoryNewEmptyCellPipeline {
 
   final Future<CapabilityFactoryNewEmptyCellResultsReader> result;
   final ReadWriteClient cell;
+}
+
+final class CapabilityFactoryNewRepositoryResult {
+  CapabilityFactoryNewRepositoryResult._(DispatchResult dispatchResult)
+      :     repository = RepositoryClient(requireCapabilityFromResult(dispatchResult, 0)),
+    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(capabilityFactoryNewRepositoryResultsFactory);
+
+  final CapabilityFactoryNewRepositoryResultsReader result;
+  final RepositoryClient repository;
 }
 
 final class CapabilityFactoryNewRepositoryPipeline {
@@ -5004,11 +5049,11 @@ class CapabilityFactoryClient extends Capability {
   final Capability _cap;
   CapabilityFactoryClient(this._cap);
 
-  Future<CapabilityFactoryNewCellResultsReader> newCell(void Function(CapabilityFactoryNewCellParamsBuilder) build) async {
+  Future<CapabilityFactoryNewCellResult> newCell(void Function(CapabilityFactoryNewCellParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(capabilityFactoryNewCellParamsFactory));
     final result = await _cap.dispatch(0xccad478715fb03b0, 0, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(capabilityFactoryNewCellResultsFactory);
+    return CapabilityFactoryNewCellResult._(result);
   }
 
   CapabilityFactoryNewCellPipeline newCellPipeline(void Function(CapabilityFactoryNewCellParamsBuilder) build) {
@@ -5017,11 +5062,11 @@ class CapabilityFactoryClient extends Capability {
     return CapabilityFactoryNewCellPipeline._(_cap.beginDispatch(0xccad478715fb03b0, 0, mb.serialize()));
   }
 
-  Future<CapabilityFactoryNewEmptyCellResultsReader> newEmptyCell(void Function(CapabilityFactoryNewEmptyCellParamsBuilder) build) async {
+  Future<CapabilityFactoryNewEmptyCellResult> newEmptyCell(void Function(CapabilityFactoryNewEmptyCellParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(capabilityFactoryNewEmptyCellParamsFactory));
     final result = await _cap.dispatch(0xccad478715fb03b0, 1, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(capabilityFactoryNewEmptyCellResultsFactory);
+    return CapabilityFactoryNewEmptyCellResult._(result);
   }
 
   CapabilityFactoryNewEmptyCellPipeline newEmptyCellPipeline(void Function(CapabilityFactoryNewEmptyCellParamsBuilder) build) {
@@ -5030,11 +5075,11 @@ class CapabilityFactoryClient extends Capability {
     return CapabilityFactoryNewEmptyCellPipeline._(_cap.beginDispatch(0xccad478715fb03b0, 1, mb.serialize()));
   }
 
-  Future<CapabilityFactoryNewRepositoryResultsReader> newRepository(void Function(CapabilityFactoryNewRepositoryParamsBuilder) build) async {
+  Future<CapabilityFactoryNewRepositoryResult> newRepository(void Function(CapabilityFactoryNewRepositoryParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(capabilityFactoryNewRepositoryParamsFactory));
     final result = await _cap.dispatch(0xccad478715fb03b0, 2, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(capabilityFactoryNewRepositoryResultsFactory);
+    return CapabilityFactoryNewRepositoryResult._(result);
   }
 
   CapabilityFactoryNewRepositoryPipeline newRepositoryPipeline(void Function(CapabilityFactoryNewRepositoryParamsBuilder) build) {
@@ -5409,6 +5454,15 @@ abstract class DiamondServer extends Capability {
 }
 
 
+final class PipelineTargetGetChildResult {
+  PipelineTargetGetChildResult._(DispatchResult dispatchResult)
+      :     child = PipelineTargetClient(requireCapabilityFromResult(dispatchResult, 0)),
+    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(pipelineTargetGetChildResultsFactory);
+
+  final PipelineTargetGetChildResultsReader result;
+  final PipelineTargetClient child;
+}
+
 final class PipelineTargetGetChildPipeline {
   PipelineTargetGetChildPipeline._(CapCall call)
       :     child = PipelineTargetClient(call.pipelineResult(0)),
@@ -5416,6 +5470,15 @@ final class PipelineTargetGetChildPipeline {
 
   final Future<PipelineTargetGetChildResultsReader> result;
   final PipelineTargetClient child;
+}
+
+final class PipelineTargetGetRepositoryResult {
+  PipelineTargetGetRepositoryResult._(DispatchResult dispatchResult)
+      :     repository = RepositoryClient(requireCapabilityFromResult(dispatchResult, 0)),
+    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(pipelineTargetGetRepositoryResultsFactory);
+
+  final PipelineTargetGetRepositoryResultsReader result;
+  final RepositoryClient repository;
 }
 
 final class PipelineTargetGetRepositoryPipeline {
@@ -5432,11 +5495,11 @@ class PipelineTargetClient extends Capability {
   final Capability _cap;
   PipelineTargetClient(this._cap);
 
-  Future<PipelineTargetGetChildResultsReader> getChild(void Function(PipelineTargetGetChildParamsBuilder) build) async {
+  Future<PipelineTargetGetChildResult> getChild(void Function(PipelineTargetGetChildParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(pipelineTargetGetChildParamsFactory));
     final result = await _cap.dispatch(0xe211443879f3b6bb, 0, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(pipelineTargetGetChildResultsFactory);
+    return PipelineTargetGetChildResult._(result);
   }
 
   PipelineTargetGetChildPipeline getChildPipeline(void Function(PipelineTargetGetChildParamsBuilder) build) {
@@ -5445,11 +5508,11 @@ class PipelineTargetClient extends Capability {
     return PipelineTargetGetChildPipeline._(_cap.beginDispatch(0xe211443879f3b6bb, 0, mb.serialize()));
   }
 
-  Future<PipelineTargetGetRepositoryResultsReader> getRepository(void Function(PipelineTargetGetRepositoryParamsBuilder) build) async {
+  Future<PipelineTargetGetRepositoryResult> getRepository(void Function(PipelineTargetGetRepositoryParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(pipelineTargetGetRepositoryParamsFactory));
     final result = await _cap.dispatch(0xe211443879f3b6bb, 1, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(pipelineTargetGetRepositoryResultsFactory);
+    return PipelineTargetGetRepositoryResult._(result);
   }
 
   PipelineTargetGetRepositoryPipeline getRepositoryPipeline(void Function(PipelineTargetGetRepositoryParamsBuilder) build) {
@@ -5515,6 +5578,15 @@ abstract class PipelineTargetServer extends Capability {
 }
 
 
+final class ComplexTestServiceMakePipelineResult {
+  ComplexTestServiceMakePipelineResult._(DispatchResult dispatchResult)
+      :     target = PipelineTargetClient(requireCapabilityFromResult(dispatchResult, 0)),
+    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(complexTestServiceMakePipelineResultsFactory);
+
+  final ComplexTestServiceMakePipelineResultsReader result;
+  final PipelineTargetClient target;
+}
+
 final class ComplexTestServiceMakePipelinePipeline {
   ComplexTestServiceMakePipelinePipeline._(CapCall call)
       :     target = PipelineTargetClient(call.pipelineResult(0)),
@@ -5522,6 +5594,15 @@ final class ComplexTestServiceMakePipelinePipeline {
 
   final Future<ComplexTestServiceMakePipelineResultsReader> result;
   final PipelineTargetClient target;
+}
+
+final class ComplexTestServiceOpenUploadResult {
+  ComplexTestServiceOpenUploadResult._(DispatchResult dispatchResult)
+      :     sink = ByteSinkClient(requireCapabilityFromResult(dispatchResult, 0)),
+    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(complexTestServiceOpenUploadResultsFactory);
+
+  final ComplexTestServiceOpenUploadResultsReader result;
+  final ByteSinkClient sink;
 }
 
 final class ComplexTestServiceOpenUploadPipeline {
@@ -5533,6 +5614,15 @@ final class ComplexTestServiceOpenUploadPipeline {
   final ByteSinkClient sink;
 }
 
+final class ComplexTestServiceOpenDownloadResult {
+  ComplexTestServiceOpenDownloadResult._(DispatchResult dispatchResult)
+      :     source = ByteSourceClient(requireCapabilityFromResult(dispatchResult, 0)),
+    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(complexTestServiceOpenDownloadResultsFactory);
+
+  final ComplexTestServiceOpenDownloadResultsReader result;
+  final ByteSourceClient source;
+}
+
 final class ComplexTestServiceOpenDownloadPipeline {
   ComplexTestServiceOpenDownloadPipeline._(CapCall call)
       :     source = ByteSourceClient(call.pipelineResult(0)),
@@ -5542,6 +5632,15 @@ final class ComplexTestServiceOpenDownloadPipeline {
   final ByteSourceClient source;
 }
 
+final class ComplexTestServiceGetRepositoryResult {
+  ComplexTestServiceGetRepositoryResult._(DispatchResult dispatchResult)
+      :     repository = RepositoryClient(requireCapabilityFromResult(dispatchResult, 0)),
+    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(complexTestServiceGetRepositoryResultsFactory);
+
+  final ComplexTestServiceGetRepositoryResultsReader result;
+  final RepositoryClient repository;
+}
+
 final class ComplexTestServiceGetRepositoryPipeline {
   ComplexTestServiceGetRepositoryPipeline._(CapCall call)
       :     repository = RepositoryClient(call.pipelineResult(0)),
@@ -5549,6 +5648,15 @@ final class ComplexTestServiceGetRepositoryPipeline {
 
   final Future<ComplexTestServiceGetRepositoryResultsReader> result;
   final RepositoryClient repository;
+}
+
+final class ComplexTestServiceGetFactoryResult {
+  ComplexTestServiceGetFactoryResult._(DispatchResult dispatchResult)
+      :     factory = CapabilityFactoryClient(requireCapabilityFromResult(dispatchResult, 0)),
+    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(complexTestServiceGetFactoryResultsFactory);
+
+  final ComplexTestServiceGetFactoryResultsReader result;
+  final CapabilityFactoryClient factory;
 }
 
 final class ComplexTestServiceGetFactoryPipeline {
@@ -5616,11 +5724,11 @@ class ComplexTestServiceClient extends Capability {
     return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceCallObserverResultsFactory);
   }
 
-  Future<ComplexTestServiceMakePipelineResultsReader> makePipeline(void Function(ComplexTestServiceMakePipelineParamsBuilder) build) async {
+  Future<ComplexTestServiceMakePipelineResult> makePipeline(void Function(ComplexTestServiceMakePipelineParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(complexTestServiceMakePipelineParamsFactory));
     final result = await _cap.dispatch(0xd7fb0472c16375ee, 7, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceMakePipelineResultsFactory);
+    return ComplexTestServiceMakePipelineResult._(result);
   }
 
   ComplexTestServiceMakePipelinePipeline makePipelinePipeline(void Function(ComplexTestServiceMakePipelineParamsBuilder) build) {
@@ -5629,11 +5737,11 @@ class ComplexTestServiceClient extends Capability {
     return ComplexTestServiceMakePipelinePipeline._(_cap.beginDispatch(0xd7fb0472c16375ee, 7, mb.serialize()));
   }
 
-  Future<ComplexTestServiceOpenUploadResultsReader> openUpload(void Function(ComplexTestServiceOpenUploadParamsBuilder) build) async {
+  Future<ComplexTestServiceOpenUploadResult> openUpload(void Function(ComplexTestServiceOpenUploadParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(complexTestServiceOpenUploadParamsFactory));
     final result = await _cap.dispatch(0xd7fb0472c16375ee, 8, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceOpenUploadResultsFactory);
+    return ComplexTestServiceOpenUploadResult._(result);
   }
 
   ComplexTestServiceOpenUploadPipeline openUploadPipeline(void Function(ComplexTestServiceOpenUploadParamsBuilder) build) {
@@ -5642,11 +5750,11 @@ class ComplexTestServiceClient extends Capability {
     return ComplexTestServiceOpenUploadPipeline._(_cap.beginDispatch(0xd7fb0472c16375ee, 8, mb.serialize()));
   }
 
-  Future<ComplexTestServiceOpenDownloadResultsReader> openDownload(void Function(ComplexTestServiceOpenDownloadParamsBuilder) build) async {
+  Future<ComplexTestServiceOpenDownloadResult> openDownload(void Function(ComplexTestServiceOpenDownloadParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(complexTestServiceOpenDownloadParamsFactory));
     final result = await _cap.dispatch(0xd7fb0472c16375ee, 9, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceOpenDownloadResultsFactory);
+    return ComplexTestServiceOpenDownloadResult._(result);
   }
 
   ComplexTestServiceOpenDownloadPipeline openDownloadPipeline(void Function(ComplexTestServiceOpenDownloadParamsBuilder) build) {
@@ -5655,11 +5763,11 @@ class ComplexTestServiceClient extends Capability {
     return ComplexTestServiceOpenDownloadPipeline._(_cap.beginDispatch(0xd7fb0472c16375ee, 9, mb.serialize()));
   }
 
-  Future<ComplexTestServiceGetRepositoryResultsReader> getRepository(void Function(ComplexTestServiceGetRepositoryParamsBuilder) build) async {
+  Future<ComplexTestServiceGetRepositoryResult> getRepository(void Function(ComplexTestServiceGetRepositoryParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(complexTestServiceGetRepositoryParamsFactory));
     final result = await _cap.dispatch(0xd7fb0472c16375ee, 10, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceGetRepositoryResultsFactory);
+    return ComplexTestServiceGetRepositoryResult._(result);
   }
 
   ComplexTestServiceGetRepositoryPipeline getRepositoryPipeline(void Function(ComplexTestServiceGetRepositoryParamsBuilder) build) {
@@ -5668,11 +5776,11 @@ class ComplexTestServiceClient extends Capability {
     return ComplexTestServiceGetRepositoryPipeline._(_cap.beginDispatch(0xd7fb0472c16375ee, 10, mb.serialize()));
   }
 
-  Future<ComplexTestServiceGetFactoryResultsReader> getFactory(void Function(ComplexTestServiceGetFactoryParamsBuilder) build) async {
+  Future<ComplexTestServiceGetFactoryResult> getFactory(void Function(ComplexTestServiceGetFactoryParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(complexTestServiceGetFactoryParamsFactory));
     final result = await _cap.dispatch(0xd7fb0472c16375ee, 11, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceGetFactoryResultsFactory);
+    return ComplexTestServiceGetFactoryResult._(result);
   }
 
   ComplexTestServiceGetFactoryPipeline getFactoryPipeline(void Function(ComplexTestServiceGetFactoryParamsBuilder) build) {
