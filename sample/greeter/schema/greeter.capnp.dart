@@ -223,6 +223,15 @@ abstract class GreetSessionServer extends Capability {
   Future<void> dispose() async {}
 }
 
+
+final class GreeterNewSessionPipeline {
+  GreeterNewSessionPipeline._(CapCall call)
+      :     session = GreetSessionClient(call.pipelineResult(0)),
+    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(greeterNewSessionResultsFactory));
+
+  final Future<GreeterNewSessionResultsReader> result;
+  final GreetSessionClient session;
+}
 class GreeterClient extends Capability {
   static const int _interfaceId = 0xd41d8cd98f00b204;
 
@@ -236,11 +245,17 @@ class GreeterClient extends Capability {
     return MessageReader.deserialize(result.bytes).getRoot(greeterGreetResultsFactory);
   }
 
-  GreetSessionClient newSession(void Function(GreeterNewSessionParamsBuilder) build) {
+  Future<GreeterNewSessionResultsReader> newSession(void Function(GreeterNewSessionParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(greeterNewSessionParamsFactory));
-    final call = _cap.beginDispatch(0xd41d8cd98f00b204, 1, mb.serialize());
-    return GreetSessionClient(call.pipelineResult(0));
+    final result = await _cap.dispatch(0xd41d8cd98f00b204, 1, mb.serialize());
+    return MessageReader.deserialize(result.bytes).getRoot(greeterNewSessionResultsFactory);
+  }
+
+  GreeterNewSessionPipeline newSessionPipeline(void Function(GreeterNewSessionParamsBuilder) build) {
+    final mb = MessageBuilder();
+    build(mb.initRoot(greeterNewSessionParamsFactory));
+    return GreeterNewSessionPipeline._(_cap.beginDispatch(0xd41d8cd98f00b204, 1, mb.serialize()));
   }
 
   @override

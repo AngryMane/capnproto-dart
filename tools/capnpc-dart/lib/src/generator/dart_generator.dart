@@ -133,6 +133,11 @@ void _writeInterface(
       <({SchemaNode ifaceNode, SchemaMethod method})>[];
   _collectAllMethods(node, body, nodeMap, allMethods, {});
 
+  // ---- Pipeline classes (one per method whose result has interface fields) ----
+  for (final m in allMethods) {
+    _writeResultsPipeline(sb, name, m.method, nodeMap);
+  }
+
   // ---- Client stub ----
   sb.writeln('class ${name}Client extends Capability {');
   sb.writeln('  static const int _interfaceId = ${_hexId(node.id)};');
@@ -141,7 +146,7 @@ void _writeInterface(
   sb.writeln('  ${name}Client(this._cap);');
 
   for (final m in allMethods) {
-    _writeClientMethod(sb, m.ifaceNode, m.method, nodeMap);
+    _writeClientMethod(sb, name, m.ifaceNode, m.method, nodeMap);
   }
 
   sb.writeln();
@@ -190,6 +195,7 @@ void _collectAllMethods(
 
 void _writeClientMethod(
   StringBuffer sb,
+  String ifaceName,
   SchemaNode ifaceNode,
   SchemaMethod method,
   Map<int, SchemaNode> nodeMap,
@@ -198,80 +204,61 @@ void _writeClientMethod(
   final paramsNode = nodeMap[method.paramStructTypeId];
   final resultsNode = nodeMap[method.resultStructTypeId];
   final paramsName = _dartClassName(paramsNode?.displayName ?? 'Unknown');
+  final resultsName = _dartClassName(resultsNode?.displayName ?? 'Unknown');
   final ifaceId = _hexId(ifaceNode.id);
   final ordinal = method.ordinal;
 
   final capParams = _collectCapParams(paramsNode);
-  final capField = _singleCapabilityField(resultsNode, nodeMap);
+  final capResults = _collectCapResults(resultsNode);
+  final hasPipeline = capResults.isNotEmpty;
+
+  final namedParams = capParams.isEmpty
+      ? ''
+      : ', {${capParams.map((p) => 'required Capability ${p.$2}').join(', ')}}';
+  final capsList = capParams.map((p) => p.$2).join(', ');
+  final dispatchCaps =
+      capParams.isEmpty ? '' : ', paramsCapabilities: [$capsList]';
 
   sb.writeln();
 
+  // ---- Normal async method (always returns Future<XxxResultsReader>) ----
+  sb.writeln(
+      '  Future<${resultsName}Reader> $methodName(void Function(${paramsName}Builder) build$namedParams) async {');
+  sb.writeln('    final mb = MessageBuilder();');
   if (capParams.isEmpty) {
-    if (capField != null) {
-      final capIfaceNode = nodeMap[capField.typeId];
-      final capIfaceName =
-          _dartClassName(capIfaceNode?.displayName ?? 'Unknown');
-      sb.writeln(
-          '  ${capIfaceName}Client $methodName(void Function(${paramsName}Builder) build) {');
-      sb.writeln('    final mb = MessageBuilder();');
-      sb.writeln('    build(mb.initRoot(${_lcfirst(paramsName)}Factory));');
-      sb.writeln(
-          '    final call = _cap.beginDispatch($ifaceId, $ordinal, mb.serialize());');
-      sb.writeln(
-          '    return ${capIfaceName}Client(call.pipelineResult(0));');
-      sb.writeln('  }');
-    } else {
-      final resultsName =
-          _dartClassName(resultsNode?.displayName ?? 'Unknown');
-      sb.writeln(
-          '  Future<${resultsName}Reader> $methodName(void Function(${paramsName}Builder) build) async {');
-      sb.writeln('    final mb = MessageBuilder();');
-      sb.writeln('    build(mb.initRoot(${_lcfirst(paramsName)}Factory));');
-      sb.writeln(
-          '    final result = await _cap.dispatch($ifaceId, $ordinal, mb.serialize());');
-      sb.writeln(
-          '    return MessageReader.deserialize(result.bytes).getRoot(${_lcfirst(resultsName)}Factory);');
-      sb.writeln('  }');
-    }
+    sb.writeln('    build(mb.initRoot(${_lcfirst(paramsName)}Factory));');
   } else {
-    final namedParams =
-        capParams.map((p) => 'required Capability ${p.$2}').join(', ');
-    final capsList = capParams.map((p) => p.$2).join(', ');
-
-    if (capField != null) {
-      final capIfaceNode = nodeMap[capField.typeId];
-      final capIfaceName =
-          _dartClassName(capIfaceNode?.displayName ?? 'Unknown');
-      sb.writeln(
-          '  ${capIfaceName}Client $methodName(void Function(${paramsName}Builder) build, {$namedParams}) {');
-      sb.writeln('    final mb = MessageBuilder();');
-      sb.writeln('    final b = mb.initRoot(${_lcfirst(paramsName)}Factory);');
-      for (final (_, fname, capIdx) in capParams) {
-        sb.writeln('    b.set${_ucfirst(fname)}($capIdx);');
-      }
-      sb.writeln('    build(b);');
-      sb.writeln(
-          '    final call = _cap.beginDispatch($ifaceId, $ordinal, mb.serialize(), paramsCapabilities: [$capsList]);');
-      sb.writeln(
-          '    return ${capIfaceName}Client(call.pipelineResult(0));');
-      sb.writeln('  }');
-    } else {
-      final resultsName =
-          _dartClassName(resultsNode?.displayName ?? 'Unknown');
-      sb.writeln(
-          '  Future<${resultsName}Reader> $methodName(void Function(${paramsName}Builder) build, {$namedParams}) async {');
-      sb.writeln('    final mb = MessageBuilder();');
-      sb.writeln('    final b = mb.initRoot(${_lcfirst(paramsName)}Factory);');
-      for (final (_, fname, capIdx) in capParams) {
-        sb.writeln('    b.set${_ucfirst(fname)}($capIdx);');
-      }
-      sb.writeln('    build(b);');
-      sb.writeln(
-          '    final result = await _cap.dispatch($ifaceId, $ordinal, mb.serialize(), paramsCapabilities: [$capsList]);');
-      sb.writeln(
-          '    return MessageReader.deserialize(result.bytes).getRoot(${_lcfirst(resultsName)}Factory);');
-      sb.writeln('  }');
+    sb.writeln('    final b = mb.initRoot(${_lcfirst(paramsName)}Factory);');
+    for (final (_, fname, capIdx) in capParams) {
+      sb.writeln('    b.set${_ucfirst(fname)}($capIdx);');
     }
+    sb.writeln('    build(b);');
+  }
+  sb.writeln(
+      '    final result = await _cap.dispatch($ifaceId, $ordinal, mb.serialize()$dispatchCaps);');
+  sb.writeln(
+      '    return MessageReader.deserialize(result.bytes).getRoot(${_lcfirst(resultsName)}Factory);');
+  sb.writeln('  }');
+
+  // ---- Pipeline method (only when result has interface fields) ----
+  if (hasPipeline) {
+    final pipelineName = '${ifaceName}${_ucfirst(methodName)}Pipeline';
+    sb.writeln();
+    sb.writeln(
+        '  $pipelineName ${methodName}Pipeline(void Function(${paramsName}Builder) build$namedParams) {');
+    sb.writeln('    final mb = MessageBuilder();');
+    if (capParams.isEmpty) {
+      sb.writeln('    build(mb.initRoot(${_lcfirst(paramsName)}Factory));');
+    } else {
+      sb.writeln('    final b = mb.initRoot(${_lcfirst(paramsName)}Factory);');
+      for (final (_, fname, capIdx) in capParams) {
+        sb.writeln('    b.set${_ucfirst(fname)}($capIdx);');
+      }
+      sb.writeln('    build(b);');
+    }
+    sb.writeln(
+        '    return $pipelineName._(_cap.beginDispatch($ifaceId, $ordinal, mb.serialize()$dispatchCaps));');
+    sb.writeln('  }');
   }
 }
 
@@ -392,20 +379,61 @@ void _writeServerStub(
   sb.writeln('}');
 }
 
-/// Returns the [InterfaceRefType] if [node] is a result struct with exactly one
-/// non-void field that is an interface reference; otherwise returns `null`.
-InterfaceRefType? _singleCapabilityField(
-    SchemaNode? node, Map<int, SchemaNode> nodeMap) {
-  if (node == null) return null;
-  final body = node.body;
-  if (body is! StructBody) return null;
-  final nonVoid = body.fields.where((f) {
-    if (f.body is! SlotField) return false;
-    return (f.body as SlotField).type is! VoidType;
-  }).toList();
-  if (nonVoid.length != 1) return null;
-  final sf = nonVoid.first.body as SlotField;
-  return sf.type is InterfaceRefType ? sf.type as InterfaceRefType : null;
+/// Returns all interface fields (sorted by codeOrder) in [resultsNode]
+/// as a list of `(ptrOffset, fieldName, typeId)`.
+List<(int, String, int)> _collectCapResults(SchemaNode? resultsNode) {
+  if (resultsNode == null) return const [];
+  final body = resultsNode.body;
+  if (body is! StructBody) return const [];
+  final fields = [...body.fields]
+    ..sort((a, b) => a.codeOrder.compareTo(b.codeOrder));
+  final result = <(int, String, int)>[];
+  for (final field in fields) {
+    if (field.body is! SlotField) continue;
+    final sf = field.body as SlotField;
+    if (sf.type is InterfaceRefType) {
+      result.add((sf.offset, _camel(field.name), (sf.type as InterfaceRefType).typeId));
+    }
+  }
+  return result;
+}
+
+/// Emits an `XxxPipeline` class for [method] if its result struct has any
+/// interface fields.  Each interface field becomes a typed `XxxClient` getter
+/// using the correct pointer slot index (fixing the hardcoded-0 bug).
+void _writeResultsPipeline(
+  StringBuffer sb,
+  String ifaceName,
+  SchemaMethod method,
+  Map<int, SchemaNode> nodeMap,
+) {
+  final resultsNode = nodeMap[method.resultStructTypeId];
+  final capResults = _collectCapResults(resultsNode);
+  if (capResults.isEmpty) return;
+
+  final methodName = _camel(method.name);
+  final resultsName = _dartClassName(resultsNode?.displayName ?? 'Unknown');
+  final pipelineName = '${ifaceName}${_ucfirst(methodName)}Pipeline';
+
+  sb.writeln();
+  sb.writeln('final class $pipelineName {');
+  sb.writeln('  $pipelineName._(CapCall call)');
+  final fieldInits = capResults.map((r) {
+    final capIfaceName =
+        _dartClassName(nodeMap[r.$3]?.displayName ?? 'Unknown');
+    return '    ${r.$2} = ${capIfaceName}Client(call.pipelineResult(${r.$1}))';
+  }).join(',\n');
+  final resultInit =
+      '    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(${_lcfirst(resultsName)}Factory))';
+  sb.writeln('      : $fieldInits,\n$resultInit;');
+  sb.writeln();
+  sb.writeln('  final Future<${resultsName}Reader> result;');
+  for (final (_, fname, typeId) in capResults) {
+    final capIfaceName =
+        _dartClassName(nodeMap[typeId]?.displayName ?? 'Unknown');
+    sb.writeln('  final ${capIfaceName}Client $fname;');
+  }
+  sb.writeln('}');
 }
 
 // ---------------------------------------------------------------------------

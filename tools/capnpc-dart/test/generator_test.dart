@@ -568,6 +568,98 @@ void main() {
     });
   });
 
+  group('generateDartFile — capability-returning methods (GEN-002)', () {
+    const sessionIfaceId = 40;
+    const greeterIfaceId = 0x1234abcd;
+    const paramsId = 41;
+    const resultsId = 42;
+
+    // A result struct with a single cap field at ptr slot 0.
+    SchemaNode capResultNode() => structNode(resultsId, 'NewSessionResults', 0, 1, [
+          ptrField('session', 0, 0, InterfaceRefType(sessionIfaceId)),
+        ]);
+
+    SchemaNode sessionIfaceNode() => SchemaNode(
+          id: sessionIfaceId,
+          displayName: 'test.capnp:Session',
+          displayNamePrefixLength: 'test.capnp:'.length,
+          scopeId: 1,
+          nestedNodes: const [],
+          body: InterfaceBody(methods: const [], superclassIds: const []),
+        );
+
+    late String src;
+    setUp(() {
+      final paramsNode = structNode(paramsId, 'NewSessionParams', 0, 1, [
+        ptrField('name', 0, 0, const TextType()),
+      ]);
+      final resultsNode = capResultNode();
+      final sessionIface = sessionIfaceNode();
+      final greeterIface = interfaceNode(greeterIfaceId, 'Greeter', [
+        SchemaMethod(
+          name: 'newSession',
+          ordinal: 0,
+          paramStructTypeId: paramsId,
+          resultStructTypeId: resultsId,
+        ),
+      ]);
+      final file = fileNode(1, [
+        SchemaNestedNode(name: 'Session', id: sessionIfaceId),
+        SchemaNestedNode(name: 'Greeter', id: greeterIfaceId),
+      ]);
+      src = generateDartFile(
+          file, [file, paramsNode, resultsNode, sessionIface, greeterIface]);
+    });
+
+    test('always returns Future<XxxResultsReader>, not XxxClient', () {
+      expect(src, contains('Future<NewSessionResultsReader> newSession('));
+      expect(src, isNot(contains('SessionClient newSession(')));
+    });
+
+    test('also generates a pipeline method', () {
+      expect(src, contains('GreeterNewSessionPipeline newSessionPipeline('));
+      expect(src, contains('beginDispatch('));
+    });
+
+    test('pipeline class uses correct ptr slot (not hardcoded 0)', () {
+      expect(src, contains('final class GreeterNewSessionPipeline'));
+      expect(src, contains('call.pipelineResult(0)'));
+    });
+
+    test('pipeline class exposes typed cap getter and result future', () {
+      expect(src, contains('final SessionClient session;'));
+      expect(src, contains('final Future<NewSessionResultsReader> result;'));
+    });
+
+    test('cap field at non-zero ptr slot uses correct index', () {
+      // Put the cap at ptr slot 2 (after two text fields).
+      final resultsNodeSlot2 = structNode(resultsId + 10, 'GetResults', 0, 3, [
+        ptrField('name', 0, 0, const TextType()),
+        ptrField('desc', 1, 1, const TextType()),
+        ptrField('session', 2, 2, InterfaceRefType(sessionIfaceId)),
+      ]);
+      final sessionIface = sessionIfaceNode();
+      final greeterIface = interfaceNode(greeterIfaceId, 'Svc', [
+        SchemaMethod(
+          name: 'get',
+          ordinal: 0,
+          paramStructTypeId: paramsId,
+          resultStructTypeId: resultsId + 10,
+        ),
+      ]);
+      final paramsNode = structNode(paramsId, 'GetParams', 0, 0, []);
+      final file = fileNode(1, [
+        SchemaNestedNode(name: 'Session', id: sessionIfaceId),
+        SchemaNestedNode(name: 'Svc', id: greeterIfaceId),
+      ]);
+      final s = generateDartFile(
+          file, [file, paramsNode, resultsNodeSlot2, sessionIface, greeterIface]);
+
+      expect(s, contains('call.pipelineResult(2)'));
+      expect(s, isNot(contains('call.pipelineResult(0)')));
+    });
+  });
+
   group('generateDartFiles — codegen entrypoint', () {
     test('maps .capnp filename to .capnp.dart', () {
       final sNode = structNode(20, 'Msg', 1, 0, [
