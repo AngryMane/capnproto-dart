@@ -57,6 +57,37 @@ Uint8List ensureSingleSegment(
   return dst.serialize();
 }
 
+/// Deep-copies the root pointer of [messageBytes] into [dstArena] at
+/// [dstPtrSeg]/[dstPtrWordOffset].
+///
+/// Unlike [ArenaBuilder.writeAnyPointerFromMessage], this is pointer-aware: it
+/// can read multi-segment source messages and follows far pointers through the
+/// source arena. Capability pointers are zeroed by default because their table
+/// is not part of the raw message bytes; RPC callers that carry the matching
+/// capability table can set [preserveCapabilityPointers].
+void copyMessageRootToBuilder(
+  Uint8List messageBytes,
+  ArenaBuilder dstArena,
+  SegmentBuilder dstPtrSeg,
+  int dstPtrWordOffset, {
+  bool preserveCapabilityPointers = false,
+}) {
+  final srcArena = ArenaReader.fromBytes(
+    messageBytes,
+    const MessageReaderOptions(),
+  );
+  _copyPointer(
+    srcArena,
+    srcArena.getSegment(0),
+    0,
+    srcArena.nestingLimit,
+    dstArena,
+    dstPtrSeg,
+    dstPtrWordOffset,
+    preserveCapabilityPointers: preserveCapabilityPointers,
+  );
+}
+
 /// Reads the AnyPointer at ptr slot [ptrIndex] of [host], deep-copies the
 /// referenced struct into a new standalone message, and returns the serialized
 /// bytes.  Returns null if the pointer is null or a CapabilityPointer
@@ -339,13 +370,13 @@ void _copyList(
     default:
       // Primitive lists (void, bit, 2/4/8-byte values): raw byte copy.
       final wordCount = listDataWordCount(raw.elementSize, raw.elementCount);
-      if (wordCount == 0) return;
       final dstList = dstArena.allocateList(
         ptrSeg: dstSeg,
         ptrWordOffset: dstPtrWordOffset,
         elementSize: raw.elementSize,
         elementCount: raw.elementCount,
       );
+      if (wordCount == 0) return;
       final byteCount = wordCount * bytesPerWord;
       final srcBuf = raw.segment.data.buffer.asUint8List(
         raw.segment.data.offsetInBytes,

@@ -36,18 +36,27 @@ class _ObserverImpl extends ObserverServer {
 class _DiamondImpl extends DiamondServer {
   @override
   Future<DispatchResult> getName(ParentGetNameParamsReader params,
-          List<Capability> paramsCapabilities) =>
-      Future.error(RpcException('not implemented'));
+      List<Capability> paramsCapabilities) async {
+    final mb = MessageBuilder();
+    mb.initRoot(parentGetNameResultsFactory).name = 'dart-diamond';
+    return DispatchResult(bytes: mb.serialize());
+  }
 
   @override
   Future<DispatchResult> left(
-          LeftLeftParamsReader params, List<Capability> paramsCapabilities) =>
-      Future.error(RpcException('not implemented'));
+      LeftLeftParamsReader params, List<Capability> paramsCapabilities) async {
+    final mb = MessageBuilder();
+    mb.initRoot(leftLeftResultsFactory).result = params.getInt32Field(0) + 10;
+    return DispatchResult(bytes: mb.serialize());
+  }
 
   @override
-  Future<DispatchResult> right(
-          RightRightParamsReader params, List<Capability> paramsCapabilities) =>
-      Future.error(RpcException('not implemented'));
+  Future<DispatchResult> right(RightRightParamsReader params,
+      List<Capability> paramsCapabilities) async {
+    final mb = MessageBuilder();
+    mb.initRoot(rightRightResultsFactory).result = params.getInt32Field(0) + 20;
+    return DispatchResult(bytes: mb.serialize());
+  }
 
   @override
   Future<DispatchResult> both(DiamondBothParamsReader params,
@@ -56,6 +65,41 @@ class _DiamondImpl extends DiamondServer {
     final b = mb.initRoot(diamondBothResultsFactory);
     b.sum = params.leftValue + params.rightValue;
     return DispatchResult(bytes: mb.serialize());
+  }
+}
+
+class _CollectingByteSink extends ByteSinkServer {
+  final data = <int>[];
+  bool aborted = false;
+
+  @override
+  Future<void> write(
+    ByteSinkWriteParamsReader params,
+    List<Capability> paramsCapabilities,
+  ) async {
+    data.addAll(params.chunk ?? const []);
+  }
+
+  @override
+  Future<DispatchResult> finish(
+    ByteSinkFinishParamsReader params,
+    List<Capability> paramsCapabilities,
+  ) async {
+    final checksum = data.fold<int>(0, (acc, b) => acc ^ b);
+    final mb = MessageBuilder();
+    final result = mb.initRoot(byteSinkFinishResultsFactory);
+    result.byteCount = data.length;
+    result.checksum = Uint8List.fromList([checksum]);
+    return DispatchResult(bytes: mb.serialize());
+  }
+
+  @override
+  Future<void> abort(
+    ByteSinkAbortParamsReader params,
+    List<Capability> paramsCapabilities,
+  ) async {
+    aborted = true;
+    data.clear();
   }
 }
 
@@ -85,6 +129,29 @@ class _PipelineTargetImpl extends PipelineTargetServer {
     final mb = MessageBuilder();
     mb.initRoot(pipelineTargetPingResultsFactory).payload = params.payload;
     return DispatchResult(bytes: mb.serialize());
+  }
+}
+
+class _TextListAnyPointerCodec implements AnyPointerCodec<List<String>> {
+  const _TextListAnyPointerCodec();
+
+  @override
+  void encode(
+    AnyPointerBuilder builder,
+    List<String> value, {
+    List<Object?>? capabilities,
+  }) {
+    final list = builder.initTextList(value.length);
+    for (var i = 0; i < value.length; i++) {
+      list[i] = value[i];
+    }
+  }
+
+  @override
+  List<String>? decode(AnyPointerReader? reader) {
+    final list = reader?.asTextList();
+    if (list == null) return null;
+    return [for (final value in list) value ?? ''];
   }
 }
 
@@ -267,6 +334,13 @@ Future<void> _s01_codeGeneration() async {
     'generic schema parameter name',
     keyValueSchema.typeParameters[0],
     'Key',
+  );
+  final keyField = keyValueSchema.fieldByName('key');
+  final keySlot = keyField?.body as SlotFieldSchemaInfo?;
+  check(
+    'generic schema TypeParameterRef preserved',
+    keySlot?.type is TypeParameterSchemaInfo &&
+        (keySlot!.type as TypeParameterSchemaInfo).parameterIndex == 0,
   );
   checkEq(
     'interface schema method count',
@@ -516,17 +590,16 @@ Future<void> _s03_allLists(ComplexTestServiceClient svc) async {
   checkEq('single int32', r4.value!.int32s?[0], 99);
   checkEq('single text', r4.value!.texts?[0], 'solo');
 
-  // 3f: Moderately large list (within single segment)
-  // Note: multi-segment messages are not yet supported by the Dart RPC layer.
+  // 3f: Large list (crosses the default first-segment size)
   final r5 = await svc.echoLists((b) {
     final v = b.initValue();
-    final big = v.initInt64s(500);
-    for (int i = 0; i < 500; i++) big[i] = i;
+    final big = v.initInt64s(1500);
+    for (int i = 0; i < 1500; i++) big[i] = i;
   });
   final bigList = r5.value!.int64s!;
-  checkEq('large list length', bigList.length, 500);
+  checkEq('large list length', bigList.length, 1500);
   checkEq('large list [0]', bigList[0], 0);
-  checkEq('large list [499]', bigList[499], 499);
+  checkEq('large list [1499]', bigList[1499], 1499);
 
   // 3g: Non-rectangular struct list (different name lengths)
   final r6 = await svc.echoLists((b) {
@@ -540,10 +613,30 @@ Future<void> _s03_allLists(ComplexTestServiceClient svc) async {
   checkEq('nonrect[1]', r6.value!.people?[1].name, 'Beatrice Wilhelmina');
   checkEq('nonrect[2]', r6.value!.people?[2].name, '');
 
-  // Unsupported list types noted
-  skip('List(Void) - generator marks as unsupported');
-  skip('List(Color) - generic enum list unsupported');
-  skip('List(List(List(Int32))) - nested list unsupported');
+  // 3h: Previously skipped generated list variants.
+  final r7 = await svc.echoLists((b) {
+    final v = b.initValue();
+    v.initVoids(4);
+    final colors = v.initColors(3);
+    colors[0] = Color.red;
+    colors[1] = Color.green;
+    colors[2] = Color.transparent;
+    final matrices = v.initMatrices(1);
+    final matrix = matrices.initAt(0, 2);
+    final row0 = matrix.initAt(0, 2);
+    row0[0] = 1;
+    row0[1] = 2;
+    final row1 = matrix.initAt(1, 2);
+    row1[0] = 3;
+    row1[1] = 4;
+  });
+  final v7 = r7.value!;
+  checkEq('void list length', v7.voids?.length, 4);
+  checkEq('color list [0]', v7.colors?[0], Color.red);
+  checkEq('color list [2]', v7.colors?[2], Color.transparent);
+  checkEq('nested matrix outer length', v7.matrices?.length, 1);
+  checkEq('nested matrix row count', v7.matrices?[0]?.length, 2);
+  checkEq('nested matrix value', v7.matrices?[0]?[1]?[1], 4);
 }
 
 // ─── 4. Nested Structs ─────────────────────────────────────────────────────────
@@ -795,9 +888,24 @@ Future<void> _s07_genericStructs(ComplexTestServiceClient svc) async {
 
   // 7b: Optional (via repo.get result) - tested in section 19
   // 7c: Result - tested via failIntentionally error propagation
-  // 7d: Tree - not directly testable (schema has Tree(Person) in ComplexRequest
-  //     which isn't in echoLists/echoScalars paths)
-  skip('Tree<Person> - only accessible via echo method (ComplexRequest)');
+  // 7d: Tree<Person> generated API and typed AnyPointer payloads.
+  final rootPersonMsg = MessageBuilder();
+  rootPersonMsg.initRoot(personFactory).name = 'TreeRoot';
+  final childPersonMsg = MessageBuilder();
+  childPersonMsg.initRoot(personFactory).name = 'TreeChild';
+  final treeMsg = MessageBuilder();
+  final tree = treeMsg.initRoot(treeFactory);
+  tree.setValueMessage(rootPersonMsg.serialize());
+  final child = tree.initChildren(1)[0];
+  child.setValueMessage(childPersonMsg.serialize());
+  final treeReader =
+      MessageReader.deserialize(treeMsg.serialize()).getRoot(treeFactory);
+  checkEq('Tree<Person> root value',
+      treeReader.value?.asStruct(personFactory)?.name, 'TreeRoot');
+  checkEq(
+      'Tree<Person> child value',
+      treeReader.children?[0].value?.asStruct(personFactory)?.name,
+      'TreeChild');
 
   // 7e: Nested generic via multiple attributes
   final r2 = await svc.echoLists((b) {
@@ -866,9 +974,22 @@ Future<void> _s08_recursive(ComplexTestServiceClient svc) async {
   checkEq(
       'wide tree [9]', r3.value!.people![0].related?[9].person?.name, 'Child9');
 
-  // 8d: ErrorInfo.cause recursive
-  // Not directly sendable without echo method that returns ErrorInfo
-  skip('ErrorInfo.cause recursion - only in ComplexResponse (needs echo)');
+  // 8d: ErrorInfo.cause recursive Optional(ErrorInfo)
+  final causeMsg = MessageBuilder();
+  final cause = causeMsg.initRoot(errorInfoFactory);
+  cause.code = 500;
+  cause.message = 'root cause';
+  final errorMsg = MessageBuilder();
+  final error = errorMsg.initRoot(errorInfoFactory);
+  error.code = 501;
+  error.message = 'wrapper';
+  error.initCause().setSomeMessage(causeMsg.serialize());
+  final errorReader =
+      MessageReader.deserialize(errorMsg.serialize()).getRoot(errorInfoFactory);
+  checkEq('ErrorInfo.cause which', errorReader.cause?.which, 1);
+  checkEq('ErrorInfo.cause code', errorReader.cause?.some?.code, 500);
+  checkEq('ErrorInfo.cause message', errorReader.cause?.some?.message,
+      'root cause');
 }
 
 // ─── 9. AnyPointer ─────────────────────────────────────────────────────────────
@@ -1143,7 +1264,20 @@ Future<void> _s12_capabilityArgs(ComplexTestServiceClient svc) async {
   } catch (e) {
     fail('callObserver', e.toString());
   }
-  skip('multiple callbacks - requires bidirectional cap support');
+
+  final obs2 = _ObserverImpl();
+  try {
+    final r = await svc.callObserver((b) {
+      final events = b.initEvents(2);
+      events[0].name = 'Dave';
+      events[1].name = 'Eve';
+    }, observer: obs2);
+    checkEq('second observer delivered count', r.delivered, 2);
+    checkEq('second observer onNext called twice', obs2.nextCount, 2);
+    check('second observer onComplete called', obs2.completed);
+  } catch (e) {
+    fail('multiple callback capabilities', e.toString());
+  }
 }
 
 // ─── 13. Capability Return Values ─────────────────────────────────────────────
@@ -1224,8 +1358,37 @@ Future<void> _s14_capsInStructs(ComplexTestServiceClient svc) async {
   await target14.dispose();
   await target14b.dispose();
 
-  skip('Capability in Optional - requires AnyPointer support');
-  skip('null capability - not yet distinguished from missing');
+  final optionalCaps = <Object?>[];
+  final observerCodec = CapabilityAnyPointerCodec<ObserverClient>(
+    ObserverClientFactory(),
+    (client) => client.capability,
+  );
+  final optionalMsg = MessageBuilder();
+  optionalMsg
+      .initRoot(capabilityBundleFactory)
+      .initOptionalObserver()
+      .setSomeTyped(
+        observerCodec,
+        ObserverClient(_ObserverImpl()),
+        capabilities: optionalCaps,
+      );
+  final optionalReader = MessageReader.deserialize(optionalMsg.serialize())
+      .getRoot(capabilityBundleFactory, capabilities: optionalCaps);
+  checkEq('Capability in Optional which=some',
+      optionalReader.optionalObserver?.which, 1);
+  checkEq('Capability in Optional cap index',
+      optionalReader.optionalObserver?.someCapIndex, 0);
+  check('Capability in Optional typed cap',
+      optionalReader.optionalObserver?.some != null);
+
+  final noneMsg = MessageBuilder();
+  noneMsg.initRoot(capabilityBundleFactory).initOptionalObserver().selectNone();
+  final noneReader = MessageReader.deserialize(noneMsg.serialize())
+      .getRoot(capabilityBundleFactory);
+  checkEq(
+      'Optional capability none which', noneReader.optionalObserver?.which, 0);
+  check('Optional capability none has no cap',
+      noneReader.optionalObserver?.some == null);
 }
 
 // ─── 15. Promise Pipelining ────────────────────────────────────────────────────
@@ -1359,8 +1522,12 @@ Future<void> _s17_genericMethods(ComplexTestServiceClient svc) async {
     return msg.serialize();
   }
 
-  final cellResult = await factory.newCell(
-      (b) => b.setInitialValueMessage(scalarMessage(11, 'cell initial')));
+  const messageCodec = MessageAnyPointerCodec();
+
+  final cellResult = await factory.newCellTyped(
+    messageCodec,
+    scalarMessage(11, 'cell initial'),
+  );
   final cell = cellResult.cell;
   final cellRead1 = await cell.read((_) {});
   checkEq(
@@ -1376,7 +1543,7 @@ Future<void> _s17_genericMethods(ComplexTestServiceClient svc) async {
     'cell updated',
   );
 
-  final emptyCell = (await factory.newEmptyCell((_) {})).cell;
+  final emptyCell = (await factory.newEmptyCellTyped<Uint8List>()).cell;
   await emptyCell.write(
     (b) => b.setValueMessage(scalarMessage(21, 'empty cell populated')),
   );
@@ -1387,50 +1554,48 @@ Future<void> _s17_genericMethods(ComplexTestServiceClient svc) async {
     21,
   );
 
-  final genericRepo = (await factory.newRepository((_) {})).repository;
+  final genericRepo =
+      (await factory.newRepositoryTyped<Uint8List, Uint8List>()).repository;
   final keyBytes = scalarMessage(31, 'repo key');
   final valueBytes = scalarMessage(32, 'repo value');
   final putGeneric = await genericRepo.put((b) {
-    b.setKeyMessage(keyBytes);
-    b.setValueMessage(valueBytes);
+    b.setKeyTyped(messageCodec, keyBytes);
+    b.setValueTyped(messageCodec, valueBytes);
   });
   check('CapabilityFactory.newRepository<K,V> put', putGeneric.newRevision > 0);
-  final getGeneric = await genericRepo.get((b) => b.setKeyMessage(keyBytes));
+  final getGeneric = await genericRepo.get(
+    (b) => b.setKeyTyped(messageCodec, keyBytes),
+  );
   checkEq('generic repository get is some', getGeneric.result?.which, 1);
   checkEq(
     'generic repository value',
-    getGeneric.result?.some?.asStruct(allScalarsFactory)?.textValue,
+    MessageReader.deserialize(
+      getGeneric.result!.getSomeTyped(messageCodec)!,
+    ).getRoot(allScalarsFactory).textValue,
     'repo value',
   );
   final listGeneric = await genericRepo.list((_) {});
   checkEq('generic repository list length', listGeneric.entries?.length, 1);
   checkEq(
     'generic repository list key',
-    listGeneric.entries?[0].key?.asStruct(allScalarsFactory)?.int32Value,
+    MessageReader.deserialize(
+      listGeneric.entries![0].getKeyTyped(messageCodec)!,
+    ).getRoot(allScalarsFactory).int32Value,
     31,
   );
 
   final target = _PipelineTargetImpl();
-  final capMsg = MessageBuilder();
-  capMsg
-      .initRoot(capabilityFactoryEchoCapabilityParamsFactory)
-      .initCapability()
-      .setCapability(0);
-  final capResult = await factory.capability.dispatch(
-    0xccad478715fb03b0,
-    3,
-    capMsg.serialize(),
-    paramsCapabilities: [target],
+  final targetCodec = CapabilityAnyPointerCodec<PipelineTargetClient>(
+    PipelineTargetClientFactory(),
+    (client) => client.capability,
   );
-  final echoedCap = MessageReader.deserialize(capResult.bytes)
-      .getRoot(
-        capabilityFactoryEchoCapabilityResultsFactory,
-        capabilities: capResult.caps,
-      )
-      .sameCapability
-      ?.asCapability();
-  final echoedTarget = PipelineTargetClient(echoedCap as Capability);
-  final ping = await echoedTarget.ping(
+  final echoedTarget = await factory.echoCapabilityTyped(
+    targetCodec,
+    PipelineTargetClient(target),
+  );
+  check('CapabilityFactory.echoCapability<T> returned typed cap',
+      echoedTarget != null);
+  final ping = await echoedTarget!.ping(
     (b) => b.payload = Uint8List.fromList([17]),
   );
   checkEq('CapabilityFactory.echoCapability<T> returned cap callable',
@@ -1440,12 +1605,17 @@ Future<void> _s17_genericMethods(ComplexTestServiceClient svc) async {
   final scalar = scalarMsg.initRoot(allScalarsFactory);
   scalar.int32Value = 1701;
   scalar.textValue = 'generic echo';
-  final echoed = await svc.echoAnyPointer(
-    (b) => b.setValueMessage(scalarMsg.serialize()),
+  final echoedBytes = await svc.echoAnyPointerTyped(
+    messageCodec,
+    scalarMsg.serialize(),
   );
-  final echoedScalar = echoed.value?.asStruct(allScalarsFactory);
-  check('ComplexTestService.echoAnyPointer<T> returns AnyPointer',
-      echoed.value != null);
+  final echoedScalar = echoedBytes == null
+      ? null
+      : MessageReader.deserialize(echoedBytes).getRoot(allScalarsFactory);
+  check(
+    'ComplexTestService.echoAnyPointer<T> returns typed value',
+    echoedBytes != null,
+  );
   checkEq(
     'ComplexTestService.echoAnyPointer<T> int32',
     echoedScalar?.int32Value,
@@ -1455,6 +1625,22 @@ Future<void> _s17_genericMethods(ComplexTestServiceClient svc) async {
     'ComplexTestService.echoAnyPointer<T> text',
     echoedScalar?.textValue,
     'generic echo',
+  );
+
+  const textListCodec = _TextListAnyPointerCodec();
+  final echoedTextList = await svc.echoAnyPointerTyped(
+    textListCodec,
+    ['alpha', 'beta', 'gamma'],
+  );
+  checkEq(
+    'ComplexTestService.echoAnyPointer<T> list length',
+    echoedTextList?.length,
+    3,
+  );
+  checkEq(
+    'ComplexTestService.echoAnyPointer<T> list value',
+    echoedTextList?[1],
+    'beta',
   );
 }
 
@@ -1467,10 +1653,16 @@ Future<void> _s18_interfaceInheritance(ComplexTestServiceClient svc) async {
   pass('LeftClient class exists');
   pass('RightClient class exists');
   pass('ParentClient class exists');
-  skip('Parent.getName - requires Dart-side Parent impl');
-  skip('Left.left / Right.right - requires Dart-side impl');
 
   final diamond = _DiamondImpl();
+  final diamondClient = DiamondClient(diamond);
+  final name = await diamondClient.getName((_) {});
+  checkEq('Parent.getName via DiamondClient', name.name, 'dart-diamond');
+  final left = await diamondClient.left((b) => b.value = 5);
+  checkEq('Left.left via DiamondClient', left.result, 15);
+  final right = await diamondClient.right((b) => b.value = 5);
+  checkEq('Right.right via DiamondClient', right.result, 25);
+
   try {
     final r = await svc.useDiamond((b) => b.value = 21, diamond: diamond);
     // Rust calls diamond.both(21, 21) → sum=42
@@ -1560,8 +1752,8 @@ Future<void> _s19_repositoryOps(ComplexTestServiceClient svc) async {
     pass('cursor not implemented in server (expected via pipelining)');
   }
 
-  // 19g: watch - requires Dart-side Observer capability
-  skip('watch - requires Dart-side Observer implementation');
+  // 19g: watch - not implemented by the Rust sample server yet.
+  skip('watch - Rust sample server method is not implemented');
 
   await repo19.dispose();
 }
@@ -1570,9 +1762,9 @@ Future<void> _s19_repositoryOps(ComplexTestServiceClient svc) async {
 
 void _s20_subscription() {
   section(20, 'Subscription');
-  skip('watch/subscribe - requires Dart-side Observer implementation');
+  skip('watch/subscribe - Rust sample server method is not implemented');
   skip('cancel subscription - requires subscription from watch');
-  skip('multiple subscribers - requires Dart-side capability');
+  skip('multiple subscribers - requires watch server implementation');
 }
 
 // ─── 21. Streaming ────────────────────────────────────────────────────────────
@@ -1604,16 +1796,38 @@ Future<void> _s21_streaming(ComplexTestServiceClient svc) async {
   } catch (e) {
     fail('ByteSink.finish()', e.toString());
   }
-  skip('ByteSink.abort() - separate sink needed');
 
-  // 21d: openDownload → results struct (ByteSource cap is at ptr 0)
+  // 21d: abort() clears data on a separate upload sink.
+  try {
+    final abortPipeline = svc.openUploadPipeline((b) {
+      b.expectedSize = 3;
+      b.expectedChecksum = Uint8List.fromList([0x00]);
+    });
+    final abortSink = abortPipeline.sink;
+    await abortSink.write((b) => b.chunk = Uint8List.fromList([9, 8, 7]));
+    await abortSink.abort((b) => b.reason = 'client cancelled');
+    final fr = await abortSink.finish((_) {});
+    checkEq('ByteSink.abort() clears buffered bytes', fr.byteCount, 0);
+    await abortSink.dispose();
+  } catch (e) {
+    fail('ByteSink.abort()', e.toString());
+  }
+
+  // 21e: openDownload → ByteSource.pumpTo() with a Dart-side ByteSink cap.
   try {
     final download = await svc.openDownload((b) {
       b.initResourceId().textual = 'test-resource';
     });
     check('openDownload RPC call succeeds', true);
+    final collectingSink = _CollectingByteSink();
+    final pump = await download.source.pumpTo(
+      (b) => b.chunkSize = 4,
+      sink: collectingSink,
+    );
+    checkEq('ByteSource.pumpTo byteCount', pump.byteCount, 13);
+    checkEq('ByteSource.pumpTo collected text',
+        String.fromCharCodes(collectingSink.data), 'test-resource');
     await download.source.dispose();
-    skip('pumpTo - ByteSource cap not yet accessible from generated results');
   } catch (e) {
     fail('openDownload', e.toString());
   }
@@ -1719,9 +1933,6 @@ Future<void> _s23_nullValues(ComplexTestServiceClient svc) async {
 Future<void> _s24_segmentation(ComplexTestServiceClient svc) async {
   section(24, 'Message Segmentation');
 
-  // Note: multi-segment messages are not yet supported by the Dart RPC layer.
-  // Keep message sizes within a single segment (~500KB budget).
-
   // Moderately large binary data
   const bigSize = 8000;
   final bigData = Uint8List(bigSize);
@@ -1761,20 +1972,52 @@ Future<void> _s24_segmentation(ComplexTestServiceClient svc) async {
   } catch (e) {
     fail('multi-segment (>8KB)', e.toString());
   }
+
+  // Large primitive list (>8KB) — exercises multi-segment request and response
+  // payloads through the Rust RPC implementation.
+  const largeListSize = 1500;
+  final r5 = await svc.echoLists((b) {
+    final values = b.initValue().initInt64s(largeListSize);
+    for (int i = 0; i < largeListSize; i++) {
+      values[i] = i * 3;
+    }
+  });
+  final returnedValues = r5.value!.int64s!;
+  checkEq('int64 list 1500 length', returnedValues.length, largeListSize);
+  checkEq('int64 list 1500 [0]', returnedValues[0], 0);
+  checkEq(
+    'int64 list 1500 [1499]',
+    returnedValues[largeListSize - 1],
+    (largeListSize - 1) * 3,
+  );
+
+  // Large Data plus a capability pointer in the same Call payload. The Rust
+  // server calls the capability back with the payload, so this also verifies the
+  // cap table remains aligned after copying a multi-segment payload.
+  final localTarget = _PipelineTargetImpl();
+  final r6 = await svc
+      .probePipelineTarget(
+        (b) => b.payload = largeData,
+        target: localTarget,
+      )
+      .timeout(const Duration(seconds: 2));
+  checkEq(
+    'cap+data 10KB callback length',
+    localTarget.lastPayload?.length,
+    largeSize,
+  );
+  checkEq('cap+data 10KB result length', r6.payload?.length, largeSize);
+  checkEq('cap+data 10KB result [255]', r6.payload?[255], 255);
 }
 
 // ─── 25. Bidirectional Interop ────────────────────────────────────────────────
 
 void _s25_bidirectional() {
   section(25, 'Bidirectional Interop');
-  // The current RPC library supports Dart→Rust calls and receiving capabilities
-  // from Rust. Server-to-client callbacks (Rust→Dart) require Dart-side
-  // capability serving which is not yet implemented.
   pass('Dart→Rust calls work (verified throughout)');
   pass('Rust-returned caps callable from Dart (verified in s13/s16/s19/s21)');
-  skip(
-      'callObserver: Rust→Dart callback - requires server-side Dart capability');
-  skip('Observer.onNext/onError/onComplete from Rust - not yet supported');
+  pass('callObserver: Rust→Dart callback verified in s12');
+  pass('Observer.onNext/onComplete from Rust verified in s12');
 }
 
 // ─── 26. Schema Evolution ─────────────────────────────────────────────────────

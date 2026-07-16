@@ -18,6 +18,8 @@ const int _echoMethodId = 0;
 const int _pipelineMethodId = 1; // returns a capability in caps[0]
 const int _mixedMethodId = 2; // result has non-cap at slot 0, cap at slot 1
 const int _duplicateCapsMethodId = 3; // returns the same cap in two slots
+const int _largeCapResultMethodId = 4; // result has large data + cap
+const int _largeCapParamMethodId = 5; // params have large data + cap
 
 // Simple factory to build param message { message :Text } (ptr 0)
 Uint8List _buildEchoParams(String message) {
@@ -31,6 +33,30 @@ String? _parseEchoResult(Uint8List bytes) {
   final mr = MessageReader.deserialize(bytes);
   final root = mr.getRoot(_TextParamFactory());
   return root.getTextField(0);
+}
+
+int _segmentCount(Uint8List bytes) =>
+    ByteData.sublistView(bytes, 0, 4).getUint32(0, Endian.little) + 1;
+
+Uint8List _largeData(int size) =>
+    Uint8List.fromList(List<int>.generate(size, (i) => i & 0xff));
+
+Uint8List _buildLargeDataParams(int size) {
+  final mb = MessageBuilder();
+  mb.initRoot(_TextParamFactory()).setDataField(0, _largeData(size));
+  final bytes = mb.serialize();
+  expect(_segmentCount(bytes), greaterThan(1));
+  return bytes;
+}
+
+Uint8List _buildLargeDataAndCapResult(int size) {
+  final mb = MessageBuilder();
+  final root = mb.initRoot(_TwoPtrFactory());
+  root.setDataField(0, _largeData(size));
+  root.setCapabilityField(1, 0);
+  final bytes = mb.serialize();
+  expect(_segmentCount(bytes), greaterThan(1));
+  return bytes;
 }
 
 // A minimal StructFactory for a struct with 0 dataWords and 1 ptrWord (Text).
@@ -267,6 +293,52 @@ class DuplicateCapsServer extends Capability {
     if (methodId == _echoMethodId) {
       return DispatchResult(bytes: _buildEchoParams('ok'));
     }
+    throw RpcException('unknown method: $methodId');
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
+class LargeCapabilityPayloadServer extends Capability {
+  final Capability child = EchoServer();
+  int? lastDataLength;
+  String? lastParamCapReply;
+
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) async {
+    if (methodId == _largeCapResultMethodId) {
+      return DispatchResult(
+        bytes: _buildLargeDataAndCapResult(10000),
+        caps: [child],
+      );
+    }
+
+    if (methodId == _largeCapParamMethodId) {
+      final root = MessageReader.deserialize(params).getRoot(_TwoPtrFactory());
+      lastDataLength = root.getDataField(0)?.length;
+      final cap = root.getCapabilityField(1);
+      if (cap != 0 || paramsCapabilities.isEmpty) {
+        throw RpcException('large cap param did not carry capability');
+      }
+      final reply = await paramsCapabilities[0].dispatch(
+        _echoInterfaceId,
+        _echoMethodId,
+        _buildEchoParams('from server'),
+      );
+      lastParamCapReply = _parseEchoResult(reply.bytes);
+      return DispatchResult(bytes: _buildEchoParams('ok'));
+    }
+
+    if (methodId == _echoMethodId) {
+      return DispatchResult(bytes: _buildEchoParams('ok'));
+    }
+
     throw RpcException('unknown method: $methodId');
   }
 
@@ -844,6 +916,68 @@ void main() {
       await interceptSink.close();
     });
 
+    test(
+      'multi-segment result with capability pointer returns callable cap',
+      () async {
+        final server = LargeCapabilityPayloadServer();
+        final (client, serverConn) = _makePipe(server);
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        await bootstrapCap.echo('warmup');
+
+        final result = await bootstrapCap.cap.dispatch(
+          _echoInterfaceId,
+          _largeCapResultMethodId,
+          _buildEchoParams(''),
+        );
+        final root = MessageReader.deserialize(
+          result.bytes,
+        ).getRoot(_TwoPtrFactory());
+
+        expect(_segmentCount(result.bytes), greaterThan(1));
+        expect(root.getDataField(0), orderedEquals(_largeData(10000)));
+        expect(root.getCapabilityField(1), equals(0));
+
+        final returnedCap = requireCapabilityFromResult(result, 1);
+        final reply = await returnedCap.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          _buildEchoParams('through returned cap'),
+        );
+        expect(
+          _parseEchoResult(reply.bytes),
+          equals('echo: through returned cap'),
+        );
+
+        await client.close();
+        await serverConn.close();
+      },
+    );
+
+    test(
+      'multi-segment params with capability pointer deliver callable cap',
+      () async {
+        final server = LargeCapabilityPayloadServer();
+        final (client, serverConn) = _makePipe(server);
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        await bootstrapCap.echo('warmup');
+
+        final localCap = EchoServer();
+        final result = await bootstrapCap.cap.dispatch(
+          _echoInterfaceId,
+          _largeCapParamMethodId,
+          _buildLargeDataAndCapResult(10000),
+          paramsCapabilities: [localCap],
+        );
+
+        expect(_parseEchoResult(result.bytes), equals('ok'));
+        expect(server.lastDataLength, equals(10000));
+        expect(server.lastParamCapReply, equals('echo: from server'));
+
+        await client.close();
+        await serverConn.close();
+      },
+    );
+
     test('invalid result pointer is preserved for resolved pipeline', () async {
       final server = MixedResultServer();
       final (client, serverConn) = _makePipe(server);
@@ -1096,6 +1230,27 @@ void main() {
       expect(paramsMr.getRoot(_TextParamFactory()).getTextField(0), 'hello');
     });
 
+    test('call params round-trip multi-segment payload semantics', () {
+      final params = _buildLargeDataParams(10000);
+
+      final bytes = buildCallMessage(
+        questionId: 8,
+        targetImportId: 3,
+        interfaceId: 0xDEADBEEF,
+        methodId: 5,
+        paramsBytes: params,
+      );
+      expect(_segmentCount(bytes), greaterThan(1));
+
+      final msg = parseRpcMessage(bytes);
+      final decoded = MessageReader.deserialize(
+        msg.paramsBytes!,
+      ).getRoot(_TextParamFactory());
+
+      expect(_segmentCount(msg.paramsBytes!), greaterThan(1));
+      expect(decoded.getDataField(0), orderedEquals(_largeData(10000)));
+    });
+
     test('return results round-trip', () {
       // Build a valid Cap'n Proto message to use as results.
       final mb = MessageBuilder();
@@ -1114,6 +1269,48 @@ void main() {
       final resultsMr = MessageReader.deserialize(msg.resultsBytes!);
       expect(resultsMr.getRoot(_TextParamFactory()).getTextField(0), 'world');
     });
+
+    test('return results round-trip multi-segment payload semantics', () {
+      final results = _buildLargeDataParams(10000);
+
+      final bytes = buildReturnResultsMessage(
+        answerId: 100,
+        resultsBytes: results,
+      );
+      expect(_segmentCount(bytes), greaterThan(1));
+
+      final msg = parseRpcMessage(bytes);
+      final decoded = MessageReader.deserialize(
+        msg.resultsBytes!,
+      ).getRoot(_TextParamFactory());
+
+      expect(_segmentCount(msg.resultsBytes!), greaterThan(1));
+      expect(decoded.getDataField(0), orderedEquals(_largeData(10000)));
+    });
+
+    test(
+      'return results preserve capability pointers with multi-segment payload',
+      () {
+        final results = _buildLargeDataAndCapResult(10000);
+
+        final bytes = buildReturnResultsWithCapsMessage(
+          answerId: 101,
+          resultsBytes: results,
+          exportIds: const [123],
+        );
+        expect(_segmentCount(bytes), greaterThan(1));
+
+        final msg = parseRpcMessage(bytes);
+        final decoded = MessageReader.deserialize(
+          msg.resultsBytes!,
+        ).getRoot(_TwoPtrFactory());
+
+        expect(_segmentCount(msg.resultsBytes!), greaterThan(1));
+        expect(decoded.getDataField(0), orderedEquals(_largeData(10000)));
+        expect(decoded.getCapabilityField(1), equals(0));
+        expect(msg.capTableExportIds, equals([123]));
+      },
+    );
 
     test('return exception round-trip', () {
       final bytes = buildReturnExceptionMessage(

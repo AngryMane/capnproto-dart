@@ -331,6 +331,135 @@ void _writeClientMethod(
     );
     sb.writeln('  }');
   }
+
+  _writeTypedClientMethod(
+    sb,
+    ifaceName,
+    methodName,
+    paramsName,
+    resultsName,
+    paramsNode,
+    resultsNode,
+    asyncReturnType,
+    hasPipeline,
+    ifaceId,
+    ordinal,
+  );
+}
+
+void _writeTypedClientMethod(
+  StringBuffer sb,
+  String ifaceName,
+  String methodName,
+  String paramsName,
+  String resultsName,
+  SchemaNode? paramsNode,
+  SchemaNode? resultsNode,
+  String asyncReturnType,
+  bool hasPipeline,
+  String ifaceId,
+  int ordinal,
+) {
+  final typeParams =
+      paramsNode?.parameters.isNotEmpty == true
+          ? paramsNode!.parameters
+          : resultsNode?.parameters ?? const <String>[];
+  if (typeParams.isEmpty) return;
+
+  final paramFields = _collectDirectTypeParamFields(paramsNode);
+  final resultFields = _collectDirectTypeParamFields(resultsNode);
+  final codecParamIndexes = <int>{
+    for (final f in paramFields) f.$2,
+    for (final f in resultFields) f.$2,
+  };
+
+  final genericNames = [
+    for (var i = 0; i < typeParams.length; i++)
+      _genericTypeParamName(typeParams[i], i),
+  ];
+  final genericDecl = '<${genericNames.join(', ')}>';
+  final args = <String>[];
+  for (final i in codecParamIndexes.toList()..sort()) {
+    args.add(
+      'AnyPointerCodec<${genericNames[i]}> ${_lcfirst(genericNames[i])}Codec',
+    );
+  }
+  for (final (fieldName, paramIndex) in paramFields) {
+    args.add('${genericNames[paramIndex]} ${_camel(fieldName)}');
+  }
+
+  final typedMethodName = '${methodName}Typed';
+  final returnType =
+      !hasPipeline && resultFields.length == 1
+          ? '${genericNames[resultFields.single.$2]}?'
+          : asyncReturnType;
+
+  sb.writeln();
+  if (args.isEmpty) {
+    sb.writeln('  Future<$returnType> $typedMethodName$genericDecl() async {');
+  } else {
+    sb.writeln(
+      '  Future<$returnType> $typedMethodName$genericDecl(${args.join(', ')}) async {',
+    );
+  }
+  sb.writeln('    final mb = MessageBuilder();');
+  sb.writeln('    final b = mb.initRoot(${_lcfirst(paramsName)}Factory);');
+  sb.writeln('    final typedCapabilities = <Capability>[];');
+  for (final (fieldName, paramIndex) in paramFields) {
+    final ucField = _ucfirst(_camel(fieldName));
+    final typeName = genericNames[paramIndex];
+    sb.writeln(
+      '    b.set${ucField}Typed(${_lcfirst(typeName)}Codec, ${_camel(fieldName)}, capabilities: typedCapabilities);',
+    );
+  }
+  sb.writeln(
+    '    final dispatchResult = await _cap.dispatch($ifaceId, $ordinal, mb.serialize(), paramsCapabilities: typedCapabilities);',
+  );
+  if (hasPipeline) {
+    sb.writeln('    return $asyncReturnType._(dispatchResult);');
+  } else {
+    sb.writeln(
+      '    final result = MessageReader.deserialize(dispatchResult.bytes).getRoot(${_lcfirst(resultsName)}Factory, capabilities: dispatchResult.caps);',
+    );
+  }
+  if (!hasPipeline && resultFields.length == 1) {
+    final (fieldName, paramIndex) = resultFields.single;
+    final ucField = _ucfirst(_camel(fieldName));
+    final typeName = genericNames[paramIndex];
+    sb.writeln(
+      '    return result.get${ucField}Typed(${_lcfirst(typeName)}Codec);',
+    );
+  } else if (!hasPipeline) {
+    sb.writeln('    return result;');
+  }
+  sb.writeln('  }');
+
+  if (hasPipeline) {
+    final pipelineName = '$ifaceName${_ucfirst(methodName)}Pipeline';
+    final pipelineMethodName = '${methodName}TypedPipeline';
+    sb.writeln();
+    if (args.isEmpty) {
+      sb.writeln('  $pipelineName $pipelineMethodName$genericDecl() {');
+    } else {
+      sb.writeln(
+        '  $pipelineName $pipelineMethodName$genericDecl(${args.join(', ')}) {',
+      );
+    }
+    sb.writeln('    final mb = MessageBuilder();');
+    sb.writeln('    final b = mb.initRoot(${_lcfirst(paramsName)}Factory);');
+    sb.writeln('    final typedCapabilities = <Capability>[];');
+    for (final (fieldName, paramIndex) in paramFields) {
+      final ucField = _ucfirst(_camel(fieldName));
+      final typeName = genericNames[paramIndex];
+      sb.writeln(
+        '    b.set${ucField}Typed(${_lcfirst(typeName)}Codec, ${_camel(fieldName)}, capabilities: typedCapabilities);',
+      );
+    }
+    sb.writeln(
+      '    return $pipelineName._(_cap.beginDispatch($ifaceId, $ordinal, mb.serialize(), paramsCapabilities: typedCapabilities));',
+    );
+    sb.writeln('  }');
+  }
 }
 
 /// Returns the [InterfaceRefType] fields (sorted by codeOrder) in [paramsNode]
@@ -506,6 +635,37 @@ List<(int, String, int)> _collectCapResults(SchemaNode? resultsNode) {
     }
   }
   return result;
+}
+
+List<(String, int)> _collectDirectTypeParamFields(SchemaNode? node) {
+  if (node == null) return const [];
+  final body = node.body;
+  if (body is! StructBody) return const [];
+
+  final fields = [...body.fields]
+    ..sort((a, b) => a.codeOrder.compareTo(b.codeOrder));
+  final result = <(String, int)>[];
+  for (final field in fields) {
+    final fieldBody = field.body;
+    if (fieldBody is! SlotField) continue;
+    final type = fieldBody.type;
+    if (type is TypeParameterRefType) {
+      result.add((field.name, type.parameterIndex));
+    }
+  }
+  return result;
+}
+
+String _genericTypeParamName(String raw, int index) {
+  final fallback = 'T$index';
+  final base = raw.isEmpty ? fallback : _dartClassName(raw);
+  final cleaned = base.replaceAll(RegExp(r'[^A-Za-z0-9_]'), '');
+  if (cleaned.isEmpty) return fallback;
+  final first = cleaned.codeUnitAt(0);
+  final startsWithLetter =
+      (first >= 65 && first <= 90) || (first >= 97 && first <= 122);
+  final name = startsWithLetter ? cleaned : '$fallback$cleaned';
+  return _ucfirst(name);
 }
 
 /// Emits `XxxResult` and `XxxPipeline` classes for [method] if its result
@@ -818,6 +978,12 @@ void _writeReaderField(
     sf.defaultValue,
   );
   sb.writeln('  $dartType get $fname => $getter;');
+  if (type is AnyPointerType || type is TypeParameterRefType) {
+    sb.writeln();
+    sb.writeln(
+      '  T? get${_ucfirst(fname)}Typed<T>(AnyPointerCodec<T> codec) => codec.decode($fname);',
+    );
+  }
   if (type is ListType && type.elementType is InterfaceRefType) {
     sb.writeln();
     sb.writeln(
@@ -982,6 +1148,17 @@ void _writeBuilderPointerField(
       '      setAnyPointerFromMessage($offset, v, preserveCapabilityPointers: true);',
     );
     sb.writeln('    }');
+    sb.writeln('  }');
+    sb.writeln();
+    sb.writeln('  void set${ucfname}Typed<T>(');
+    sb.writeln('    AnyPointerCodec<T> codec,');
+    sb.writeln('    T value,');
+    sb.writeln('    {List<Object?>? capabilities}');
+    sb.writeln('  ) {');
+    if (hasDisc) sb.write(setDisc);
+    sb.writeln(
+      '    codec.encode(init$ucfname(), value, capabilities: capabilities);',
+    );
     sb.writeln('  }');
   } else if (type is InterfaceRefType) {
     final ucfname = _ucfirst(fname);

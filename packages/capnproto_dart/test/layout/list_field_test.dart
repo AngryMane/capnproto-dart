@@ -23,8 +23,9 @@ import 'package:test/test.dart';
 //   texts    @4  :List(Text);
 //   dataList @5  :List(Data);
 //   items    @6  :List(Item);
+//   voids    @7  :List(Void);
 // }
-// Layout: dataWords=0, ptrWords=7
+// Layout: dataWords=0, ptrWords=8
 //
 // struct Item { value @0 :Int32; label @1 :Text; }
 // Layout: dataWords=1, ptrWords=1
@@ -69,6 +70,7 @@ class ContainerReader extends StructReader {
   ListReader<Uint8List?>? get dataList => getDataListField(5);
   ListReader<ItemReader>? get items =>
       getStructListFieldWith(6, (r) => ItemReader(r));
+  ListReader<Null>? get voids => getVoidListField(7);
 }
 
 class ContainerBuilder extends StructBuilder {
@@ -82,6 +84,7 @@ class ContainerBuilder extends StructBuilder {
   ListBuilder<Uint8List?> initDataList(int n) => initDataListField(5, n);
   ListBuilder<ItemBuilder> initItems(int n) =>
       initStructListFieldWith(6, n, (r) => ItemBuilder(r), 1, 1);
+  ListBuilder<Null> initVoids(int n) => initVoidListField(7, n);
 
   @override
   ContainerReader asReader() => throw UnimplementedError();
@@ -92,7 +95,7 @@ class _ContainerFactory
   @override
   int get dataWords => 0;
   @override
-  int get ptrWords => 7;
+  int get ptrWords => 8;
   @override
   ContainerReader fromRawReader(RawStructReader r) => ContainerReader(r);
   @override
@@ -269,6 +272,21 @@ void main() {
 
       expect(reader.caps!.toList(), equals([1, 0]));
       expect(reader.typedCaps!.toList(), equals(['bravo', 'alpha']));
+    });
+  });
+
+  group('Void list', () {
+    test('non-empty List(Void) preserves count', () {
+      final result = _rt((b) {
+        final list = b.initVoids(4);
+        expect(list.length, equals(4));
+        expect(list[0], isNull);
+      }, (r) => r.voids!.length);
+      expect(result, equals(4));
+    });
+
+    test('empty List(Void) has length 0', () {
+      expect(_rt((b) => b.initVoids(0), (r) => r.voids!.length), equals(0));
     });
   });
 

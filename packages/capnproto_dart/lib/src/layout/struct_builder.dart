@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import '../arena/arena_builder.dart';
 import '../arena/arena_reader.dart' show ArenaReader, RawStructReader;
-import '../message/message_copy.dart' show ensureSingleSegment;
+import '../message/message_copy.dart' show copyMessageRootToBuilder;
 import '../wire/pointer.dart' show ListElementSize, CapabilityPointer;
 import '../wire/wire_helpers.dart';
 import 'any_pointer.dart';
@@ -188,13 +188,12 @@ abstract class StructBuilder {
     Uint8List messageBytes, {
     bool preserveCapabilityPointers = false,
   }) {
-    _raw.arena.writeAnyPointerFromMessage(
+    copyMessageRootToBuilder(
+      messageBytes,
+      _raw.arena,
       _raw.segment,
       _raw.ptrWordOffset + ptrIndex,
-      ensureSingleSegment(
-        messageBytes,
-        preserveCapabilityPointers: preserveCapabilityPointers,
-      ),
+      preserveCapabilityPointers: preserveCapabilityPointers,
     );
   }
 

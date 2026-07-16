@@ -1187,7 +1187,11 @@ final class KeyValueReader extends StructReader {
 
   AnyPointerReader? get key => getAnyPointerField(0);
 
+  T? getKeyTyped<T>(AnyPointerCodec<T> codec) => codec.decode(key);
+
   AnyPointerReader? get value => getAnyPointerField(1);
+
+  T? getValueTyped<T>(AnyPointerCodec<T> codec) => codec.decode(value);
 }
 
 final class KeyValueBuilder extends StructBuilder {
@@ -1210,6 +1214,14 @@ final class KeyValueBuilder extends StructBuilder {
     }
   }
 
+  void setKeyTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    codec.encode(initKey(), value, capabilities: capabilities);
+  }
+
   AnyPointerBuilder initValue() {
     return initAnyPointerField(1);
   }
@@ -1222,6 +1234,14 @@ final class KeyValueBuilder extends StructBuilder {
     if (v != null) {
       setAnyPointerFromMessage(1, v, preserveCapabilityPointers: true);
     }
+  }
+
+  void setValueTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    codec.encode(initValue(), value, capabilities: capabilities);
   }
 }
 
@@ -1275,6 +1295,8 @@ final class OptionalReader extends StructReader {
   int get which => getUint16Field(0);
 
   AnyPointerReader? get some => getAnyPointerField(0);
+
+  T? getSomeTyped<T>(AnyPointerCodec<T> codec) => codec.decode(some);
 }
 
 final class OptionalBuilder extends StructBuilder {
@@ -1304,6 +1326,15 @@ final class OptionalBuilder extends StructBuilder {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
     }
+  }
+
+  void setSomeTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    setUint16Field(0, 1);
+    codec.encode(initSome(), value, capabilities: capabilities);
   }
 }
 
@@ -1364,7 +1395,11 @@ final class ResultReader extends StructReader {
 
   AnyPointerReader? get ok => getAnyPointerField(0);
 
+  T? getOkTyped<T>(AnyPointerCodec<T> codec) => codec.decode(ok);
+
   AnyPointerReader? get err => getAnyPointerField(0);
+
+  T? getErrTyped<T>(AnyPointerCodec<T> codec) => codec.decode(err);
 }
 
 final class ResultBuilder extends StructBuilder {
@@ -1392,6 +1427,15 @@ final class ResultBuilder extends StructBuilder {
     }
   }
 
+  void setOkTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    setUint16Field(0, 0);
+    codec.encode(initOk(), value, capabilities: capabilities);
+  }
+
   AnyPointerBuilder initErr() {
     setUint16Field(0, 1);
     return initAnyPointerField(0);
@@ -1407,6 +1451,15 @@ final class ResultBuilder extends StructBuilder {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
     }
+  }
+
+  void setErrTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    setUint16Field(0, 1);
+    codec.encode(initErr(), value, capabilities: capabilities);
   }
 }
 
@@ -1461,6 +1514,8 @@ final class TreeReader extends StructReader {
 
   AnyPointerReader? get value => getAnyPointerField(0);
 
+  T? getValueTyped<T>(AnyPointerCodec<T> codec) => codec.decode(value);
+
   ListReader<TreeReader>? get children => getStructListFieldWith(
     1,
     (r) => TreeReader(r, capabilities: capabilityTable),
@@ -1485,6 +1540,14 @@ final class TreeBuilder extends StructBuilder {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
     }
+  }
+
+  void setValueTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    codec.encode(initValue(), value, capabilities: capabilities);
   }
 
   ListBuilder<TreeBuilder> initChildren(int length) {
@@ -1982,6 +2045,8 @@ final class DynamicEnvelopeReader extends StructReader {
 
   AnyPointerReader? get payload => getAnyPointerField(1);
 
+  T? getPayloadTyped<T>(AnyPointerCodec<T> codec) => codec.decode(payload);
+
   ListReader<KeyValueTextTextReader>? get metadata => getStructListFieldWith(
     2,
     (r) => KeyValueTextTextReader(r, capabilities: capabilityTable),
@@ -2010,6 +2075,14 @@ final class DynamicEnvelopeBuilder extends StructBuilder {
     if (v != null) {
       setAnyPointerFromMessage(1, v, preserveCapabilityPointers: true);
     }
+  }
+
+  void setPayloadTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    codec.encode(initPayload(), value, capabilities: capabilities);
   }
 
   ListBuilder<KeyValueBuilder> initMetadata(int length) {
@@ -2087,6 +2160,8 @@ final class ObserverOnNextParamsReader extends StructReader {
   int get sequence => getUint64Field(0);
 
   AnyPointerReader? get event => getAnyPointerField(0);
+
+  T? getEventTyped<T>(AnyPointerCodec<T> codec) => codec.decode(event);
 }
 
 final class ObserverOnNextParamsBuilder extends StructBuilder {
@@ -2112,6 +2187,14 @@ final class ObserverOnNextParamsBuilder extends StructBuilder {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
     }
+  }
+
+  void setEventTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    codec.encode(initEvent(), value, capabilities: capabilities);
   }
 }
 
@@ -2222,6 +2305,8 @@ final class ObserverOnErrorParamsReader extends StructReader {
   String? get message => getTextField(0);
 
   AnyPointerReader? get detail => getAnyPointerField(1);
+
+  T? getDetailTyped<T>(AnyPointerCodec<T> codec) => codec.decode(detail);
 }
 
 final class ObserverOnErrorParamsBuilder extends StructBuilder {
@@ -2251,6 +2336,14 @@ final class ObserverOnErrorParamsBuilder extends StructBuilder {
     if (v != null) {
       setAnyPointerFromMessage(1, v, preserveCapabilityPointers: true);
     }
+  }
+
+  void setDetailTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    codec.encode(initDetail(), value, capabilities: capabilities);
   }
 }
 
@@ -2745,6 +2838,8 @@ final class ReadableReadResultsReader extends StructReader {
 
   AnyPointerReader? get value => getAnyPointerField(0);
 
+  T? getValueTyped<T>(AnyPointerCodec<T> codec) => codec.decode(value);
+
   int get revision => getUint64Field(0);
 }
 
@@ -2767,6 +2862,14 @@ final class ReadableReadResultsBuilder extends StructBuilder {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
     }
+  }
+
+  void setValueTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    codec.encode(initValue(), value, capabilities: capabilities);
   }
 
   set revision(int v) {
@@ -2828,6 +2931,8 @@ final class WritableWriteParamsReader extends StructReader {
 
   AnyPointerReader? get value => getAnyPointerField(0);
 
+  T? getValueTyped<T>(AnyPointerCodec<T> codec) => codec.decode(value);
+
   int get expectedRevision => getUint64Field(0);
 }
 
@@ -2850,6 +2955,14 @@ final class WritableWriteParamsBuilder extends StructBuilder {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
     }
+  }
+
+  void setValueTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    codec.encode(initValue(), value, capabilities: capabilities);
   }
 
   set expectedRevision(int v) {
@@ -2975,7 +3088,12 @@ final class ReadWriteCompareAndSwapParamsReader extends StructReader {
 
   AnyPointerReader? get expected => getAnyPointerField(0);
 
+  T? getExpectedTyped<T>(AnyPointerCodec<T> codec) => codec.decode(expected);
+
   AnyPointerReader? get replacement => getAnyPointerField(1);
+
+  T? getReplacementTyped<T>(AnyPointerCodec<T> codec) =>
+      codec.decode(replacement);
 }
 
 final class ReadWriteCompareAndSwapParamsBuilder extends StructBuilder {
@@ -2999,6 +3117,14 @@ final class ReadWriteCompareAndSwapParamsBuilder extends StructBuilder {
     }
   }
 
+  void setExpectedTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    codec.encode(initExpected(), value, capabilities: capabilities);
+  }
+
   AnyPointerBuilder initReplacement() {
     return initAnyPointerField(1);
   }
@@ -3011,6 +3137,14 @@ final class ReadWriteCompareAndSwapParamsBuilder extends StructBuilder {
     if (v != null) {
       setAnyPointerFromMessage(1, v, preserveCapabilityPointers: true);
     }
+  }
+
+  void setReplacementTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    codec.encode(initReplacement(), value, capabilities: capabilities);
   }
 }
 
@@ -3071,6 +3205,8 @@ final class ReadWriteCompareAndSwapResultsReader extends StructReader {
 
   AnyPointerReader? get actual => getAnyPointerField(0);
 
+  T? getActualTyped<T>(AnyPointerCodec<T> codec) => codec.decode(actual);
+
   int get revision => getUint64Field(8);
 }
 
@@ -3097,6 +3233,14 @@ final class ReadWriteCompareAndSwapResultsBuilder extends StructBuilder {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
     }
+  }
+
+  void setActualTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    codec.encode(initActual(), value, capabilities: capabilities);
   }
 
   set revision(int v) {
@@ -3171,6 +3315,8 @@ final class CursorResultReader extends StructReader {
   int get which => getUint16Field(0);
 
   AnyPointerReader? get value => getAnyPointerField(0);
+
+  T? getValueTyped<T>(AnyPointerCodec<T> codec) => codec.decode(value);
 }
 
 final class CursorResultBuilder extends StructBuilder {
@@ -3200,6 +3346,15 @@ final class CursorResultBuilder extends StructBuilder {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
     }
+  }
+
+  void setValueTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    setUint16Field(0, 1);
+    codec.encode(initValue(), value, capabilities: capabilities);
   }
 }
 
@@ -3371,6 +3526,8 @@ final class RepositoryGetParamsReader extends StructReader {
   static const StructSchemaInfo schema = repositoryGetParamsSchema;
 
   AnyPointerReader? get key => getAnyPointerField(0);
+
+  T? getKeyTyped<T>(AnyPointerCodec<T> codec) => codec.decode(key);
 }
 
 final class RepositoryGetParamsBuilder extends StructBuilder {
@@ -3392,6 +3549,14 @@ final class RepositoryGetParamsBuilder extends StructBuilder {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
     }
+  }
+
+  void setKeyTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    codec.encode(initKey(), value, capabilities: capabilities);
   }
 }
 
@@ -3525,7 +3690,11 @@ final class RepositoryPutParamsReader extends StructReader {
 
   AnyPointerReader? get key => getAnyPointerField(0);
 
+  T? getKeyTyped<T>(AnyPointerCodec<T> codec) => codec.decode(key);
+
   AnyPointerReader? get value => getAnyPointerField(1);
+
+  T? getValueTyped<T>(AnyPointerCodec<T> codec) => codec.decode(value);
 
   int get expectedRevision => getUint64Field(0);
 }
@@ -3551,6 +3720,14 @@ final class RepositoryPutParamsBuilder extends StructBuilder {
     }
   }
 
+  void setKeyTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    codec.encode(initKey(), value, capabilities: capabilities);
+  }
+
   AnyPointerBuilder initValue() {
     return initAnyPointerField(1);
   }
@@ -3563,6 +3740,14 @@ final class RepositoryPutParamsBuilder extends StructBuilder {
     if (v != null) {
       setAnyPointerFromMessage(1, v, preserveCapabilityPointers: true);
     }
+  }
+
+  void setValueTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    codec.encode(initValue(), value, capabilities: capabilities);
   }
 
   set expectedRevision(int v) {
@@ -3715,6 +3900,8 @@ final class RepositoryRemoveParamsReader extends StructReader {
 
   AnyPointerReader? get key => getAnyPointerField(0);
 
+  T? getKeyTyped<T>(AnyPointerCodec<T> codec) => codec.decode(key);
+
   int get expectedRevision => getUint64Field(0);
 }
 
@@ -3737,6 +3924,14 @@ final class RepositoryRemoveParamsBuilder extends StructBuilder {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
     }
+  }
+
+  void setKeyTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    codec.encode(initKey(), value, capabilities: capabilities);
   }
 
   set expectedRevision(int v) {
@@ -4776,6 +4971,9 @@ final class CapabilityFactoryNewCellParamsReader extends StructReader {
   static const StructSchemaInfo schema = capabilityFactoryNewCellParamsSchema;
 
   AnyPointerReader? get initialValue => getAnyPointerField(0);
+
+  T? getInitialValueTyped<T>(AnyPointerCodec<T> codec) =>
+      codec.decode(initialValue);
 }
 
 final class CapabilityFactoryNewCellParamsBuilder extends StructBuilder {
@@ -4797,6 +4995,14 @@ final class CapabilityFactoryNewCellParamsBuilder extends StructBuilder {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
     }
+  }
+
+  void setInitialValueTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    codec.encode(initInitialValue(), value, capabilities: capabilities);
   }
 }
 
@@ -5201,6 +5407,9 @@ final class CapabilityFactoryEchoCapabilityParamsReader extends StructReader {
       capabilityFactoryEchoCapabilityParamsSchema;
 
   AnyPointerReader? get capability => getAnyPointerField(0);
+
+  T? getCapabilityTyped<T>(AnyPointerCodec<T> codec) =>
+      codec.decode(capability);
 }
 
 final class CapabilityFactoryEchoCapabilityParamsBuilder extends StructBuilder {
@@ -5222,6 +5431,14 @@ final class CapabilityFactoryEchoCapabilityParamsBuilder extends StructBuilder {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
     }
+  }
+
+  void setCapabilityTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    codec.encode(initCapability(), value, capabilities: capabilities);
   }
 }
 
@@ -5285,6 +5502,9 @@ final class CapabilityFactoryEchoCapabilityResultsReader extends StructReader {
       capabilityFactoryEchoCapabilityResultsSchema;
 
   AnyPointerReader? get sameCapability => getAnyPointerField(0);
+
+  T? getSameCapabilityTyped<T>(AnyPointerCodec<T> codec) =>
+      codec.decode(sameCapability);
 }
 
 final class CapabilityFactoryEchoCapabilityResultsBuilder
@@ -5307,6 +5527,14 @@ final class CapabilityFactoryEchoCapabilityResultsBuilder
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
     }
+  }
+
+  void setSameCapabilityTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    codec.encode(initSameCapability(), value, capabilities: capabilities);
   }
 }
 
@@ -5438,6 +5666,8 @@ final class CapabilityFactoryGetUntypedResultsReader extends StructReader {
       capabilityFactoryGetUntypedResultsSchema;
 
   AnyPointerReader? get value => getAnyPointerField(0);
+
+  T? getValueTyped<T>(AnyPointerCodec<T> codec) => codec.decode(value);
 }
 
 final class CapabilityFactoryGetUntypedResultsBuilder extends StructBuilder {
@@ -5459,6 +5689,14 @@ final class CapabilityFactoryGetUntypedResultsBuilder extends StructBuilder {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
     }
+  }
+
+  void setValueTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    codec.encode(initValue(), value, capabilities: capabilities);
   }
 }
 
@@ -6837,6 +7075,8 @@ final class ComplexResponseReader extends StructReader {
   int get serverCapabilityCapIndex => getCapabilityField(4);
 
   AnyPointerReader? get extra => getAnyPointerField(5);
+
+  T? getExtraTyped<T>(AnyPointerCodec<T> codec) => codec.decode(extra);
 }
 
 final class ComplexResponseBuilder extends StructBuilder {
@@ -6891,6 +7131,14 @@ final class ComplexResponseBuilder extends StructBuilder {
     if (v != null) {
       setAnyPointerFromMessage(5, v, preserveCapabilityPointers: true);
     }
+  }
+
+  void setExtraTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    codec.encode(initExtra(), value, capabilities: capabilities);
   }
 }
 
@@ -7733,6 +7981,8 @@ final class ComplexTestServiceEchoAnyPointerParamsReader extends StructReader {
       complexTestServiceEchoAnyPointerParamsSchema;
 
   AnyPointerReader? get value => getAnyPointerField(0);
+
+  T? getValueTyped<T>(AnyPointerCodec<T> codec) => codec.decode(value);
 }
 
 final class ComplexTestServiceEchoAnyPointerParamsBuilder
@@ -7755,6 +8005,14 @@ final class ComplexTestServiceEchoAnyPointerParamsBuilder
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
     }
+  }
+
+  void setValueTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    codec.encode(initValue(), value, capabilities: capabilities);
   }
 }
 
@@ -7821,6 +8079,8 @@ final class ComplexTestServiceEchoAnyPointerResultsReader extends StructReader {
       complexTestServiceEchoAnyPointerResultsSchema;
 
   AnyPointerReader? get value => getAnyPointerField(0);
+
+  T? getValueTyped<T>(AnyPointerCodec<T> codec) => codec.decode(value);
 }
 
 final class ComplexTestServiceEchoAnyPointerResultsBuilder
@@ -7843,6 +8103,14 @@ final class ComplexTestServiceEchoAnyPointerResultsBuilder
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
     }
+  }
+
+  void setValueTyped<T>(
+    AnyPointerCodec<T> codec,
+    T value, {
+    List<Object?>? capabilities,
+  }) {
+    codec.encode(initValue(), value, capabilities: capabilities);
   }
 }
 
@@ -12219,6 +12487,49 @@ class CapabilityFactoryClient extends Capability {
     );
   }
 
+  Future<CapabilityFactoryNewCellResult> newCellTyped<Value>(
+    AnyPointerCodec<Value> valueCodec,
+    Value initialValue,
+  ) async {
+    final mb = MessageBuilder();
+    final b = mb.initRoot(capabilityFactoryNewCellParamsFactory);
+    final typedCapabilities = <Capability>[];
+    b.setInitialValueTyped(
+      valueCodec,
+      initialValue,
+      capabilities: typedCapabilities,
+    );
+    final dispatchResult = await _cap.dispatch(
+      0xccad478715fb03b0,
+      0,
+      mb.serialize(),
+      paramsCapabilities: typedCapabilities,
+    );
+    return CapabilityFactoryNewCellResult._(dispatchResult);
+  }
+
+  CapabilityFactoryNewCellPipeline newCellTypedPipeline<Value>(
+    AnyPointerCodec<Value> valueCodec,
+    Value initialValue,
+  ) {
+    final mb = MessageBuilder();
+    final b = mb.initRoot(capabilityFactoryNewCellParamsFactory);
+    final typedCapabilities = <Capability>[];
+    b.setInitialValueTyped(
+      valueCodec,
+      initialValue,
+      capabilities: typedCapabilities,
+    );
+    return CapabilityFactoryNewCellPipeline._(
+      _cap.beginDispatch(
+        0xccad478715fb03b0,
+        0,
+        mb.serialize(),
+        paramsCapabilities: typedCapabilities,
+      ),
+    );
+  }
+
   Future<CapabilityFactoryNewEmptyCellResult> newEmptyCell(
     void Function(CapabilityFactoryNewEmptyCellParamsBuilder) build,
   ) async {
@@ -12235,6 +12546,33 @@ class CapabilityFactoryClient extends Capability {
     build(mb.initRoot(capabilityFactoryNewEmptyCellParamsFactory));
     return CapabilityFactoryNewEmptyCellPipeline._(
       _cap.beginDispatch(0xccad478715fb03b0, 1, mb.serialize()),
+    );
+  }
+
+  Future<CapabilityFactoryNewEmptyCellResult> newEmptyCellTyped<Value>() async {
+    final mb = MessageBuilder();
+    final b = mb.initRoot(capabilityFactoryNewEmptyCellParamsFactory);
+    final typedCapabilities = <Capability>[];
+    final dispatchResult = await _cap.dispatch(
+      0xccad478715fb03b0,
+      1,
+      mb.serialize(),
+      paramsCapabilities: typedCapabilities,
+    );
+    return CapabilityFactoryNewEmptyCellResult._(dispatchResult);
+  }
+
+  CapabilityFactoryNewEmptyCellPipeline newEmptyCellTypedPipeline<Value>() {
+    final mb = MessageBuilder();
+    final b = mb.initRoot(capabilityFactoryNewEmptyCellParamsFactory);
+    final typedCapabilities = <Capability>[];
+    return CapabilityFactoryNewEmptyCellPipeline._(
+      _cap.beginDispatch(
+        0xccad478715fb03b0,
+        1,
+        mb.serialize(),
+        paramsCapabilities: typedCapabilities,
+      ),
     );
   }
 
@@ -12257,6 +12595,35 @@ class CapabilityFactoryClient extends Capability {
     );
   }
 
+  Future<CapabilityFactoryNewRepositoryResult>
+  newRepositoryTyped<Key, Value>() async {
+    final mb = MessageBuilder();
+    final b = mb.initRoot(capabilityFactoryNewRepositoryParamsFactory);
+    final typedCapabilities = <Capability>[];
+    final dispatchResult = await _cap.dispatch(
+      0xccad478715fb03b0,
+      2,
+      mb.serialize(),
+      paramsCapabilities: typedCapabilities,
+    );
+    return CapabilityFactoryNewRepositoryResult._(dispatchResult);
+  }
+
+  CapabilityFactoryNewRepositoryPipeline
+  newRepositoryTypedPipeline<Key, Value>() {
+    final mb = MessageBuilder();
+    final b = mb.initRoot(capabilityFactoryNewRepositoryParamsFactory);
+    final typedCapabilities = <Capability>[];
+    return CapabilityFactoryNewRepositoryPipeline._(
+      _cap.beginDispatch(
+        0xccad478715fb03b0,
+        2,
+        mb.serialize(),
+        paramsCapabilities: typedCapabilities,
+      ),
+    );
+  }
+
   Future<CapabilityFactoryEchoCapabilityResultsReader> echoCapability(
     void Function(CapabilityFactoryEchoCapabilityParamsBuilder) build,
   ) async {
@@ -12267,6 +12634,27 @@ class CapabilityFactoryClient extends Capability {
       capabilityFactoryEchoCapabilityResultsFactory,
       capabilities: result.caps,
     );
+  }
+
+  Future<Cap?> echoCapabilityTyped<Cap>(
+    AnyPointerCodec<Cap> capCodec,
+    Cap capability,
+  ) async {
+    final mb = MessageBuilder();
+    final b = mb.initRoot(capabilityFactoryEchoCapabilityParamsFactory);
+    final typedCapabilities = <Capability>[];
+    b.setCapabilityTyped(capCodec, capability, capabilities: typedCapabilities);
+    final dispatchResult = await _cap.dispatch(
+      0xccad478715fb03b0,
+      3,
+      mb.serialize(),
+      paramsCapabilities: typedCapabilities,
+    );
+    final result = MessageReader.deserialize(dispatchResult.bytes).getRoot(
+      capabilityFactoryEchoCapabilityResultsFactory,
+      capabilities: dispatchResult.caps,
+    );
+    return result.getSameCapabilityTyped(capCodec);
   }
 
   Future<CapabilityFactoryGetUntypedResultsReader> getUntyped(
@@ -13596,6 +13984,27 @@ class ComplexTestServiceClient extends Capability {
       complexTestServiceEchoAnyPointerResultsFactory,
       capabilities: result.caps,
     );
+  }
+
+  Future<Value?> echoAnyPointerTyped<Value>(
+    AnyPointerCodec<Value> valueCodec,
+    Value value,
+  ) async {
+    final mb = MessageBuilder();
+    final b = mb.initRoot(complexTestServiceEchoAnyPointerParamsFactory);
+    final typedCapabilities = <Capability>[];
+    b.setValueTyped(valueCodec, value, capabilities: typedCapabilities);
+    final dispatchResult = await _cap.dispatch(
+      0xd7fb0472c16375ee,
+      4,
+      mb.serialize(),
+      paramsCapabilities: typedCapabilities,
+    );
+    final result = MessageReader.deserialize(dispatchResult.bytes).getRoot(
+      complexTestServiceEchoAnyPointerResultsFactory,
+      capabilities: dispatchResult.caps,
+    );
+    return result.getValueTyped(valueCodec);
   }
 
   Future<ComplexTestServiceExchangeCapabilitiesResultsReader>

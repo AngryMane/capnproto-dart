@@ -100,21 +100,30 @@ class ArenaBuilder {
   /// Only single-segment source messages are fully supported. Multi-segment
   /// messages are rejected with [UnsupportedError].
   void writeAnyPointerFromMessage(
-      SegmentBuilder ptrSeg, int ptrWordOffset, Uint8List messageBytes) {
+    SegmentBuilder ptrSeg,
+    int ptrWordOffset,
+    Uint8List messageBytes,
+  ) {
     if (messageBytes.lengthInBytes < 8) {
-      throw ArgumentError('message bytes too short to be a valid Cap\'n Proto message');
+      throw ArgumentError(
+        'message bytes too short to be a valid Cap\'n Proto message',
+      );
     }
     final hdr = ByteData.sublistView(messageBytes, 0, 4);
     final numSegments = readUint32(hdr, 0) + 1;
     if (numSegments != 1) {
       throw UnsupportedError(
-          'multi-segment AnyPointer embedding is not yet supported');
+        'multi-segment AnyPointer embedding is not yet supported',
+      );
     }
-    final headerBytes = 8; // for single segment: [numSegs-1, seg0Words] = 2 words
+    final headerBytes =
+        8; // for single segment: [numSegs-1, seg0Words] = 2 words
     final seg0Words = readUint32(ByteData.sublistView(messageBytes, 4, 8), 0);
     final seg0ByteCount = seg0Words * bytesPerWord;
     final seg0Data = messageBytes.buffer.asUint8List(
-        messageBytes.offsetInBytes + headerBytes, seg0ByteCount);
+      messageBytes.offsetInBytes + headerBytes,
+      seg0ByteCount,
+    );
 
     // Import the params segment.  Word 0 of this segment is the original
     // message's root struct pointer, which becomes the landing pad for the
@@ -275,18 +284,19 @@ class ArenaBuilder {
     final allocationWords = tagWords + totalDataWords;
 
     if (allocationWords == 0) {
-      // Empty non-composite list: write a zero-element list pointer; no data.
+      // Zero-word non-composite list: empty primitive lists and List(Void)
+      // store no data, but List(Void) still carries its element count.
       ListPointer(
         offset: 0,
         elementSize: elementSize,
-        elementCountOrWordCount: 0,
+        elementCountOrWordCount: listPointerCount,
       ).encode(ptrSeg.data, ptrWordOffset);
       return RawListBuilder(
         segment: ptrSeg,
         arena: this,
         dataByteOffset: 0,
         elementSize: elementSize,
-        elementCount: 0,
+        elementCount: elementCount,
       );
     }
 
@@ -303,7 +313,12 @@ class ArenaBuilder {
         final int dataByteOffset;
         if (isComposite) {
           _writeCompositeTag(
-              ptrSeg.data, offset, elementCount, structDataWords, structPtrWords);
+            ptrSeg.data,
+            offset,
+            elementCount,
+            structDataWords,
+            structPtrWords,
+          );
           dataByteOffset = (offset + 1) * bytesPerWord;
         } else {
           dataByteOffset = offset * bytesPerWord;
@@ -339,8 +354,13 @@ class ArenaBuilder {
 
     final int dataByteOffset;
     if (isComposite) {
-      _writeCompositeTag(dataSeg.data, listStartOffset, elementCount,
-          structDataWords, structPtrWords);
+      _writeCompositeTag(
+        dataSeg.data,
+        listStartOffset,
+        elementCount,
+        structDataWords,
+        structPtrWords,
+      );
       dataByteOffset = (listStartOffset + 1) * bytesPerWord;
     } else {
       dataByteOffset = listStartOffset * bytesPerWord;
@@ -359,8 +379,13 @@ class ArenaBuilder {
 
   // Encodes the tag word for a composite list.
   // The tag uses struct-pointer format with bits[31:2] = elementCount.
-  void _writeCompositeTag(ByteData data, int wordOffset, int elementCount,
-      int structDataWords, int structPtrWords) {
+  void _writeCompositeTag(
+    ByteData data,
+    int wordOffset,
+    int elementCount,
+    int structDataWords,
+    int structPtrWords,
+  ) {
     StructPointer(
       offset: elementCount, // "offset" field holds element count in tag words
       dataWords: structDataWords,
@@ -372,20 +397,25 @@ class ArenaBuilder {
 
   /// Writes a Text (UTF-8 string) list pointer at [ptrWordOffset] in [ptrSeg].
   /// A null [value] leaves the pointer slot zeroed (null pointer).
-  void writeTextField(
-      SegmentBuilder ptrSeg, int ptrWordOffset, String? value) {
+  void writeTextField(SegmentBuilder ptrSeg, int ptrWordOffset, String? value) {
     if (value == null) return;
-    _writeByteList(ptrSeg, ptrWordOffset, utf8.encode(value),
-        includeNullTerminator: true);
+    _writeByteList(
+      ptrSeg,
+      ptrWordOffset,
+      utf8.encode(value),
+      includeNullTerminator: true,
+    );
   }
 
   /// Writes a Data (raw bytes) list pointer at [ptrWordOffset] in [ptrSeg].
   /// A null [value] leaves the pointer slot zeroed (null pointer).
   void writeDataField(
-      SegmentBuilder ptrSeg, int ptrWordOffset, Uint8List? value) {
+    SegmentBuilder ptrSeg,
+    int ptrWordOffset,
+    Uint8List? value,
+  ) {
     if (value == null) return;
-    _writeByteList(ptrSeg, ptrWordOffset, value,
-        includeNullTerminator: false);
+    _writeByteList(ptrSeg, ptrWordOffset, value, includeNullTerminator: false);
   }
 
   void _writeByteList(

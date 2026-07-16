@@ -13,6 +13,74 @@ import 'struct_builder.dart';
 import 'struct_factory.dart';
 import 'struct_reader.dart';
 
+/// Encodes and decodes values carried through schema type parameters.
+///
+/// Cap'n Proto represents a type parameter at runtime as an `AnyPointer`.
+/// Generated generic-method helpers accept an [AnyPointerCodec] so callers can
+/// decide how each type argument is serialized while the generated code keeps
+/// capability tables and pointer copying rules consistent.
+abstract interface class AnyPointerCodec<T> {
+  void encode(
+    AnyPointerBuilder builder,
+    T value, {
+    List<Object?>? capabilities,
+  });
+
+  T? decode(AnyPointerReader? reader);
+}
+
+/// Codec for callers that already have a serialized single-root message for a
+/// generic value.
+///
+/// The payload is embedded preserving capability pointer words. RPC callers
+/// should pass the matching capability table through the generated capability
+/// argument APIs when using capability-bearing payloads.
+final class MessageAnyPointerCodec implements AnyPointerCodec<Uint8List> {
+  const MessageAnyPointerCodec();
+
+  @override
+  void encode(
+    AnyPointerBuilder builder,
+    Uint8List value, {
+    List<Object?>? capabilities,
+  }) {
+    builder.setMessageBytes(value, preserveCapabilityPointers: true);
+  }
+
+  @override
+  Uint8List? decode(AnyPointerReader? reader) =>
+      reader?.asMessageBytes(preserveCapabilityPointers: true);
+}
+
+/// Codec for generic values whose runtime representation is a struct reader.
+///
+/// This codec is primarily useful for decoding generic method results. For
+/// encoding, prefer [StructBuilderAnyPointerCodec] so the value can be built in
+/// the destination message.
+final class StructReaderAnyPointerCodec<
+  R extends StructReader,
+  B extends StructBuilder
+>
+    implements AnyPointerCodec<R> {
+  final StructFactory<R, B> factory;
+
+  const StructReaderAnyPointerCodec(this.factory);
+
+  @override
+  void encode(
+    AnyPointerBuilder builder,
+    R value, {
+    List<Object?>? capabilities,
+  }) {
+    throw UnsupportedError(
+      'StructReaderAnyPointerCodec only supports decoding values',
+    );
+  }
+
+  @override
+  R? decode(AnyPointerReader? reader) => reader?.asStruct(factory);
+}
+
 /// Read-only view of an `AnyPointer` field.
 ///
 /// The view keeps the message capability table next to the raw pointer. This
@@ -461,13 +529,12 @@ final class AnyPointerBuilder {
     bool preserveCapabilityPointers = false,
   }) {
     if (messageBytes == null) return;
-    _owner.arena.writeAnyPointerFromMessage(
+    copyMessageRootToBuilder(
+      messageBytes,
+      _owner.arena,
       _owner.segment,
       _owner.ptrWordOffset + _ptrIndex,
-      ensureSingleSegment(
-        messageBytes,
-        preserveCapabilityPointers: preserveCapabilityPointers,
-      ),
+      preserveCapabilityPointers: preserveCapabilityPointers,
     );
   }
 

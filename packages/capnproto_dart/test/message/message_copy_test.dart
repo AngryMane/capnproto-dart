@@ -101,6 +101,22 @@ class _AnyHostFactory extends StructFactory<AnyHostReader, AnyHostBuilder> {
   AnyHostBuilder fromRawBuilder(RawStructBuilder raw) => AnyHostBuilder(raw);
 }
 
+int _segmentCount(Uint8List bytes) =>
+    ByteData.sublistView(bytes, 0, 4).getUint32(0, Endian.little) + 1;
+
+Uint8List _buildLargeDataMessage(int size) {
+  final data = Uint8List(size);
+  for (var i = 0; i < data.length; i++) {
+    data[i] = i & 0xff;
+  }
+
+  final builder = MessageBuilder();
+  builder.initRoot(anyHostFactory).setDataField(0, data);
+  final bytes = builder.serialize();
+  expect(_segmentCount(bytes), greaterThan(1));
+  return bytes;
+}
+
 void main() {
   group('bytes-only message copy', () {
     test(
@@ -139,6 +155,91 @@ void main() {
         ).getRoot(capHolderFactory);
 
         expect(copiedReader.capIndex, equals(3));
+      },
+    );
+
+    test(
+      'ensureSingleSegment flattens multi-segment messages semantically',
+      () {
+        final sourceBytes = _buildLargeDataMessage(10000);
+
+        final copiedBytes = ensureSingleSegment(sourceBytes);
+        final copiedReader = MessageReader.deserialize(
+          copiedBytes,
+        ).getRoot(anyHostFactory);
+
+        expect(_segmentCount(copiedBytes), equals(1));
+        expect(
+          copiedReader.getDataField(0),
+          orderedEquals(
+            Uint8List.fromList(List<int>.generate(10000, (i) => i & 0xff)),
+          ),
+        );
+      },
+    );
+
+    test('raw AnyPointer import rejects multi-segment source today', () {
+      final sourceBytes = _buildLargeDataMessage(10000);
+      final arena = ArenaBuilder();
+      final (ptrSeg, ptrWordOffset) = arena.allocate(1);
+
+      expect(
+        () => arena.writeAnyPointerFromMessage(
+          ptrSeg,
+          ptrWordOffset,
+          sourceBytes,
+        ),
+        throwsA(
+          isA<UnsupportedError>().having(
+            (e) => e.message,
+            'message',
+            contains('multi-segment AnyPointer embedding'),
+          ),
+        ),
+      );
+    });
+
+    test('setAnyPointerFromMessage embeds multi-segment source messages', () {
+      final sourceBytes = _buildLargeDataMessage(10000);
+
+      final hostBuilder = MessageBuilder();
+      hostBuilder.initRoot(anyHostFactory).payloadBytes = sourceBytes;
+
+      final hostReader = MessageReader.deserialize(
+        hostBuilder.serialize(),
+      ).getRoot(anyHostFactory);
+      final embeddedRoot = hostReader.anyPayload!.asDynamicStruct()!;
+
+      expect(
+        embeddedRoot.getDataField(0),
+        orderedEquals(
+          Uint8List.fromList(List<int>.generate(10000, (i) => i & 0xff)),
+        ),
+      );
+    });
+
+    test(
+      'AnyPointerBuilder.setMessageBytes embeds multi-segment source messages',
+      () {
+        final sourceBytes = _buildLargeDataMessage(10000);
+
+        final hostBuilder = MessageBuilder();
+        hostBuilder
+            .initRoot(anyHostFactory)
+            .initAnyPayload()
+            .setMessageBytes(sourceBytes);
+
+        final hostReader = MessageReader.deserialize(
+          hostBuilder.serialize(),
+        ).getRoot(anyHostFactory);
+        final embeddedRoot = hostReader.anyPayload!.asDynamicStruct()!;
+
+        expect(
+          embeddedRoot.getDataField(0),
+          orderedEquals(
+            Uint8List.fromList(List<int>.generate(10000, (i) => i & 0xff)),
+          ),
+        );
       },
     );
 
@@ -289,6 +390,23 @@ void main() {
             nestedHost.serialize(),
           ).getRoot(anyHostFactory).anyPayload!.asDynamicList();
       expect(nestedReader!.getList(0)!.getUint16(1), equals(22));
+    });
+
+    test('message copy preserves List(Void) element count', () {
+      final source = MessageBuilder();
+      source
+          .initRoot(anyHostFactory)
+          .initAnyPayload()
+          .initDynamicList(elementSize: ListElementSize.void_, count: 5);
+
+      final copied = ensureSingleSegment(source.serialize());
+      final reader =
+          MessageReader.deserialize(
+            copied,
+          ).getRoot(anyHostFactory).anyPayload!.asDynamicList();
+
+      expect(reader, isNotNull);
+      expect(reader!.length, equals(5));
     });
   });
 }

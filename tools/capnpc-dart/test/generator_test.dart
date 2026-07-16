@@ -24,6 +24,7 @@ SchemaNode structNode(
   int discCount = 0,
   int discOffset = 0,
   List<SchemaNestedNode> nested = const [],
+  List<String> parameters = const [],
 }) => SchemaNode(
   id: id,
   displayName: 'test.capnp:$name',
@@ -38,6 +39,7 @@ SchemaNode structNode(
     discriminantOffset: discOffset,
     fields: fields,
   ),
+  parameters: parameters,
 );
 
 SchemaNode interfaceNode(int id, String name, List<SchemaMethod> methods) =>
@@ -662,6 +664,14 @@ void main() {
           src,
           contains('AnyPointerReader? get value => getAnyPointerField(1)'),
         );
+        expect(
+          src,
+          contains(
+            'T? getKeyTyped<T>(AnyPointerCodec<T> codec) => codec.decode(key)',
+          ),
+        );
+        expect(src, contains('type: TypeParameterSchemaInfo(0)'));
+        expect(src, contains('type: TypeParameterSchemaInfo(1)'));
       },
     );
 
@@ -675,6 +685,13 @@ void main() {
         expect(src, contains('AnyPointerBuilder initKey()'));
         expect(src, contains('set key(AnyPointerReader? v)'));
         expect(src, contains('void setKeyMessage(Uint8List? v)'));
+        expect(src, contains('void setKeyTyped<T>('));
+        expect(
+          src,
+          contains(
+            'codec.encode(initKey(), value, capabilities: capabilities)',
+          ),
+        );
         expect(src, contains('setAnyPointerField(0, v)'));
       },
     );
@@ -769,6 +786,97 @@ void main() {
         src,
         contains('final class KeyValueTextTextReader extends StructReader'),
       );
+    });
+  });
+
+  group('generateDartFile — generic methods (GEN-031)', () {
+    test('generates typed convenience API for TypeParameterRef params/results', () {
+      final params = structNode(
+        100,
+        'Service.echoAny\$Params',
+        0,
+        1,
+        [ptrField('value', 0, 0, const TypeParameterRefType(0))],
+        parameters: ['Value'],
+      );
+      final results = structNode(
+        101,
+        'Service.echoAny\$Results',
+        0,
+        1,
+        [ptrField('value', 0, 0, const TypeParameterRefType(0))],
+        parameters: ['Value'],
+      );
+      final iface = interfaceNode(200, 'Service', [
+        const SchemaMethod(
+          name: 'echoAny',
+          ordinal: 0,
+          paramStructTypeId: 100,
+          resultStructTypeId: 101,
+        ),
+      ]);
+      final file = fileNode(1, [SchemaNestedNode(name: 'Service', id: 200)]);
+      final src = generateDartFile(file, [file, params, results, iface]);
+
+      expect(
+        src,
+        contains(
+          'Future<Value?> echoAnyTyped<Value>(AnyPointerCodec<Value> valueCodec, Value value) async',
+        ),
+      );
+      expect(
+        src,
+        contains(
+          'b.setValueTyped(valueCodec, value, capabilities: typedCapabilities)',
+        ),
+      );
+      expect(src, contains('final typedCapabilities = <Capability>[]'));
+      expect(src, contains('paramsCapabilities: typedCapabilities'));
+      expect(src, contains('return result.getValueTyped(valueCodec)'));
+    });
+
+    test('generic capability params/results keep typed capability table', () {
+      final params = structNode(
+        100,
+        'Factory.echoCapability\$Params',
+        0,
+        1,
+        [ptrField('capability', 0, 0, const TypeParameterRefType(0))],
+        parameters: ['Cap'],
+      );
+      final results = structNode(
+        101,
+        'Factory.echoCapability\$Results',
+        0,
+        1,
+        [ptrField('sameCapability', 0, 0, const TypeParameterRefType(0))],
+        parameters: ['Cap'],
+      );
+      final iface = interfaceNode(200, 'Factory', [
+        const SchemaMethod(
+          name: 'echoCapability',
+          ordinal: 3,
+          paramStructTypeId: 100,
+          resultStructTypeId: 101,
+        ),
+      ]);
+      final file = fileNode(1, [SchemaNestedNode(name: 'Factory', id: 200)]);
+      final src = generateDartFile(file, [file, params, results, iface]);
+
+      expect(
+        src,
+        contains(
+          'Future<Cap?> echoCapabilityTyped<Cap>(AnyPointerCodec<Cap> capCodec, Cap capability) async',
+        ),
+      );
+      expect(
+        src,
+        contains(
+          'b.setCapabilityTyped(capCodec, capability, capabilities: typedCapabilities)',
+        ),
+      );
+      expect(src, contains('paramsCapabilities: typedCapabilities'));
+      expect(src, contains('return result.getSameCapabilityTyped(capCodec)'));
     });
   });
 
