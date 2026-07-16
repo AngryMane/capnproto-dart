@@ -310,9 +310,14 @@ class TwoPartyRpcConnection implements RpcConnection {
   ]);
 
   Future<void> _releaseImport(int importId) async {
-    final count = _importRefCounts.remove(importId);
+    final count = _importRefCounts[importId];
     if (count == null || count <= 0) return;
-    _sendRaw(buildReleaseMessage(importId, count));
+    if (count == 1) {
+      _importRefCounts.remove(importId);
+    } else {
+      _importRefCounts[importId] = count - 1;
+    }
+    _sendRaw(buildReleaseMessage(importId, 1));
   }
 
   // ---------------------------------------------------------------------------
@@ -682,6 +687,7 @@ class _ExportEntry {
 
 class _ImportedCapability extends Capability {
   final TwoPartyRpcConnection _conn;
+  bool _disposed = false;
 
   // Resolves to the import ID once the bootstrap handshake completes.
   final Future<int> _importIdFuture;
@@ -731,6 +737,8 @@ class _ImportedCapability extends Capability {
 
   @override
   Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
     final id = await _importIdFuture.catchError((_) => -1);
     if (id >= 0) await _conn._releaseImport(id);
   }

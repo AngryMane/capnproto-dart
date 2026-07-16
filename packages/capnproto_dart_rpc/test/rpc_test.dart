@@ -17,6 +17,7 @@ const int _echoInterfaceId = 0x0001;
 const int _echoMethodId = 0;
 const int _pipelineMethodId = 1; // returns a capability in caps[0]
 const int _mixedMethodId = 2; // result has non-cap at slot 0, cap at slot 1
+const int _duplicateCapsMethodId = 3; // returns the same cap in two slots
 
 // Simple factory to build param message { message :Text } (ptr 0)
 Uint8List _buildEchoParams(String message) {
@@ -246,6 +247,33 @@ class ChildPipelineServer extends Capability {
   Future<void> dispose() async {}
 }
 
+class DuplicateCapsServer extends Capability {
+  final Capability child = EchoServer();
+
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) async {
+    if (methodId == _duplicateCapsMethodId) {
+      final mb = MessageBuilder();
+      final root = mb.initRoot(_TwoPtrFactory());
+      root.setCapabilityField(0, 0);
+      root.setCapabilityField(1, 1);
+      return DispatchResult(bytes: mb.serialize(), caps: [child, child]);
+    }
+    if (methodId == _echoMethodId) {
+      return DispatchResult(bytes: _buildEchoParams('ok'));
+    }
+    throw RpcException('unknown method: $methodId');
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
 // ---------------------------------------------------------------------------
 // CapReceivingServer — captures paramsCapabilities for inspection
 // ---------------------------------------------------------------------------
@@ -278,6 +306,23 @@ Future<void> _waitForRelease(List<Uint8List> captured) async {
     await Future<void>.delayed(const Duration(milliseconds: 10));
   }
   throw TestFailure('no Release message captured');
+}
+
+List<RpcMessage> _releaseMessages(List<Uint8List> captured) =>
+    captured
+        .map(parseRpcMessage)
+        .where((m) => m.type == RpcMessageType.release)
+        .toList();
+
+Future<void> _waitForReleaseCount(
+  List<Uint8List> captured,
+  int expectedCount,
+) async {
+  for (var i = 0; i < 20; i++) {
+    if (_releaseMessages(captured).length >= expectedCount) return;
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+  throw TestFailure('expected $expectedCount Release messages');
 }
 
 // ---------------------------------------------------------------------------
@@ -601,6 +646,72 @@ void main() {
         await serverConn.close();
       },
     );
+
+    test('disposing one duplicate import keeps the other usable', () async {
+      final clientToServer = StreamController<Uint8List>();
+      final serverToClient = StreamController<Uint8List>();
+      final captured = <Uint8List>[];
+
+      final interceptSink =
+          StreamController<Uint8List>()
+            ..stream.listen((b) {
+              captured.add(b);
+              clientToServer.add(b);
+            });
+
+      TwoPartyRpcConnection.server(
+        incoming: clientToServer.stream,
+        outgoing: serverToClient.sink,
+        bootstrap: DuplicateCapsServer(),
+      );
+      final client = TwoPartyRpcConnection.client(
+        incoming: serverToClient.stream,
+        outgoing: interceptSink.sink,
+      );
+
+      final bootstrapCap = client.bootstrap(EchoClientFactory());
+      await bootstrapCap.echo('warmup');
+
+      captured.clear();
+      final call = bootstrapCap.cap.beginDispatch(
+        _echoInterfaceId,
+        _duplicateCapsMethodId,
+        _buildEchoParams(''),
+      );
+      final result = await call.result;
+      final capA = requireCapabilityFromResult(result, 0);
+      final capB = requireCapabilityFromResult(result, 1);
+
+      await capA.dispose();
+      await _waitForReleaseCount(captured, 1);
+      var releases = _releaseMessages(captured);
+      expect(releases, hasLength(1));
+      expect(releases.single.referenceCount, equals(1));
+
+      final secondResult = await capB.dispatch(
+        _echoInterfaceId,
+        _echoMethodId,
+        _buildEchoParams('still-live'),
+      );
+      expect(_parseEchoResult(secondResult.bytes), equals('echo: still-live'));
+
+      await capB.dispose();
+      await _waitForReleaseCount(captured, 2);
+      releases = _releaseMessages(captured);
+      expect(releases, hasLength(2));
+      expect(releases.map((m) => m.referenceCount), everyElement(equals(1)));
+      expect(
+        releases.fold<int>(0, (sum, msg) => sum + msg.referenceCount),
+        equals(2),
+      );
+
+      await capB.dispose();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(_releaseMessages(captured), hasLength(2));
+
+      await client.close();
+      await interceptSink.close();
+    });
 
     test('invalid result pointer is preserved for resolved pipeline', () async {
       final server = MixedResultServer();
