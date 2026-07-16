@@ -524,7 +524,7 @@ Future<void> _s05_unions(ComplexTestServiceClient svc) async {
 
   // 5a: empty variant (discriminant 0)
   final r0 = await svc.echoUnion((b) {
-    b.initValue().payload.empty = null;
+    b.initValue().payload.selectEmpty();
   });
   checkEq('empty which', r0.value!.payload.which, 0);
 
@@ -575,7 +575,7 @@ Future<void> _s05_unions(ComplexTestServiceClient svc) async {
   // IdentifierBuilder.absent sets union disc to 3
   final r6 = await svc.echoLists((b) {
     final pp = b.initValue().initPeople(1);
-    pp[0].initId().absent = null;
+    pp[0].initId().selectAbsent();
   });
   final id = r6.value!.people![0].id!;
   checkEq('optional/absent which', id.getUint16Field(8), 3); // absent discriminant
@@ -858,24 +858,26 @@ Future<void> _s13_capabilityReturns(ComplexTestServiceClient svc) async {
   section(13, 'Capability Return Values');
 
   // 13a: getRepository returns a Repository capability
-  final repo = await svc.getRepository((_) {});
+  final repoPipeline13 = svc.getRepositoryPipeline((_) {});
+  final repo13 = repoPipeline13.repository;
   check('getRepository returns cap', true); // no exception = success
 
   // 13b: getFactory returns a CapabilityFactory capability
-  final factory = await svc.getFactory((_) {});
+  final factoryPipeline13 = svc.getFactoryPipeline((_) {});
+  final factory13 = factoryPipeline13.factory;
   check('getFactory returns cap', true);
 
   // 13c: Capabilities can be called (tested more in sections 16, 17, 19)
   // Basic sanity: list is callable even on empty repo
   try {
-    await repo.list((_) {});
+    await repo13.list((_) {});
     check('repository.list() callable', true);
   } catch (e) {
     fail('repository.list() callable', e.toString());
   }
 
-  await repo.dispose();
-  await factory.dispose();
+  await repo13.dispose();
+  await factory13.dispose();
 }
 
 // ─── 14. Capability in Struct ─────────────────────────────────────────────────
@@ -884,14 +886,15 @@ Future<void> _s14_capsInStructs(ComplexTestServiceClient svc) async {
   section(14, 'Capability in Struct');
 
   // makePipeline returns PipelineTarget (cap in results)
-  final target = await svc.makePipeline((b) => b.depth = 1);
+  final targetPipeline14 = svc.makePipelinePipeline((b) => b.depth = 1);
+  final target14 = targetPipeline14.target;
   check('cap in results (PipelineTarget)', true);
 
   // The PipelineTarget is callable
-  final pingR = await target.ping((b) => b.payload = Uint8List.fromList([1]));
+  final pingR = await target14.ping((b) => b.payload = Uint8List.fromList([1]));
   checkEq('cap-in-results callable', pingR.payload?[0], 1);
 
-  await target.dispose();
+  await target14.dispose();
 
   // Capability in Optional/List positions - only testable via repository
   // (CapabilityBundle with PipelineTarget list is in ComplexRequest, not directly accessible)
@@ -906,26 +909,29 @@ Future<void> _s15_pipelining(ComplexTestServiceClient svc) async {
   section(15, 'Promise Pipelining');
 
   // 15a: direct pipeline call on returned cap
-  final target = await svc.makePipeline((b) => b.depth = 3);
-  final pingR = await target.ping((b) => b.payload = Uint8List.fromList([42]));
-  checkEq('pipeline ping', pingR.payload?[0], 42);
+  final targetPipeline15 = svc.makePipelinePipeline((b) => b.depth = 3);
+  final target15 = targetPipeline15.target;
+  final pingR15 = await target15.ping((b) => b.payload = Uint8List.fromList([42]));
+  checkEq('pipeline ping', pingR15.payload?[0], 42);
 
   // 15b: getChild chaining
-  final child1 = await target.getChild((b) => b.name = 'alpha');
+  final child1Pipeline = target15.getChildPipeline((b) => b.name = 'alpha');
+  final child1 = child1Pipeline.child;
   check('getChild returns cap', true);
   final childPing = await child1.ping((b) => b.payload = Uint8List.fromList([1, 2]));
   check('child ping', childPing.payload?.length == 2);
 
   // 15c: multi-level pipeline
-  final child2 = await child1.getChild((b) => b.name = 'beta');
+  final child2Pipeline = child1.getChildPipeline((b) => b.name = 'beta');
+  final child2 = child2Pipeline.child;
   final deepPing = await child2.ping((b) => b.payload = Uint8List.fromList([99]));
   checkEq('deep pipeline ping', deepPing.payload?[0], 99);
 
   // 15d: Multiple pipeline calls in flight (async)
   final futs = [
-    target.ping((b) => b.payload = Uint8List.fromList([1])),
-    target.ping((b) => b.payload = Uint8List.fromList([2])),
-    target.ping((b) => b.payload = Uint8List.fromList([3])),
+    target15.ping((b) => b.payload = Uint8List.fromList([1])),
+    target15.ping((b) => b.payload = Uint8List.fromList([2])),
+    target15.ping((b) => b.payload = Uint8List.fromList([3])),
   ];
   final pings = await Future.wait(futs);
   checkEq('parallel pipeline[0]', pings[0].payload?[0], 1);
@@ -934,7 +940,7 @@ Future<void> _s15_pipelining(ComplexTestServiceClient svc) async {
 
   await child2.dispose();
   await child1.dispose();
-  await target.dispose();
+  await target15.dispose();
 
   // 15e: Pipeline failure propagation
   try {
@@ -954,10 +960,11 @@ Future<void> _s16_genericInterface(ComplexTestServiceClient svc) async {
   section(16, 'Generic Interface');
 
   // Repository<Text, Person> is a generic interface
-  final repo = await svc.getRepository((_) {});
+  final repoPipeline16 = svc.getRepositoryPipeline((_) {});
+  final repo16 = repoPipeline16.repository;
 
   // Put a person (using underlying raw methods for generic key/value)
-  final putR = await repo.put((b) {
+  final putR = await repo16.put((b) {
     b.setTextField(0, 'alice'); // key :Text at ptr 0
     final person = b.initStructFieldWith(1, (r) => PersonBuilder(r), 1, 10);
     person.name = 'Alice';
@@ -969,7 +976,7 @@ Future<void> _s16_genericInterface(ComplexTestServiceClient svc) async {
   check('first put revision > 0', rev1 > 0);
 
   // Get it back
-  final getR = await repo.get((b) {
+  final getR = await repo16.get((b) {
     b.setTextField(0, 'alice'); // key :Text at ptr 0
   });
   checkEq('Repository.get revision matches', getR.revision, rev1);
@@ -980,7 +987,7 @@ Future<void> _s16_genericInterface(ComplexTestServiceClient svc) async {
   checkEq('get person name', person?.name, 'Alice');
 
   // Put another key
-  await repo.put((b) {
+  await repo16.put((b) {
     b.setTextField(0, 'bob');
     final p = b.initStructFieldWith(1, (r) => PersonBuilder(r), 1, 10);
     p.name = 'Bob';
@@ -988,23 +995,23 @@ Future<void> _s16_genericInterface(ComplexTestServiceClient svc) async {
   });
 
   // List
-  final listR = await repo.list((_) {});
+  final listR = await repo16.list((_) {});
   // RepositoryListResultsReader has a typed 'entries' getter
   final entries = listR.entries;
   check('list returns entries', entries != null && entries.length >= 2);
 
   // Remove
-  final removeR = await repo.remove((b) {
+  final removeR = await repo16.remove((b) {
     b.setTextField(0, 'alice');
     b.setUint64Field(0, 0);
   });
   check('remove returns', removeR.newRevision >= 0);
 
   // Get non-existent key → Optional.none
-  final getR2 = await repo.get((b) => b.setTextField(0, 'alice'));
+  final getR2 = await repo16.get((b) => b.setTextField(0, 'alice'));
   checkEq('missing key is none', getR2.result?.getUint16Field(0), 0);
 
-  await repo.dispose();
+  await repo16.dispose();
 }
 
 // ─── 17. Generic Methods ──────────────────────────────────────────────────────
@@ -1048,25 +1055,26 @@ Future<void> _s18_interfaceInheritance(ComplexTestServiceClient svc) async {
 Future<void> _s19_repositoryOps(ComplexTestServiceClient svc) async {
   section(19, 'Repository Operations');
 
-  final repo = await svc.getRepository((_) {});
+  final repoPipeline19 = svc.getRepositoryPipeline((_) {});
+  final repo19 = repoPipeline19.repository;
 
   // 19a: put and get
-  await repo.put((b) {
+  await repo19.put((b) {
     b.setTextField(0, 'k1');
     b.initStructFieldWith(1, (r) => PersonBuilder(r), 1, 10).name = 'Person1';
     b.setUint64Field(0, 0);
   });
-  final g1 = await repo.get((b) => b.setTextField(0, 'k1'));
+  final g1 = await repo19.get((b) => b.setTextField(0, 'k1'));
   checkEq('get k1 is some', g1.result?.getUint16Field(0), 1);
   checkEq('get k1 name', g1.result?.getStructFieldWith(0, (r) => PersonReader(r))?.name, 'Person1');
 
   // 19b: revision increments
-  final p1 = await repo.put((b) {
+  final p1 = await repo19.put((b) {
     b.setTextField(0, 'k2');
     b.initStructFieldWith(1, (r) => PersonBuilder(r), 1, 10).name = 'P2';
     b.setUint64Field(0, 0);
   });
-  final p2 = await repo.put((b) {
+  final p2 = await repo19.put((b) {
     b.setTextField(0, 'k3');
     b.initStructFieldWith(1, (r) => PersonBuilder(r), 1, 10).name = 'P3';
     b.setUint64Field(0, 0);
@@ -1074,12 +1082,12 @@ Future<void> _s19_repositoryOps(ComplexTestServiceClient svc) async {
   check('revision monotonically increases', p2.newRevision > p1.newRevision);
 
   // 19c: list returns all entries
-  await repo.put((b) {
+  await repo19.put((b) {
     b.setTextField(0, 'k4');
     b.initStructFieldWith(1, (r) => PersonBuilder(r), 1, 10).name = 'P4';
     b.setUint64Field(0, 0);
   });
-  final lr = await repo.list((_) {});
+  final lr = await repo19.list((_) {});
   final entries = lr.entries;
   check('list has entries', entries != null && entries.isNotEmpty);
 
@@ -1093,23 +1101,25 @@ Future<void> _s19_repositoryOps(ComplexTestServiceClient svc) async {
   check('k1 in list', foundK1);
 
   // 19d: remove
-  final rr = await repo.remove((b) {
+  final rr = await repo19.remove((b) {
     b.setTextField(0, 'k1');
     b.setUint64Field(0, 0);
   });
   check('remove returns revision', rr.newRevision > 0);
   // k1 is gone
-  final g2 = await repo.get((b) => b.setTextField(0, 'k1'));
+  final g2 = await repo19.get((b) => b.setTextField(0, 'k1'));
   checkEq('removed key is none', g2.result?.getUint16Field(0), 0);
 
   // 19e: get non-existent key
-  final g3 = await repo.get((b) => b.setTextField(0, 'nonexistent'));
+  final g3 = await repo19.get((b) => b.setTextField(0, 'nonexistent'));
   checkEq('nonexistent key is none', g3.result?.getUint16Field(0), 0);
 
   // 19f: cursor - not implemented in server (error surfaces via pipelining)
-  final cursor = repo.openCursor((_) {});
+  final cursorPipeline19 = repo19.openCursorPipeline((_) {});
+  cursorPipeline19.result.ignore(); // openCursor is unimplemented; avoid zone error
+  final cursor19 = cursorPipeline19.cursor;
   try {
-    await cursor.next((_) {});
+    await cursor19.next((_) {});
     skip('cursor - server returned success (unexpected)');
   } catch (e) {
     pass('cursor not implemented in server (expected via pipelining)');
@@ -1118,7 +1128,7 @@ Future<void> _s19_repositoryOps(ComplexTestServiceClient svc) async {
   // 19g: watch - requires Dart-side Observer capability
   skip('watch - requires Dart-side Observer implementation');
 
-  await repo.dispose();
+  await repo19.dispose();
 }
 
 // ─── 20. Subscription ─────────────────────────────────────────────────────────
@@ -1136,10 +1146,11 @@ Future<void> _s21_streaming(ComplexTestServiceClient svc) async {
   section(21, 'Streaming');
 
   // 21a: openUpload → ByteSink capability returned successfully
-  final sink = await svc.openUpload((b) {
+  final sinkPipeline21 = svc.openUploadPipeline((b) {
     b.expectedSize = 6;
     b.expectedChecksum = Uint8List.fromList([0x07]);
   });
+  final sink = sinkPipeline21.sink;
   check('openUpload returns ByteSink cap', true);
 
   // 21b: write() uses `-> stream` return type (empty StreamResult).
@@ -1257,10 +1268,11 @@ Future<void> _s23_nullValues(ComplexTestServiceClient svc) async {
       r5.value!.textValue == '');
 
   // 23f: Optional.none (which == 0)
-  final repo = await svc.getRepository((_) {});
-  final g = await repo.get((b) => b.setTextField(0, 'nonexistent_key_xyz'));
+  final repoPipeline23 = svc.getRepositoryPipeline((_) {});
+  final repo23 = repoPipeline23.repository;
+  final g = await repo23.get((b) => b.setTextField(0, 'nonexistent_key_xyz'));
   checkEq('Optional.none which', g.result?.getUint16Field(0), 0);
-  await repo.dispose();
+  await repo23.dispose();
 }
 
 // ─── 24. Message Segmentation ─────────────────────────────────────────────────
@@ -1384,10 +1396,11 @@ Future<void> _s28_resourceManagement(
   section(28, 'Resource Management');
 
   // 28a: Dispose capability after use
-  final target = await svc.makePipeline((b) => b.depth = 0);
-  final alive = await target.ping((b) => b.payload = Uint8List.fromList([1]));
+  final targetPipeline28a = svc.makePipelinePipeline((b) => b.depth = 0);
+  final target28a = targetPipeline28a.target;
+  final alive = await target28a.ping((b) => b.payload = Uint8List.fromList([1]));
   check('cap works before dispose', alive.payload?[0] == 1);
-  await target.dispose();
+  await target28a.dispose();
   pass('capability disposed without error');
 
   // 28b: Calling disposed capability may throw or cause connection issues.
@@ -1398,13 +1411,14 @@ Future<void> _s28_resourceManagement(
   skip('calling disposed cap - may abort connection (protocol limitation)');
 
   // 28c: Repository lifecycle: open, use, dispose
-  final repo = await svc.getRepository((_) {});
-  await repo.put((b) {
+  final repoPipeline28c = svc.getRepositoryPipeline((_) {});
+  final repo28c = repoPipeline28c.repository;
+  await repo28c.put((b) {
     b.setTextField(0, 'lifecycle_test');
     b.initStructFieldWith(1, (r) => PersonBuilder(r), 1, 10).name = 'Temp';
     b.setUint64Field(0, 0);
   });
-  await repo.dispose();
+  await repo28c.dispose();
   pass('repository lifecycle: put then dispose');
 
   // 28d: Bootstrap cap is still alive after disposing other caps
@@ -1412,8 +1426,10 @@ Future<void> _s28_resourceManagement(
   check('svc alive after child dispose', r.value?.boolean == true);
 
   // 28e: Multiple capabilities can be live simultaneously
-  final t1 = await svc.makePipeline((b) => b.depth = 1);
-  final t2 = await svc.makePipeline((b) => b.depth = 2);
+  final t1Pipeline = svc.makePipelinePipeline((b) => b.depth = 1);
+  final t2Pipeline = svc.makePipelinePipeline((b) => b.depth = 2);
+  final t1 = t1Pipeline.target;
+  final t2 = t2Pipeline.target;
   final p1 = await t1.ping((b) => b.payload = Uint8List.fromList([10]));
   final p2 = await t2.ping((b) => b.payload = Uint8List.fromList([20]));
   checkEq('t1 payload', p1.payload?[0], 10);

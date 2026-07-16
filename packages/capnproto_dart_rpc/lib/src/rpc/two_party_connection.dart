@@ -709,11 +709,12 @@ class _WireCapCall implements CapCall {
 
   @override
   Capability pipelineResult(int ptrIndex) =>
-      _WirePipelinedCapability(_conn, _qid, ptrIndex);
+      _WirePipelinedCapability(_conn, _qid, ptrIndex, result);
 }
 
 // ---------------------------------------------------------------------------
-// _WirePipelinedCapability: targets a promisedAnswer on the wire immediately
+// _WirePipelinedCapability: targets a promisedAnswer on the wire, then
+// switches to the resolved imported capability once the parent completes.
 // ---------------------------------------------------------------------------
 
 class _WirePipelinedCapability extends Capability {
@@ -721,7 +722,35 @@ class _WirePipelinedCapability extends Capability {
   final int _parentQid;
   final int _ptrIndex;
 
-  _WirePipelinedCapability(this._conn, this._parentQid, this._ptrIndex);
+  // Set once the parent question resolves; null while still pending.
+  // After resolution all new calls go directly to this cap (no pipelining).
+  Capability? _resolved;
+
+  _WirePipelinedCapability(
+      this._conn, this._parentQid, this._ptrIndex, Future<DispatchResult> parentResult) {
+    parentResult.then((result) {
+      _resolved = _capFromDispatchResult(result, _ptrIndex) ?? NullCapability();
+    }).catchError((_) {
+      _resolved = NullCapability();
+    });
+  }
+
+  /// Reads the capability at pointer slot [ptrIndex] from a [DispatchResult].
+  static Capability? _capFromDispatchResult(DispatchResult result, int ptrIndex) {
+    if (result.caps.isEmpty) return null;
+    try {
+      final root = MessageReader.deserialize(result.bytes).getRootRaw();
+      if (ptrIndex >= root.ptrWords) return null;
+      final ptr =
+          WirePointer.decode(root.segment.data, root.ptrWordOffset + ptrIndex);
+      if (ptr is! CapabilityPointer) return null;
+      final capIdx = ptr.capabilityIndex;
+      if (capIdx >= result.caps.length) return null;
+      return result.caps[capIdx];
+    } catch (_) {
+      return null;
+    }
+  }
 
   @override
   Future<DispatchResult> dispatch(
@@ -730,6 +759,11 @@ class _WirePipelinedCapability extends Capability {
     Uint8List params, {
     List<Capability> paramsCapabilities = const [],
   }) {
+    final r = _resolved;
+    if (r != null) {
+      return r.dispatch(interfaceId, methodId, params,
+          paramsCapabilities: paramsCapabilities);
+    }
     final (_, future) = _conn._startCall(
       null,
       interfaceId,
@@ -749,6 +783,11 @@ class _WirePipelinedCapability extends Capability {
     Uint8List params, {
     List<Capability> paramsCapabilities = const [],
   }) {
+    final r = _resolved;
+    if (r != null) {
+      return r.beginDispatch(interfaceId, methodId, params,
+          paramsCapabilities: paramsCapabilities);
+    }
     final (qid, future) = _conn._startCall(
       null,
       interfaceId,
@@ -762,9 +801,7 @@ class _WirePipelinedCapability extends Capability {
   }
 
   @override
-  Future<void> dispose() async {
-    // When the parent resolves, we could send a Release; for now no-op.
-  }
+  Future<void> dispose() async {}
 }
 
 // ---------------------------------------------------------------------------

@@ -157,8 +157,14 @@ void _copyPointer(
           dstSeg, dstPtrWordOffset);
 
     case CapabilityPointer():
-      // Capability pointers cannot be deep-copied; leave as null.
-      break;
+      // Copy the pointer word verbatim so consumers can extract
+      // the capabilityIndex for cap-table lookups.
+      final byteOffset = srcPtrWordOffset * bytesPerWord;
+      final dstByteOffset = dstPtrWordOffset * bytesPerWord;
+      writeUint32(dstSeg.data, dstByteOffset,
+          readUint32(srcSeg.data, byteOffset));
+      writeUint32(dstSeg.data, dstByteOffset + 4,
+          readUint32(srcSeg.data, byteOffset + 4));
   }
 }
 
