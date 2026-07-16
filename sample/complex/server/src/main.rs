@@ -15,7 +15,7 @@ pub mod complex_capnp {
 
 use complex_capnp::{
     byte_sink, byte_source, capability_factory, complex_test_service, diamond, named_union,
-    observer, pipeline_target, repository,
+    observer, pipeline_target, read_write, readable, repository, writable,
 };
 
 // ---------------------------------------------------------------------------
@@ -37,8 +37,7 @@ impl pipeline_target::Server for PipelineTargetImpl {
             .unwrap_or("child")
             .to_string();
         println!("[server] pipeline.getChild(\"{}\")", name);
-        let child: pipeline_target::Client =
-            capnp_rpc::new_client(PipelineTargetImpl { name });
+        let child: pipeline_target::Client = capnp_rpc::new_client(PipelineTargetImpl { name });
         results.get().set_child(child);
         Promise::ok(())
     }
@@ -61,7 +60,11 @@ impl pipeline_target::Server for PipelineTargetImpl {
         mut results: pipeline_target::PingResults,
     ) -> Promise<(), capnp::Error> {
         let payload = pry!(pry!(params.get()).get_payload());
-        println!("[server] pipeline[{}].ping({} bytes)", self.name, payload.len());
+        println!(
+            "[server] pipeline[{}].ping({} bytes)",
+            self.name,
+            payload.len()
+        );
         results.get().set_payload(payload);
         Promise::ok(())
     }
@@ -85,15 +88,256 @@ impl RepositoryImpl {
     }
 }
 
+fn serialize_any_pointer(reader: capnp::any_pointer::Reader) -> capnp::Result<Vec<u8>> {
+    let mut msg = capnp::message::Builder::new_default();
+    let mut root: capnp::any_pointer::Builder = msg.init_root();
+    root.set_as::<capnp::any_pointer::Owned>(reader)?;
+    Ok(capnp::serialize::write_message_to_words(&msg))
+}
+
+struct GenericCellImpl {
+    value: Rc<RefCell<Option<Vec<u8>>>>,
+    revision: Rc<RefCell<u64>>,
+}
+
+impl GenericCellImpl {
+    fn new(initial_value: Option<Vec<u8>>) -> Self {
+        Self {
+            value: Rc::new(RefCell::new(initial_value)),
+            revision: Rc::new(RefCell::new(1)),
+        }
+    }
+}
+
+impl readable::Server<capnp::any_pointer::Owned> for GenericCellImpl {
+    fn read(
+        &mut self,
+        _params: readable::ReadParams<capnp::any_pointer::Owned>,
+        mut results: readable::ReadResults<capnp::any_pointer::Owned>,
+    ) -> Promise<(), capnp::Error> {
+        let mut r = results.get();
+        r.set_revision(*self.revision.borrow());
+        if let Some(bytes) = self.value.borrow().as_ref() {
+            let msg = pry!(capnp::serialize::read_message_from_flat_slice(
+                &mut &bytes[..],
+                Default::default()
+            ));
+            let value: capnp::any_pointer::Reader =
+                pry!(msg.get_root::<capnp::any_pointer::Reader>());
+            pry!(r.set_value(value));
+        }
+        Promise::ok(())
+    }
+}
+
+impl writable::Server<capnp::any_pointer::Owned> for GenericCellImpl {
+    fn write(
+        &mut self,
+        params: writable::WriteParams<capnp::any_pointer::Owned>,
+        mut results: writable::WriteResults<capnp::any_pointer::Owned>,
+    ) -> Promise<(), capnp::Error> {
+        let value = pry!(pry!(params.get()).get_value());
+        *self.value.borrow_mut() = Some(pry!(serialize_any_pointer(value)));
+        let mut revision = self.revision.borrow_mut();
+        *revision += 1;
+        results.get().set_new_revision(*revision);
+        Promise::ok(())
+    }
+}
+
+impl read_write::Server<capnp::any_pointer::Owned> for GenericCellImpl {
+    fn compare_and_swap(
+        &mut self,
+        params: read_write::CompareAndSwapParams<capnp::any_pointer::Owned>,
+        mut results: read_write::CompareAndSwapResults<capnp::any_pointer::Owned>,
+    ) -> Promise<(), capnp::Error> {
+        let p = pry!(params.get());
+        let expected = pry!(serialize_any_pointer(pry!(p.get_expected())));
+        let replacement = pry!(serialize_any_pointer(pry!(p.get_replacement())));
+        let mut current = self.value.borrow_mut();
+        let swapped = current.as_ref() == Some(&expected);
+        let mut r = results.get();
+        r.set_swapped(swapped);
+        if let Some(bytes) = current.as_ref() {
+            let msg = pry!(capnp::serialize::read_message_from_flat_slice(
+                &mut &bytes[..],
+                Default::default()
+            ));
+            let actual: capnp::any_pointer::Reader =
+                pry!(msg.get_root::<capnp::any_pointer::Reader>());
+            pry!(r.set_actual(actual));
+        }
+        if swapped {
+            *current = Some(replacement);
+            *self.revision.borrow_mut() += 1;
+        }
+        r.set_revision(*self.revision.borrow());
+        Promise::ok(())
+    }
+}
+
+struct GenericRepositoryImpl {
+    store: Rc<RefCell<HashMap<Vec<u8>, (Vec<u8>, u64)>>>,
+    revision: Rc<RefCell<u64>>,
+}
+
+impl GenericRepositoryImpl {
+    fn new() -> Self {
+        Self {
+            store: Rc::new(RefCell::new(HashMap::new())),
+            revision: Rc::new(RefCell::new(0)),
+        }
+    }
+}
+
+impl repository::Server<capnp::any_pointer::Owned, capnp::any_pointer::Owned>
+    for GenericRepositoryImpl
+{
+    fn get(
+        &mut self,
+        params: repository::GetParams<capnp::any_pointer::Owned, capnp::any_pointer::Owned>,
+        mut results: repository::GetResults<capnp::any_pointer::Owned, capnp::any_pointer::Owned>,
+    ) -> Promise<(), capnp::Error> {
+        let key = pry!(serialize_any_pointer(pry!(pry!(params.get()).get_key())));
+        let store = self.store.borrow();
+        let mut r = results.get();
+        if let Some((bytes, rev)) = store.get(&key) {
+            r.set_revision(*rev);
+            let msg = pry!(capnp::serialize::read_message_from_flat_slice(
+                &mut &bytes[..],
+                Default::default()
+            ));
+            let value: capnp::any_pointer::Reader =
+                pry!(msg.get_root::<capnp::any_pointer::Reader>());
+            let mut opt = pry!(r.get_result());
+            pry!(opt.set_some(value));
+        } else {
+            r.set_revision(0);
+            pry!(r.get_result()).set_none(());
+        }
+        Promise::ok(())
+    }
+
+    fn put(
+        &mut self,
+        params: repository::PutParams<capnp::any_pointer::Owned, capnp::any_pointer::Owned>,
+        mut results: repository::PutResults<capnp::any_pointer::Owned, capnp::any_pointer::Owned>,
+    ) -> Promise<(), capnp::Error> {
+        let p = pry!(params.get());
+        let key = pry!(serialize_any_pointer(pry!(p.get_key())));
+        let value = pry!(serialize_any_pointer(pry!(p.get_value())));
+        let mut store = self.store.borrow_mut();
+        let mut revision = self.revision.borrow_mut();
+        *revision += 1;
+        let new_revision = *revision;
+        let mut r = results.get();
+        r.set_new_revision(new_revision);
+        if let Some((bytes, _)) = store.get(&key) {
+            let msg = pry!(capnp::serialize::read_message_from_flat_slice(
+                &mut &bytes[..],
+                Default::default()
+            ));
+            let previous: capnp::any_pointer::Reader =
+                pry!(msg.get_root::<capnp::any_pointer::Reader>());
+            let mut prev = pry!(r.get_previous());
+            pry!(prev.set_some(previous));
+        } else {
+            pry!(r.get_previous()).set_none(());
+        }
+        store.insert(key, (value, new_revision));
+        Promise::ok(())
+    }
+
+    fn remove(
+        &mut self,
+        params: repository::RemoveParams<capnp::any_pointer::Owned, capnp::any_pointer::Owned>,
+        mut results: repository::RemoveResults<
+            capnp::any_pointer::Owned,
+            capnp::any_pointer::Owned,
+        >,
+    ) -> Promise<(), capnp::Error> {
+        let key = pry!(serialize_any_pointer(pry!(pry!(params.get()).get_key())));
+        let mut store = self.store.borrow_mut();
+        let mut revision = self.revision.borrow_mut();
+        *revision += 1;
+        let new_revision = *revision;
+        let mut r = results.get();
+        r.set_new_revision(new_revision);
+        if let Some((bytes, _)) = store.remove(&key) {
+            let msg = pry!(capnp::serialize::read_message_from_flat_slice(
+                &mut &bytes[..],
+                Default::default()
+            ));
+            let removed: capnp::any_pointer::Reader =
+                pry!(msg.get_root::<capnp::any_pointer::Reader>());
+            let mut result = pry!(r.get_removed());
+            pry!(result.set_some(removed));
+        } else {
+            pry!(r.get_removed()).set_none(());
+        }
+        Promise::ok(())
+    }
+
+    fn list(
+        &mut self,
+        _params: repository::ListParams<capnp::any_pointer::Owned, capnp::any_pointer::Owned>,
+        mut results: repository::ListResults<capnp::any_pointer::Owned, capnp::any_pointer::Owned>,
+    ) -> Promise<(), capnp::Error> {
+        let store = self.store.borrow();
+        let mut entries = results.get().init_entries(store.len() as u32);
+        for (i, (key, (value, _))) in store.iter().enumerate() {
+            let mut entry = entries.reborrow().get(i as u32);
+            let key_msg = pry!(capnp::serialize::read_message_from_flat_slice(
+                &mut &key[..],
+                Default::default()
+            ));
+            let key_root: capnp::any_pointer::Reader =
+                pry!(key_msg.get_root::<capnp::any_pointer::Reader>());
+            let value_msg = pry!(capnp::serialize::read_message_from_flat_slice(
+                &mut &value[..],
+                Default::default()
+            ));
+            let value_root: capnp::any_pointer::Reader =
+                pry!(value_msg.get_root::<capnp::any_pointer::Reader>());
+            pry!(entry.set_key(key_root));
+            pry!(entry.set_value(value_root));
+        }
+        Promise::ok(())
+    }
+
+    fn open_cursor(
+        &mut self,
+        _params: repository::OpenCursorParams<capnp::any_pointer::Owned, capnp::any_pointer::Owned>,
+        _results: repository::OpenCursorResults<
+            capnp::any_pointer::Owned,
+            capnp::any_pointer::Owned,
+        >,
+    ) -> Promise<(), capnp::Error> {
+        Promise::err(capnp::Error::failed(
+            "generic openCursor: not implemented".to_string(),
+        ))
+    }
+
+    fn watch(
+        &mut self,
+        _params: repository::WatchParams<capnp::any_pointer::Owned, capnp::any_pointer::Owned>,
+        _results: repository::WatchResults<capnp::any_pointer::Owned, capnp::any_pointer::Owned>,
+    ) -> Promise<(), capnp::Error> {
+        Promise::err(capnp::Error::failed(
+            "generic watch: not implemented".to_string(),
+        ))
+    }
+}
+
 impl repository::Server<capnp::text::Owned, complex_capnp::person::Owned> for RepositoryImpl {
     fn get(
         &mut self,
         params: repository::GetParams<capnp::text::Owned, complex_capnp::person::Owned>,
         mut results: repository::GetResults<capnp::text::Owned, complex_capnp::person::Owned>,
     ) -> Promise<(), capnp::Error> {
-        let key = pry!(pry!(pry!(params.get()).get_key()).to_str().map_err(|e| {
-            capnp::Error::failed(format!("invalid key utf8: {}", e))
-        }))
+        let key = pry!(pry!(pry!(params.get()).get_key())
+            .to_str()
+            .map_err(|e| { capnp::Error::failed(format!("invalid key utf8: {}", e)) }))
         .to_string();
         let store = self.store.borrow();
         let mut r = results.get();
@@ -122,9 +366,9 @@ impl repository::Server<capnp::text::Owned, complex_capnp::person::Owned> for Re
         mut results: repository::PutResults<capnp::text::Owned, complex_capnp::person::Owned>,
     ) -> Promise<(), capnp::Error> {
         let p = pry!(params.get());
-        let key = pry!(pry!(p.get_key()).to_str().map_err(|e| {
-            capnp::Error::failed(format!("invalid key utf8: {}", e))
-        }))
+        let key = pry!(pry!(p.get_key())
+            .to_str()
+            .map_err(|e| { capnp::Error::failed(format!("invalid key utf8: {}", e)) }))
         .to_string();
         let person_reader = pry!(p.get_value());
 
@@ -165,9 +409,9 @@ impl repository::Server<capnp::text::Owned, complex_capnp::person::Owned> for Re
         params: repository::RemoveParams<capnp::text::Owned, complex_capnp::person::Owned>,
         mut results: repository::RemoveResults<capnp::text::Owned, complex_capnp::person::Owned>,
     ) -> Promise<(), capnp::Error> {
-        let key = pry!(pry!(pry!(params.get()).get_key()).to_str().map_err(|e| {
-            capnp::Error::failed(format!("invalid key utf8: {}", e))
-        }))
+        let key = pry!(pry!(pry!(params.get()).get_key())
+            .to_str()
+            .map_err(|e| { capnp::Error::failed(format!("invalid key utf8: {}", e)) }))
         .to_string();
 
         let mut store = self.store.borrow_mut();
@@ -225,7 +469,9 @@ impl repository::Server<capnp::text::Owned, complex_capnp::person::Owned> for Re
         _params: repository::OpenCursorParams<capnp::text::Owned, complex_capnp::person::Owned>,
         _results: repository::OpenCursorResults<capnp::text::Owned, complex_capnp::person::Owned>,
     ) -> Promise<(), capnp::Error> {
-        Promise::err(capnp::Error::failed("openCursor: not implemented".to_string()))
+        Promise::err(capnp::Error::failed(
+            "openCursor: not implemented".to_string(),
+        ))
     }
 
     fn watch(
@@ -254,10 +500,7 @@ impl ByteSinkImpl {
 }
 
 impl byte_sink::Server for ByteSinkImpl {
-    fn write(
-        &mut self,
-        params: byte_sink::WriteParams,
-    ) -> Promise<(), capnp::Error> {
+    fn write(&mut self, params: byte_sink::WriteParams) -> Promise<(), capnp::Error> {
         let chunk = pry!(pry!(params.get()).get_chunk());
         self.data.borrow_mut().extend_from_slice(chunk);
         Promise::ok(())
@@ -339,7 +582,77 @@ impl byte_source::Server for ByteSourceImpl {
 struct CapabilityFactoryImpl;
 
 impl capability_factory::Server for CapabilityFactoryImpl {
-    // All methods return "not implemented" - generic methods aren't easily supported
+    fn new_cell(
+        &mut self,
+        params: capability_factory::NewCellParams,
+        mut results: capability_factory::NewCellResults,
+    ) -> Promise<(), capnp::Error> {
+        let initial_value = pry!(serialize_any_pointer(pry!(
+            pry!(params.get()).get_initial_value()
+        )));
+        let cell: read_write::Client<capnp::any_pointer::Owned> =
+            capnp_rpc::new_client(GenericCellImpl::new(Some(initial_value)));
+        results.get().set_cell(cell);
+        Promise::ok(())
+    }
+
+    fn new_empty_cell(
+        &mut self,
+        _params: capability_factory::NewEmptyCellParams,
+        mut results: capability_factory::NewEmptyCellResults,
+    ) -> Promise<(), capnp::Error> {
+        let cell: read_write::Client<capnp::any_pointer::Owned> =
+            capnp_rpc::new_client(GenericCellImpl::new(None));
+        results.get().set_cell(cell);
+        Promise::ok(())
+    }
+
+    fn new_repository(
+        &mut self,
+        _params: capability_factory::NewRepositoryParams,
+        mut results: capability_factory::NewRepositoryResults,
+    ) -> Promise<(), capnp::Error> {
+        let repository: repository::Client<capnp::any_pointer::Owned, capnp::any_pointer::Owned> =
+            capnp_rpc::new_client(GenericRepositoryImpl::new());
+        results.get().set_repository(repository);
+        Promise::ok(())
+    }
+
+    fn echo_capability(
+        &mut self,
+        params: capability_factory::EchoCapabilityParams,
+        mut results: capability_factory::EchoCapabilityResults,
+    ) -> Promise<(), capnp::Error> {
+        let capability = pry!(pry!(params.get()).get_capability());
+        pry!(results.get().set_same_capability(capability));
+        Promise::ok(())
+    }
+
+    fn get_untyped(
+        &mut self,
+        params: capability_factory::GetUntypedParams,
+        mut results: capability_factory::GetUntypedResults,
+    ) -> Promise<(), capnp::Error> {
+        let name = pry!(pry!(params.get()).get_name()).to_str().unwrap_or("");
+        println!("[server] factory.getUntyped({})", name);
+
+        let result_root = results.get();
+        let value = result_root.init_value();
+        match name {
+            "scalars" | "AllScalars" => {
+                let mut scalars = value.init_as::<complex_capnp::all_scalars::Builder>();
+                scalars.set_int32_value(20260717);
+                scalars.set_uint16_value(4242);
+                scalars.set_text_value("untyped from Rust");
+            }
+            _ => {
+                let mut scalars = value.init_as::<complex_capnp::all_scalars::Builder>();
+                scalars.set_int32_value(-1);
+                scalars.set_text_value("unknown untyped payload");
+            }
+        }
+        Promise::ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -414,12 +727,15 @@ impl complex_test_service::Server for ComplexTestServiceImpl {
 
     fn echo_any_pointer(
         &mut self,
-        _params: complex_test_service::EchoAnyPointerParams,
-        _results: complex_test_service::EchoAnyPointerResults,
+        params: complex_test_service::EchoAnyPointerParams,
+        mut results: complex_test_service::EchoAnyPointerResults,
     ) -> Promise<(), capnp::Error> {
-        Promise::err(capnp::Error::failed(
-            "echoAnyPointer: generic methods not supported at runtime".to_string(),
-        ))
+        let value = pry!(pry!(params.get()).get_value());
+        pry!(results
+            .get()
+            .init_value()
+            .set_as::<capnp::any_pointer::Owned>(value));
+        Promise::ok(())
     }
 
     fn exchange_capabilities(
@@ -490,12 +806,11 @@ impl complex_test_service::Server for ComplexTestServiceImpl {
         let resource_id = pry!(p.get_resource_id());
         // Use the text value of the identifier as the data to serve
         let data: Vec<u8> = match resource_id.which() {
-            Ok(complex_capnp::identifier::Which::Textual(t)) => {
-                t.unwrap_or(capnp::text::Reader::from("")).as_bytes().to_vec()
-            }
-            Ok(complex_capnp::identifier::Which::Binary(d)) => {
-                d.unwrap_or(&[]).to_vec()
-            }
+            Ok(complex_capnp::identifier::Which::Textual(t)) => t
+                .unwrap_or(capnp::text::Reader::from(""))
+                .as_bytes()
+                .to_vec(),
+            Ok(complex_capnp::identifier::Which::Binary(d)) => d.unwrap_or(&[]).to_vec(),
             _ => b"default-data".to_vec(),
         };
         println!("[server] openDownload({} bytes)", data.len());
@@ -559,11 +874,11 @@ impl complex_test_service::Server for ComplexTestServiceImpl {
         let p = pry!(params.get());
         let code = p.get_code();
         let message = pry!(p.get_message()).to_str().unwrap_or("").to_string();
-        println!("[server] failIntentionally(code={}, message=\"{}\")", code, message);
-        Promise::err(capnp::Error::failed(format!(
-            "[code={}] {}",
+        println!(
+            "[server] failIntentionally(code={}, message=\"{}\")",
             code, message
-        )))
+        );
+        Promise::err(capnp::Error::failed(format!("[code={}] {}", code, message)))
     }
 
     fn shutdown(

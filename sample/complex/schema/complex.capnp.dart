@@ -7,11 +7,37 @@ import 'package:capnproto_dart_rpc/capnproto_dart_rpc.dart';
 
 enum Color { red, green, blue, transparent }
 
+const EnumSchemaInfo colorSchema = EnumSchemaInfo(
+  id: 0xf9126378ca362f00,
+  displayName: 'complex.capnp:Color',
+  shortName: 'Color',
+  enumerants: [
+    EnumerantSchemaInfo(name: 'red', codeOrder: 0),
+    EnumerantSchemaInfo(name: 'green', codeOrder: 1),
+    EnumerantSchemaInfo(name: 'blue', codeOrder: 2),
+    EnumerantSchemaInfo(name: 'transparent', codeOrder: 3),
+  ],
+);
+
 Color? colorFromUint16(int v) =>
     v < Color.values.length ? Color.values[v] : null;
 int colorToUint16(Color v) => v.index;
 
 enum Status { unknown, starting, running, stopping, stopped, failed }
+
+const EnumSchemaInfo statusSchema = EnumSchemaInfo(
+  id: 0xef7ddc7b82f81295,
+  displayName: 'complex.capnp:Status',
+  shortName: 'Status',
+  enumerants: [
+    EnumerantSchemaInfo(name: 'unknown', codeOrder: 0),
+    EnumerantSchemaInfo(name: 'starting', codeOrder: 1),
+    EnumerantSchemaInfo(name: 'running', codeOrder: 2),
+    EnumerantSchemaInfo(name: 'stopping', codeOrder: 3),
+    EnumerantSchemaInfo(name: 'stopped', codeOrder: 4),
+    EnumerantSchemaInfo(name: 'failed', codeOrder: 5),
+  ],
+);
 
 Status? statusFromUint16(int v) =>
     v < Status.values.length ? Status.values[v] : null;
@@ -19,12 +45,29 @@ int statusToUint16(Status v) => v.index;
 
 enum Relationship { parent, child, sibling, spouse, friend, colleague, other }
 
+const EnumSchemaInfo relationshipSchema = EnumSchemaInfo(
+  id: 0xea1311715fb9ef94,
+  displayName: 'complex.capnp:Person.Relationship',
+  shortName: 'Relationship',
+  enumerants: [
+    EnumerantSchemaInfo(name: 'parent', codeOrder: 0),
+    EnumerantSchemaInfo(name: 'child', codeOrder: 1),
+    EnumerantSchemaInfo(name: 'sibling', codeOrder: 2),
+    EnumerantSchemaInfo(name: 'spouse', codeOrder: 3),
+    EnumerantSchemaInfo(name: 'friend', codeOrder: 4),
+    EnumerantSchemaInfo(name: 'colleague', codeOrder: 5),
+    EnumerantSchemaInfo(name: 'other', codeOrder: 6),
+  ],
+);
+
 Relationship? relationshipFromUint16(int v) =>
     v < Relationship.values.length ? Relationship.values[v] : null;
 int relationshipToUint16(Relationship v) => v.index;
 
 final class EmptyReader extends StructReader {
   EmptyReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = emptySchema;
 }
 
 final class EmptyBuilder extends StructBuilder {
@@ -35,6 +78,8 @@ final class EmptyBuilder extends StructBuilder {
 }
 
 final class _EmptyFactory extends StructFactory<EmptyReader, EmptyBuilder> {
+  @override
+  StructSchemaInfo get schema => emptySchema;
   @override
   int get dataWords => 0;
   @override
@@ -50,10 +95,21 @@ final class _EmptyFactory extends StructFactory<EmptyReader, EmptyBuilder> {
   EmptyBuilder fromRawBuilder(RawStructBuilder r) => EmptyBuilder(r);
 }
 
+const StructSchemaInfo emptySchema = StructSchemaInfo(
+  id: 0x848a5175b688254d,
+  displayName: 'complex.capnp:Empty',
+  shortName: 'Empty',
+  dataWords: 0,
+  pointerWords: 0,
+  fields: [],
+);
+
 final emptyFactory = _EmptyFactory();
 
 final class TinyReader extends StructReader {
   TinyReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = tinySchema;
 
   bool get flag => getBoolField(0);
 }
@@ -71,6 +127,8 @@ final class TinyBuilder extends StructBuilder {
 
 final class _TinyFactory extends StructFactory<TinyReader, TinyBuilder> {
   @override
+  StructSchemaInfo get schema => tinySchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 0;
@@ -85,10 +143,30 @@ final class _TinyFactory extends StructFactory<TinyReader, TinyBuilder> {
   TinyBuilder fromRawBuilder(RawStructBuilder r) => TinyBuilder(r);
 }
 
+const StructSchemaInfo tinySchema = StructSchemaInfo(
+  id: 0xa62b003b7e673302,
+  displayName: 'complex.capnp:Tiny',
+  shortName: 'Tiny',
+  dataWords: 1,
+  pointerWords: 0,
+  fields: [
+    FieldSchemaInfo(
+      name: 'flag',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Bool'),
+      ),
+    ),
+  ],
+);
+
 final tinyFactory = _TinyFactory();
 
 final class AllScalarsReader extends StructReader {
   AllScalarsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = allScalarsSchema;
 
   bool get boolean => getBoolField(0, defaultValue: true);
 
@@ -185,6 +263,8 @@ final class AllScalarsBuilder extends StructBuilder {
 final class _AllScalarsFactory
     extends StructFactory<AllScalarsReader, AllScalarsBuilder> {
   @override
+  StructSchemaInfo get schema => allScalarsSchema;
+  @override
   int get dataWords => 6;
   @override
   int get ptrWords => 2;
@@ -199,10 +279,168 @@ final class _AllScalarsFactory
   AllScalarsBuilder fromRawBuilder(RawStructBuilder r) => AllScalarsBuilder(r);
 }
 
+const StructSchemaInfo allScalarsSchema = StructSchemaInfo(
+  id: 0xd3551dfdec8334bd,
+  displayName: 'complex.capnp:AllScalars',
+  shortName: 'AllScalars',
+  dataWords: 6,
+  pointerWords: 2,
+  fields: [
+    FieldSchemaInfo(
+      name: 'nothing',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Void'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'boolean',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Bool'),
+        hadExplicitDefault: true,
+        defaultValue: true,
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'int8Value',
+      codeOrder: 2,
+      body: SlotFieldSchemaInfo(
+        offset: 1,
+        type: PrimitiveTypeSchemaInfo('Int8'),
+        hadExplicitDefault: true,
+        defaultValue: -8,
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'int16Value',
+      codeOrder: 3,
+      body: SlotFieldSchemaInfo(
+        offset: 1,
+        type: PrimitiveTypeSchemaInfo('Int16'),
+        hadExplicitDefault: true,
+        defaultValue: -1600,
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'int32Value',
+      codeOrder: 4,
+      body: SlotFieldSchemaInfo(
+        offset: 1,
+        type: PrimitiveTypeSchemaInfo('Int32'),
+        hadExplicitDefault: true,
+        defaultValue: -320000,
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'int64Value',
+      codeOrder: 5,
+      body: SlotFieldSchemaInfo(
+        offset: 1,
+        type: PrimitiveTypeSchemaInfo('Int64'),
+        hadExplicitDefault: true,
+        defaultValue: -6400000000,
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'uint8Value',
+      codeOrder: 6,
+      body: SlotFieldSchemaInfo(
+        offset: 16,
+        type: PrimitiveTypeSchemaInfo('UInt8'),
+        hadExplicitDefault: true,
+        defaultValue: 8,
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'uint16Value',
+      codeOrder: 7,
+      body: SlotFieldSchemaInfo(
+        offset: 9,
+        type: PrimitiveTypeSchemaInfo('UInt16'),
+        hadExplicitDefault: true,
+        defaultValue: 1600,
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'uint32Value',
+      codeOrder: 8,
+      body: SlotFieldSchemaInfo(
+        offset: 5,
+        type: PrimitiveTypeSchemaInfo('UInt32'),
+        hadExplicitDefault: true,
+        defaultValue: 320000,
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'uint64Value',
+      codeOrder: 9,
+      body: SlotFieldSchemaInfo(
+        offset: 3,
+        type: PrimitiveTypeSchemaInfo('UInt64'),
+        hadExplicitDefault: true,
+        defaultValue: 6400000000,
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'float32Value',
+      codeOrder: 10,
+      body: SlotFieldSchemaInfo(
+        offset: 8,
+        type: PrimitiveTypeSchemaInfo('Float32'),
+        hadExplicitDefault: true,
+        defaultValue: 1.25,
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'float64Value',
+      codeOrder: 11,
+      body: SlotFieldSchemaInfo(
+        offset: 5,
+        type: PrimitiveTypeSchemaInfo('Float64'),
+        hadExplicitDefault: true,
+        defaultValue: -2.5,
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'textValue',
+      codeOrder: 12,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Text'),
+        hadExplicitDefault: true,
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'dataValue',
+      codeOrder: 13,
+      body: SlotFieldSchemaInfo(
+        offset: 1,
+        type: PrimitiveTypeSchemaInfo('Data'),
+        hadExplicitDefault: true,
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'color',
+      codeOrder: 14,
+      body: SlotFieldSchemaInfo(
+        offset: 18,
+        type: EnumRefTypeSchemaInfo(0xf9126378ca362f00),
+        hadExplicitDefault: true,
+        defaultValue: 1,
+      ),
+    ),
+  ],
+);
+
 final allScalarsFactory = _AllScalarsFactory();
 
 final class TimestampReader extends StructReader {
   TimestampReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = timestampSchema;
 
   int get seconds => getInt64Field(0);
 
@@ -227,6 +465,8 @@ final class TimestampBuilder extends StructBuilder {
 final class _TimestampFactory
     extends StructFactory<TimestampReader, TimestampBuilder> {
   @override
+  StructSchemaInfo get schema => timestampSchema;
+  @override
   int get dataWords => 2;
   @override
   int get ptrWords => 0;
@@ -241,10 +481,38 @@ final class _TimestampFactory
   TimestampBuilder fromRawBuilder(RawStructBuilder r) => TimestampBuilder(r);
 }
 
+const StructSchemaInfo timestampSchema = StructSchemaInfo(
+  id: 0xa994ff121f52a9fc,
+  displayName: 'complex.capnp:Timestamp',
+  shortName: 'Timestamp',
+  dataWords: 2,
+  pointerWords: 0,
+  fields: [
+    FieldSchemaInfo(
+      name: 'seconds',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Int64'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'nanoseconds',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 2,
+        type: PrimitiveTypeSchemaInfo('UInt32'),
+      ),
+    ),
+  ],
+);
+
 final timestampFactory = _TimestampFactory();
 
 final class IdentifierReader extends StructReader {
   IdentifierReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = identifierSchema;
 
   int get which => getUint16Field(8);
 
@@ -286,6 +554,8 @@ final class IdentifierBuilder extends StructBuilder {
 final class _IdentifierFactory
     extends StructFactory<IdentifierReader, IdentifierBuilder> {
   @override
+  StructSchemaInfo get schema => identifierSchema;
+  @override
   int get dataWords => 2;
   @override
   int get ptrWords => 1;
@@ -300,10 +570,60 @@ final class _IdentifierFactory
   IdentifierBuilder fromRawBuilder(RawStructBuilder r) => IdentifierBuilder(r);
 }
 
+const StructSchemaInfo identifierSchema = StructSchemaInfo(
+  id: 0xfdfd178b7c29d313,
+  displayName: 'complex.capnp:Identifier',
+  shortName: 'Identifier',
+  dataWords: 2,
+  pointerWords: 1,
+  discriminantCount: 4,
+  discriminantOffset: 4,
+  fields: [
+    FieldSchemaInfo(
+      name: 'numeric',
+      codeOrder: 0,
+      discriminantValue: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('UInt64'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'textual',
+      codeOrder: 1,
+      discriminantValue: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Text'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'binary',
+      codeOrder: 2,
+      discriminantValue: 2,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Data'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'absent',
+      codeOrder: 3,
+      discriminantValue: 3,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Void'),
+      ),
+    ),
+  ],
+);
+
 final identifierFactory = _IdentifierFactory();
 
 final class AddressReader extends StructReader {
   AddressReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = addressSchema;
 
   String? get country => getTextField(0);
 
@@ -346,6 +666,8 @@ final class AddressBuilder extends StructBuilder {
 final class _AddressFactory
     extends StructFactory<AddressReader, AddressBuilder> {
   @override
+  StructSchemaInfo get schema => addressSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 5;
@@ -360,10 +682,62 @@ final class _AddressFactory
   AddressBuilder fromRawBuilder(RawStructBuilder r) => AddressBuilder(r);
 }
 
+const StructSchemaInfo addressSchema = StructSchemaInfo(
+  id: 0x9d7145743cb95b21,
+  displayName: 'complex.capnp:Address',
+  shortName: 'Address',
+  dataWords: 0,
+  pointerWords: 5,
+  fields: [
+    FieldSchemaInfo(
+      name: 'country',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Text'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'postalCode',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 1,
+        type: PrimitiveTypeSchemaInfo('Text'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'city',
+      codeOrder: 2,
+      body: SlotFieldSchemaInfo(
+        offset: 2,
+        type: PrimitiveTypeSchemaInfo('Text'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'street',
+      codeOrder: 3,
+      body: SlotFieldSchemaInfo(
+        offset: 3,
+        type: PrimitiveTypeSchemaInfo('Text'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'building',
+      codeOrder: 4,
+      body: SlotFieldSchemaInfo(
+        offset: 4,
+        type: PrimitiveTypeSchemaInfo('Text'),
+      ),
+    ),
+  ],
+);
+
 final addressFactory = _AddressFactory();
 
 final class PersonReader extends StructReader {
   PersonReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = personSchema;
 
   IdentifierReader? get id => getStructFieldWith(
     0,
@@ -472,6 +846,8 @@ final class PersonBuilder extends StructBuilder {
 
 final class _PersonFactory extends StructFactory<PersonReader, PersonBuilder> {
   @override
+  StructSchemaInfo get schema => personSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 10;
@@ -486,10 +862,119 @@ final class _PersonFactory extends StructFactory<PersonReader, PersonBuilder> {
   PersonBuilder fromRawBuilder(RawStructBuilder r) => PersonBuilder(r);
 }
 
+const StructSchemaInfo personSchema = StructSchemaInfo(
+  id: 0xe9ca435af8b77fd8,
+  displayName: 'complex.capnp:Person',
+  shortName: 'Person',
+  dataWords: 1,
+  pointerWords: 10,
+  fields: [
+    FieldSchemaInfo(
+      name: 'id',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: StructRefTypeSchemaInfo(0xfdfd178b7c29d313),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'name',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 1,
+        type: PrimitiveTypeSchemaInfo('Text'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'email',
+      codeOrder: 2,
+      body: SlotFieldSchemaInfo(
+        offset: 2,
+        type: PrimitiveTypeSchemaInfo('Text'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'status',
+      codeOrder: 3,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: EnumRefTypeSchemaInfo(0xef7ddc7b82f81295),
+        hadExplicitDefault: true,
+        defaultValue: 0,
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'favoriteColor',
+      codeOrder: 4,
+      body: SlotFieldSchemaInfo(
+        offset: 1,
+        type: EnumRefTypeSchemaInfo(0xf9126378ca362f00),
+        hadExplicitDefault: true,
+        defaultValue: 3,
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'createdAt',
+      codeOrder: 5,
+      body: SlotFieldSchemaInfo(
+        offset: 3,
+        type: StructRefTypeSchemaInfo(0xa994ff121f52a9fc),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'contact',
+      codeOrder: 6,
+      body: GroupFieldSchemaInfo(typeId: 0xa7204948c4b8594e),
+    ),
+    FieldSchemaInfo(
+      name: 'tags',
+      codeOrder: 7,
+      body: SlotFieldSchemaInfo(
+        offset: 6,
+        type: ListTypeSchemaInfo(PrimitiveTypeSchemaInfo('Text')),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'attributes',
+      codeOrder: 8,
+      body: SlotFieldSchemaInfo(
+        offset: 7,
+        type: ListTypeSchemaInfo(
+          StructRefTypeSchemaInfo(
+            0xa3757dd4f46775cf,
+            typeArgs: [
+              PrimitiveTypeSchemaInfo('Text'),
+              PrimitiveTypeSchemaInfo('Text'),
+            ],
+          ),
+        ),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'employments',
+      codeOrder: 9,
+      body: SlotFieldSchemaInfo(
+        offset: 8,
+        type: ListTypeSchemaInfo(StructRefTypeSchemaInfo(0x8b49a2cb335954bf)),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'related',
+      codeOrder: 10,
+      body: SlotFieldSchemaInfo(
+        offset: 9,
+        type: ListTypeSchemaInfo(StructRefTypeSchemaInfo(0xbd02ac71c6b4adfd)),
+      ),
+    ),
+  ],
+);
+
 final personFactory = _PersonFactory();
 
 final class EmploymentReader extends StructReader {
   EmploymentReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = employmentSchema;
 
   int get which => getUint16Field(0);
 
@@ -545,6 +1030,8 @@ final class EmploymentBuilder extends StructBuilder {
 final class _EmploymentFactory
     extends StructFactory<EmploymentReader, EmploymentBuilder> {
   @override
+  StructSchemaInfo get schema => employmentSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 4;
@@ -559,10 +1046,65 @@ final class _EmploymentFactory
   EmploymentBuilder fromRawBuilder(RawStructBuilder r) => EmploymentBuilder(r);
 }
 
+const StructSchemaInfo employmentSchema = StructSchemaInfo(
+  id: 0x8b49a2cb335954bf,
+  displayName: 'complex.capnp:Person.Employment',
+  shortName: 'Employment',
+  dataWords: 1,
+  pointerWords: 4,
+  discriminantCount: 2,
+  fields: [
+    FieldSchemaInfo(
+      name: 'employer',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Text'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'title',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 1,
+        type: PrimitiveTypeSchemaInfo('Text'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'since',
+      codeOrder: 2,
+      body: SlotFieldSchemaInfo(
+        offset: 2,
+        type: StructRefTypeSchemaInfo(0xa994ff121f52a9fc),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'active',
+      codeOrder: 3,
+      discriminantValue: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Void'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'endedAt',
+      codeOrder: 4,
+      discriminantValue: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 3,
+        type: StructRefTypeSchemaInfo(0xa994ff121f52a9fc),
+      ),
+    ),
+  ],
+);
+
 final employmentFactory = _EmploymentFactory();
 
 final class RelatedPersonReader extends StructReader {
   RelatedPersonReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = relatedPersonSchema;
 
   PersonReader? get person => getStructFieldWith(
     0,
@@ -592,6 +1134,8 @@ final class RelatedPersonBuilder extends StructBuilder {
 final class _RelatedPersonFactory
     extends StructFactory<RelatedPersonReader, RelatedPersonBuilder> {
   @override
+  StructSchemaInfo get schema => relatedPersonSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 1;
@@ -608,14 +1152,42 @@ final class _RelatedPersonFactory
       RelatedPersonBuilder(r);
 }
 
+const StructSchemaInfo relatedPersonSchema = StructSchemaInfo(
+  id: 0xbd02ac71c6b4adfd,
+  displayName: 'complex.capnp:Person.RelatedPerson',
+  shortName: 'RelatedPerson',
+  dataWords: 1,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'person',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: StructRefTypeSchemaInfo(0xe9ca435af8b77fd8),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'relationship',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: EnumRefTypeSchemaInfo(0xea1311715fb9ef94),
+      ),
+    ),
+  ],
+);
+
 final relatedPersonFactory = _RelatedPersonFactory();
 
 final class KeyValueReader extends StructReader {
   KeyValueReader(super.raw, {super.capabilities});
 
-  Uint8List? get key => getAnyPointerAsMessageBytes(0);
+  static const StructSchemaInfo schema = keyValueSchema;
 
-  Uint8List? get value => getAnyPointerAsMessageBytes(1);
+  AnyPointerReader? get key => getAnyPointerField(0);
+
+  AnyPointerReader? get value => getAnyPointerField(1);
 }
 
 final class KeyValueBuilder extends StructBuilder {
@@ -624,17 +1196,39 @@ final class KeyValueBuilder extends StructBuilder {
   @override
   KeyValueReader asReader() => KeyValueReader(rawToReader());
 
-  set key(Uint8List? v) {
-    if (v != null) setAnyPointerFromMessage(0, v);
+  AnyPointerBuilder initKey() {
+    return initAnyPointerField(0);
   }
 
-  set value(Uint8List? v) {
-    if (v != null) setAnyPointerFromMessage(1, v);
+  set key(AnyPointerReader? v) {
+    setAnyPointerField(0, v);
+  }
+
+  void setKeyMessage(Uint8List? v) {
+    if (v != null) {
+      setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    }
+  }
+
+  AnyPointerBuilder initValue() {
+    return initAnyPointerField(1);
+  }
+
+  set value(AnyPointerReader? v) {
+    setAnyPointerField(1, v);
+  }
+
+  void setValueMessage(Uint8List? v) {
+    if (v != null) {
+      setAnyPointerFromMessage(1, v, preserveCapabilityPointers: true);
+    }
   }
 }
 
 final class _KeyValueFactory
     extends StructFactory<KeyValueReader, KeyValueBuilder> {
+  @override
+  StructSchemaInfo get schema => keyValueSchema;
   @override
   int get dataWords => 0;
   @override
@@ -650,14 +1244,37 @@ final class _KeyValueFactory
   KeyValueBuilder fromRawBuilder(RawStructBuilder r) => KeyValueBuilder(r);
 }
 
+const StructSchemaInfo keyValueSchema = StructSchemaInfo(
+  id: 0xa3757dd4f46775cf,
+  displayName: 'complex.capnp:KeyValue',
+  shortName: 'KeyValue',
+  dataWords: 0,
+  pointerWords: 2,
+  typeParameters: ['Key', 'Value'],
+  fields: [
+    FieldSchemaInfo(
+      name: 'key',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(offset: 0, type: TypeParameterSchemaInfo(0)),
+    ),
+    FieldSchemaInfo(
+      name: 'value',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(offset: 1, type: TypeParameterSchemaInfo(1)),
+    ),
+  ],
+);
+
 final keyValueFactory = _KeyValueFactory();
 
 final class OptionalReader extends StructReader {
   OptionalReader(super.raw, {super.capabilities});
 
+  static const StructSchemaInfo schema = optionalSchema;
+
   int get which => getUint16Field(0);
 
-  Uint8List? get some => getAnyPointerAsMessageBytes(0);
+  AnyPointerReader? get some => getAnyPointerField(0);
 }
 
 final class OptionalBuilder extends StructBuilder {
@@ -672,14 +1289,28 @@ final class OptionalBuilder extends StructBuilder {
     setUint16Field(0, 0);
   }
 
-  set some(Uint8List? v) {
+  AnyPointerBuilder initSome() {
     setUint16Field(0, 1);
-    if (v != null) setAnyPointerFromMessage(0, v);
+    return initAnyPointerField(0);
+  }
+
+  set some(AnyPointerReader? v) {
+    setUint16Field(0, 1);
+    setAnyPointerField(0, v);
+  }
+
+  void setSomeMessage(Uint8List? v) {
+    setUint16Field(0, 1);
+    if (v != null) {
+      setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    }
   }
 }
 
 final class _OptionalFactory
     extends StructFactory<OptionalReader, OptionalBuilder> {
+  @override
+  StructSchemaInfo get schema => optionalSchema;
   @override
   int get dataWords => 1;
   @override
@@ -695,16 +1326,45 @@ final class _OptionalFactory
   OptionalBuilder fromRawBuilder(RawStructBuilder r) => OptionalBuilder(r);
 }
 
+const StructSchemaInfo optionalSchema = StructSchemaInfo(
+  id: 0xa6ccf7c03dcc3a0b,
+  displayName: 'complex.capnp:Optional',
+  shortName: 'Optional',
+  dataWords: 1,
+  pointerWords: 1,
+  discriminantCount: 2,
+  typeParameters: ['Value'],
+  fields: [
+    FieldSchemaInfo(
+      name: 'none',
+      codeOrder: 0,
+      discriminantValue: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Void'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'some',
+      codeOrder: 1,
+      discriminantValue: 1,
+      body: SlotFieldSchemaInfo(offset: 0, type: TypeParameterSchemaInfo(0)),
+    ),
+  ],
+);
+
 final optionalFactory = _OptionalFactory();
 
 final class ResultReader extends StructReader {
   ResultReader(super.raw, {super.capabilities});
 
+  static const StructSchemaInfo schema = resultSchema;
+
   int get which => getUint16Field(0);
 
-  Uint8List? get ok => getAnyPointerAsMessageBytes(0);
+  AnyPointerReader? get ok => getAnyPointerField(0);
 
-  Uint8List? get err => getAnyPointerAsMessageBytes(0);
+  AnyPointerReader? get err => getAnyPointerField(0);
 }
 
 final class ResultBuilder extends StructBuilder {
@@ -715,18 +1375,44 @@ final class ResultBuilder extends StructBuilder {
 
   void _setWhich(int v) => setUint16Field(0, v);
 
-  set ok(Uint8List? v) {
+  AnyPointerBuilder initOk() {
     setUint16Field(0, 0);
-    if (v != null) setAnyPointerFromMessage(0, v);
+    return initAnyPointerField(0);
   }
 
-  set err(Uint8List? v) {
+  set ok(AnyPointerReader? v) {
+    setUint16Field(0, 0);
+    setAnyPointerField(0, v);
+  }
+
+  void setOkMessage(Uint8List? v) {
+    setUint16Field(0, 0);
+    if (v != null) {
+      setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    }
+  }
+
+  AnyPointerBuilder initErr() {
     setUint16Field(0, 1);
-    if (v != null) setAnyPointerFromMessage(0, v);
+    return initAnyPointerField(0);
+  }
+
+  set err(AnyPointerReader? v) {
+    setUint16Field(0, 1);
+    setAnyPointerField(0, v);
+  }
+
+  void setErrMessage(Uint8List? v) {
+    setUint16Field(0, 1);
+    if (v != null) {
+      setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    }
   }
 }
 
 final class _ResultFactory extends StructFactory<ResultReader, ResultBuilder> {
+  @override
+  StructSchemaInfo get schema => resultSchema;
   @override
   int get dataWords => 1;
   @override
@@ -742,12 +1428,38 @@ final class _ResultFactory extends StructFactory<ResultReader, ResultBuilder> {
   ResultBuilder fromRawBuilder(RawStructBuilder r) => ResultBuilder(r);
 }
 
+const StructSchemaInfo resultSchema = StructSchemaInfo(
+  id: 0xa2f61119ceb856c8,
+  displayName: 'complex.capnp:Result',
+  shortName: 'Result',
+  dataWords: 1,
+  pointerWords: 1,
+  discriminantCount: 2,
+  typeParameters: ['Value', 'Error'],
+  fields: [
+    FieldSchemaInfo(
+      name: 'ok',
+      codeOrder: 0,
+      discriminantValue: 0,
+      body: SlotFieldSchemaInfo(offset: 0, type: TypeParameterSchemaInfo(0)),
+    ),
+    FieldSchemaInfo(
+      name: 'err',
+      codeOrder: 1,
+      discriminantValue: 1,
+      body: SlotFieldSchemaInfo(offset: 0, type: TypeParameterSchemaInfo(1)),
+    ),
+  ],
+);
+
 final resultFactory = _ResultFactory();
 
 final class TreeReader extends StructReader {
   TreeReader(super.raw, {super.capabilities});
 
-  Uint8List? get value => getAnyPointerAsMessageBytes(0);
+  static const StructSchemaInfo schema = treeSchema;
+
+  AnyPointerReader? get value => getAnyPointerField(0);
 
   ListReader<TreeReader>? get children => getStructListFieldWith(
     1,
@@ -761,8 +1473,18 @@ final class TreeBuilder extends StructBuilder {
   @override
   TreeReader asReader() => TreeReader(rawToReader());
 
-  set value(Uint8List? v) {
-    if (v != null) setAnyPointerFromMessage(0, v);
+  AnyPointerBuilder initValue() {
+    return initAnyPointerField(0);
+  }
+
+  set value(AnyPointerReader? v) {
+    setAnyPointerField(0, v);
+  }
+
+  void setValueMessage(Uint8List? v) {
+    if (v != null) {
+      setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    }
   }
 
   ListBuilder<TreeBuilder> initChildren(int length) {
@@ -771,6 +1493,8 @@ final class TreeBuilder extends StructBuilder {
 }
 
 final class _TreeFactory extends StructFactory<TreeReader, TreeBuilder> {
+  @override
+  StructSchemaInfo get schema => treeSchema;
   @override
   int get dataWords => 0;
   @override
@@ -786,10 +1510,41 @@ final class _TreeFactory extends StructFactory<TreeReader, TreeBuilder> {
   TreeBuilder fromRawBuilder(RawStructBuilder r) => TreeBuilder(r);
 }
 
+const StructSchemaInfo treeSchema = StructSchemaInfo(
+  id: 0x802ea58652a5cc53,
+  displayName: 'complex.capnp:Tree',
+  shortName: 'Tree',
+  dataWords: 0,
+  pointerWords: 2,
+  typeParameters: ['NodeValue'],
+  fields: [
+    FieldSchemaInfo(
+      name: 'value',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(offset: 0, type: TypeParameterSchemaInfo(0)),
+    ),
+    FieldSchemaInfo(
+      name: 'children',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 1,
+        type: ListTypeSchemaInfo(
+          StructRefTypeSchemaInfo(
+            0x802ea58652a5cc53,
+            typeArgs: [TypeParameterSchemaInfo(0)],
+          ),
+        ),
+      ),
+    ),
+  ],
+);
+
 final treeFactory = _TreeFactory();
 
 final class MatrixReader extends StructReader {
   MatrixReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = matrixSchema;
 
   ListReader<ListReader<double>?>? get rows =>
       getNestedListField(0, float64ListFromRaw);
@@ -813,6 +1568,8 @@ final class MatrixBuilder extends StructBuilder {
 
 final class _MatrixFactory extends StructFactory<MatrixReader, MatrixBuilder> {
   @override
+  StructSchemaInfo get schema => matrixSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -827,10 +1584,32 @@ final class _MatrixFactory extends StructFactory<MatrixReader, MatrixBuilder> {
   MatrixBuilder fromRawBuilder(RawStructBuilder r) => MatrixBuilder(r);
 }
 
+const StructSchemaInfo matrixSchema = StructSchemaInfo(
+  id: 0xe226f174a996641c,
+  displayName: 'complex.capnp:Matrix',
+  shortName: 'Matrix',
+  dataWords: 0,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'rows',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: ListTypeSchemaInfo(
+          ListTypeSchemaInfo(PrimitiveTypeSchemaInfo('Float64')),
+        ),
+      ),
+    ),
+  ],
+);
+
 final matrixFactory = _MatrixFactory();
 
 final class AllListsReader extends StructReader {
   AllListsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = allListsSchema;
 
   ListReader<Null>? get voids => getVoidListField(0);
 
@@ -958,6 +1737,8 @@ final class AllListsBuilder extends StructBuilder {
 final class _AllListsFactory
     extends StructFactory<AllListsReader, AllListsBuilder> {
   @override
+  StructSchemaInfo get schema => allListsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 17;
@@ -972,10 +1753,162 @@ final class _AllListsFactory
   AllListsBuilder fromRawBuilder(RawStructBuilder r) => AllListsBuilder(r);
 }
 
+const StructSchemaInfo allListsSchema = StructSchemaInfo(
+  id: 0xe26a1cda2307fb78,
+  displayName: 'complex.capnp:AllLists',
+  shortName: 'AllLists',
+  dataWords: 0,
+  pointerWords: 17,
+  fields: [
+    FieldSchemaInfo(
+      name: 'voids',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: ListTypeSchemaInfo(PrimitiveTypeSchemaInfo('Void')),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'bools',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 1,
+        type: ListTypeSchemaInfo(PrimitiveTypeSchemaInfo('Bool')),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'int8s',
+      codeOrder: 2,
+      body: SlotFieldSchemaInfo(
+        offset: 2,
+        type: ListTypeSchemaInfo(PrimitiveTypeSchemaInfo('Int8')),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'int16s',
+      codeOrder: 3,
+      body: SlotFieldSchemaInfo(
+        offset: 3,
+        type: ListTypeSchemaInfo(PrimitiveTypeSchemaInfo('Int16')),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'int32s',
+      codeOrder: 4,
+      body: SlotFieldSchemaInfo(
+        offset: 4,
+        type: ListTypeSchemaInfo(PrimitiveTypeSchemaInfo('Int32')),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'int64s',
+      codeOrder: 5,
+      body: SlotFieldSchemaInfo(
+        offset: 5,
+        type: ListTypeSchemaInfo(PrimitiveTypeSchemaInfo('Int64')),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'uint8s',
+      codeOrder: 6,
+      body: SlotFieldSchemaInfo(
+        offset: 6,
+        type: ListTypeSchemaInfo(PrimitiveTypeSchemaInfo('UInt8')),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'uint16s',
+      codeOrder: 7,
+      body: SlotFieldSchemaInfo(
+        offset: 7,
+        type: ListTypeSchemaInfo(PrimitiveTypeSchemaInfo('UInt16')),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'uint32s',
+      codeOrder: 8,
+      body: SlotFieldSchemaInfo(
+        offset: 8,
+        type: ListTypeSchemaInfo(PrimitiveTypeSchemaInfo('UInt32')),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'uint64s',
+      codeOrder: 9,
+      body: SlotFieldSchemaInfo(
+        offset: 9,
+        type: ListTypeSchemaInfo(PrimitiveTypeSchemaInfo('UInt64')),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'float32s',
+      codeOrder: 10,
+      body: SlotFieldSchemaInfo(
+        offset: 10,
+        type: ListTypeSchemaInfo(PrimitiveTypeSchemaInfo('Float32')),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'float64s',
+      codeOrder: 11,
+      body: SlotFieldSchemaInfo(
+        offset: 11,
+        type: ListTypeSchemaInfo(PrimitiveTypeSchemaInfo('Float64')),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'texts',
+      codeOrder: 12,
+      body: SlotFieldSchemaInfo(
+        offset: 12,
+        type: ListTypeSchemaInfo(PrimitiveTypeSchemaInfo('Text')),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'blobs',
+      codeOrder: 13,
+      body: SlotFieldSchemaInfo(
+        offset: 13,
+        type: ListTypeSchemaInfo(PrimitiveTypeSchemaInfo('Data')),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'colors',
+      codeOrder: 14,
+      body: SlotFieldSchemaInfo(
+        offset: 14,
+        type: ListTypeSchemaInfo(EnumRefTypeSchemaInfo(0xf9126378ca362f00)),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'people',
+      codeOrder: 15,
+      body: SlotFieldSchemaInfo(
+        offset: 15,
+        type: ListTypeSchemaInfo(StructRefTypeSchemaInfo(0xe9ca435af8b77fd8)),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'matrices',
+      codeOrder: 16,
+      body: SlotFieldSchemaInfo(
+        offset: 16,
+        type: ListTypeSchemaInfo(
+          ListTypeSchemaInfo(
+            ListTypeSchemaInfo(PrimitiveTypeSchemaInfo('Int32')),
+          ),
+        ),
+      ),
+    ),
+  ],
+);
+
 final allListsFactory = _AllListsFactory();
 
 final class NamedUnionReader extends StructReader {
   NamedUnionReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = namedUnionSchema;
 
   int get selector => getUint32Field(0);
 
@@ -999,6 +1932,8 @@ final class NamedUnionBuilder extends StructBuilder {
 final class _NamedUnionFactory
     extends StructFactory<NamedUnionReader, NamedUnionBuilder> {
   @override
+  StructSchemaInfo get schema => namedUnionSchema;
+  @override
   int get dataWords => 4;
   @override
   int get ptrWords => 1;
@@ -1013,14 +1948,39 @@ final class _NamedUnionFactory
   NamedUnionBuilder fromRawBuilder(RawStructBuilder r) => NamedUnionBuilder(r);
 }
 
+const StructSchemaInfo namedUnionSchema = StructSchemaInfo(
+  id: 0xe831ae3d88b37134,
+  displayName: 'complex.capnp:NamedUnion',
+  shortName: 'NamedUnion',
+  dataWords: 4,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'selector',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('UInt32'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'payload',
+      codeOrder: 1,
+      body: GroupFieldSchemaInfo(typeId: 0xc92a18a8e56a5d74),
+    ),
+  ],
+);
+
 final namedUnionFactory = _NamedUnionFactory();
 
 final class DynamicEnvelopeReader extends StructReader {
   DynamicEnvelopeReader(super.raw, {super.capabilities});
 
+  static const StructSchemaInfo schema = dynamicEnvelopeSchema;
+
   String? get typeName => getTextField(0);
 
-  Uint8List? get payload => getAnyPointerAsMessageBytes(1);
+  AnyPointerReader? get payload => getAnyPointerField(1);
 
   ListReader<KeyValueTextTextReader>? get metadata => getStructListFieldWith(
     2,
@@ -1038,8 +1998,18 @@ final class DynamicEnvelopeBuilder extends StructBuilder {
     setTextField(0, v);
   }
 
-  set payload(Uint8List? v) {
-    if (v != null) setAnyPointerFromMessage(1, v);
+  AnyPointerBuilder initPayload() {
+    return initAnyPointerField(1);
+  }
+
+  set payload(AnyPointerReader? v) {
+    setAnyPointerField(1, v);
+  }
+
+  void setPayloadMessage(Uint8List? v) {
+    if (v != null) {
+      setAnyPointerFromMessage(1, v, preserveCapabilityPointers: true);
+    }
   }
 
   ListBuilder<KeyValueBuilder> initMetadata(int length) {
@@ -1049,6 +2019,8 @@ final class DynamicEnvelopeBuilder extends StructBuilder {
 
 final class _DynamicEnvelopeFactory
     extends StructFactory<DynamicEnvelopeReader, DynamicEnvelopeBuilder> {
+  @override
+  StructSchemaInfo get schema => dynamicEnvelopeSchema;
   @override
   int get dataWords => 0;
   @override
@@ -1066,14 +2038,55 @@ final class _DynamicEnvelopeFactory
       DynamicEnvelopeBuilder(r);
 }
 
+const StructSchemaInfo dynamicEnvelopeSchema = StructSchemaInfo(
+  id: 0xee151f729670f908,
+  displayName: 'complex.capnp:DynamicEnvelope',
+  shortName: 'DynamicEnvelope',
+  dataWords: 0,
+  pointerWords: 3,
+  fields: [
+    FieldSchemaInfo(
+      name: 'typeName',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Text'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'payload',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(offset: 1, type: AnyPointerTypeSchemaInfo()),
+    ),
+    FieldSchemaInfo(
+      name: 'metadata',
+      codeOrder: 2,
+      body: SlotFieldSchemaInfo(
+        offset: 2,
+        type: ListTypeSchemaInfo(
+          StructRefTypeSchemaInfo(
+            0xa3757dd4f46775cf,
+            typeArgs: [
+              PrimitiveTypeSchemaInfo('Text'),
+              PrimitiveTypeSchemaInfo('Text'),
+            ],
+          ),
+        ),
+      ),
+    ),
+  ],
+);
+
 final dynamicEnvelopeFactory = _DynamicEnvelopeFactory();
 
 final class ObserverOnNextParamsReader extends StructReader {
   ObserverOnNextParamsReader(super.raw, {super.capabilities});
 
+  static const StructSchemaInfo schema = observerOnNextParamsSchema;
+
   int get sequence => getUint64Field(0);
 
-  Uint8List? get event => getAnyPointerAsMessageBytes(0);
+  AnyPointerReader? get event => getAnyPointerField(0);
 }
 
 final class ObserverOnNextParamsBuilder extends StructBuilder {
@@ -1087,14 +2100,26 @@ final class ObserverOnNextParamsBuilder extends StructBuilder {
     setUint64Field(0, v);
   }
 
-  set event(Uint8List? v) {
-    if (v != null) setAnyPointerFromMessage(0, v);
+  AnyPointerBuilder initEvent() {
+    return initAnyPointerField(0);
+  }
+
+  set event(AnyPointerReader? v) {
+    setAnyPointerField(0, v);
+  }
+
+  void setEventMessage(Uint8List? v) {
+    if (v != null) {
+      setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    }
   }
 }
 
 final class _ObserverOnNextParamsFactory
     extends
         StructFactory<ObserverOnNextParamsReader, ObserverOnNextParamsBuilder> {
+  @override
+  StructSchemaInfo get schema => observerOnNextParamsSchema;
   @override
   int get dataWords => 1;
   @override
@@ -1112,10 +2137,35 @@ final class _ObserverOnNextParamsFactory
       ObserverOnNextParamsBuilder(r);
 }
 
+const StructSchemaInfo observerOnNextParamsSchema = StructSchemaInfo(
+  id: 0xe38bb67a6dbe9e66,
+  displayName: 'complex.capnp:Observer.onNext\$Params',
+  shortName: 'onNext\$Params',
+  dataWords: 1,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'sequence',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('UInt64'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'event',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(offset: 0, type: TypeParameterSchemaInfo(0)),
+    ),
+  ],
+);
+
 final observerOnNextParamsFactory = _ObserverOnNextParamsFactory();
 
 final class ObserverOnNextResultsReader extends StructReader {
   ObserverOnNextResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = observerOnNextResultsSchema;
 }
 
 final class ObserverOnNextResultsBuilder extends StructBuilder {
@@ -1133,6 +2183,8 @@ final class _ObserverOnNextResultsFactory
           ObserverOnNextResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => observerOnNextResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 0;
@@ -1149,16 +2201,27 @@ final class _ObserverOnNextResultsFactory
       ObserverOnNextResultsBuilder(r);
 }
 
+const StructSchemaInfo observerOnNextResultsSchema = StructSchemaInfo(
+  id: 0xa35c5bc3e93ac0ff,
+  displayName: 'complex.capnp:Observer.onNext\$Results',
+  shortName: 'onNext\$Results',
+  dataWords: 0,
+  pointerWords: 0,
+  fields: [],
+);
+
 final observerOnNextResultsFactory = _ObserverOnNextResultsFactory();
 
 final class ObserverOnErrorParamsReader extends StructReader {
   ObserverOnErrorParamsReader(super.raw, {super.capabilities});
 
+  static const StructSchemaInfo schema = observerOnErrorParamsSchema;
+
   int get code => getUint32Field(0);
 
   String? get message => getTextField(0);
 
-  Uint8List? get detail => getAnyPointerAsMessageBytes(1);
+  AnyPointerReader? get detail => getAnyPointerField(1);
 }
 
 final class ObserverOnErrorParamsBuilder extends StructBuilder {
@@ -1176,8 +2239,18 @@ final class ObserverOnErrorParamsBuilder extends StructBuilder {
     setTextField(0, v);
   }
 
-  set detail(Uint8List? v) {
-    if (v != null) setAnyPointerFromMessage(1, v);
+  AnyPointerBuilder initDetail() {
+    return initAnyPointerField(1);
+  }
+
+  set detail(AnyPointerReader? v) {
+    setAnyPointerField(1, v);
+  }
+
+  void setDetailMessage(Uint8List? v) {
+    if (v != null) {
+      setAnyPointerFromMessage(1, v, preserveCapabilityPointers: true);
+    }
   }
 }
 
@@ -1187,6 +2260,8 @@ final class _ObserverOnErrorParamsFactory
           ObserverOnErrorParamsReader,
           ObserverOnErrorParamsBuilder
         > {
+  @override
+  StructSchemaInfo get schema => observerOnErrorParamsSchema;
   @override
   int get dataWords => 1;
   @override
@@ -1204,10 +2279,43 @@ final class _ObserverOnErrorParamsFactory
       ObserverOnErrorParamsBuilder(r);
 }
 
+const StructSchemaInfo observerOnErrorParamsSchema = StructSchemaInfo(
+  id: 0xcaa50aad36cccb93,
+  displayName: 'complex.capnp:Observer.onError\$Params',
+  shortName: 'onError\$Params',
+  dataWords: 1,
+  pointerWords: 2,
+  fields: [
+    FieldSchemaInfo(
+      name: 'code',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('UInt32'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'message',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Text'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'detail',
+      codeOrder: 2,
+      body: SlotFieldSchemaInfo(offset: 1, type: AnyPointerTypeSchemaInfo()),
+    ),
+  ],
+);
+
 final observerOnErrorParamsFactory = _ObserverOnErrorParamsFactory();
 
 final class ObserverOnErrorResultsReader extends StructReader {
   ObserverOnErrorResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = observerOnErrorResultsSchema;
 }
 
 final class ObserverOnErrorResultsBuilder extends StructBuilder {
@@ -1225,6 +2333,8 @@ final class _ObserverOnErrorResultsFactory
           ObserverOnErrorResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => observerOnErrorResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 0;
@@ -1241,10 +2351,21 @@ final class _ObserverOnErrorResultsFactory
       ObserverOnErrorResultsBuilder(r);
 }
 
+const StructSchemaInfo observerOnErrorResultsSchema = StructSchemaInfo(
+  id: 0xec53e98c1cf65511,
+  displayName: 'complex.capnp:Observer.onError\$Results',
+  shortName: 'onError\$Results',
+  dataWords: 0,
+  pointerWords: 0,
+  fields: [],
+);
+
 final observerOnErrorResultsFactory = _ObserverOnErrorResultsFactory();
 
 final class ObserverOnCompleteParamsReader extends StructReader {
   ObserverOnCompleteParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = observerOnCompleteParamsSchema;
 }
 
 final class ObserverOnCompleteParamsBuilder extends StructBuilder {
@@ -1262,6 +2383,8 @@ final class _ObserverOnCompleteParamsFactory
           ObserverOnCompleteParamsBuilder
         > {
   @override
+  StructSchemaInfo get schema => observerOnCompleteParamsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 0;
@@ -1278,10 +2401,21 @@ final class _ObserverOnCompleteParamsFactory
       ObserverOnCompleteParamsBuilder(r);
 }
 
+const StructSchemaInfo observerOnCompleteParamsSchema = StructSchemaInfo(
+  id: 0x9059d753409eea18,
+  displayName: 'complex.capnp:Observer.onComplete\$Params',
+  shortName: 'onComplete\$Params',
+  dataWords: 0,
+  pointerWords: 0,
+  fields: [],
+);
+
 final observerOnCompleteParamsFactory = _ObserverOnCompleteParamsFactory();
 
 final class ObserverOnCompleteResultsReader extends StructReader {
   ObserverOnCompleteResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = observerOnCompleteResultsSchema;
 }
 
 final class ObserverOnCompleteResultsBuilder extends StructBuilder {
@@ -1299,6 +2433,8 @@ final class _ObserverOnCompleteResultsFactory
           ObserverOnCompleteResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => observerOnCompleteResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 0;
@@ -1315,10 +2451,21 @@ final class _ObserverOnCompleteResultsFactory
       ObserverOnCompleteResultsBuilder(r);
 }
 
+const StructSchemaInfo observerOnCompleteResultsSchema = StructSchemaInfo(
+  id: 0xe06598eb27f39812,
+  displayName: 'complex.capnp:Observer.onComplete\$Results',
+  shortName: 'onComplete\$Results',
+  dataWords: 0,
+  pointerWords: 0,
+  fields: [],
+);
+
 final observerOnCompleteResultsFactory = _ObserverOnCompleteResultsFactory();
 
 final class SubscriptionCancelParamsReader extends StructReader {
   SubscriptionCancelParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = subscriptionCancelParamsSchema;
 }
 
 final class SubscriptionCancelParamsBuilder extends StructBuilder {
@@ -1336,6 +2483,8 @@ final class _SubscriptionCancelParamsFactory
           SubscriptionCancelParamsBuilder
         > {
   @override
+  StructSchemaInfo get schema => subscriptionCancelParamsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 0;
@@ -1352,10 +2501,21 @@ final class _SubscriptionCancelParamsFactory
       SubscriptionCancelParamsBuilder(r);
 }
 
+const StructSchemaInfo subscriptionCancelParamsSchema = StructSchemaInfo(
+  id: 0xd5c5308e092d6e83,
+  displayName: 'complex.capnp:Subscription.cancel\$Params',
+  shortName: 'cancel\$Params',
+  dataWords: 0,
+  pointerWords: 0,
+  fields: [],
+);
+
 final subscriptionCancelParamsFactory = _SubscriptionCancelParamsFactory();
 
 final class SubscriptionCancelResultsReader extends StructReader {
   SubscriptionCancelResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = subscriptionCancelResultsSchema;
 
   bool get wasActive => getBoolField(0);
 }
@@ -1379,6 +2539,8 @@ final class _SubscriptionCancelResultsFactory
           SubscriptionCancelResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => subscriptionCancelResultsSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 0;
@@ -1395,10 +2557,30 @@ final class _SubscriptionCancelResultsFactory
       SubscriptionCancelResultsBuilder(r);
 }
 
+const StructSchemaInfo subscriptionCancelResultsSchema = StructSchemaInfo(
+  id: 0xb95610db247a8223,
+  displayName: 'complex.capnp:Subscription.cancel\$Results',
+  shortName: 'cancel\$Results',
+  dataWords: 1,
+  pointerWords: 0,
+  fields: [
+    FieldSchemaInfo(
+      name: 'wasActive',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Bool'),
+      ),
+    ),
+  ],
+);
+
 final subscriptionCancelResultsFactory = _SubscriptionCancelResultsFactory();
 
 final class SubscriptionGetIdParamsReader extends StructReader {
   SubscriptionGetIdParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = subscriptionGetIdParamsSchema;
 }
 
 final class SubscriptionGetIdParamsBuilder extends StructBuilder {
@@ -1416,6 +2598,8 @@ final class _SubscriptionGetIdParamsFactory
           SubscriptionGetIdParamsBuilder
         > {
   @override
+  StructSchemaInfo get schema => subscriptionGetIdParamsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 0;
@@ -1432,10 +2616,21 @@ final class _SubscriptionGetIdParamsFactory
       SubscriptionGetIdParamsBuilder(r);
 }
 
+const StructSchemaInfo subscriptionGetIdParamsSchema = StructSchemaInfo(
+  id: 0x89817288ea65574b,
+  displayName: 'complex.capnp:Subscription.getId\$Params',
+  shortName: 'getId\$Params',
+  dataWords: 0,
+  pointerWords: 0,
+  fields: [],
+);
+
 final subscriptionGetIdParamsFactory = _SubscriptionGetIdParamsFactory();
 
 final class SubscriptionGetIdResultsReader extends StructReader {
   SubscriptionGetIdResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = subscriptionGetIdResultsSchema;
 
   int get id => getUint64Field(0);
 }
@@ -1459,6 +2654,8 @@ final class _SubscriptionGetIdResultsFactory
           SubscriptionGetIdResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => subscriptionGetIdResultsSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 0;
@@ -1475,10 +2672,30 @@ final class _SubscriptionGetIdResultsFactory
       SubscriptionGetIdResultsBuilder(r);
 }
 
+const StructSchemaInfo subscriptionGetIdResultsSchema = StructSchemaInfo(
+  id: 0xccbe2b039a7b98fe,
+  displayName: 'complex.capnp:Subscription.getId\$Results',
+  shortName: 'getId\$Results',
+  dataWords: 1,
+  pointerWords: 0,
+  fields: [
+    FieldSchemaInfo(
+      name: 'id',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('UInt64'),
+      ),
+    ),
+  ],
+);
+
 final subscriptionGetIdResultsFactory = _SubscriptionGetIdResultsFactory();
 
 final class ReadableReadParamsReader extends StructReader {
   ReadableReadParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = readableReadParamsSchema;
 }
 
 final class ReadableReadParamsBuilder extends StructBuilder {
@@ -1491,6 +2708,8 @@ final class ReadableReadParamsBuilder extends StructBuilder {
 
 final class _ReadableReadParamsFactory
     extends StructFactory<ReadableReadParamsReader, ReadableReadParamsBuilder> {
+  @override
+  StructSchemaInfo get schema => readableReadParamsSchema;
   @override
   int get dataWords => 0;
   @override
@@ -1508,12 +2727,23 @@ final class _ReadableReadParamsFactory
       ReadableReadParamsBuilder(r);
 }
 
+const StructSchemaInfo readableReadParamsSchema = StructSchemaInfo(
+  id: 0xf22b305ab6fff9e6,
+  displayName: 'complex.capnp:Readable.read\$Params',
+  shortName: 'read\$Params',
+  dataWords: 0,
+  pointerWords: 0,
+  fields: [],
+);
+
 final readableReadParamsFactory = _ReadableReadParamsFactory();
 
 final class ReadableReadResultsReader extends StructReader {
   ReadableReadResultsReader(super.raw, {super.capabilities});
 
-  Uint8List? get value => getAnyPointerAsMessageBytes(0);
+  static const StructSchemaInfo schema = readableReadResultsSchema;
+
+  AnyPointerReader? get value => getAnyPointerField(0);
 
   int get revision => getUint64Field(0);
 }
@@ -1525,8 +2755,18 @@ final class ReadableReadResultsBuilder extends StructBuilder {
   ReadableReadResultsReader asReader() =>
       ReadableReadResultsReader(rawToReader());
 
-  set value(Uint8List? v) {
-    if (v != null) setAnyPointerFromMessage(0, v);
+  AnyPointerBuilder initValue() {
+    return initAnyPointerField(0);
+  }
+
+  set value(AnyPointerReader? v) {
+    setAnyPointerField(0, v);
+  }
+
+  void setValueMessage(Uint8List? v) {
+    if (v != null) {
+      setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    }
   }
 
   set revision(int v) {
@@ -1537,6 +2777,8 @@ final class ReadableReadResultsBuilder extends StructBuilder {
 final class _ReadableReadResultsFactory
     extends
         StructFactory<ReadableReadResultsReader, ReadableReadResultsBuilder> {
+  @override
+  StructSchemaInfo get schema => readableReadResultsSchema;
   @override
   int get dataWords => 1;
   @override
@@ -1554,12 +2796,37 @@ final class _ReadableReadResultsFactory
       ReadableReadResultsBuilder(r);
 }
 
+const StructSchemaInfo readableReadResultsSchema = StructSchemaInfo(
+  id: 0xca09026cf2c4c5bd,
+  displayName: 'complex.capnp:Readable.read\$Results',
+  shortName: 'read\$Results',
+  dataWords: 1,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'value',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(offset: 0, type: TypeParameterSchemaInfo(0)),
+    ),
+    FieldSchemaInfo(
+      name: 'revision',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('UInt64'),
+      ),
+    ),
+  ],
+);
+
 final readableReadResultsFactory = _ReadableReadResultsFactory();
 
 final class WritableWriteParamsReader extends StructReader {
   WritableWriteParamsReader(super.raw, {super.capabilities});
 
-  Uint8List? get value => getAnyPointerAsMessageBytes(0);
+  static const StructSchemaInfo schema = writableWriteParamsSchema;
+
+  AnyPointerReader? get value => getAnyPointerField(0);
 
   int get expectedRevision => getUint64Field(0);
 }
@@ -1571,8 +2838,18 @@ final class WritableWriteParamsBuilder extends StructBuilder {
   WritableWriteParamsReader asReader() =>
       WritableWriteParamsReader(rawToReader());
 
-  set value(Uint8List? v) {
-    if (v != null) setAnyPointerFromMessage(0, v);
+  AnyPointerBuilder initValue() {
+    return initAnyPointerField(0);
+  }
+
+  set value(AnyPointerReader? v) {
+    setAnyPointerField(0, v);
+  }
+
+  void setValueMessage(Uint8List? v) {
+    if (v != null) {
+      setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    }
   }
 
   set expectedRevision(int v) {
@@ -1583,6 +2860,8 @@ final class WritableWriteParamsBuilder extends StructBuilder {
 final class _WritableWriteParamsFactory
     extends
         StructFactory<WritableWriteParamsReader, WritableWriteParamsBuilder> {
+  @override
+  StructSchemaInfo get schema => writableWriteParamsSchema;
   @override
   int get dataWords => 1;
   @override
@@ -1600,10 +2879,37 @@ final class _WritableWriteParamsFactory
       WritableWriteParamsBuilder(r);
 }
 
+const StructSchemaInfo writableWriteParamsSchema = StructSchemaInfo(
+  id: 0xf0b17fc4bf08beb3,
+  displayName: 'complex.capnp:Writable.write\$Params',
+  shortName: 'write\$Params',
+  dataWords: 1,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'value',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(offset: 0, type: TypeParameterSchemaInfo(0)),
+    ),
+    FieldSchemaInfo(
+      name: 'expectedRevision',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('UInt64'),
+        hadExplicitDefault: true,
+        defaultValue: 0,
+      ),
+    ),
+  ],
+);
+
 final writableWriteParamsFactory = _WritableWriteParamsFactory();
 
 final class WritableWriteResultsReader extends StructReader {
   WritableWriteResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = writableWriteResultsSchema;
 
   int get newRevision => getUint64Field(0);
 }
@@ -1624,6 +2930,8 @@ final class _WritableWriteResultsFactory
     extends
         StructFactory<WritableWriteResultsReader, WritableWriteResultsBuilder> {
   @override
+  StructSchemaInfo get schema => writableWriteResultsSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 0;
@@ -1640,14 +2948,34 @@ final class _WritableWriteResultsFactory
       WritableWriteResultsBuilder(r);
 }
 
+const StructSchemaInfo writableWriteResultsSchema = StructSchemaInfo(
+  id: 0xa8eb2729790dd6f5,
+  displayName: 'complex.capnp:Writable.write\$Results',
+  shortName: 'write\$Results',
+  dataWords: 1,
+  pointerWords: 0,
+  fields: [
+    FieldSchemaInfo(
+      name: 'newRevision',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('UInt64'),
+      ),
+    ),
+  ],
+);
+
 final writableWriteResultsFactory = _WritableWriteResultsFactory();
 
 final class ReadWriteCompareAndSwapParamsReader extends StructReader {
   ReadWriteCompareAndSwapParamsReader(super.raw, {super.capabilities});
 
-  Uint8List? get expected => getAnyPointerAsMessageBytes(0);
+  static const StructSchemaInfo schema = readWriteCompareAndSwapParamsSchema;
 
-  Uint8List? get replacement => getAnyPointerAsMessageBytes(1);
+  AnyPointerReader? get expected => getAnyPointerField(0);
+
+  AnyPointerReader? get replacement => getAnyPointerField(1);
 }
 
 final class ReadWriteCompareAndSwapParamsBuilder extends StructBuilder {
@@ -1657,12 +2985,32 @@ final class ReadWriteCompareAndSwapParamsBuilder extends StructBuilder {
   ReadWriteCompareAndSwapParamsReader asReader() =>
       ReadWriteCompareAndSwapParamsReader(rawToReader());
 
-  set expected(Uint8List? v) {
-    if (v != null) setAnyPointerFromMessage(0, v);
+  AnyPointerBuilder initExpected() {
+    return initAnyPointerField(0);
   }
 
-  set replacement(Uint8List? v) {
-    if (v != null) setAnyPointerFromMessage(1, v);
+  set expected(AnyPointerReader? v) {
+    setAnyPointerField(0, v);
+  }
+
+  void setExpectedMessage(Uint8List? v) {
+    if (v != null) {
+      setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    }
+  }
+
+  AnyPointerBuilder initReplacement() {
+    return initAnyPointerField(1);
+  }
+
+  set replacement(AnyPointerReader? v) {
+    setAnyPointerField(1, v);
+  }
+
+  void setReplacementMessage(Uint8List? v) {
+    if (v != null) {
+      setAnyPointerFromMessage(1, v, preserveCapabilityPointers: true);
+    }
   }
 }
 
@@ -1672,6 +3020,8 @@ final class _ReadWriteCompareAndSwapParamsFactory
           ReadWriteCompareAndSwapParamsReader,
           ReadWriteCompareAndSwapParamsBuilder
         > {
+  @override
+  StructSchemaInfo get schema => readWriteCompareAndSwapParamsSchema;
   @override
   int get dataWords => 0;
   @override
@@ -1689,15 +3039,37 @@ final class _ReadWriteCompareAndSwapParamsFactory
       ReadWriteCompareAndSwapParamsBuilder(r);
 }
 
+const StructSchemaInfo readWriteCompareAndSwapParamsSchema = StructSchemaInfo(
+  id: 0xf4acdb94f731a7dc,
+  displayName: 'complex.capnp:ReadWrite.compareAndSwap\$Params',
+  shortName: 'compareAndSwap\$Params',
+  dataWords: 0,
+  pointerWords: 2,
+  fields: [
+    FieldSchemaInfo(
+      name: 'expected',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(offset: 0, type: TypeParameterSchemaInfo(0)),
+    ),
+    FieldSchemaInfo(
+      name: 'replacement',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(offset: 1, type: TypeParameterSchemaInfo(0)),
+    ),
+  ],
+);
+
 final readWriteCompareAndSwapParamsFactory =
     _ReadWriteCompareAndSwapParamsFactory();
 
 final class ReadWriteCompareAndSwapResultsReader extends StructReader {
   ReadWriteCompareAndSwapResultsReader(super.raw, {super.capabilities});
 
+  static const StructSchemaInfo schema = readWriteCompareAndSwapResultsSchema;
+
   bool get swapped => getBoolField(0);
 
-  Uint8List? get actual => getAnyPointerAsMessageBytes(0);
+  AnyPointerReader? get actual => getAnyPointerField(0);
 
   int get revision => getUint64Field(8);
 }
@@ -1713,8 +3085,18 @@ final class ReadWriteCompareAndSwapResultsBuilder extends StructBuilder {
     setBoolField(0, v);
   }
 
-  set actual(Uint8List? v) {
-    if (v != null) setAnyPointerFromMessage(0, v);
+  AnyPointerBuilder initActual() {
+    return initAnyPointerField(0);
+  }
+
+  set actual(AnyPointerReader? v) {
+    setAnyPointerField(0, v);
+  }
+
+  void setActualMessage(Uint8List? v) {
+    if (v != null) {
+      setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    }
   }
 
   set revision(int v) {
@@ -1728,6 +3110,8 @@ final class _ReadWriteCompareAndSwapResultsFactory
           ReadWriteCompareAndSwapResultsReader,
           ReadWriteCompareAndSwapResultsBuilder
         > {
+  @override
+  StructSchemaInfo get schema => readWriteCompareAndSwapResultsSchema;
   @override
   int get dataWords => 2;
   @override
@@ -1745,15 +3129,48 @@ final class _ReadWriteCompareAndSwapResultsFactory
       ReadWriteCompareAndSwapResultsBuilder(r);
 }
 
+const StructSchemaInfo readWriteCompareAndSwapResultsSchema = StructSchemaInfo(
+  id: 0x9f87096d0d99609b,
+  displayName: 'complex.capnp:ReadWrite.compareAndSwap\$Results',
+  shortName: 'compareAndSwap\$Results',
+  dataWords: 2,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'swapped',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Bool'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'actual',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(offset: 0, type: TypeParameterSchemaInfo(0)),
+    ),
+    FieldSchemaInfo(
+      name: 'revision',
+      codeOrder: 2,
+      body: SlotFieldSchemaInfo(
+        offset: 1,
+        type: PrimitiveTypeSchemaInfo('UInt64'),
+      ),
+    ),
+  ],
+);
+
 final readWriteCompareAndSwapResultsFactory =
     _ReadWriteCompareAndSwapResultsFactory();
 
 final class CursorResultReader extends StructReader {
   CursorResultReader(super.raw, {super.capabilities});
 
+  static const StructSchemaInfo schema = cursorResultSchema;
+
   int get which => getUint16Field(0);
 
-  Uint8List? get value => getAnyPointerAsMessageBytes(0);
+  AnyPointerReader? get value => getAnyPointerField(0);
 }
 
 final class CursorResultBuilder extends StructBuilder {
@@ -1768,14 +3185,28 @@ final class CursorResultBuilder extends StructBuilder {
     setUint16Field(0, 0);
   }
 
-  set value(Uint8List? v) {
+  AnyPointerBuilder initValue() {
     setUint16Field(0, 1);
-    if (v != null) setAnyPointerFromMessage(0, v);
+    return initAnyPointerField(0);
+  }
+
+  set value(AnyPointerReader? v) {
+    setUint16Field(0, 1);
+    setAnyPointerField(0, v);
+  }
+
+  void setValueMessage(Uint8List? v) {
+    setUint16Field(0, 1);
+    if (v != null) {
+      setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    }
   }
 }
 
 final class _CursorResultFactory
     extends StructFactory<CursorResultReader, CursorResultBuilder> {
+  @override
+  StructSchemaInfo get schema => cursorResultSchema;
   @override
   int get dataWords => 1;
   @override
@@ -1792,10 +3223,39 @@ final class _CursorResultFactory
       CursorResultBuilder(r);
 }
 
+const StructSchemaInfo cursorResultSchema = StructSchemaInfo(
+  id: 0x85c819687fb34027,
+  displayName: 'complex.capnp:CursorResult',
+  shortName: 'CursorResult',
+  dataWords: 1,
+  pointerWords: 1,
+  discriminantCount: 2,
+  typeParameters: ['Value'],
+  fields: [
+    FieldSchemaInfo(
+      name: 'done',
+      codeOrder: 0,
+      discriminantValue: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Void'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'value',
+      codeOrder: 1,
+      discriminantValue: 1,
+      body: SlotFieldSchemaInfo(offset: 0, type: TypeParameterSchemaInfo(0)),
+    ),
+  ],
+);
+
 final cursorResultFactory = _CursorResultFactory();
 
 final class CursorNextParamsReader extends StructReader {
   CursorNextParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = cursorNextParamsSchema;
 }
 
 final class CursorNextParamsBuilder extends StructBuilder {
@@ -1807,6 +3267,8 @@ final class CursorNextParamsBuilder extends StructBuilder {
 
 final class _CursorNextParamsFactory
     extends StructFactory<CursorNextParamsReader, CursorNextParamsBuilder> {
+  @override
+  StructSchemaInfo get schema => cursorNextParamsSchema;
   @override
   int get dataWords => 0;
   @override
@@ -1824,10 +3286,21 @@ final class _CursorNextParamsFactory
       CursorNextParamsBuilder(r);
 }
 
+const StructSchemaInfo cursorNextParamsSchema = StructSchemaInfo(
+  id: 0xd3cdbdb8a3c01703,
+  displayName: 'complex.capnp:Cursor.next\$Params',
+  shortName: 'next\$Params',
+  dataWords: 0,
+  pointerWords: 0,
+  fields: [],
+);
+
 final cursorNextParamsFactory = _CursorNextParamsFactory();
 
 final class CursorNextResultsReader extends StructReader {
   CursorNextResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = cursorNextResultsSchema;
 
   CursorResultReader? get result => getStructFieldWith(
     0,
@@ -1851,6 +3324,8 @@ final class CursorNextResultsBuilder extends StructBuilder {
 final class _CursorNextResultsFactory
     extends StructFactory<CursorNextResultsReader, CursorNextResultsBuilder> {
   @override
+  StructSchemaInfo get schema => cursorNextResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -1867,12 +3342,35 @@ final class _CursorNextResultsFactory
       CursorNextResultsBuilder(r);
 }
 
+const StructSchemaInfo cursorNextResultsSchema = StructSchemaInfo(
+  id: 0xc79658c97f1dfc52,
+  displayName: 'complex.capnp:Cursor.next\$Results',
+  shortName: 'next\$Results',
+  dataWords: 0,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'result',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: StructRefTypeSchemaInfo(
+          0x85c819687fb34027,
+          typeArgs: [TypeParameterSchemaInfo(0)],
+        ),
+      ),
+    ),
+  ],
+);
+
 final cursorNextResultsFactory = _CursorNextResultsFactory();
 
 final class RepositoryGetParamsReader extends StructReader {
   RepositoryGetParamsReader(super.raw, {super.capabilities});
 
-  Uint8List? get key => getAnyPointerAsMessageBytes(0);
+  static const StructSchemaInfo schema = repositoryGetParamsSchema;
+
+  AnyPointerReader? get key => getAnyPointerField(0);
 }
 
 final class RepositoryGetParamsBuilder extends StructBuilder {
@@ -1882,14 +3380,26 @@ final class RepositoryGetParamsBuilder extends StructBuilder {
   RepositoryGetParamsReader asReader() =>
       RepositoryGetParamsReader(rawToReader());
 
-  set key(Uint8List? v) {
-    if (v != null) setAnyPointerFromMessage(0, v);
+  AnyPointerBuilder initKey() {
+    return initAnyPointerField(0);
+  }
+
+  set key(AnyPointerReader? v) {
+    setAnyPointerField(0, v);
+  }
+
+  void setKeyMessage(Uint8List? v) {
+    if (v != null) {
+      setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    }
   }
 }
 
 final class _RepositoryGetParamsFactory
     extends
         StructFactory<RepositoryGetParamsReader, RepositoryGetParamsBuilder> {
+  @override
+  StructSchemaInfo get schema => repositoryGetParamsSchema;
   @override
   int get dataWords => 0;
   @override
@@ -1907,10 +3417,27 @@ final class _RepositoryGetParamsFactory
       RepositoryGetParamsBuilder(r);
 }
 
+const StructSchemaInfo repositoryGetParamsSchema = StructSchemaInfo(
+  id: 0xcda68ea602111f99,
+  displayName: 'complex.capnp:Repository.get\$Params',
+  shortName: 'get\$Params',
+  dataWords: 0,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'key',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(offset: 0, type: TypeParameterSchemaInfo(0)),
+    ),
+  ],
+);
+
 final repositoryGetParamsFactory = _RepositoryGetParamsFactory();
 
 final class RepositoryGetResultsReader extends StructReader {
   RepositoryGetResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = repositoryGetResultsSchema;
 
   OptionalReader? get result => getStructFieldWith(
     0,
@@ -1942,6 +3469,8 @@ final class _RepositoryGetResultsFactory
     extends
         StructFactory<RepositoryGetResultsReader, RepositoryGetResultsBuilder> {
   @override
+  StructSchemaInfo get schema => repositoryGetResultsSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 1;
@@ -1958,14 +3487,45 @@ final class _RepositoryGetResultsFactory
       RepositoryGetResultsBuilder(r);
 }
 
+const StructSchemaInfo repositoryGetResultsSchema = StructSchemaInfo(
+  id: 0x87c2d124b5f78561,
+  displayName: 'complex.capnp:Repository.get\$Results',
+  shortName: 'get\$Results',
+  dataWords: 1,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'result',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: StructRefTypeSchemaInfo(
+          0xa6ccf7c03dcc3a0b,
+          typeArgs: [TypeParameterSchemaInfo(1)],
+        ),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'revision',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('UInt64'),
+      ),
+    ),
+  ],
+);
+
 final repositoryGetResultsFactory = _RepositoryGetResultsFactory();
 
 final class RepositoryPutParamsReader extends StructReader {
   RepositoryPutParamsReader(super.raw, {super.capabilities});
 
-  Uint8List? get key => getAnyPointerAsMessageBytes(0);
+  static const StructSchemaInfo schema = repositoryPutParamsSchema;
 
-  Uint8List? get value => getAnyPointerAsMessageBytes(1);
+  AnyPointerReader? get key => getAnyPointerField(0);
+
+  AnyPointerReader? get value => getAnyPointerField(1);
 
   int get expectedRevision => getUint64Field(0);
 }
@@ -1977,12 +3537,32 @@ final class RepositoryPutParamsBuilder extends StructBuilder {
   RepositoryPutParamsReader asReader() =>
       RepositoryPutParamsReader(rawToReader());
 
-  set key(Uint8List? v) {
-    if (v != null) setAnyPointerFromMessage(0, v);
+  AnyPointerBuilder initKey() {
+    return initAnyPointerField(0);
   }
 
-  set value(Uint8List? v) {
-    if (v != null) setAnyPointerFromMessage(1, v);
+  set key(AnyPointerReader? v) {
+    setAnyPointerField(0, v);
+  }
+
+  void setKeyMessage(Uint8List? v) {
+    if (v != null) {
+      setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    }
+  }
+
+  AnyPointerBuilder initValue() {
+    return initAnyPointerField(1);
+  }
+
+  set value(AnyPointerReader? v) {
+    setAnyPointerField(1, v);
+  }
+
+  void setValueMessage(Uint8List? v) {
+    if (v != null) {
+      setAnyPointerFromMessage(1, v, preserveCapabilityPointers: true);
+    }
   }
 
   set expectedRevision(int v) {
@@ -1993,6 +3573,8 @@ final class RepositoryPutParamsBuilder extends StructBuilder {
 final class _RepositoryPutParamsFactory
     extends
         StructFactory<RepositoryPutParamsReader, RepositoryPutParamsBuilder> {
+  @override
+  StructSchemaInfo get schema => repositoryPutParamsSchema;
   @override
   int get dataWords => 1;
   @override
@@ -2010,10 +3592,42 @@ final class _RepositoryPutParamsFactory
       RepositoryPutParamsBuilder(r);
 }
 
+const StructSchemaInfo repositoryPutParamsSchema = StructSchemaInfo(
+  id: 0xcd1d4ff569abe161,
+  displayName: 'complex.capnp:Repository.put\$Params',
+  shortName: 'put\$Params',
+  dataWords: 1,
+  pointerWords: 2,
+  fields: [
+    FieldSchemaInfo(
+      name: 'key',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(offset: 0, type: TypeParameterSchemaInfo(0)),
+    ),
+    FieldSchemaInfo(
+      name: 'value',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(offset: 1, type: TypeParameterSchemaInfo(1)),
+    ),
+    FieldSchemaInfo(
+      name: 'expectedRevision',
+      codeOrder: 2,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('UInt64'),
+        hadExplicitDefault: true,
+        defaultValue: 0,
+      ),
+    ),
+  ],
+);
+
 final repositoryPutParamsFactory = _RepositoryPutParamsFactory();
 
 final class RepositoryPutResultsReader extends StructReader {
   RepositoryPutResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = repositoryPutResultsSchema;
 
   OptionalReader? get previous => getStructFieldWith(
     0,
@@ -2045,6 +3659,8 @@ final class _RepositoryPutResultsFactory
     extends
         StructFactory<RepositoryPutResultsReader, RepositoryPutResultsBuilder> {
   @override
+  StructSchemaInfo get schema => repositoryPutResultsSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 1;
@@ -2061,12 +3677,43 @@ final class _RepositoryPutResultsFactory
       RepositoryPutResultsBuilder(r);
 }
 
+const StructSchemaInfo repositoryPutResultsSchema = StructSchemaInfo(
+  id: 0xc91138161f524eda,
+  displayName: 'complex.capnp:Repository.put\$Results',
+  shortName: 'put\$Results',
+  dataWords: 1,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'previous',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: StructRefTypeSchemaInfo(
+          0xa6ccf7c03dcc3a0b,
+          typeArgs: [TypeParameterSchemaInfo(1)],
+        ),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'newRevision',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('UInt64'),
+      ),
+    ),
+  ],
+);
+
 final repositoryPutResultsFactory = _RepositoryPutResultsFactory();
 
 final class RepositoryRemoveParamsReader extends StructReader {
   RepositoryRemoveParamsReader(super.raw, {super.capabilities});
 
-  Uint8List? get key => getAnyPointerAsMessageBytes(0);
+  static const StructSchemaInfo schema = repositoryRemoveParamsSchema;
+
+  AnyPointerReader? get key => getAnyPointerField(0);
 
   int get expectedRevision => getUint64Field(0);
 }
@@ -2078,8 +3725,18 @@ final class RepositoryRemoveParamsBuilder extends StructBuilder {
   RepositoryRemoveParamsReader asReader() =>
       RepositoryRemoveParamsReader(rawToReader());
 
-  set key(Uint8List? v) {
-    if (v != null) setAnyPointerFromMessage(0, v);
+  AnyPointerBuilder initKey() {
+    return initAnyPointerField(0);
+  }
+
+  set key(AnyPointerReader? v) {
+    setAnyPointerField(0, v);
+  }
+
+  void setKeyMessage(Uint8List? v) {
+    if (v != null) {
+      setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    }
   }
 
   set expectedRevision(int v) {
@@ -2093,6 +3750,8 @@ final class _RepositoryRemoveParamsFactory
           RepositoryRemoveParamsReader,
           RepositoryRemoveParamsBuilder
         > {
+  @override
+  StructSchemaInfo get schema => repositoryRemoveParamsSchema;
   @override
   int get dataWords => 1;
   @override
@@ -2110,10 +3769,37 @@ final class _RepositoryRemoveParamsFactory
       RepositoryRemoveParamsBuilder(r);
 }
 
+const StructSchemaInfo repositoryRemoveParamsSchema = StructSchemaInfo(
+  id: 0xd7587e0e1dbeeb9d,
+  displayName: 'complex.capnp:Repository.remove\$Params',
+  shortName: 'remove\$Params',
+  dataWords: 1,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'key',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(offset: 0, type: TypeParameterSchemaInfo(0)),
+    ),
+    FieldSchemaInfo(
+      name: 'expectedRevision',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('UInt64'),
+        hadExplicitDefault: true,
+        defaultValue: 0,
+      ),
+    ),
+  ],
+);
+
 final repositoryRemoveParamsFactory = _RepositoryRemoveParamsFactory();
 
 final class RepositoryRemoveResultsReader extends StructReader {
   RepositoryRemoveResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = repositoryRemoveResultsSchema;
 
   OptionalReader? get removed => getStructFieldWith(
     0,
@@ -2148,6 +3834,8 @@ final class _RepositoryRemoveResultsFactory
           RepositoryRemoveResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => repositoryRemoveResultsSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 1;
@@ -2164,10 +3852,41 @@ final class _RepositoryRemoveResultsFactory
       RepositoryRemoveResultsBuilder(r);
 }
 
+const StructSchemaInfo repositoryRemoveResultsSchema = StructSchemaInfo(
+  id: 0xec3df3f66c00a574,
+  displayName: 'complex.capnp:Repository.remove\$Results',
+  shortName: 'remove\$Results',
+  dataWords: 1,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'removed',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: StructRefTypeSchemaInfo(
+          0xa6ccf7c03dcc3a0b,
+          typeArgs: [TypeParameterSchemaInfo(1)],
+        ),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'newRevision',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('UInt64'),
+      ),
+    ),
+  ],
+);
+
 final repositoryRemoveResultsFactory = _RepositoryRemoveResultsFactory();
 
 final class RepositoryListParamsReader extends StructReader {
   RepositoryListParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = repositoryListParamsSchema;
 }
 
 final class RepositoryListParamsBuilder extends StructBuilder {
@@ -2181,6 +3900,8 @@ final class RepositoryListParamsBuilder extends StructBuilder {
 final class _RepositoryListParamsFactory
     extends
         StructFactory<RepositoryListParamsReader, RepositoryListParamsBuilder> {
+  @override
+  StructSchemaInfo get schema => repositoryListParamsSchema;
   @override
   int get dataWords => 0;
   @override
@@ -2198,10 +3919,21 @@ final class _RepositoryListParamsFactory
       RepositoryListParamsBuilder(r);
 }
 
+const StructSchemaInfo repositoryListParamsSchema = StructSchemaInfo(
+  id: 0xac036b743c067587,
+  displayName: 'complex.capnp:Repository.list\$Params',
+  shortName: 'list\$Params',
+  dataWords: 0,
+  pointerWords: 0,
+  fields: [],
+);
+
 final repositoryListParamsFactory = _RepositoryListParamsFactory();
 
 final class RepositoryListResultsReader extends StructReader {
   RepositoryListResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = repositoryListResultsSchema;
 
   ListReader<KeyValueReader>? get entries => getStructListFieldWith(
     0,
@@ -2228,6 +3960,8 @@ final class _RepositoryListResultsFactory
           RepositoryListResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => repositoryListResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -2244,10 +3978,35 @@ final class _RepositoryListResultsFactory
       RepositoryListResultsBuilder(r);
 }
 
+const StructSchemaInfo repositoryListResultsSchema = StructSchemaInfo(
+  id: 0xca266319202dc4e0,
+  displayName: 'complex.capnp:Repository.list\$Results',
+  shortName: 'list\$Results',
+  dataWords: 0,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'entries',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: ListTypeSchemaInfo(
+          StructRefTypeSchemaInfo(
+            0xa3757dd4f46775cf,
+            typeArgs: [TypeParameterSchemaInfo(0), TypeParameterSchemaInfo(1)],
+          ),
+        ),
+      ),
+    ),
+  ],
+);
+
 final repositoryListResultsFactory = _RepositoryListResultsFactory();
 
 final class RepositoryOpenCursorParamsReader extends StructReader {
   RepositoryOpenCursorParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = repositoryOpenCursorParamsSchema;
 }
 
 final class RepositoryOpenCursorParamsBuilder extends StructBuilder {
@@ -2265,6 +4024,8 @@ final class _RepositoryOpenCursorParamsFactory
           RepositoryOpenCursorParamsBuilder
         > {
   @override
+  StructSchemaInfo get schema => repositoryOpenCursorParamsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 0;
@@ -2281,10 +4042,21 @@ final class _RepositoryOpenCursorParamsFactory
       RepositoryOpenCursorParamsBuilder(r);
 }
 
+const StructSchemaInfo repositoryOpenCursorParamsSchema = StructSchemaInfo(
+  id: 0x8818397b1a6b1aa5,
+  displayName: 'complex.capnp:Repository.openCursor\$Params',
+  shortName: 'openCursor\$Params',
+  dataWords: 0,
+  pointerWords: 0,
+  fields: [],
+);
+
 final repositoryOpenCursorParamsFactory = _RepositoryOpenCursorParamsFactory();
 
 final class RepositoryOpenCursorResultsReader extends StructReader {
   RepositoryOpenCursorResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = repositoryOpenCursorResultsSchema;
 
   CursorClient? get cursor {
     final cap = getCapabilityObjectField(0);
@@ -2313,6 +4085,8 @@ final class _RepositoryOpenCursorResultsFactory
           RepositoryOpenCursorResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => repositoryOpenCursorResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -2329,11 +4103,42 @@ final class _RepositoryOpenCursorResultsFactory
       RepositoryOpenCursorResultsBuilder(r);
 }
 
+const StructSchemaInfo repositoryOpenCursorResultsSchema = StructSchemaInfo(
+  id: 0xddae4be495982436,
+  displayName: 'complex.capnp:Repository.openCursor\$Results',
+  shortName: 'openCursor\$Results',
+  dataWords: 0,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'cursor',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: InterfaceRefTypeSchemaInfo(
+          0x8384e36911992a84,
+          typeArgs: [
+            StructRefTypeSchemaInfo(
+              0xa3757dd4f46775cf,
+              typeArgs: [
+                TypeParameterSchemaInfo(0),
+                TypeParameterSchemaInfo(1),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ),
+  ],
+);
+
 final repositoryOpenCursorResultsFactory =
     _RepositoryOpenCursorResultsFactory();
 
 final class RepositoryWatchParamsReader extends StructReader {
   RepositoryWatchParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = repositoryWatchParamsSchema;
 
   ObserverClient? get observer {
     final cap = getCapabilityObjectField(0);
@@ -2362,6 +4167,8 @@ final class _RepositoryWatchParamsFactory
           RepositoryWatchParamsBuilder
         > {
   @override
+  StructSchemaInfo get schema => repositoryWatchParamsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -2378,10 +4185,33 @@ final class _RepositoryWatchParamsFactory
       RepositoryWatchParamsBuilder(r);
 }
 
+const StructSchemaInfo repositoryWatchParamsSchema = StructSchemaInfo(
+  id: 0xe4bbf2b22c925c53,
+  displayName: 'complex.capnp:Repository.watch\$Params',
+  shortName: 'watch\$Params',
+  dataWords: 0,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'observer',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: InterfaceRefTypeSchemaInfo(
+          0xf67686e607b37dbb,
+          typeArgs: [StructRefTypeSchemaInfo(0x90b8f67b0e502a98)],
+        ),
+      ),
+    ),
+  ],
+);
+
 final repositoryWatchParamsFactory = _RepositoryWatchParamsFactory();
 
 final class RepositoryWatchResultsReader extends StructReader {
   RepositoryWatchResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = repositoryWatchResultsSchema;
 
   SubscriptionClient? get subscription {
     final cap = getCapabilityObjectField(0);
@@ -2410,6 +4240,8 @@ final class _RepositoryWatchResultsFactory
           RepositoryWatchResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => repositoryWatchResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -2426,10 +4258,30 @@ final class _RepositoryWatchResultsFactory
       RepositoryWatchResultsBuilder(r);
 }
 
+const StructSchemaInfo repositoryWatchResultsSchema = StructSchemaInfo(
+  id: 0x97c283c51d6243e7,
+  displayName: 'complex.capnp:Repository.watch\$Results',
+  shortName: 'watch\$Results',
+  dataWords: 0,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'subscription',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: InterfaceRefTypeSchemaInfo(0xe23251fe94e836ec),
+      ),
+    ),
+  ],
+);
+
 final repositoryWatchResultsFactory = _RepositoryWatchResultsFactory();
 
 final class ByteSinkWriteParamsReader extends StructReader {
   ByteSinkWriteParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = byteSinkWriteParamsSchema;
 
   Uint8List? get chunk => getDataField(0);
 }
@@ -2450,6 +4302,8 @@ final class _ByteSinkWriteParamsFactory
     extends
         StructFactory<ByteSinkWriteParamsReader, ByteSinkWriteParamsBuilder> {
   @override
+  StructSchemaInfo get schema => byteSinkWriteParamsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -2466,10 +4320,30 @@ final class _ByteSinkWriteParamsFactory
       ByteSinkWriteParamsBuilder(r);
 }
 
+const StructSchemaInfo byteSinkWriteParamsSchema = StructSchemaInfo(
+  id: 0xafdfb9bf0f462fee,
+  displayName: 'complex.capnp:ByteSink.write\$Params',
+  shortName: 'write\$Params',
+  dataWords: 0,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'chunk',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Data'),
+      ),
+    ),
+  ],
+);
+
 final byteSinkWriteParamsFactory = _ByteSinkWriteParamsFactory();
 
 final class StreamResultReader extends StructReader {
   StreamResultReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = streamResultSchema;
 }
 
 final class StreamResultBuilder extends StructBuilder {
@@ -2481,6 +4355,8 @@ final class StreamResultBuilder extends StructBuilder {
 
 final class _StreamResultFactory
     extends StructFactory<StreamResultReader, StreamResultBuilder> {
+  @override
+  StructSchemaInfo get schema => streamResultSchema;
   @override
   int get dataWords => 0;
   @override
@@ -2497,10 +4373,21 @@ final class _StreamResultFactory
       StreamResultBuilder(r);
 }
 
+const StructSchemaInfo streamResultSchema = StructSchemaInfo(
+  id: 0x995f9a3377c0b16e,
+  displayName: 'capnp/stream.capnp:StreamResult',
+  shortName: 'StreamResult',
+  dataWords: 0,
+  pointerWords: 0,
+  fields: [],
+);
+
 final streamResultFactory = _StreamResultFactory();
 
 final class ByteSinkFinishParamsReader extends StructReader {
   ByteSinkFinishParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = byteSinkFinishParamsSchema;
 }
 
 final class ByteSinkFinishParamsBuilder extends StructBuilder {
@@ -2514,6 +4401,8 @@ final class ByteSinkFinishParamsBuilder extends StructBuilder {
 final class _ByteSinkFinishParamsFactory
     extends
         StructFactory<ByteSinkFinishParamsReader, ByteSinkFinishParamsBuilder> {
+  @override
+  StructSchemaInfo get schema => byteSinkFinishParamsSchema;
   @override
   int get dataWords => 0;
   @override
@@ -2531,10 +4420,21 @@ final class _ByteSinkFinishParamsFactory
       ByteSinkFinishParamsBuilder(r);
 }
 
+const StructSchemaInfo byteSinkFinishParamsSchema = StructSchemaInfo(
+  id: 0xa2319baef9522b7e,
+  displayName: 'complex.capnp:ByteSink.finish\$Params',
+  shortName: 'finish\$Params',
+  dataWords: 0,
+  pointerWords: 0,
+  fields: [],
+);
+
 final byteSinkFinishParamsFactory = _ByteSinkFinishParamsFactory();
 
 final class ByteSinkFinishResultsReader extends StructReader {
   ByteSinkFinishResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = byteSinkFinishResultsSchema;
 
   int get byteCount => getUint64Field(0);
 
@@ -2564,6 +4464,8 @@ final class _ByteSinkFinishResultsFactory
           ByteSinkFinishResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => byteSinkFinishResultsSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 1;
@@ -2580,10 +4482,38 @@ final class _ByteSinkFinishResultsFactory
       ByteSinkFinishResultsBuilder(r);
 }
 
+const StructSchemaInfo byteSinkFinishResultsSchema = StructSchemaInfo(
+  id: 0xc137170920cbe242,
+  displayName: 'complex.capnp:ByteSink.finish\$Results',
+  shortName: 'finish\$Results',
+  dataWords: 1,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'byteCount',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('UInt64'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'checksum',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Data'),
+      ),
+    ),
+  ],
+);
+
 final byteSinkFinishResultsFactory = _ByteSinkFinishResultsFactory();
 
 final class ByteSinkAbortParamsReader extends StructReader {
   ByteSinkAbortParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = byteSinkAbortParamsSchema;
 
   String? get reason => getTextField(0);
 }
@@ -2604,6 +4534,8 @@ final class _ByteSinkAbortParamsFactory
     extends
         StructFactory<ByteSinkAbortParamsReader, ByteSinkAbortParamsBuilder> {
   @override
+  StructSchemaInfo get schema => byteSinkAbortParamsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -2620,10 +4552,30 @@ final class _ByteSinkAbortParamsFactory
       ByteSinkAbortParamsBuilder(r);
 }
 
+const StructSchemaInfo byteSinkAbortParamsSchema = StructSchemaInfo(
+  id: 0x96fc25f47cf45583,
+  displayName: 'complex.capnp:ByteSink.abort\$Params',
+  shortName: 'abort\$Params',
+  dataWords: 0,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'reason',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Text'),
+      ),
+    ),
+  ],
+);
+
 final byteSinkAbortParamsFactory = _ByteSinkAbortParamsFactory();
 
 final class ByteSinkAbortResultsReader extends StructReader {
   ByteSinkAbortResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = byteSinkAbortResultsSchema;
 }
 
 final class ByteSinkAbortResultsBuilder extends StructBuilder {
@@ -2637,6 +4589,8 @@ final class ByteSinkAbortResultsBuilder extends StructBuilder {
 final class _ByteSinkAbortResultsFactory
     extends
         StructFactory<ByteSinkAbortResultsReader, ByteSinkAbortResultsBuilder> {
+  @override
+  StructSchemaInfo get schema => byteSinkAbortResultsSchema;
   @override
   int get dataWords => 0;
   @override
@@ -2654,10 +4608,21 @@ final class _ByteSinkAbortResultsFactory
       ByteSinkAbortResultsBuilder(r);
 }
 
+const StructSchemaInfo byteSinkAbortResultsSchema = StructSchemaInfo(
+  id: 0xeac9b85e358ad038,
+  displayName: 'complex.capnp:ByteSink.abort\$Results',
+  shortName: 'abort\$Results',
+  dataWords: 0,
+  pointerWords: 0,
+  fields: [],
+);
+
 final byteSinkAbortResultsFactory = _ByteSinkAbortResultsFactory();
 
 final class ByteSourcePumpToParamsReader extends StructReader {
   ByteSourcePumpToParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = byteSourcePumpToParamsSchema;
 
   ByteSinkClient? get sink {
     final cap = getCapabilityObjectField(0);
@@ -2692,6 +4657,8 @@ final class _ByteSourcePumpToParamsFactory
           ByteSourcePumpToParamsBuilder
         > {
   @override
+  StructSchemaInfo get schema => byteSourcePumpToParamsSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 1;
@@ -2708,10 +4675,40 @@ final class _ByteSourcePumpToParamsFactory
       ByteSourcePumpToParamsBuilder(r);
 }
 
+const StructSchemaInfo byteSourcePumpToParamsSchema = StructSchemaInfo(
+  id: 0xaf9e25ee76071957,
+  displayName: 'complex.capnp:ByteSource.pumpTo\$Params',
+  shortName: 'pumpTo\$Params',
+  dataWords: 1,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'sink',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: InterfaceRefTypeSchemaInfo(0xbef98c1dd8be91de),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'chunkSize',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('UInt32'),
+        hadExplicitDefault: true,
+        defaultValue: 65536,
+      ),
+    ),
+  ],
+);
+
 final byteSourcePumpToParamsFactory = _ByteSourcePumpToParamsFactory();
 
 final class ByteSourcePumpToResultsReader extends StructReader {
   ByteSourcePumpToResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = byteSourcePumpToResultsSchema;
 
   int get byteCount => getUint64Field(0);
 }
@@ -2735,6 +4732,8 @@ final class _ByteSourcePumpToResultsFactory
           ByteSourcePumpToResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => byteSourcePumpToResultsSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 0;
@@ -2751,12 +4750,32 @@ final class _ByteSourcePumpToResultsFactory
       ByteSourcePumpToResultsBuilder(r);
 }
 
+const StructSchemaInfo byteSourcePumpToResultsSchema = StructSchemaInfo(
+  id: 0xa5ec2941660b8125,
+  displayName: 'complex.capnp:ByteSource.pumpTo\$Results',
+  shortName: 'pumpTo\$Results',
+  dataWords: 1,
+  pointerWords: 0,
+  fields: [
+    FieldSchemaInfo(
+      name: 'byteCount',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('UInt64'),
+      ),
+    ),
+  ],
+);
+
 final byteSourcePumpToResultsFactory = _ByteSourcePumpToResultsFactory();
 
 final class CapabilityFactoryNewCellParamsReader extends StructReader {
   CapabilityFactoryNewCellParamsReader(super.raw, {super.capabilities});
 
-  Uint8List? get initialValue => getAnyPointerAsMessageBytes(0);
+  static const StructSchemaInfo schema = capabilityFactoryNewCellParamsSchema;
+
+  AnyPointerReader? get initialValue => getAnyPointerField(0);
 }
 
 final class CapabilityFactoryNewCellParamsBuilder extends StructBuilder {
@@ -2766,8 +4785,18 @@ final class CapabilityFactoryNewCellParamsBuilder extends StructBuilder {
   CapabilityFactoryNewCellParamsReader asReader() =>
       CapabilityFactoryNewCellParamsReader(rawToReader());
 
-  set initialValue(Uint8List? v) {
-    if (v != null) setAnyPointerFromMessage(0, v);
+  AnyPointerBuilder initInitialValue() {
+    return initAnyPointerField(0);
+  }
+
+  set initialValue(AnyPointerReader? v) {
+    setAnyPointerField(0, v);
+  }
+
+  void setInitialValueMessage(Uint8List? v) {
+    if (v != null) {
+      setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    }
   }
 }
 
@@ -2777,6 +4806,8 @@ final class _CapabilityFactoryNewCellParamsFactory
           CapabilityFactoryNewCellParamsReader,
           CapabilityFactoryNewCellParamsBuilder
         > {
+  @override
+  StructSchemaInfo get schema => capabilityFactoryNewCellParamsSchema;
   @override
   int get dataWords => 0;
   @override
@@ -2794,11 +4825,29 @@ final class _CapabilityFactoryNewCellParamsFactory
       CapabilityFactoryNewCellParamsBuilder(r);
 }
 
+const StructSchemaInfo capabilityFactoryNewCellParamsSchema = StructSchemaInfo(
+  id: 0xec9febe961558d81,
+  displayName: 'complex.capnp:CapabilityFactory.newCell\$Params',
+  shortName: 'newCell\$Params',
+  dataWords: 0,
+  pointerWords: 1,
+  typeParameters: ['Value'],
+  fields: [
+    FieldSchemaInfo(
+      name: 'initialValue',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(offset: 0, type: TypeParameterSchemaInfo(0)),
+    ),
+  ],
+);
+
 final capabilityFactoryNewCellParamsFactory =
     _CapabilityFactoryNewCellParamsFactory();
 
 final class CapabilityFactoryNewCellResultsReader extends StructReader {
   CapabilityFactoryNewCellResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = capabilityFactoryNewCellResultsSchema;
 
   ReadWriteClient? get cell {
     final cap = getCapabilityObjectField(0);
@@ -2827,6 +4876,8 @@ final class _CapabilityFactoryNewCellResultsFactory
           CapabilityFactoryNewCellResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => capabilityFactoryNewCellResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -2843,11 +4894,36 @@ final class _CapabilityFactoryNewCellResultsFactory
       CapabilityFactoryNewCellResultsBuilder(r);
 }
 
+const StructSchemaInfo capabilityFactoryNewCellResultsSchema = StructSchemaInfo(
+  id: 0x8b05b4a25440230f,
+  displayName: 'complex.capnp:CapabilityFactory.newCell\$Results',
+  shortName: 'newCell\$Results',
+  dataWords: 0,
+  pointerWords: 1,
+  typeParameters: ['Value'],
+  fields: [
+    FieldSchemaInfo(
+      name: 'cell',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: InterfaceRefTypeSchemaInfo(
+          0xc2108261d371f6f8,
+          typeArgs: [TypeParameterSchemaInfo(0)],
+        ),
+      ),
+    ),
+  ],
+);
+
 final capabilityFactoryNewCellResultsFactory =
     _CapabilityFactoryNewCellResultsFactory();
 
 final class CapabilityFactoryNewEmptyCellParamsReader extends StructReader {
   CapabilityFactoryNewEmptyCellParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      capabilityFactoryNewEmptyCellParamsSchema;
 }
 
 final class CapabilityFactoryNewEmptyCellParamsBuilder extends StructBuilder {
@@ -2864,6 +4940,8 @@ final class _CapabilityFactoryNewEmptyCellParamsFactory
           CapabilityFactoryNewEmptyCellParamsReader,
           CapabilityFactoryNewEmptyCellParamsBuilder
         > {
+  @override
+  StructSchemaInfo get schema => capabilityFactoryNewEmptyCellParamsSchema;
   @override
   int get dataWords => 0;
   @override
@@ -2882,11 +4960,25 @@ final class _CapabilityFactoryNewEmptyCellParamsFactory
   ) => CapabilityFactoryNewEmptyCellParamsBuilder(r);
 }
 
+const StructSchemaInfo capabilityFactoryNewEmptyCellParamsSchema =
+    StructSchemaInfo(
+      id: 0xf13ecef7827cc706,
+      displayName: 'complex.capnp:CapabilityFactory.newEmptyCell\$Params',
+      shortName: 'newEmptyCell\$Params',
+      dataWords: 0,
+      pointerWords: 0,
+      typeParameters: ['Value'],
+      fields: [],
+    );
+
 final capabilityFactoryNewEmptyCellParamsFactory =
     _CapabilityFactoryNewEmptyCellParamsFactory();
 
 final class CapabilityFactoryNewEmptyCellResultsReader extends StructReader {
   CapabilityFactoryNewEmptyCellResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      capabilityFactoryNewEmptyCellResultsSchema;
 
   ReadWriteClient? get cell {
     final cap = getCapabilityObjectField(0);
@@ -2915,6 +5007,8 @@ final class _CapabilityFactoryNewEmptyCellResultsFactory
           CapabilityFactoryNewEmptyCellResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => capabilityFactoryNewEmptyCellResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -2933,11 +5027,37 @@ final class _CapabilityFactoryNewEmptyCellResultsFactory
   ) => CapabilityFactoryNewEmptyCellResultsBuilder(r);
 }
 
+const StructSchemaInfo capabilityFactoryNewEmptyCellResultsSchema =
+    StructSchemaInfo(
+      id: 0xa1aace366c5c1ee0,
+      displayName: 'complex.capnp:CapabilityFactory.newEmptyCell\$Results',
+      shortName: 'newEmptyCell\$Results',
+      dataWords: 0,
+      pointerWords: 1,
+      typeParameters: ['Value'],
+      fields: [
+        FieldSchemaInfo(
+          name: 'cell',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: InterfaceRefTypeSchemaInfo(
+              0xc2108261d371f6f8,
+              typeArgs: [TypeParameterSchemaInfo(0)],
+            ),
+          ),
+        ),
+      ],
+    );
+
 final capabilityFactoryNewEmptyCellResultsFactory =
     _CapabilityFactoryNewEmptyCellResultsFactory();
 
 final class CapabilityFactoryNewRepositoryParamsReader extends StructReader {
   CapabilityFactoryNewRepositoryParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      capabilityFactoryNewRepositoryParamsSchema;
 }
 
 final class CapabilityFactoryNewRepositoryParamsBuilder extends StructBuilder {
@@ -2954,6 +5074,8 @@ final class _CapabilityFactoryNewRepositoryParamsFactory
           CapabilityFactoryNewRepositoryParamsReader,
           CapabilityFactoryNewRepositoryParamsBuilder
         > {
+  @override
+  StructSchemaInfo get schema => capabilityFactoryNewRepositoryParamsSchema;
   @override
   int get dataWords => 0;
   @override
@@ -2973,11 +5095,25 @@ final class _CapabilityFactoryNewRepositoryParamsFactory
   ) => CapabilityFactoryNewRepositoryParamsBuilder(r);
 }
 
+const StructSchemaInfo capabilityFactoryNewRepositoryParamsSchema =
+    StructSchemaInfo(
+      id: 0xcdd5b5e6c9ba03cc,
+      displayName: 'complex.capnp:CapabilityFactory.newRepository\$Params',
+      shortName: 'newRepository\$Params',
+      dataWords: 0,
+      pointerWords: 0,
+      typeParameters: ['Key', 'Value'],
+      fields: [],
+    );
+
 final capabilityFactoryNewRepositoryParamsFactory =
     _CapabilityFactoryNewRepositoryParamsFactory();
 
 final class CapabilityFactoryNewRepositoryResultsReader extends StructReader {
   CapabilityFactoryNewRepositoryResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      capabilityFactoryNewRepositoryResultsSchema;
 
   RepositoryClient? get repository {
     final cap = getCapabilityObjectField(0);
@@ -3006,6 +5142,8 @@ final class _CapabilityFactoryNewRepositoryResultsFactory
           CapabilityFactoryNewRepositoryResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => capabilityFactoryNewRepositoryResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -3027,13 +5165,42 @@ final class _CapabilityFactoryNewRepositoryResultsFactory
   ) => CapabilityFactoryNewRepositoryResultsBuilder(r);
 }
 
+const StructSchemaInfo capabilityFactoryNewRepositoryResultsSchema =
+    StructSchemaInfo(
+      id: 0x9a728496ffd3d837,
+      displayName: 'complex.capnp:CapabilityFactory.newRepository\$Results',
+      shortName: 'newRepository\$Results',
+      dataWords: 0,
+      pointerWords: 1,
+      typeParameters: ['Key', 'Value'],
+      fields: [
+        FieldSchemaInfo(
+          name: 'repository',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: InterfaceRefTypeSchemaInfo(
+              0xff065518e00ba453,
+              typeArgs: [
+                TypeParameterSchemaInfo(0),
+                TypeParameterSchemaInfo(1),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+
 final capabilityFactoryNewRepositoryResultsFactory =
     _CapabilityFactoryNewRepositoryResultsFactory();
 
 final class CapabilityFactoryEchoCapabilityParamsReader extends StructReader {
   CapabilityFactoryEchoCapabilityParamsReader(super.raw, {super.capabilities});
 
-  Uint8List? get capability => getAnyPointerAsMessageBytes(0);
+  static const StructSchemaInfo schema =
+      capabilityFactoryEchoCapabilityParamsSchema;
+
+  AnyPointerReader? get capability => getAnyPointerField(0);
 }
 
 final class CapabilityFactoryEchoCapabilityParamsBuilder extends StructBuilder {
@@ -3043,8 +5210,18 @@ final class CapabilityFactoryEchoCapabilityParamsBuilder extends StructBuilder {
   CapabilityFactoryEchoCapabilityParamsReader asReader() =>
       CapabilityFactoryEchoCapabilityParamsReader(rawToReader());
 
-  set capability(Uint8List? v) {
-    if (v != null) setAnyPointerFromMessage(0, v);
+  AnyPointerBuilder initCapability() {
+    return initAnyPointerField(0);
+  }
+
+  set capability(AnyPointerReader? v) {
+    setAnyPointerField(0, v);
+  }
+
+  void setCapabilityMessage(Uint8List? v) {
+    if (v != null) {
+      setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    }
   }
 }
 
@@ -3054,6 +5231,8 @@ final class _CapabilityFactoryEchoCapabilityParamsFactory
           CapabilityFactoryEchoCapabilityParamsReader,
           CapabilityFactoryEchoCapabilityParamsBuilder
         > {
+  @override
+  StructSchemaInfo get schema => capabilityFactoryEchoCapabilityParamsSchema;
   @override
   int get dataWords => 0;
   @override
@@ -3076,13 +5255,36 @@ final class _CapabilityFactoryEchoCapabilityParamsFactory
   ) => CapabilityFactoryEchoCapabilityParamsBuilder(r);
 }
 
+const StructSchemaInfo capabilityFactoryEchoCapabilityParamsSchema =
+    StructSchemaInfo(
+      id: 0xd289d712c47b67c4,
+      displayName: 'complex.capnp:CapabilityFactory.echoCapability\$Params',
+      shortName: 'echoCapability\$Params',
+      dataWords: 0,
+      pointerWords: 1,
+      typeParameters: ['Cap'],
+      fields: [
+        FieldSchemaInfo(
+          name: 'capability',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: TypeParameterSchemaInfo(0),
+          ),
+        ),
+      ],
+    );
+
 final capabilityFactoryEchoCapabilityParamsFactory =
     _CapabilityFactoryEchoCapabilityParamsFactory();
 
 final class CapabilityFactoryEchoCapabilityResultsReader extends StructReader {
   CapabilityFactoryEchoCapabilityResultsReader(super.raw, {super.capabilities});
 
-  Uint8List? get sameCapability => getAnyPointerAsMessageBytes(0);
+  static const StructSchemaInfo schema =
+      capabilityFactoryEchoCapabilityResultsSchema;
+
+  AnyPointerReader? get sameCapability => getAnyPointerField(0);
 }
 
 final class CapabilityFactoryEchoCapabilityResultsBuilder
@@ -3093,8 +5295,18 @@ final class CapabilityFactoryEchoCapabilityResultsBuilder
   CapabilityFactoryEchoCapabilityResultsReader asReader() =>
       CapabilityFactoryEchoCapabilityResultsReader(rawToReader());
 
-  set sameCapability(Uint8List? v) {
-    if (v != null) setAnyPointerFromMessage(0, v);
+  AnyPointerBuilder initSameCapability() {
+    return initAnyPointerField(0);
+  }
+
+  set sameCapability(AnyPointerReader? v) {
+    setAnyPointerField(0, v);
+  }
+
+  void setSameCapabilityMessage(Uint8List? v) {
+    if (v != null) {
+      setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    }
   }
 }
 
@@ -3104,6 +5316,8 @@ final class _CapabilityFactoryEchoCapabilityResultsFactory
           CapabilityFactoryEchoCapabilityResultsReader,
           CapabilityFactoryEchoCapabilityResultsBuilder
         > {
+  @override
+  StructSchemaInfo get schema => capabilityFactoryEchoCapabilityResultsSchema;
   @override
   int get dataWords => 0;
   @override
@@ -3126,11 +5340,34 @@ final class _CapabilityFactoryEchoCapabilityResultsFactory
   ) => CapabilityFactoryEchoCapabilityResultsBuilder(r);
 }
 
+const StructSchemaInfo capabilityFactoryEchoCapabilityResultsSchema =
+    StructSchemaInfo(
+      id: 0xa2dd5da9a79ba44a,
+      displayName: 'complex.capnp:CapabilityFactory.echoCapability\$Results',
+      shortName: 'echoCapability\$Results',
+      dataWords: 0,
+      pointerWords: 1,
+      typeParameters: ['Cap'],
+      fields: [
+        FieldSchemaInfo(
+          name: 'sameCapability',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: TypeParameterSchemaInfo(0),
+          ),
+        ),
+      ],
+    );
+
 final capabilityFactoryEchoCapabilityResultsFactory =
     _CapabilityFactoryEchoCapabilityResultsFactory();
 
 final class CapabilityFactoryGetUntypedParamsReader extends StructReader {
   CapabilityFactoryGetUntypedParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      capabilityFactoryGetUntypedParamsSchema;
 
   String? get name => getTextField(0);
 }
@@ -3154,6 +5391,8 @@ final class _CapabilityFactoryGetUntypedParamsFactory
           CapabilityFactoryGetUntypedParamsBuilder
         > {
   @override
+  StructSchemaInfo get schema => capabilityFactoryGetUntypedParamsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -3170,13 +5409,35 @@ final class _CapabilityFactoryGetUntypedParamsFactory
       CapabilityFactoryGetUntypedParamsBuilder(r);
 }
 
+const StructSchemaInfo capabilityFactoryGetUntypedParamsSchema =
+    StructSchemaInfo(
+      id: 0xb4b6893326debbbc,
+      displayName: 'complex.capnp:CapabilityFactory.getUntyped\$Params',
+      shortName: 'getUntyped\$Params',
+      dataWords: 0,
+      pointerWords: 1,
+      fields: [
+        FieldSchemaInfo(
+          name: 'name',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: PrimitiveTypeSchemaInfo('Text'),
+          ),
+        ),
+      ],
+    );
+
 final capabilityFactoryGetUntypedParamsFactory =
     _CapabilityFactoryGetUntypedParamsFactory();
 
 final class CapabilityFactoryGetUntypedResultsReader extends StructReader {
   CapabilityFactoryGetUntypedResultsReader(super.raw, {super.capabilities});
 
-  Uint8List? get value => getAnyPointerAsMessageBytes(0);
+  static const StructSchemaInfo schema =
+      capabilityFactoryGetUntypedResultsSchema;
+
+  AnyPointerReader? get value => getAnyPointerField(0);
 }
 
 final class CapabilityFactoryGetUntypedResultsBuilder extends StructBuilder {
@@ -3186,8 +5447,18 @@ final class CapabilityFactoryGetUntypedResultsBuilder extends StructBuilder {
   CapabilityFactoryGetUntypedResultsReader asReader() =>
       CapabilityFactoryGetUntypedResultsReader(rawToReader());
 
-  set value(Uint8List? v) {
-    if (v != null) setAnyPointerFromMessage(0, v);
+  AnyPointerBuilder initValue() {
+    return initAnyPointerField(0);
+  }
+
+  set value(AnyPointerReader? v) {
+    setAnyPointerField(0, v);
+  }
+
+  void setValueMessage(Uint8List? v) {
+    if (v != null) {
+      setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    }
   }
 }
 
@@ -3197,6 +5468,8 @@ final class _CapabilityFactoryGetUntypedResultsFactory
           CapabilityFactoryGetUntypedResultsReader,
           CapabilityFactoryGetUntypedResultsBuilder
         > {
+  @override
+  StructSchemaInfo get schema => capabilityFactoryGetUntypedResultsSchema;
   @override
   int get dataWords => 0;
   @override
@@ -3215,11 +5488,32 @@ final class _CapabilityFactoryGetUntypedResultsFactory
   ) => CapabilityFactoryGetUntypedResultsBuilder(r);
 }
 
+const StructSchemaInfo capabilityFactoryGetUntypedResultsSchema =
+    StructSchemaInfo(
+      id: 0x87b11c7f9df9ca5d,
+      displayName: 'complex.capnp:CapabilityFactory.getUntyped\$Results',
+      shortName: 'getUntyped\$Results',
+      dataWords: 0,
+      pointerWords: 1,
+      fields: [
+        FieldSchemaInfo(
+          name: 'value',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: AnyPointerTypeSchemaInfo(),
+          ),
+        ),
+      ],
+    );
+
 final capabilityFactoryGetUntypedResultsFactory =
     _CapabilityFactoryGetUntypedResultsFactory();
 
 final class ParentGetNameParamsReader extends StructReader {
   ParentGetNameParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = parentGetNameParamsSchema;
 }
 
 final class ParentGetNameParamsBuilder extends StructBuilder {
@@ -3233,6 +5527,8 @@ final class ParentGetNameParamsBuilder extends StructBuilder {
 final class _ParentGetNameParamsFactory
     extends
         StructFactory<ParentGetNameParamsReader, ParentGetNameParamsBuilder> {
+  @override
+  StructSchemaInfo get schema => parentGetNameParamsSchema;
   @override
   int get dataWords => 0;
   @override
@@ -3250,10 +5546,21 @@ final class _ParentGetNameParamsFactory
       ParentGetNameParamsBuilder(r);
 }
 
+const StructSchemaInfo parentGetNameParamsSchema = StructSchemaInfo(
+  id: 0xf8a6f2630857f7c5,
+  displayName: 'complex.capnp:Parent.getName\$Params',
+  shortName: 'getName\$Params',
+  dataWords: 0,
+  pointerWords: 0,
+  fields: [],
+);
+
 final parentGetNameParamsFactory = _ParentGetNameParamsFactory();
 
 final class ParentGetNameResultsReader extends StructReader {
   ParentGetNameResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = parentGetNameResultsSchema;
 
   String? get name => getTextField(0);
 }
@@ -3274,6 +5581,8 @@ final class _ParentGetNameResultsFactory
     extends
         StructFactory<ParentGetNameResultsReader, ParentGetNameResultsBuilder> {
   @override
+  StructSchemaInfo get schema => parentGetNameResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -3290,10 +5599,30 @@ final class _ParentGetNameResultsFactory
       ParentGetNameResultsBuilder(r);
 }
 
+const StructSchemaInfo parentGetNameResultsSchema = StructSchemaInfo(
+  id: 0x8ce9bbc8d281e1e6,
+  displayName: 'complex.capnp:Parent.getName\$Results',
+  shortName: 'getName\$Results',
+  dataWords: 0,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'name',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Text'),
+      ),
+    ),
+  ],
+);
+
 final parentGetNameResultsFactory = _ParentGetNameResultsFactory();
 
 final class LeftLeftParamsReader extends StructReader {
   LeftLeftParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = leftLeftParamsSchema;
 
   int get value => getInt32Field(0);
 }
@@ -3312,6 +5641,8 @@ final class LeftLeftParamsBuilder extends StructBuilder {
 final class _LeftLeftParamsFactory
     extends StructFactory<LeftLeftParamsReader, LeftLeftParamsBuilder> {
   @override
+  StructSchemaInfo get schema => leftLeftParamsSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 0;
@@ -3328,10 +5659,30 @@ final class _LeftLeftParamsFactory
       LeftLeftParamsBuilder(r);
 }
 
+const StructSchemaInfo leftLeftParamsSchema = StructSchemaInfo(
+  id: 0xe95c21718e5543d1,
+  displayName: 'complex.capnp:Left.left\$Params',
+  shortName: 'left\$Params',
+  dataWords: 1,
+  pointerWords: 0,
+  fields: [
+    FieldSchemaInfo(
+      name: 'value',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Int32'),
+      ),
+    ),
+  ],
+);
+
 final leftLeftParamsFactory = _LeftLeftParamsFactory();
 
 final class LeftLeftResultsReader extends StructReader {
   LeftLeftResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = leftLeftResultsSchema;
 
   int get result => getInt32Field(0);
 }
@@ -3350,6 +5701,8 @@ final class LeftLeftResultsBuilder extends StructBuilder {
 final class _LeftLeftResultsFactory
     extends StructFactory<LeftLeftResultsReader, LeftLeftResultsBuilder> {
   @override
+  StructSchemaInfo get schema => leftLeftResultsSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 0;
@@ -3366,10 +5719,30 @@ final class _LeftLeftResultsFactory
       LeftLeftResultsBuilder(r);
 }
 
+const StructSchemaInfo leftLeftResultsSchema = StructSchemaInfo(
+  id: 0xf262eb425f2f06b5,
+  displayName: 'complex.capnp:Left.left\$Results',
+  shortName: 'left\$Results',
+  dataWords: 1,
+  pointerWords: 0,
+  fields: [
+    FieldSchemaInfo(
+      name: 'result',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Int32'),
+      ),
+    ),
+  ],
+);
+
 final leftLeftResultsFactory = _LeftLeftResultsFactory();
 
 final class RightRightParamsReader extends StructReader {
   RightRightParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = rightRightParamsSchema;
 
   int get value => getInt32Field(0);
 }
@@ -3388,6 +5761,8 @@ final class RightRightParamsBuilder extends StructBuilder {
 final class _RightRightParamsFactory
     extends StructFactory<RightRightParamsReader, RightRightParamsBuilder> {
   @override
+  StructSchemaInfo get schema => rightRightParamsSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 0;
@@ -3404,10 +5779,30 @@ final class _RightRightParamsFactory
       RightRightParamsBuilder(r);
 }
 
+const StructSchemaInfo rightRightParamsSchema = StructSchemaInfo(
+  id: 0xb3483ea8606f0573,
+  displayName: 'complex.capnp:Right.right\$Params',
+  shortName: 'right\$Params',
+  dataWords: 1,
+  pointerWords: 0,
+  fields: [
+    FieldSchemaInfo(
+      name: 'value',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Int32'),
+      ),
+    ),
+  ],
+);
+
 final rightRightParamsFactory = _RightRightParamsFactory();
 
 final class RightRightResultsReader extends StructReader {
   RightRightResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = rightRightResultsSchema;
 
   int get result => getInt32Field(0);
 }
@@ -3426,6 +5821,8 @@ final class RightRightResultsBuilder extends StructBuilder {
 final class _RightRightResultsFactory
     extends StructFactory<RightRightResultsReader, RightRightResultsBuilder> {
   @override
+  StructSchemaInfo get schema => rightRightResultsSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 0;
@@ -3442,10 +5839,30 @@ final class _RightRightResultsFactory
       RightRightResultsBuilder(r);
 }
 
+const StructSchemaInfo rightRightResultsSchema = StructSchemaInfo(
+  id: 0xf8a7a01702aa85a6,
+  displayName: 'complex.capnp:Right.right\$Results',
+  shortName: 'right\$Results',
+  dataWords: 1,
+  pointerWords: 0,
+  fields: [
+    FieldSchemaInfo(
+      name: 'result',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Int32'),
+      ),
+    ),
+  ],
+);
+
 final rightRightResultsFactory = _RightRightResultsFactory();
 
 final class DiamondBothParamsReader extends StructReader {
   DiamondBothParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = diamondBothParamsSchema;
 
   int get leftValue => getInt32Field(0);
 
@@ -3470,6 +5887,8 @@ final class DiamondBothParamsBuilder extends StructBuilder {
 final class _DiamondBothParamsFactory
     extends StructFactory<DiamondBothParamsReader, DiamondBothParamsBuilder> {
   @override
+  StructSchemaInfo get schema => diamondBothParamsSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 0;
@@ -3486,10 +5905,38 @@ final class _DiamondBothParamsFactory
       DiamondBothParamsBuilder(r);
 }
 
+const StructSchemaInfo diamondBothParamsSchema = StructSchemaInfo(
+  id: 0xcf56406a2452589e,
+  displayName: 'complex.capnp:Diamond.both\$Params',
+  shortName: 'both\$Params',
+  dataWords: 1,
+  pointerWords: 0,
+  fields: [
+    FieldSchemaInfo(
+      name: 'leftValue',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Int32'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'rightValue',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 1,
+        type: PrimitiveTypeSchemaInfo('Int32'),
+      ),
+    ),
+  ],
+);
+
 final diamondBothParamsFactory = _DiamondBothParamsFactory();
 
 final class DiamondBothResultsReader extends StructReader {
   DiamondBothResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = diamondBothResultsSchema;
 
   int get sum => getInt64Field(0);
 }
@@ -3509,6 +5956,8 @@ final class DiamondBothResultsBuilder extends StructBuilder {
 final class _DiamondBothResultsFactory
     extends StructFactory<DiamondBothResultsReader, DiamondBothResultsBuilder> {
   @override
+  StructSchemaInfo get schema => diamondBothResultsSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 0;
@@ -3525,10 +5974,30 @@ final class _DiamondBothResultsFactory
       DiamondBothResultsBuilder(r);
 }
 
+const StructSchemaInfo diamondBothResultsSchema = StructSchemaInfo(
+  id: 0x82cda5048998b05a,
+  displayName: 'complex.capnp:Diamond.both\$Results',
+  shortName: 'both\$Results',
+  dataWords: 1,
+  pointerWords: 0,
+  fields: [
+    FieldSchemaInfo(
+      name: 'sum',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Int64'),
+      ),
+    ),
+  ],
+);
+
 final diamondBothResultsFactory = _DiamondBothResultsFactory();
 
 final class PipelineTargetGetChildParamsReader extends StructReader {
   PipelineTargetGetChildParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = pipelineTargetGetChildParamsSchema;
 
   String? get name => getTextField(0);
 }
@@ -3552,6 +6021,8 @@ final class _PipelineTargetGetChildParamsFactory
           PipelineTargetGetChildParamsBuilder
         > {
   @override
+  StructSchemaInfo get schema => pipelineTargetGetChildParamsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -3568,11 +6039,31 @@ final class _PipelineTargetGetChildParamsFactory
       PipelineTargetGetChildParamsBuilder(r);
 }
 
+const StructSchemaInfo pipelineTargetGetChildParamsSchema = StructSchemaInfo(
+  id: 0xbb5838cc7e8c6022,
+  displayName: 'complex.capnp:PipelineTarget.getChild\$Params',
+  shortName: 'getChild\$Params',
+  dataWords: 0,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'name',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Text'),
+      ),
+    ),
+  ],
+);
+
 final pipelineTargetGetChildParamsFactory =
     _PipelineTargetGetChildParamsFactory();
 
 final class PipelineTargetGetChildResultsReader extends StructReader {
   PipelineTargetGetChildResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = pipelineTargetGetChildResultsSchema;
 
   PipelineTargetClient? get child {
     final cap = getCapabilityObjectField(0);
@@ -3601,6 +6092,8 @@ final class _PipelineTargetGetChildResultsFactory
           PipelineTargetGetChildResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => pipelineTargetGetChildResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -3617,11 +6110,32 @@ final class _PipelineTargetGetChildResultsFactory
       PipelineTargetGetChildResultsBuilder(r);
 }
 
+const StructSchemaInfo pipelineTargetGetChildResultsSchema = StructSchemaInfo(
+  id: 0xea029d19d63a2b01,
+  displayName: 'complex.capnp:PipelineTarget.getChild\$Results',
+  shortName: 'getChild\$Results',
+  dataWords: 0,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'child',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: InterfaceRefTypeSchemaInfo(0xe211443879f3b6bb),
+      ),
+    ),
+  ],
+);
+
 final pipelineTargetGetChildResultsFactory =
     _PipelineTargetGetChildResultsFactory();
 
 final class PipelineTargetGetRepositoryParamsReader extends StructReader {
   PipelineTargetGetRepositoryParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      pipelineTargetGetRepositoryParamsSchema;
 }
 
 final class PipelineTargetGetRepositoryParamsBuilder extends StructBuilder {
@@ -3639,6 +6153,8 @@ final class _PipelineTargetGetRepositoryParamsFactory
           PipelineTargetGetRepositoryParamsBuilder
         > {
   @override
+  StructSchemaInfo get schema => pipelineTargetGetRepositoryParamsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 0;
@@ -3655,11 +6171,24 @@ final class _PipelineTargetGetRepositoryParamsFactory
       PipelineTargetGetRepositoryParamsBuilder(r);
 }
 
+const StructSchemaInfo pipelineTargetGetRepositoryParamsSchema =
+    StructSchemaInfo(
+      id: 0xb9e44b818e6eca9c,
+      displayName: 'complex.capnp:PipelineTarget.getRepository\$Params',
+      shortName: 'getRepository\$Params',
+      dataWords: 0,
+      pointerWords: 0,
+      fields: [],
+    );
+
 final pipelineTargetGetRepositoryParamsFactory =
     _PipelineTargetGetRepositoryParamsFactory();
 
 final class PipelineTargetGetRepositoryResultsReader extends StructReader {
   PipelineTargetGetRepositoryResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      pipelineTargetGetRepositoryResultsSchema;
 
   RepositoryClient? get repository {
     final cap = getCapabilityObjectField(0);
@@ -3688,6 +6217,8 @@ final class _PipelineTargetGetRepositoryResultsFactory
           PipelineTargetGetRepositoryResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => pipelineTargetGetRepositoryResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -3705,11 +6236,38 @@ final class _PipelineTargetGetRepositoryResultsFactory
   ) => PipelineTargetGetRepositoryResultsBuilder(r);
 }
 
+const StructSchemaInfo pipelineTargetGetRepositoryResultsSchema =
+    StructSchemaInfo(
+      id: 0xae223ac78af3245f,
+      displayName: 'complex.capnp:PipelineTarget.getRepository\$Results',
+      shortName: 'getRepository\$Results',
+      dataWords: 0,
+      pointerWords: 1,
+      fields: [
+        FieldSchemaInfo(
+          name: 'repository',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: InterfaceRefTypeSchemaInfo(
+              0xff065518e00ba453,
+              typeArgs: [
+                PrimitiveTypeSchemaInfo('Text'),
+                StructRefTypeSchemaInfo(0xe9ca435af8b77fd8),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+
 final pipelineTargetGetRepositoryResultsFactory =
     _PipelineTargetGetRepositoryResultsFactory();
 
 final class PipelineTargetPingParamsReader extends StructReader {
   PipelineTargetPingParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = pipelineTargetPingParamsSchema;
 
   Uint8List? get payload => getDataField(0);
 }
@@ -3733,6 +6291,8 @@ final class _PipelineTargetPingParamsFactory
           PipelineTargetPingParamsBuilder
         > {
   @override
+  StructSchemaInfo get schema => pipelineTargetPingParamsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -3749,10 +6309,30 @@ final class _PipelineTargetPingParamsFactory
       PipelineTargetPingParamsBuilder(r);
 }
 
+const StructSchemaInfo pipelineTargetPingParamsSchema = StructSchemaInfo(
+  id: 0xae0a87680b83b4b5,
+  displayName: 'complex.capnp:PipelineTarget.ping\$Params',
+  shortName: 'ping\$Params',
+  dataWords: 0,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'payload',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Data'),
+      ),
+    ),
+  ],
+);
+
 final pipelineTargetPingParamsFactory = _PipelineTargetPingParamsFactory();
 
 final class PipelineTargetPingResultsReader extends StructReader {
   PipelineTargetPingResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = pipelineTargetPingResultsSchema;
 
   Uint8List? get payload => getDataField(0);
 }
@@ -3776,6 +6356,8 @@ final class _PipelineTargetPingResultsFactory
           PipelineTargetPingResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => pipelineTargetPingResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -3792,10 +6374,30 @@ final class _PipelineTargetPingResultsFactory
       PipelineTargetPingResultsBuilder(r);
 }
 
+const StructSchemaInfo pipelineTargetPingResultsSchema = StructSchemaInfo(
+  id: 0xb8231d9344127d33,
+  displayName: 'complex.capnp:PipelineTarget.ping\$Results',
+  shortName: 'ping\$Results',
+  dataWords: 0,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'payload',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Data'),
+      ),
+    ),
+  ],
+);
+
 final pipelineTargetPingResultsFactory = _PipelineTargetPingResultsFactory();
 
 final class CapabilityBundleReader extends StructReader {
   CapabilityBundleReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = capabilityBundleSchema;
 
   PipelineTargetClient? get primary {
     final cap = getCapabilityObjectField(0);
@@ -3854,6 +6456,8 @@ final class CapabilityBundleBuilder extends StructBuilder {
 final class _CapabilityBundleFactory
     extends StructFactory<CapabilityBundleReader, CapabilityBundleBuilder> {
   @override
+  StructSchemaInfo get schema => capabilityBundleSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 4;
@@ -3870,10 +6474,72 @@ final class _CapabilityBundleFactory
       CapabilityBundleBuilder(r);
 }
 
+const StructSchemaInfo capabilityBundleSchema = StructSchemaInfo(
+  id: 0x9218a1066a8b654e,
+  displayName: 'complex.capnp:CapabilityBundle',
+  shortName: 'CapabilityBundle',
+  dataWords: 0,
+  pointerWords: 4,
+  fields: [
+    FieldSchemaInfo(
+      name: 'primary',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: InterfaceRefTypeSchemaInfo(0xe211443879f3b6bb),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'optionalObserver',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 1,
+        type: StructRefTypeSchemaInfo(
+          0xa6ccf7c03dcc3a0b,
+          typeArgs: [
+            InterfaceRefTypeSchemaInfo(
+              0xf67686e607b37dbb,
+              typeArgs: [StructRefTypeSchemaInfo(0xe9ca435af8b77fd8)],
+            ),
+          ],
+        ),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'targets',
+      codeOrder: 2,
+      body: SlotFieldSchemaInfo(
+        offset: 2,
+        type: ListTypeSchemaInfo(
+          InterfaceRefTypeSchemaInfo(0xe211443879f3b6bb),
+        ),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'repositories',
+      codeOrder: 3,
+      body: SlotFieldSchemaInfo(
+        offset: 3,
+        type: ListTypeSchemaInfo(
+          InterfaceRefTypeSchemaInfo(
+            0xff065518e00ba453,
+            typeArgs: [
+              PrimitiveTypeSchemaInfo('Text'),
+              StructRefTypeSchemaInfo(0xe9ca435af8b77fd8),
+            ],
+          ),
+        ),
+      ),
+    ),
+  ],
+);
+
 final capabilityBundleFactory = _CapabilityBundleFactory();
 
 final class ComplexRequestReader extends StructReader {
   ComplexRequestReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = complexRequestSchema;
 
   IdentifierReader? get requestId => getStructFieldWith(
     0,
@@ -4008,6 +6674,8 @@ final class ComplexRequestBuilder extends StructBuilder {
 final class _ComplexRequestFactory
     extends StructFactory<ComplexRequestReader, ComplexRequestBuilder> {
   @override
+  StructSchemaInfo get schema => complexRequestSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 12;
@@ -4024,10 +6692,121 @@ final class _ComplexRequestFactory
       ComplexRequestBuilder(r);
 }
 
+const StructSchemaInfo complexRequestSchema = StructSchemaInfo(
+  id: 0x9533f2cec01fe5c1,
+  displayName: 'complex.capnp:ComplexRequest',
+  shortName: 'ComplexRequest',
+  dataWords: 0,
+  pointerWords: 12,
+  fields: [
+    FieldSchemaInfo(
+      name: 'requestId',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: StructRefTypeSchemaInfo(0xfdfd178b7c29d313),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'timestamp',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 1,
+        type: StructRefTypeSchemaInfo(0xa994ff121f52a9fc),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'scalars',
+      codeOrder: 2,
+      body: SlotFieldSchemaInfo(
+        offset: 2,
+        type: StructRefTypeSchemaInfo(0xd3551dfdec8334bd),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'lists',
+      codeOrder: 3,
+      body: SlotFieldSchemaInfo(
+        offset: 3,
+        type: StructRefTypeSchemaInfo(0xe26a1cda2307fb78),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'person',
+      codeOrder: 4,
+      body: SlotFieldSchemaInfo(
+        offset: 4,
+        type: StructRefTypeSchemaInfo(0xe9ca435af8b77fd8),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'tree',
+      codeOrder: 5,
+      body: SlotFieldSchemaInfo(
+        offset: 5,
+        type: StructRefTypeSchemaInfo(
+          0x802ea58652a5cc53,
+          typeArgs: [StructRefTypeSchemaInfo(0xe9ca435af8b77fd8)],
+        ),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'matrix',
+      codeOrder: 6,
+      body: SlotFieldSchemaInfo(
+        offset: 6,
+        type: StructRefTypeSchemaInfo(0xe226f174a996641c),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'choice',
+      codeOrder: 7,
+      body: SlotFieldSchemaInfo(
+        offset: 7,
+        type: StructRefTypeSchemaInfo(0xe831ae3d88b37134),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'dynamic',
+      codeOrder: 8,
+      body: SlotFieldSchemaInfo(
+        offset: 8,
+        type: StructRefTypeSchemaInfo(0xee151f729670f908),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'capabilities',
+      codeOrder: 9,
+      body: SlotFieldSchemaInfo(
+        offset: 9,
+        type: StructRefTypeSchemaInfo(0x9218a1066a8b654e),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'flags',
+      codeOrder: 10,
+      body: SlotFieldSchemaInfo(
+        offset: 10,
+        type: ListTypeSchemaInfo(PrimitiveTypeSchemaInfo('Bool')),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'opaqueBytes',
+      codeOrder: 11,
+      body: SlotFieldSchemaInfo(
+        offset: 11,
+        type: PrimitiveTypeSchemaInfo('Data'),
+      ),
+    ),
+  ],
+);
+
 final complexRequestFactory = _ComplexRequestFactory();
 
 final class ComplexResponseReader extends StructReader {
   ComplexResponseReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = complexResponseSchema;
 
   IdentifierReader? get requestId => getStructFieldWith(
     0,
@@ -4057,7 +6836,7 @@ final class ComplexResponseReader extends StructReader {
 
   int get serverCapabilityCapIndex => getCapabilityField(4);
 
-  Uint8List? get extra => getAnyPointerAsMessageBytes(5);
+  AnyPointerReader? get extra => getAnyPointerField(5);
 }
 
 final class ComplexResponseBuilder extends StructBuilder {
@@ -4100,13 +6879,25 @@ final class ComplexResponseBuilder extends StructBuilder {
     setCapabilityField(4, capTableIndex);
   }
 
-  set extra(Uint8List? v) {
-    if (v != null) setAnyPointerFromMessage(5, v);
+  AnyPointerBuilder initExtra() {
+    return initAnyPointerField(5);
+  }
+
+  set extra(AnyPointerReader? v) {
+    setAnyPointerField(5, v);
+  }
+
+  void setExtraMessage(Uint8List? v) {
+    if (v != null) {
+      setAnyPointerFromMessage(5, v, preserveCapabilityPointers: true);
+    }
   }
 }
 
 final class _ComplexResponseFactory
     extends StructFactory<ComplexResponseReader, ComplexResponseBuilder> {
+  @override
+  StructSchemaInfo get schema => complexResponseSchema;
   @override
   int get dataWords => 1;
   @override
@@ -4124,10 +6915,89 @@ final class _ComplexResponseFactory
       ComplexResponseBuilder(r);
 }
 
+const StructSchemaInfo complexResponseSchema = StructSchemaInfo(
+  id: 0x82712934a747b116,
+  displayName: 'complex.capnp:ComplexResponse',
+  shortName: 'ComplexResponse',
+  dataWords: 1,
+  pointerWords: 6,
+  fields: [
+    FieldSchemaInfo(
+      name: 'requestId',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: StructRefTypeSchemaInfo(0xfdfd178b7c29d313),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'accepted',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Bool'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'status',
+      codeOrder: 2,
+      body: SlotFieldSchemaInfo(
+        offset: 1,
+        type: EnumRefTypeSchemaInfo(0xef7ddc7b82f81295),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'message',
+      codeOrder: 3,
+      body: SlotFieldSchemaInfo(
+        offset: 1,
+        type: PrimitiveTypeSchemaInfo('Text'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'echoed',
+      codeOrder: 4,
+      body: SlotFieldSchemaInfo(
+        offset: 2,
+        type: StructRefTypeSchemaInfo(0x9533f2cec01fe5c1),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'result',
+      codeOrder: 5,
+      body: SlotFieldSchemaInfo(
+        offset: 3,
+        type: StructRefTypeSchemaInfo(
+          0xa2f61119ceb856c8,
+          typeArgs: [
+            StructRefTypeSchemaInfo(0xe9ca435af8b77fd8),
+            StructRefTypeSchemaInfo(0xf8db9aacc5e54996),
+          ],
+        ),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'serverCapability',
+      codeOrder: 6,
+      body: SlotFieldSchemaInfo(
+        offset: 4,
+        type: InterfaceRefTypeSchemaInfo(0xe211443879f3b6bb),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'extra',
+      codeOrder: 7,
+      body: SlotFieldSchemaInfo(offset: 5, type: AnyPointerTypeSchemaInfo()),
+    ),
+  ],
+);
+
 final complexResponseFactory = _ComplexResponseFactory();
 
 final class ErrorInfoReader extends StructReader {
   ErrorInfoReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = errorInfoSchema;
 
   int get code => getUint32Field(0);
 
@@ -4184,6 +7054,8 @@ final class ErrorInfoBuilder extends StructBuilder {
 final class _ErrorInfoFactory
     extends StructFactory<ErrorInfoReader, ErrorInfoBuilder> {
   @override
+  StructSchemaInfo get schema => errorInfoSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 4;
@@ -4198,10 +7070,81 @@ final class _ErrorInfoFactory
   ErrorInfoBuilder fromRawBuilder(RawStructBuilder r) => ErrorInfoBuilder(r);
 }
 
+const StructSchemaInfo errorInfoSchema = StructSchemaInfo(
+  id: 0xf8db9aacc5e54996,
+  displayName: 'complex.capnp:ErrorInfo',
+  shortName: 'ErrorInfo',
+  dataWords: 1,
+  pointerWords: 4,
+  fields: [
+    FieldSchemaInfo(
+      name: 'code',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('UInt32'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'category',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Text'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'message',
+      codeOrder: 2,
+      body: SlotFieldSchemaInfo(
+        offset: 1,
+        type: PrimitiveTypeSchemaInfo('Text'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'retryable',
+      codeOrder: 3,
+      body: SlotFieldSchemaInfo(
+        offset: 32,
+        type: PrimitiveTypeSchemaInfo('Bool'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'details',
+      codeOrder: 4,
+      body: SlotFieldSchemaInfo(
+        offset: 2,
+        type: ListTypeSchemaInfo(
+          StructRefTypeSchemaInfo(
+            0xa3757dd4f46775cf,
+            typeArgs: [
+              PrimitiveTypeSchemaInfo('Text'),
+              PrimitiveTypeSchemaInfo('Text'),
+            ],
+          ),
+        ),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'cause',
+      codeOrder: 5,
+      body: SlotFieldSchemaInfo(
+        offset: 3,
+        type: StructRefTypeSchemaInfo(
+          0xa6ccf7c03dcc3a0b,
+          typeArgs: [StructRefTypeSchemaInfo(0xf8db9aacc5e54996)],
+        ),
+      ),
+    ),
+  ],
+);
+
 final errorInfoFactory = _ErrorInfoFactory();
 
 final class ComplexTestServiceEchoParamsReader extends StructReader {
   ComplexTestServiceEchoParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = complexTestServiceEchoParamsSchema;
 
   ComplexRequestReader? get request => getStructFieldWith(
     0,
@@ -4230,6 +7173,8 @@ final class _ComplexTestServiceEchoParamsFactory
           ComplexTestServiceEchoParamsBuilder
         > {
   @override
+  StructSchemaInfo get schema => complexTestServiceEchoParamsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -4246,11 +7191,31 @@ final class _ComplexTestServiceEchoParamsFactory
       ComplexTestServiceEchoParamsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceEchoParamsSchema = StructSchemaInfo(
+  id: 0xbabd818c1536ec0f,
+  displayName: 'complex.capnp:ComplexTestService.echo\$Params',
+  shortName: 'echo\$Params',
+  dataWords: 0,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'request',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: StructRefTypeSchemaInfo(0x9533f2cec01fe5c1),
+      ),
+    ),
+  ],
+);
+
 final complexTestServiceEchoParamsFactory =
     _ComplexTestServiceEchoParamsFactory();
 
 final class ComplexTestServiceEchoResultsReader extends StructReader {
   ComplexTestServiceEchoResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = complexTestServiceEchoResultsSchema;
 
   ComplexResponseReader? get response => getStructFieldWith(
     0,
@@ -4279,6 +7244,8 @@ final class _ComplexTestServiceEchoResultsFactory
           ComplexTestServiceEchoResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => complexTestServiceEchoResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -4295,11 +7262,32 @@ final class _ComplexTestServiceEchoResultsFactory
       ComplexTestServiceEchoResultsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceEchoResultsSchema = StructSchemaInfo(
+  id: 0x8c6ebb148e13b0c5,
+  displayName: 'complex.capnp:ComplexTestService.echo\$Results',
+  shortName: 'echo\$Results',
+  dataWords: 0,
+  pointerWords: 1,
+  fields: [
+    FieldSchemaInfo(
+      name: 'response',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: StructRefTypeSchemaInfo(0x82712934a747b116),
+      ),
+    ),
+  ],
+);
+
 final complexTestServiceEchoResultsFactory =
     _ComplexTestServiceEchoResultsFactory();
 
 final class ComplexTestServiceEchoScalarsParamsReader extends StructReader {
   ComplexTestServiceEchoScalarsParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      complexTestServiceEchoScalarsParamsSchema;
 
   AllScalarsReader? get value => getStructFieldWith(
     0,
@@ -4328,6 +7316,8 @@ final class _ComplexTestServiceEchoScalarsParamsFactory
           ComplexTestServiceEchoScalarsParamsBuilder
         > {
   @override
+  StructSchemaInfo get schema => complexTestServiceEchoScalarsParamsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -4345,11 +7335,33 @@ final class _ComplexTestServiceEchoScalarsParamsFactory
   ) => ComplexTestServiceEchoScalarsParamsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceEchoScalarsParamsSchema =
+    StructSchemaInfo(
+      id: 0xad3395b1fb42ebe2,
+      displayName: 'complex.capnp:ComplexTestService.echoScalars\$Params',
+      shortName: 'echoScalars\$Params',
+      dataWords: 0,
+      pointerWords: 1,
+      fields: [
+        FieldSchemaInfo(
+          name: 'value',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: StructRefTypeSchemaInfo(0xd3551dfdec8334bd),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceEchoScalarsParamsFactory =
     _ComplexTestServiceEchoScalarsParamsFactory();
 
 final class ComplexTestServiceEchoScalarsResultsReader extends StructReader {
   ComplexTestServiceEchoScalarsResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      complexTestServiceEchoScalarsResultsSchema;
 
   AllScalarsReader? get value => getStructFieldWith(
     0,
@@ -4378,6 +7390,8 @@ final class _ComplexTestServiceEchoScalarsResultsFactory
           ComplexTestServiceEchoScalarsResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => complexTestServiceEchoScalarsResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -4396,11 +7410,33 @@ final class _ComplexTestServiceEchoScalarsResultsFactory
   ) => ComplexTestServiceEchoScalarsResultsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceEchoScalarsResultsSchema =
+    StructSchemaInfo(
+      id: 0xc8b5893f587a43cc,
+      displayName: 'complex.capnp:ComplexTestService.echoScalars\$Results',
+      shortName: 'echoScalars\$Results',
+      dataWords: 0,
+      pointerWords: 1,
+      fields: [
+        FieldSchemaInfo(
+          name: 'value',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: StructRefTypeSchemaInfo(0xd3551dfdec8334bd),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceEchoScalarsResultsFactory =
     _ComplexTestServiceEchoScalarsResultsFactory();
 
 final class ComplexTestServiceEchoListsParamsReader extends StructReader {
   ComplexTestServiceEchoListsParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      complexTestServiceEchoListsParamsSchema;
 
   AllListsReader? get value => getStructFieldWith(
     0,
@@ -4429,6 +7465,8 @@ final class _ComplexTestServiceEchoListsParamsFactory
           ComplexTestServiceEchoListsParamsBuilder
         > {
   @override
+  StructSchemaInfo get schema => complexTestServiceEchoListsParamsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -4445,11 +7483,33 @@ final class _ComplexTestServiceEchoListsParamsFactory
       ComplexTestServiceEchoListsParamsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceEchoListsParamsSchema =
+    StructSchemaInfo(
+      id: 0x9abf96f9ef2bfdb3,
+      displayName: 'complex.capnp:ComplexTestService.echoLists\$Params',
+      shortName: 'echoLists\$Params',
+      dataWords: 0,
+      pointerWords: 1,
+      fields: [
+        FieldSchemaInfo(
+          name: 'value',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: StructRefTypeSchemaInfo(0xe26a1cda2307fb78),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceEchoListsParamsFactory =
     _ComplexTestServiceEchoListsParamsFactory();
 
 final class ComplexTestServiceEchoListsResultsReader extends StructReader {
   ComplexTestServiceEchoListsResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      complexTestServiceEchoListsResultsSchema;
 
   AllListsReader? get value => getStructFieldWith(
     0,
@@ -4478,6 +7538,8 @@ final class _ComplexTestServiceEchoListsResultsFactory
           ComplexTestServiceEchoListsResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => complexTestServiceEchoListsResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -4495,11 +7557,33 @@ final class _ComplexTestServiceEchoListsResultsFactory
   ) => ComplexTestServiceEchoListsResultsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceEchoListsResultsSchema =
+    StructSchemaInfo(
+      id: 0xf19304c600f7058d,
+      displayName: 'complex.capnp:ComplexTestService.echoLists\$Results',
+      shortName: 'echoLists\$Results',
+      dataWords: 0,
+      pointerWords: 1,
+      fields: [
+        FieldSchemaInfo(
+          name: 'value',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: StructRefTypeSchemaInfo(0xe26a1cda2307fb78),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceEchoListsResultsFactory =
     _ComplexTestServiceEchoListsResultsFactory();
 
 final class ComplexTestServiceEchoUnionParamsReader extends StructReader {
   ComplexTestServiceEchoUnionParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      complexTestServiceEchoUnionParamsSchema;
 
   NamedUnionReader? get value => getStructFieldWith(
     0,
@@ -4528,6 +7612,8 @@ final class _ComplexTestServiceEchoUnionParamsFactory
           ComplexTestServiceEchoUnionParamsBuilder
         > {
   @override
+  StructSchemaInfo get schema => complexTestServiceEchoUnionParamsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -4544,11 +7630,33 @@ final class _ComplexTestServiceEchoUnionParamsFactory
       ComplexTestServiceEchoUnionParamsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceEchoUnionParamsSchema =
+    StructSchemaInfo(
+      id: 0xcabd1d920b68740a,
+      displayName: 'complex.capnp:ComplexTestService.echoUnion\$Params',
+      shortName: 'echoUnion\$Params',
+      dataWords: 0,
+      pointerWords: 1,
+      fields: [
+        FieldSchemaInfo(
+          name: 'value',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: StructRefTypeSchemaInfo(0xe831ae3d88b37134),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceEchoUnionParamsFactory =
     _ComplexTestServiceEchoUnionParamsFactory();
 
 final class ComplexTestServiceEchoUnionResultsReader extends StructReader {
   ComplexTestServiceEchoUnionResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      complexTestServiceEchoUnionResultsSchema;
 
   NamedUnionReader? get value => getStructFieldWith(
     0,
@@ -4577,6 +7685,8 @@ final class _ComplexTestServiceEchoUnionResultsFactory
           ComplexTestServiceEchoUnionResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => complexTestServiceEchoUnionResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -4594,13 +7704,35 @@ final class _ComplexTestServiceEchoUnionResultsFactory
   ) => ComplexTestServiceEchoUnionResultsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceEchoUnionResultsSchema =
+    StructSchemaInfo(
+      id: 0xbf99c26089546ade,
+      displayName: 'complex.capnp:ComplexTestService.echoUnion\$Results',
+      shortName: 'echoUnion\$Results',
+      dataWords: 0,
+      pointerWords: 1,
+      fields: [
+        FieldSchemaInfo(
+          name: 'value',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: StructRefTypeSchemaInfo(0xe831ae3d88b37134),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceEchoUnionResultsFactory =
     _ComplexTestServiceEchoUnionResultsFactory();
 
 final class ComplexTestServiceEchoAnyPointerParamsReader extends StructReader {
   ComplexTestServiceEchoAnyPointerParamsReader(super.raw, {super.capabilities});
 
-  Uint8List? get value => getAnyPointerAsMessageBytes(0);
+  static const StructSchemaInfo schema =
+      complexTestServiceEchoAnyPointerParamsSchema;
+
+  AnyPointerReader? get value => getAnyPointerField(0);
 }
 
 final class ComplexTestServiceEchoAnyPointerParamsBuilder
@@ -4611,8 +7743,18 @@ final class ComplexTestServiceEchoAnyPointerParamsBuilder
   ComplexTestServiceEchoAnyPointerParamsReader asReader() =>
       ComplexTestServiceEchoAnyPointerParamsReader(rawToReader());
 
-  set value(Uint8List? v) {
-    if (v != null) setAnyPointerFromMessage(0, v);
+  AnyPointerBuilder initValue() {
+    return initAnyPointerField(0);
+  }
+
+  set value(AnyPointerReader? v) {
+    setAnyPointerField(0, v);
+  }
+
+  void setValueMessage(Uint8List? v) {
+    if (v != null) {
+      setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    }
   }
 }
 
@@ -4622,6 +7764,8 @@ final class _ComplexTestServiceEchoAnyPointerParamsFactory
           ComplexTestServiceEchoAnyPointerParamsReader,
           ComplexTestServiceEchoAnyPointerParamsBuilder
         > {
+  @override
+  StructSchemaInfo get schema => complexTestServiceEchoAnyPointerParamsSchema;
   @override
   int get dataWords => 0;
   @override
@@ -4644,6 +7788,26 @@ final class _ComplexTestServiceEchoAnyPointerParamsFactory
   ) => ComplexTestServiceEchoAnyPointerParamsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceEchoAnyPointerParamsSchema =
+    StructSchemaInfo(
+      id: 0x88f4dfe3ca9e7a59,
+      displayName: 'complex.capnp:ComplexTestService.echoAnyPointer\$Params',
+      shortName: 'echoAnyPointer\$Params',
+      dataWords: 0,
+      pointerWords: 1,
+      typeParameters: ['Value'],
+      fields: [
+        FieldSchemaInfo(
+          name: 'value',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: TypeParameterSchemaInfo(0),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceEchoAnyPointerParamsFactory =
     _ComplexTestServiceEchoAnyPointerParamsFactory();
 
@@ -4653,7 +7817,10 @@ final class ComplexTestServiceEchoAnyPointerResultsReader extends StructReader {
     super.capabilities,
   });
 
-  Uint8List? get value => getAnyPointerAsMessageBytes(0);
+  static const StructSchemaInfo schema =
+      complexTestServiceEchoAnyPointerResultsSchema;
+
+  AnyPointerReader? get value => getAnyPointerField(0);
 }
 
 final class ComplexTestServiceEchoAnyPointerResultsBuilder
@@ -4664,8 +7831,18 @@ final class ComplexTestServiceEchoAnyPointerResultsBuilder
   ComplexTestServiceEchoAnyPointerResultsReader asReader() =>
       ComplexTestServiceEchoAnyPointerResultsReader(rawToReader());
 
-  set value(Uint8List? v) {
-    if (v != null) setAnyPointerFromMessage(0, v);
+  AnyPointerBuilder initValue() {
+    return initAnyPointerField(0);
+  }
+
+  set value(AnyPointerReader? v) {
+    setAnyPointerField(0, v);
+  }
+
+  void setValueMessage(Uint8List? v) {
+    if (v != null) {
+      setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    }
   }
 }
 
@@ -4675,6 +7852,8 @@ final class _ComplexTestServiceEchoAnyPointerResultsFactory
           ComplexTestServiceEchoAnyPointerResultsReader,
           ComplexTestServiceEchoAnyPointerResultsBuilder
         > {
+  @override
+  StructSchemaInfo get schema => complexTestServiceEchoAnyPointerResultsSchema;
   @override
   int get dataWords => 0;
   @override
@@ -4697,6 +7876,26 @@ final class _ComplexTestServiceEchoAnyPointerResultsFactory
   ) => ComplexTestServiceEchoAnyPointerResultsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceEchoAnyPointerResultsSchema =
+    StructSchemaInfo(
+      id: 0x9a60ea4618245767,
+      displayName: 'complex.capnp:ComplexTestService.echoAnyPointer\$Results',
+      shortName: 'echoAnyPointer\$Results',
+      dataWords: 0,
+      pointerWords: 1,
+      typeParameters: ['Value'],
+      fields: [
+        FieldSchemaInfo(
+          name: 'value',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: TypeParameterSchemaInfo(0),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceEchoAnyPointerResultsFactory =
     _ComplexTestServiceEchoAnyPointerResultsFactory();
 
@@ -4706,6 +7905,9 @@ final class ComplexTestServiceExchangeCapabilitiesParamsReader
     super.raw, {
     super.capabilities,
   });
+
+  static const StructSchemaInfo schema =
+      complexTestServiceExchangeCapabilitiesParamsSchema;
 
   CapabilityBundleReader? get bundle => getStructFieldWith(
     0,
@@ -4735,6 +7937,9 @@ final class _ComplexTestServiceExchangeCapabilitiesParamsFactory
           ComplexTestServiceExchangeCapabilitiesParamsBuilder
         > {
   @override
+  StructSchemaInfo get schema =>
+      complexTestServiceExchangeCapabilitiesParamsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -4757,6 +7962,26 @@ final class _ComplexTestServiceExchangeCapabilitiesParamsFactory
   ) => ComplexTestServiceExchangeCapabilitiesParamsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceExchangeCapabilitiesParamsSchema =
+    StructSchemaInfo(
+      id: 0xe2db873b433ba9f0,
+      displayName:
+          'complex.capnp:ComplexTestService.exchangeCapabilities\$Params',
+      shortName: 'exchangeCapabilities\$Params',
+      dataWords: 0,
+      pointerWords: 1,
+      fields: [
+        FieldSchemaInfo(
+          name: 'bundle',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: StructRefTypeSchemaInfo(0x9218a1066a8b654e),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceExchangeCapabilitiesParamsFactory =
     _ComplexTestServiceExchangeCapabilitiesParamsFactory();
 
@@ -4766,6 +7991,9 @@ final class ComplexTestServiceExchangeCapabilitiesResultsReader
     super.raw, {
     super.capabilities,
   });
+
+  static const StructSchemaInfo schema =
+      complexTestServiceExchangeCapabilitiesResultsSchema;
 
   CapabilityBundleReader? get bundle => getStructFieldWith(
     0,
@@ -4795,6 +8023,9 @@ final class _ComplexTestServiceExchangeCapabilitiesResultsFactory
           ComplexTestServiceExchangeCapabilitiesResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema =>
+      complexTestServiceExchangeCapabilitiesResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -4817,11 +8048,34 @@ final class _ComplexTestServiceExchangeCapabilitiesResultsFactory
   ) => ComplexTestServiceExchangeCapabilitiesResultsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceExchangeCapabilitiesResultsSchema =
+    StructSchemaInfo(
+      id: 0xa9f271d439f0f4de,
+      displayName:
+          'complex.capnp:ComplexTestService.exchangeCapabilities\$Results',
+      shortName: 'exchangeCapabilities\$Results',
+      dataWords: 0,
+      pointerWords: 1,
+      fields: [
+        FieldSchemaInfo(
+          name: 'bundle',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: StructRefTypeSchemaInfo(0x9218a1066a8b654e),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceExchangeCapabilitiesResultsFactory =
     _ComplexTestServiceExchangeCapabilitiesResultsFactory();
 
 final class ComplexTestServiceCallObserverParamsReader extends StructReader {
   ComplexTestServiceCallObserverParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      complexTestServiceCallObserverParamsSchema;
 
   ObserverClient? get observer {
     final cap = getCapabilityObjectField(0);
@@ -4859,6 +8113,8 @@ final class _ComplexTestServiceCallObserverParamsFactory
           ComplexTestServiceCallObserverParamsBuilder
         > {
   @override
+  StructSchemaInfo get schema => complexTestServiceCallObserverParamsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 2;
@@ -4877,11 +8133,46 @@ final class _ComplexTestServiceCallObserverParamsFactory
   ) => ComplexTestServiceCallObserverParamsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceCallObserverParamsSchema =
+    StructSchemaInfo(
+      id: 0x8b2545063898928c,
+      displayName: 'complex.capnp:ComplexTestService.callObserver\$Params',
+      shortName: 'callObserver\$Params',
+      dataWords: 0,
+      pointerWords: 2,
+      fields: [
+        FieldSchemaInfo(
+          name: 'observer',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: InterfaceRefTypeSchemaInfo(
+              0xf67686e607b37dbb,
+              typeArgs: [StructRefTypeSchemaInfo(0xe9ca435af8b77fd8)],
+            ),
+          ),
+        ),
+        FieldSchemaInfo(
+          name: 'events',
+          codeOrder: 1,
+          body: SlotFieldSchemaInfo(
+            offset: 1,
+            type: ListTypeSchemaInfo(
+              StructRefTypeSchemaInfo(0xe9ca435af8b77fd8),
+            ),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceCallObserverParamsFactory =
     _ComplexTestServiceCallObserverParamsFactory();
 
 final class ComplexTestServiceCallObserverResultsReader extends StructReader {
   ComplexTestServiceCallObserverResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      complexTestServiceCallObserverResultsSchema;
 
   int get delivered => getUint32Field(0);
 }
@@ -4905,6 +8196,8 @@ final class _ComplexTestServiceCallObserverResultsFactory
           ComplexTestServiceCallObserverResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => complexTestServiceCallObserverResultsSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 0;
@@ -4926,11 +8219,33 @@ final class _ComplexTestServiceCallObserverResultsFactory
   ) => ComplexTestServiceCallObserverResultsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceCallObserverResultsSchema =
+    StructSchemaInfo(
+      id: 0xafef2ae4ce506559,
+      displayName: 'complex.capnp:ComplexTestService.callObserver\$Results',
+      shortName: 'callObserver\$Results',
+      dataWords: 1,
+      pointerWords: 0,
+      fields: [
+        FieldSchemaInfo(
+          name: 'delivered',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: PrimitiveTypeSchemaInfo('UInt32'),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceCallObserverResultsFactory =
     _ComplexTestServiceCallObserverResultsFactory();
 
 final class ComplexTestServiceMakePipelineParamsReader extends StructReader {
   ComplexTestServiceMakePipelineParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      complexTestServiceMakePipelineParamsSchema;
 
   int get depth => getUint32Field(0);
 }
@@ -4954,6 +8269,8 @@ final class _ComplexTestServiceMakePipelineParamsFactory
           ComplexTestServiceMakePipelineParamsBuilder
         > {
   @override
+  StructSchemaInfo get schema => complexTestServiceMakePipelineParamsSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 0;
@@ -4972,11 +8289,33 @@ final class _ComplexTestServiceMakePipelineParamsFactory
   ) => ComplexTestServiceMakePipelineParamsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceMakePipelineParamsSchema =
+    StructSchemaInfo(
+      id: 0xc99cb70875beda41,
+      displayName: 'complex.capnp:ComplexTestService.makePipeline\$Params',
+      shortName: 'makePipeline\$Params',
+      dataWords: 1,
+      pointerWords: 0,
+      fields: [
+        FieldSchemaInfo(
+          name: 'depth',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: PrimitiveTypeSchemaInfo('UInt32'),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceMakePipelineParamsFactory =
     _ComplexTestServiceMakePipelineParamsFactory();
 
 final class ComplexTestServiceMakePipelineResultsReader extends StructReader {
   ComplexTestServiceMakePipelineResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      complexTestServiceMakePipelineResultsSchema;
 
   PipelineTargetClient? get target {
     final cap = getCapabilityObjectField(0);
@@ -5005,6 +8344,8 @@ final class _ComplexTestServiceMakePipelineResultsFactory
           ComplexTestServiceMakePipelineResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => complexTestServiceMakePipelineResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -5026,11 +8367,33 @@ final class _ComplexTestServiceMakePipelineResultsFactory
   ) => ComplexTestServiceMakePipelineResultsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceMakePipelineResultsSchema =
+    StructSchemaInfo(
+      id: 0xe6e9a23d205e8aa1,
+      displayName: 'complex.capnp:ComplexTestService.makePipeline\$Results',
+      shortName: 'makePipeline\$Results',
+      dataWords: 0,
+      pointerWords: 1,
+      fields: [
+        FieldSchemaInfo(
+          name: 'target',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: InterfaceRefTypeSchemaInfo(0xe211443879f3b6bb),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceMakePipelineResultsFactory =
     _ComplexTestServiceMakePipelineResultsFactory();
 
 final class ComplexTestServiceOpenUploadParamsReader extends StructReader {
   ComplexTestServiceOpenUploadParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      complexTestServiceOpenUploadParamsSchema;
 
   int get expectedSize => getUint64Field(0);
 
@@ -5060,6 +8423,8 @@ final class _ComplexTestServiceOpenUploadParamsFactory
           ComplexTestServiceOpenUploadParamsBuilder
         > {
   @override
+  StructSchemaInfo get schema => complexTestServiceOpenUploadParamsSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 1;
@@ -5077,11 +8442,41 @@ final class _ComplexTestServiceOpenUploadParamsFactory
   ) => ComplexTestServiceOpenUploadParamsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceOpenUploadParamsSchema =
+    StructSchemaInfo(
+      id: 0xa59a2201191e4004,
+      displayName: 'complex.capnp:ComplexTestService.openUpload\$Params',
+      shortName: 'openUpload\$Params',
+      dataWords: 1,
+      pointerWords: 1,
+      fields: [
+        FieldSchemaInfo(
+          name: 'expectedSize',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: PrimitiveTypeSchemaInfo('UInt64'),
+          ),
+        ),
+        FieldSchemaInfo(
+          name: 'expectedChecksum',
+          codeOrder: 1,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: PrimitiveTypeSchemaInfo('Data'),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceOpenUploadParamsFactory =
     _ComplexTestServiceOpenUploadParamsFactory();
 
 final class ComplexTestServiceOpenUploadResultsReader extends StructReader {
   ComplexTestServiceOpenUploadResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      complexTestServiceOpenUploadResultsSchema;
 
   ByteSinkClient? get sink {
     final cap = getCapabilityObjectField(0);
@@ -5110,6 +8505,8 @@ final class _ComplexTestServiceOpenUploadResultsFactory
           ComplexTestServiceOpenUploadResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => complexTestServiceOpenUploadResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -5127,11 +8524,33 @@ final class _ComplexTestServiceOpenUploadResultsFactory
   ) => ComplexTestServiceOpenUploadResultsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceOpenUploadResultsSchema =
+    StructSchemaInfo(
+      id: 0x9cd82d2e804f72ab,
+      displayName: 'complex.capnp:ComplexTestService.openUpload\$Results',
+      shortName: 'openUpload\$Results',
+      dataWords: 0,
+      pointerWords: 1,
+      fields: [
+        FieldSchemaInfo(
+          name: 'sink',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: InterfaceRefTypeSchemaInfo(0xbef98c1dd8be91de),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceOpenUploadResultsFactory =
     _ComplexTestServiceOpenUploadResultsFactory();
 
 final class ComplexTestServiceOpenDownloadParamsReader extends StructReader {
   ComplexTestServiceOpenDownloadParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      complexTestServiceOpenDownloadParamsSchema;
 
   IdentifierReader? get resourceId => getStructFieldWith(
     0,
@@ -5160,6 +8579,8 @@ final class _ComplexTestServiceOpenDownloadParamsFactory
           ComplexTestServiceOpenDownloadParamsBuilder
         > {
   @override
+  StructSchemaInfo get schema => complexTestServiceOpenDownloadParamsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -5178,11 +8599,33 @@ final class _ComplexTestServiceOpenDownloadParamsFactory
   ) => ComplexTestServiceOpenDownloadParamsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceOpenDownloadParamsSchema =
+    StructSchemaInfo(
+      id: 0x918b6400de54f317,
+      displayName: 'complex.capnp:ComplexTestService.openDownload\$Params',
+      shortName: 'openDownload\$Params',
+      dataWords: 0,
+      pointerWords: 1,
+      fields: [
+        FieldSchemaInfo(
+          name: 'resourceId',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: StructRefTypeSchemaInfo(0xfdfd178b7c29d313),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceOpenDownloadParamsFactory =
     _ComplexTestServiceOpenDownloadParamsFactory();
 
 final class ComplexTestServiceOpenDownloadResultsReader extends StructReader {
   ComplexTestServiceOpenDownloadResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      complexTestServiceOpenDownloadResultsSchema;
 
   ByteSourceClient? get source {
     final cap = getCapabilityObjectField(0);
@@ -5220,6 +8663,8 @@ final class _ComplexTestServiceOpenDownloadResultsFactory
           ComplexTestServiceOpenDownloadResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => complexTestServiceOpenDownloadResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 2;
@@ -5241,11 +8686,49 @@ final class _ComplexTestServiceOpenDownloadResultsFactory
   ) => ComplexTestServiceOpenDownloadResultsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceOpenDownloadResultsSchema =
+    StructSchemaInfo(
+      id: 0x981ed34f5fa9fab4,
+      displayName: 'complex.capnp:ComplexTestService.openDownload\$Results',
+      shortName: 'openDownload\$Results',
+      dataWords: 0,
+      pointerWords: 2,
+      fields: [
+        FieldSchemaInfo(
+          name: 'source',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: InterfaceRefTypeSchemaInfo(0x8a2b2ec8ae50b170),
+          ),
+        ),
+        FieldSchemaInfo(
+          name: 'metadata',
+          codeOrder: 1,
+          body: SlotFieldSchemaInfo(
+            offset: 1,
+            type: ListTypeSchemaInfo(
+              StructRefTypeSchemaInfo(
+                0xa3757dd4f46775cf,
+                typeArgs: [
+                  PrimitiveTypeSchemaInfo('Text'),
+                  PrimitiveTypeSchemaInfo('Text'),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceOpenDownloadResultsFactory =
     _ComplexTestServiceOpenDownloadResultsFactory();
 
 final class ComplexTestServiceGetRepositoryParamsReader extends StructReader {
   ComplexTestServiceGetRepositoryParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      complexTestServiceGetRepositoryParamsSchema;
 }
 
 final class ComplexTestServiceGetRepositoryParamsBuilder extends StructBuilder {
@@ -5262,6 +8745,8 @@ final class _ComplexTestServiceGetRepositoryParamsFactory
           ComplexTestServiceGetRepositoryParamsReader,
           ComplexTestServiceGetRepositoryParamsBuilder
         > {
+  @override
+  StructSchemaInfo get schema => complexTestServiceGetRepositoryParamsSchema;
   @override
   int get dataWords => 0;
   @override
@@ -5284,11 +8769,24 @@ final class _ComplexTestServiceGetRepositoryParamsFactory
   ) => ComplexTestServiceGetRepositoryParamsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceGetRepositoryParamsSchema =
+    StructSchemaInfo(
+      id: 0xf3f0ee20dbd34805,
+      displayName: 'complex.capnp:ComplexTestService.getRepository\$Params',
+      shortName: 'getRepository\$Params',
+      dataWords: 0,
+      pointerWords: 0,
+      fields: [],
+    );
+
 final complexTestServiceGetRepositoryParamsFactory =
     _ComplexTestServiceGetRepositoryParamsFactory();
 
 final class ComplexTestServiceGetRepositoryResultsReader extends StructReader {
   ComplexTestServiceGetRepositoryResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      complexTestServiceGetRepositoryResultsSchema;
 
   RepositoryClient? get repository {
     final cap = getCapabilityObjectField(0);
@@ -5318,6 +8816,8 @@ final class _ComplexTestServiceGetRepositoryResultsFactory
           ComplexTestServiceGetRepositoryResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => complexTestServiceGetRepositoryResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -5339,11 +8839,39 @@ final class _ComplexTestServiceGetRepositoryResultsFactory
   ) => ComplexTestServiceGetRepositoryResultsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceGetRepositoryResultsSchema =
+    StructSchemaInfo(
+      id: 0x8574ed6d3b2cd7e2,
+      displayName: 'complex.capnp:ComplexTestService.getRepository\$Results',
+      shortName: 'getRepository\$Results',
+      dataWords: 0,
+      pointerWords: 1,
+      fields: [
+        FieldSchemaInfo(
+          name: 'repository',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: InterfaceRefTypeSchemaInfo(
+              0xff065518e00ba453,
+              typeArgs: [
+                PrimitiveTypeSchemaInfo('Text'),
+                StructRefTypeSchemaInfo(0xe9ca435af8b77fd8),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceGetRepositoryResultsFactory =
     _ComplexTestServiceGetRepositoryResultsFactory();
 
 final class ComplexTestServiceGetFactoryParamsReader extends StructReader {
   ComplexTestServiceGetFactoryParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      complexTestServiceGetFactoryParamsSchema;
 }
 
 final class ComplexTestServiceGetFactoryParamsBuilder extends StructBuilder {
@@ -5360,6 +8888,8 @@ final class _ComplexTestServiceGetFactoryParamsFactory
           ComplexTestServiceGetFactoryParamsReader,
           ComplexTestServiceGetFactoryParamsBuilder
         > {
+  @override
+  StructSchemaInfo get schema => complexTestServiceGetFactoryParamsSchema;
   @override
   int get dataWords => 0;
   @override
@@ -5378,11 +8908,24 @@ final class _ComplexTestServiceGetFactoryParamsFactory
   ) => ComplexTestServiceGetFactoryParamsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceGetFactoryParamsSchema =
+    StructSchemaInfo(
+      id: 0xa8b93c52bfe7d01b,
+      displayName: 'complex.capnp:ComplexTestService.getFactory\$Params',
+      shortName: 'getFactory\$Params',
+      dataWords: 0,
+      pointerWords: 0,
+      fields: [],
+    );
+
 final complexTestServiceGetFactoryParamsFactory =
     _ComplexTestServiceGetFactoryParamsFactory();
 
 final class ComplexTestServiceGetFactoryResultsReader extends StructReader {
   ComplexTestServiceGetFactoryResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      complexTestServiceGetFactoryResultsSchema;
 
   CapabilityFactoryClient? get factory {
     final cap = getCapabilityObjectField(0);
@@ -5411,6 +8954,8 @@ final class _ComplexTestServiceGetFactoryResultsFactory
           ComplexTestServiceGetFactoryResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => complexTestServiceGetFactoryResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -5428,11 +8973,33 @@ final class _ComplexTestServiceGetFactoryResultsFactory
   ) => ComplexTestServiceGetFactoryResultsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceGetFactoryResultsSchema =
+    StructSchemaInfo(
+      id: 0xb28bc0b96e02ff52,
+      displayName: 'complex.capnp:ComplexTestService.getFactory\$Results',
+      shortName: 'getFactory\$Results',
+      dataWords: 0,
+      pointerWords: 1,
+      fields: [
+        FieldSchemaInfo(
+          name: 'factory',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: InterfaceRefTypeSchemaInfo(0xccad478715fb03b0),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceGetFactoryResultsFactory =
     _ComplexTestServiceGetFactoryResultsFactory();
 
 final class ComplexTestServiceUseDiamondParamsReader extends StructReader {
   ComplexTestServiceUseDiamondParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      complexTestServiceUseDiamondParamsSchema;
 
   DiamondClient? get diamond {
     final cap = getCapabilityObjectField(0);
@@ -5467,6 +9034,8 @@ final class _ComplexTestServiceUseDiamondParamsFactory
           ComplexTestServiceUseDiamondParamsBuilder
         > {
   @override
+  StructSchemaInfo get schema => complexTestServiceUseDiamondParamsSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 1;
@@ -5484,11 +9053,41 @@ final class _ComplexTestServiceUseDiamondParamsFactory
   ) => ComplexTestServiceUseDiamondParamsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceUseDiamondParamsSchema =
+    StructSchemaInfo(
+      id: 0xed819fe46e3aa4d7,
+      displayName: 'complex.capnp:ComplexTestService.useDiamond\$Params',
+      shortName: 'useDiamond\$Params',
+      dataWords: 1,
+      pointerWords: 1,
+      fields: [
+        FieldSchemaInfo(
+          name: 'diamond',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: InterfaceRefTypeSchemaInfo(0xdbf219de6a215361),
+          ),
+        ),
+        FieldSchemaInfo(
+          name: 'value',
+          codeOrder: 1,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: PrimitiveTypeSchemaInfo('Int32'),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceUseDiamondParamsFactory =
     _ComplexTestServiceUseDiamondParamsFactory();
 
 final class ComplexTestServiceUseDiamondResultsReader extends StructReader {
   ComplexTestServiceUseDiamondResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      complexTestServiceUseDiamondResultsSchema;
 
   int get result => getInt64Field(0);
 }
@@ -5512,6 +9111,8 @@ final class _ComplexTestServiceUseDiamondResultsFactory
           ComplexTestServiceUseDiamondResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => complexTestServiceUseDiamondResultsSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 0;
@@ -5529,6 +9130,25 @@ final class _ComplexTestServiceUseDiamondResultsFactory
   ) => ComplexTestServiceUseDiamondResultsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceUseDiamondResultsSchema =
+    StructSchemaInfo(
+      id: 0x9f451ea2bd479eb1,
+      displayName: 'complex.capnp:ComplexTestService.useDiamond\$Results',
+      shortName: 'useDiamond\$Results',
+      dataWords: 1,
+      pointerWords: 0,
+      fields: [
+        FieldSchemaInfo(
+          name: 'result',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: PrimitiveTypeSchemaInfo('Int64'),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceUseDiamondResultsFactory =
     _ComplexTestServiceUseDiamondResultsFactory();
 
@@ -5538,6 +9158,9 @@ final class ComplexTestServiceFailIntentionallyParamsReader
     super.raw, {
     super.capabilities,
   });
+
+  static const StructSchemaInfo schema =
+      complexTestServiceFailIntentionallyParamsSchema;
 
   int get code => getUint32Field(0);
 
@@ -5568,6 +9191,9 @@ final class _ComplexTestServiceFailIntentionallyParamsFactory
           ComplexTestServiceFailIntentionallyParamsBuilder
         > {
   @override
+  StructSchemaInfo get schema =>
+      complexTestServiceFailIntentionallyParamsSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 1;
@@ -5589,6 +9215,33 @@ final class _ComplexTestServiceFailIntentionallyParamsFactory
   ) => ComplexTestServiceFailIntentionallyParamsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceFailIntentionallyParamsSchema =
+    StructSchemaInfo(
+      id: 0x98bbebceafacb8b2,
+      displayName: 'complex.capnp:ComplexTestService.failIntentionally\$Params',
+      shortName: 'failIntentionally\$Params',
+      dataWords: 1,
+      pointerWords: 1,
+      fields: [
+        FieldSchemaInfo(
+          name: 'code',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: PrimitiveTypeSchemaInfo('UInt32'),
+          ),
+        ),
+        FieldSchemaInfo(
+          name: 'message',
+          codeOrder: 1,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: PrimitiveTypeSchemaInfo('Text'),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceFailIntentionallyParamsFactory =
     _ComplexTestServiceFailIntentionallyParamsFactory();
 
@@ -5598,6 +9251,9 @@ final class ComplexTestServiceFailIntentionallyResultsReader
     super.raw, {
     super.capabilities,
   });
+
+  static const StructSchemaInfo schema =
+      complexTestServiceFailIntentionallyResultsSchema;
 }
 
 final class ComplexTestServiceFailIntentionallyResultsBuilder
@@ -5615,6 +9271,9 @@ final class _ComplexTestServiceFailIntentionallyResultsFactory
           ComplexTestServiceFailIntentionallyResultsReader,
           ComplexTestServiceFailIntentionallyResultsBuilder
         > {
+  @override
+  StructSchemaInfo get schema =>
+      complexTestServiceFailIntentionallyResultsSchema;
   @override
   int get dataWords => 0;
   @override
@@ -5638,11 +9297,24 @@ final class _ComplexTestServiceFailIntentionallyResultsFactory
   ) => ComplexTestServiceFailIntentionallyResultsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceFailIntentionallyResultsSchema =
+    StructSchemaInfo(
+      id: 0xbaa9743da012a782,
+      displayName:
+          'complex.capnp:ComplexTestService.failIntentionally\$Results',
+      shortName: 'failIntentionally\$Results',
+      dataWords: 0,
+      pointerWords: 0,
+      fields: [],
+    );
+
 final complexTestServiceFailIntentionallyResultsFactory =
     _ComplexTestServiceFailIntentionallyResultsFactory();
 
 final class ComplexTestServiceShutdownParamsReader extends StructReader {
   ComplexTestServiceShutdownParamsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = complexTestServiceShutdownParamsSchema;
 }
 
 final class ComplexTestServiceShutdownParamsBuilder extends StructBuilder {
@@ -5660,6 +9332,8 @@ final class _ComplexTestServiceShutdownParamsFactory
           ComplexTestServiceShutdownParamsBuilder
         > {
   @override
+  StructSchemaInfo get schema => complexTestServiceShutdownParamsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 0;
@@ -5676,11 +9350,24 @@ final class _ComplexTestServiceShutdownParamsFactory
       ComplexTestServiceShutdownParamsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceShutdownParamsSchema =
+    StructSchemaInfo(
+      id: 0x9503a90e4a6dfdaa,
+      displayName: 'complex.capnp:ComplexTestService.shutdown\$Params',
+      shortName: 'shutdown\$Params',
+      dataWords: 0,
+      pointerWords: 0,
+      fields: [],
+    );
+
 final complexTestServiceShutdownParamsFactory =
     _ComplexTestServiceShutdownParamsFactory();
 
 final class ComplexTestServiceShutdownResultsReader extends StructReader {
   ComplexTestServiceShutdownResultsReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema =
+      complexTestServiceShutdownResultsSchema;
 }
 
 final class ComplexTestServiceShutdownResultsBuilder extends StructBuilder {
@@ -5698,6 +9385,8 @@ final class _ComplexTestServiceShutdownResultsFactory
           ComplexTestServiceShutdownResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema => complexTestServiceShutdownResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 0;
@@ -5714,6 +9403,16 @@ final class _ComplexTestServiceShutdownResultsFactory
       ComplexTestServiceShutdownResultsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceShutdownResultsSchema =
+    StructSchemaInfo(
+      id: 0x8fb7e0459a18e5e2,
+      displayName: 'complex.capnp:ComplexTestService.shutdown\$Results',
+      shortName: 'shutdown\$Results',
+      dataWords: 0,
+      pointerWords: 0,
+      fields: [],
+    );
+
 final complexTestServiceShutdownResultsFactory =
     _ComplexTestServiceShutdownResultsFactory();
 
@@ -5723,6 +9422,9 @@ final class ComplexTestServiceProbePipelineTargetParamsReader
     super.raw, {
     super.capabilities,
   });
+
+  static const StructSchemaInfo schema =
+      complexTestServiceProbePipelineTargetParamsSchema;
 
   PipelineTargetClient? get target {
     final cap = getCapabilityObjectField(0);
@@ -5758,6 +9460,9 @@ final class _ComplexTestServiceProbePipelineTargetParamsFactory
           ComplexTestServiceProbePipelineTargetParamsBuilder
         > {
   @override
+  StructSchemaInfo get schema =>
+      complexTestServiceProbePipelineTargetParamsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 2;
@@ -5780,6 +9485,34 @@ final class _ComplexTestServiceProbePipelineTargetParamsFactory
   ) => ComplexTestServiceProbePipelineTargetParamsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceProbePipelineTargetParamsSchema =
+    StructSchemaInfo(
+      id: 0xb371dcbc1b22f92b,
+      displayName:
+          'complex.capnp:ComplexTestService.probePipelineTarget\$Params',
+      shortName: 'probePipelineTarget\$Params',
+      dataWords: 0,
+      pointerWords: 2,
+      fields: [
+        FieldSchemaInfo(
+          name: 'target',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: InterfaceRefTypeSchemaInfo(0xe211443879f3b6bb),
+          ),
+        ),
+        FieldSchemaInfo(
+          name: 'payload',
+          codeOrder: 1,
+          body: SlotFieldSchemaInfo(
+            offset: 1,
+            type: PrimitiveTypeSchemaInfo('Data'),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceProbePipelineTargetParamsFactory =
     _ComplexTestServiceProbePipelineTargetParamsFactory();
 
@@ -5789,6 +9522,9 @@ final class ComplexTestServiceProbePipelineTargetResultsReader
     super.raw, {
     super.capabilities,
   });
+
+  static const StructSchemaInfo schema =
+      complexTestServiceProbePipelineTargetResultsSchema;
 
   Uint8List? get payload => getDataField(0);
 }
@@ -5813,6 +9549,9 @@ final class _ComplexTestServiceProbePipelineTargetResultsFactory
           ComplexTestServiceProbePipelineTargetResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema =>
+      complexTestServiceProbePipelineTargetResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -5835,6 +9574,26 @@ final class _ComplexTestServiceProbePipelineTargetResultsFactory
   ) => ComplexTestServiceProbePipelineTargetResultsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceProbePipelineTargetResultsSchema =
+    StructSchemaInfo(
+      id: 0xe712f12a94590f5d,
+      displayName:
+          'complex.capnp:ComplexTestService.probePipelineTarget\$Results',
+      shortName: 'probePipelineTarget\$Results',
+      dataWords: 0,
+      pointerWords: 1,
+      fields: [
+        FieldSchemaInfo(
+          name: 'payload',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: PrimitiveTypeSchemaInfo('Data'),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceProbePipelineTargetResultsFactory =
     _ComplexTestServiceProbePipelineTargetResultsFactory();
 
@@ -5844,6 +9603,9 @@ final class ComplexTestServiceMakePromisedPipelineParamsReader
     super.raw, {
     super.capabilities,
   });
+
+  static const StructSchemaInfo schema =
+      complexTestServiceMakePromisedPipelineParamsSchema;
 
   int get delayMs => getUint32Field(0);
 }
@@ -5868,6 +9630,9 @@ final class _ComplexTestServiceMakePromisedPipelineParamsFactory
           ComplexTestServiceMakePromisedPipelineParamsBuilder
         > {
   @override
+  StructSchemaInfo get schema =>
+      complexTestServiceMakePromisedPipelineParamsSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 0;
@@ -5890,6 +9655,26 @@ final class _ComplexTestServiceMakePromisedPipelineParamsFactory
   ) => ComplexTestServiceMakePromisedPipelineParamsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceMakePromisedPipelineParamsSchema =
+    StructSchemaInfo(
+      id: 0xfdde68efc7d0f57a,
+      displayName:
+          'complex.capnp:ComplexTestService.makePromisedPipeline\$Params',
+      shortName: 'makePromisedPipeline\$Params',
+      dataWords: 1,
+      pointerWords: 0,
+      fields: [
+        FieldSchemaInfo(
+          name: 'delayMs',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: PrimitiveTypeSchemaInfo('UInt32'),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceMakePromisedPipelineParamsFactory =
     _ComplexTestServiceMakePromisedPipelineParamsFactory();
 
@@ -5899,6 +9684,9 @@ final class ComplexTestServiceMakePromisedPipelineResultsReader
     super.raw, {
     super.capabilities,
   });
+
+  static const StructSchemaInfo schema =
+      complexTestServiceMakePromisedPipelineResultsSchema;
 
   PipelineTargetClient? get target {
     final cap = getCapabilityObjectField(0);
@@ -5928,6 +9716,9 @@ final class _ComplexTestServiceMakePromisedPipelineResultsFactory
           ComplexTestServiceMakePromisedPipelineResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema =>
+      complexTestServiceMakePromisedPipelineResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -5950,6 +9741,26 @@ final class _ComplexTestServiceMakePromisedPipelineResultsFactory
   ) => ComplexTestServiceMakePromisedPipelineResultsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceMakePromisedPipelineResultsSchema =
+    StructSchemaInfo(
+      id: 0xe5f71a26002eb5e7,
+      displayName:
+          'complex.capnp:ComplexTestService.makePromisedPipeline\$Results',
+      shortName: 'makePromisedPipeline\$Results',
+      dataWords: 0,
+      pointerWords: 1,
+      fields: [
+        FieldSchemaInfo(
+          name: 'target',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: InterfaceRefTypeSchemaInfo(0xe211443879f3b6bb),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceMakePromisedPipelineResultsFactory =
     _ComplexTestServiceMakePromisedPipelineResultsFactory();
 
@@ -5959,6 +9770,9 @@ final class ComplexTestServiceEchoPipelineTargetLaterParamsReader
     super.raw, {
     super.capabilities,
   });
+
+  static const StructSchemaInfo schema =
+      complexTestServiceEchoPipelineTargetLaterParamsSchema;
 
   PipelineTargetClient? get target {
     final cap = getCapabilityObjectField(0);
@@ -5994,6 +9808,9 @@ final class _ComplexTestServiceEchoPipelineTargetLaterParamsFactory
           ComplexTestServiceEchoPipelineTargetLaterParamsBuilder
         > {
   @override
+  StructSchemaInfo get schema =>
+      complexTestServiceEchoPipelineTargetLaterParamsSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 1;
@@ -6016,6 +9833,34 @@ final class _ComplexTestServiceEchoPipelineTargetLaterParamsFactory
   ) => ComplexTestServiceEchoPipelineTargetLaterParamsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceEchoPipelineTargetLaterParamsSchema =
+    StructSchemaInfo(
+      id: 0xff8dcb50bdfcc1bb,
+      displayName:
+          'complex.capnp:ComplexTestService.echoPipelineTargetLater\$Params',
+      shortName: 'echoPipelineTargetLater\$Params',
+      dataWords: 1,
+      pointerWords: 1,
+      fields: [
+        FieldSchemaInfo(
+          name: 'target',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: InterfaceRefTypeSchemaInfo(0xe211443879f3b6bb),
+          ),
+        ),
+        FieldSchemaInfo(
+          name: 'delayMs',
+          codeOrder: 1,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: PrimitiveTypeSchemaInfo('UInt32'),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceEchoPipelineTargetLaterParamsFactory =
     _ComplexTestServiceEchoPipelineTargetLaterParamsFactory();
 
@@ -6025,6 +9870,9 @@ final class ComplexTestServiceEchoPipelineTargetLaterResultsReader
     super.raw, {
     super.capabilities,
   });
+
+  static const StructSchemaInfo schema =
+      complexTestServiceEchoPipelineTargetLaterResultsSchema;
 
   PipelineTargetClient? get target {
     final cap = getCapabilityObjectField(0);
@@ -6054,6 +9902,9 @@ final class _ComplexTestServiceEchoPipelineTargetLaterResultsFactory
           ComplexTestServiceEchoPipelineTargetLaterResultsBuilder
         > {
   @override
+  StructSchemaInfo get schema =>
+      complexTestServiceEchoPipelineTargetLaterResultsSchema;
+  @override
   int get dataWords => 0;
   @override
   int get ptrWords => 1;
@@ -6076,11 +9927,33 @@ final class _ComplexTestServiceEchoPipelineTargetLaterResultsFactory
   ) => ComplexTestServiceEchoPipelineTargetLaterResultsBuilder(r);
 }
 
+const StructSchemaInfo complexTestServiceEchoPipelineTargetLaterResultsSchema =
+    StructSchemaInfo(
+      id: 0xca3f53fcbe05cecf,
+      displayName:
+          'complex.capnp:ComplexTestService.echoPipelineTargetLater\$Results',
+      shortName: 'echoPipelineTargetLater\$Results',
+      dataWords: 0,
+      pointerWords: 1,
+      fields: [
+        FieldSchemaInfo(
+          name: 'target',
+          codeOrder: 0,
+          body: SlotFieldSchemaInfo(
+            offset: 0,
+            type: InterfaceRefTypeSchemaInfo(0xe211443879f3b6bb),
+          ),
+        ),
+      ],
+    );
+
 final complexTestServiceEchoPipelineTargetLaterResultsFactory =
     _ComplexTestServiceEchoPipelineTargetLaterResultsFactory();
 
 final class contactReader extends StructReader {
   contactReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = contactSchema;
 
   int get which => getUint16Field(4);
 
@@ -6122,6 +9995,8 @@ final class contactBuilder extends StructBuilder {
 final class _contactFactory
     extends StructFactory<contactReader, contactBuilder> {
   @override
+  StructSchemaInfo get schema => contactSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 10;
@@ -6136,10 +10011,52 @@ final class _contactFactory
   contactBuilder fromRawBuilder(RawStructBuilder r) => contactBuilder(r);
 }
 
+const StructSchemaInfo contactSchema = StructSchemaInfo(
+  id: 0xa7204948c4b8594e,
+  displayName: 'complex.capnp:Person.contact',
+  shortName: 'contact',
+  dataWords: 1,
+  pointerWords: 10,
+  isGroup: true,
+  discriminantCount: 4,
+  discriminantOffset: 2,
+  fields: [
+    FieldSchemaInfo(
+      name: 'noContact',
+      codeOrder: 0,
+      discriminantValue: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Void'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'phone',
+      codeOrder: 1,
+      discriminantValue: 1,
+      body: GroupFieldSchemaInfo(typeId: 0xe44eb1049102d42b),
+    ),
+    FieldSchemaInfo(
+      name: 'postal',
+      codeOrder: 2,
+      discriminantValue: 2,
+      body: GroupFieldSchemaInfo(typeId: 0xd6d36a73f94ce822),
+    ),
+    FieldSchemaInfo(
+      name: 'online',
+      codeOrder: 3,
+      discriminantValue: 3,
+      body: GroupFieldSchemaInfo(typeId: 0xa7d95c46cda05fd3),
+    ),
+  ],
+);
+
 final contactFactory = _contactFactory();
 
 final class phoneReader extends StructReader {
   phoneReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = phoneSchema;
 
   int get countryCode => getUint16Field(6);
 
@@ -6169,6 +10086,8 @@ final class phoneBuilder extends StructBuilder {
 
 final class _phoneFactory extends StructFactory<phoneReader, phoneBuilder> {
   @override
+  StructSchemaInfo get schema => phoneSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 10;
@@ -6183,10 +10102,47 @@ final class _phoneFactory extends StructFactory<phoneReader, phoneBuilder> {
   phoneBuilder fromRawBuilder(RawStructBuilder r) => phoneBuilder(r);
 }
 
+const StructSchemaInfo phoneSchema = StructSchemaInfo(
+  id: 0xe44eb1049102d42b,
+  displayName: 'complex.capnp:Person.contact.phone',
+  shortName: 'phone',
+  dataWords: 1,
+  pointerWords: 10,
+  isGroup: true,
+  fields: [
+    FieldSchemaInfo(
+      name: 'countryCode',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 3,
+        type: PrimitiveTypeSchemaInfo('UInt16'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'subscriberNumber',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 4,
+        type: PrimitiveTypeSchemaInfo('Text'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'extension',
+      codeOrder: 2,
+      body: SlotFieldSchemaInfo(
+        offset: 5,
+        type: PrimitiveTypeSchemaInfo('Text'),
+      ),
+    ),
+  ],
+);
+
 final phoneFactory = _phoneFactory();
 
 final class postalReader extends StructReader {
   postalReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = postalSchema;
 
   AddressReader? get address => getStructFieldWith(
     4,
@@ -6215,6 +10171,8 @@ final class postalBuilder extends StructBuilder {
 
 final class _postalFactory extends StructFactory<postalReader, postalBuilder> {
   @override
+  StructSchemaInfo get schema => postalSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 10;
@@ -6229,10 +10187,39 @@ final class _postalFactory extends StructFactory<postalReader, postalBuilder> {
   postalBuilder fromRawBuilder(RawStructBuilder r) => postalBuilder(r);
 }
 
+const StructSchemaInfo postalSchema = StructSchemaInfo(
+  id: 0xd6d36a73f94ce822,
+  displayName: 'complex.capnp:Person.contact.postal',
+  shortName: 'postal',
+  dataWords: 1,
+  pointerWords: 10,
+  isGroup: true,
+  fields: [
+    FieldSchemaInfo(
+      name: 'address',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 4,
+        type: StructRefTypeSchemaInfo(0x9d7145743cb95b21),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'attention',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 5,
+        type: PrimitiveTypeSchemaInfo('Text'),
+      ),
+    ),
+  ],
+);
+
 final postalFactory = _postalFactory();
 
 final class onlineReader extends StructReader {
   onlineReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = onlineSchema;
 
   String? get service => getTextField(4);
 
@@ -6256,6 +10243,8 @@ final class onlineBuilder extends StructBuilder {
 
 final class _onlineFactory extends StructFactory<onlineReader, onlineBuilder> {
   @override
+  StructSchemaInfo get schema => onlineSchema;
+  @override
   int get dataWords => 1;
   @override
   int get ptrWords => 10;
@@ -6270,10 +10259,39 @@ final class _onlineFactory extends StructFactory<onlineReader, onlineBuilder> {
   onlineBuilder fromRawBuilder(RawStructBuilder r) => onlineBuilder(r);
 }
 
+const StructSchemaInfo onlineSchema = StructSchemaInfo(
+  id: 0xa7d95c46cda05fd3,
+  displayName: 'complex.capnp:Person.contact.online',
+  shortName: 'online',
+  dataWords: 1,
+  pointerWords: 10,
+  isGroup: true,
+  fields: [
+    FieldSchemaInfo(
+      name: 'service',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 4,
+        type: PrimitiveTypeSchemaInfo('Text'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'account',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 5,
+        type: PrimitiveTypeSchemaInfo('Text'),
+      ),
+    ),
+  ],
+);
+
 final onlineFactory = _onlineFactory();
 
 final class payloadReader extends StructReader {
   payloadReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = payloadSchema;
 
   int get which => getUint16Field(4);
 
@@ -6343,6 +10361,8 @@ final class payloadBuilder extends StructBuilder {
 final class _payloadFactory
     extends StructFactory<payloadReader, payloadBuilder> {
   @override
+  StructSchemaInfo get schema => payloadSchema;
+  @override
   int get dataWords => 4;
   @override
   int get ptrWords => 1;
@@ -6357,10 +10377,82 @@ final class _payloadFactory
   payloadBuilder fromRawBuilder(RawStructBuilder r) => payloadBuilder(r);
 }
 
+const StructSchemaInfo payloadSchema = StructSchemaInfo(
+  id: 0xc92a18a8e56a5d74,
+  displayName: 'complex.capnp:NamedUnion.payload',
+  shortName: 'payload',
+  dataWords: 4,
+  pointerWords: 1,
+  isGroup: true,
+  discriminantCount: 7,
+  discriminantOffset: 2,
+  fields: [
+    FieldSchemaInfo(
+      name: 'empty',
+      codeOrder: 0,
+      discriminantValue: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Void'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'scalar',
+      codeOrder: 1,
+      discriminantValue: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 1,
+        type: PrimitiveTypeSchemaInfo('Int64'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'text',
+      codeOrder: 2,
+      discriminantValue: 2,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Text'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'data',
+      codeOrder: 3,
+      discriminantValue: 3,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: PrimitiveTypeSchemaInfo('Data'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'person',
+      codeOrder: 4,
+      discriminantValue: 4,
+      body: SlotFieldSchemaInfo(
+        offset: 0,
+        type: StructRefTypeSchemaInfo(0xe9ca435af8b77fd8),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'coordinates',
+      codeOrder: 5,
+      discriminantValue: 5,
+      body: GroupFieldSchemaInfo(typeId: 0x8f57b09d565d64a0),
+    ),
+    FieldSchemaInfo(
+      name: 'rectangle',
+      codeOrder: 6,
+      discriminantValue: 6,
+      body: GroupFieldSchemaInfo(typeId: 0x8492b33ff9f093f9),
+    ),
+  ],
+);
+
 final payloadFactory = _payloadFactory();
 
 final class coordinatesReader extends StructReader {
   coordinatesReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = coordinatesSchema;
 
   double get x => getFloat64Field(8);
 
@@ -6391,6 +10483,8 @@ final class coordinatesBuilder extends StructBuilder {
 final class _coordinatesFactory
     extends StructFactory<coordinatesReader, coordinatesBuilder> {
   @override
+  StructSchemaInfo get schema => coordinatesSchema;
+  @override
   int get dataWords => 4;
   @override
   int get ptrWords => 1;
@@ -6406,10 +10500,47 @@ final class _coordinatesFactory
       coordinatesBuilder(r);
 }
 
+const StructSchemaInfo coordinatesSchema = StructSchemaInfo(
+  id: 0x8f57b09d565d64a0,
+  displayName: 'complex.capnp:NamedUnion.payload.coordinates',
+  shortName: 'coordinates',
+  dataWords: 4,
+  pointerWords: 1,
+  isGroup: true,
+  fields: [
+    FieldSchemaInfo(
+      name: 'x',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 1,
+        type: PrimitiveTypeSchemaInfo('Float64'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'y',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 2,
+        type: PrimitiveTypeSchemaInfo('Float64'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'z',
+      codeOrder: 2,
+      body: SlotFieldSchemaInfo(
+        offset: 3,
+        type: PrimitiveTypeSchemaInfo('Float64'),
+      ),
+    ),
+  ],
+);
+
 final coordinatesFactory = _coordinatesFactory();
 
 final class rectangleReader extends StructReader {
   rectangleReader(super.raw, {super.capabilities});
+
+  static const StructSchemaInfo schema = rectangleSchema;
 
   double get left => getFloat32Field(8);
 
@@ -6446,6 +10577,8 @@ final class rectangleBuilder extends StructBuilder {
 final class _rectangleFactory
     extends StructFactory<rectangleReader, rectangleBuilder> {
   @override
+  StructSchemaInfo get schema => rectangleSchema;
+  @override
   int get dataWords => 4;
   @override
   int get ptrWords => 1;
@@ -6460,10 +10593,54 @@ final class _rectangleFactory
   rectangleBuilder fromRawBuilder(RawStructBuilder r) => rectangleBuilder(r);
 }
 
+const StructSchemaInfo rectangleSchema = StructSchemaInfo(
+  id: 0x8492b33ff9f093f9,
+  displayName: 'complex.capnp:NamedUnion.payload.rectangle',
+  shortName: 'rectangle',
+  dataWords: 4,
+  pointerWords: 1,
+  isGroup: true,
+  fields: [
+    FieldSchemaInfo(
+      name: 'left',
+      codeOrder: 0,
+      body: SlotFieldSchemaInfo(
+        offset: 2,
+        type: PrimitiveTypeSchemaInfo('Float32'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'top',
+      codeOrder: 1,
+      body: SlotFieldSchemaInfo(
+        offset: 3,
+        type: PrimitiveTypeSchemaInfo('Float32'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'right',
+      codeOrder: 2,
+      body: SlotFieldSchemaInfo(
+        offset: 4,
+        type: PrimitiveTypeSchemaInfo('Float32'),
+      ),
+    ),
+    FieldSchemaInfo(
+      name: 'bottom',
+      codeOrder: 3,
+      body: SlotFieldSchemaInfo(
+        offset: 5,
+        type: PrimitiveTypeSchemaInfo('Float32'),
+      ),
+    ),
+  ],
+);
+
 final rectangleFactory = _rectangleFactory();
 
 class ObserverClient extends Capability {
   static const int _interfaceId = 0xf67686e607b37dbb;
+  static const InterfaceSchemaInfo schema = observerSchema;
 
   final Capability _cap;
   ObserverClient(this._cap);
@@ -6505,6 +10682,32 @@ class ObserverClient extends Capability {
   @override
   Future<void> dispose() => _cap.dispose();
 }
+
+const InterfaceSchemaInfo observerSchema = InterfaceSchemaInfo(
+  id: 0xf67686e607b37dbb,
+  displayName: 'complex.capnp:Observer',
+  shortName: 'Observer',
+  methods: [
+    MethodSchemaInfo(
+      name: 'onNext',
+      ordinal: 0,
+      paramStructTypeId: 0xe38bb67a6dbe9e66,
+      resultStructTypeId: 0xa35c5bc3e93ac0ff,
+    ),
+    MethodSchemaInfo(
+      name: 'onError',
+      ordinal: 1,
+      paramStructTypeId: 0xcaa50aad36cccb93,
+      resultStructTypeId: 0xec53e98c1cf65511,
+    ),
+    MethodSchemaInfo(
+      name: 'onComplete',
+      ordinal: 2,
+      paramStructTypeId: 0x9059d753409eea18,
+      resultStructTypeId: 0xe06598eb27f39812,
+    ),
+  ],
+);
 
 class ObserverClientFactory extends CapabilityFactory<ObserverClient> {
   @override
@@ -6609,6 +10812,7 @@ abstract class ObserverServer extends Capability {
 
 class SubscriptionClient extends Capability {
   static const int _interfaceId = 0xe23251fe94e836ec;
+  static const InterfaceSchemaInfo schema = subscriptionSchema;
 
   final Capability _cap;
   SubscriptionClient(this._cap);
@@ -6639,6 +10843,26 @@ class SubscriptionClient extends Capability {
   @override
   Future<void> dispose() => _cap.dispose();
 }
+
+const InterfaceSchemaInfo subscriptionSchema = InterfaceSchemaInfo(
+  id: 0xe23251fe94e836ec,
+  displayName: 'complex.capnp:Subscription',
+  shortName: 'Subscription',
+  methods: [
+    MethodSchemaInfo(
+      name: 'cancel',
+      ordinal: 0,
+      paramStructTypeId: 0xd5c5308e092d6e83,
+      resultStructTypeId: 0xb95610db247a8223,
+    ),
+    MethodSchemaInfo(
+      name: 'getId',
+      ordinal: 1,
+      paramStructTypeId: 0x89817288ea65574b,
+      resultStructTypeId: 0xccbe2b039a7b98fe,
+    ),
+  ],
+);
 
 class SubscriptionClientFactory extends CapabilityFactory<SubscriptionClient> {
   @override
@@ -6732,6 +10956,7 @@ abstract class SubscriptionServer extends Capability {
 
 class ReadableClient extends Capability {
   static const int _interfaceId = 0xa69434bbd537a649;
+  static const InterfaceSchemaInfo schema = readableSchema;
 
   final Capability _cap;
   ReadableClient(this._cap);
@@ -6751,6 +10976,20 @@ class ReadableClient extends Capability {
   @override
   Future<void> dispose() => _cap.dispose();
 }
+
+const InterfaceSchemaInfo readableSchema = InterfaceSchemaInfo(
+  id: 0xa69434bbd537a649,
+  displayName: 'complex.capnp:Readable',
+  shortName: 'Readable',
+  methods: [
+    MethodSchemaInfo(
+      name: 'read',
+      ordinal: 0,
+      paramStructTypeId: 0xf22b305ab6fff9e6,
+      resultStructTypeId: 0xca09026cf2c4c5bd,
+    ),
+  ],
+);
 
 class ReadableClientFactory extends CapabilityFactory<ReadableClient> {
   @override
@@ -6824,6 +11063,7 @@ abstract class ReadableServer extends Capability {
 
 class WritableClient extends Capability {
   static const int _interfaceId = 0xd4bab7c88d024c5e;
+  static const InterfaceSchemaInfo schema = writableSchema;
 
   final Capability _cap;
   WritableClient(this._cap);
@@ -6843,6 +11083,20 @@ class WritableClient extends Capability {
   @override
   Future<void> dispose() => _cap.dispose();
 }
+
+const InterfaceSchemaInfo writableSchema = InterfaceSchemaInfo(
+  id: 0xd4bab7c88d024c5e,
+  displayName: 'complex.capnp:Writable',
+  shortName: 'Writable',
+  methods: [
+    MethodSchemaInfo(
+      name: 'write',
+      ordinal: 0,
+      paramStructTypeId: 0xf0b17fc4bf08beb3,
+      resultStructTypeId: 0xa8eb2729790dd6f5,
+    ),
+  ],
+);
 
 class WritableClientFactory extends CapabilityFactory<WritableClient> {
   @override
@@ -6916,6 +11170,7 @@ abstract class WritableServer extends Capability {
 
 class ReadWriteClient extends Capability {
   static const int _interfaceId = 0xc2108261d371f6f8;
+  static const InterfaceSchemaInfo schema = readWriteSchema;
 
   final Capability _cap;
   ReadWriteClient(this._cap);
@@ -6957,6 +11212,21 @@ class ReadWriteClient extends Capability {
   @override
   Future<void> dispose() => _cap.dispose();
 }
+
+const InterfaceSchemaInfo readWriteSchema = InterfaceSchemaInfo(
+  id: 0xc2108261d371f6f8,
+  displayName: 'complex.capnp:ReadWrite',
+  shortName: 'ReadWrite',
+  superclassIds: [0xa69434bbd537a649, 0xd4bab7c88d024c5e],
+  methods: [
+    MethodSchemaInfo(
+      name: 'compareAndSwap',
+      ordinal: 0,
+      paramStructTypeId: 0xf4acdb94f731a7dc,
+      resultStructTypeId: 0x9f87096d0d99609b,
+    ),
+  ],
+);
 
 class ReadWriteClientFactory extends CapabilityFactory<ReadWriteClient> {
   @override
@@ -7080,6 +11350,7 @@ abstract class ReadWriteServer extends Capability {
 
 class CursorClient extends Capability {
   static const int _interfaceId = 0x8384e36911992a84;
+  static const InterfaceSchemaInfo schema = cursorSchema;
 
   final Capability _cap;
   CursorClient(this._cap);
@@ -7099,6 +11370,20 @@ class CursorClient extends Capability {
   @override
   Future<void> dispose() => _cap.dispose();
 }
+
+const InterfaceSchemaInfo cursorSchema = InterfaceSchemaInfo(
+  id: 0x8384e36911992a84,
+  displayName: 'complex.capnp:Cursor',
+  shortName: 'Cursor',
+  methods: [
+    MethodSchemaInfo(
+      name: 'next',
+      ordinal: 0,
+      paramStructTypeId: 0xd3cdbdb8a3c01703,
+      resultStructTypeId: 0xc79658c97f1dfc52,
+    ),
+  ],
+);
 
 class CursorClientFactory extends CapabilityFactory<CursorClient> {
   @override
@@ -7224,6 +11509,7 @@ final class RepositoryWatchPipeline {
 
 class RepositoryClient extends Capability {
   static const int _interfaceId = 0xff065518e00ba453;
+  static const InterfaceSchemaInfo schema = repositorySchema;
 
   final Capability _cap;
   RepositoryClient(this._cap);
@@ -7330,6 +11616,50 @@ class RepositoryClient extends Capability {
   @override
   Future<void> dispose() => _cap.dispose();
 }
+
+const InterfaceSchemaInfo repositorySchema = InterfaceSchemaInfo(
+  id: 0xff065518e00ba453,
+  displayName: 'complex.capnp:Repository',
+  shortName: 'Repository',
+  methods: [
+    MethodSchemaInfo(
+      name: 'get',
+      ordinal: 0,
+      paramStructTypeId: 0xcda68ea602111f99,
+      resultStructTypeId: 0x87c2d124b5f78561,
+    ),
+    MethodSchemaInfo(
+      name: 'put',
+      ordinal: 1,
+      paramStructTypeId: 0xcd1d4ff569abe161,
+      resultStructTypeId: 0xc91138161f524eda,
+    ),
+    MethodSchemaInfo(
+      name: 'remove',
+      ordinal: 2,
+      paramStructTypeId: 0xd7587e0e1dbeeb9d,
+      resultStructTypeId: 0xec3df3f66c00a574,
+    ),
+    MethodSchemaInfo(
+      name: 'list',
+      ordinal: 3,
+      paramStructTypeId: 0xac036b743c067587,
+      resultStructTypeId: 0xca266319202dc4e0,
+    ),
+    MethodSchemaInfo(
+      name: 'openCursor',
+      ordinal: 4,
+      paramStructTypeId: 0x8818397b1a6b1aa5,
+      resultStructTypeId: 0xddae4be495982436,
+    ),
+    MethodSchemaInfo(
+      name: 'watch',
+      ordinal: 5,
+      paramStructTypeId: 0xe4bbf2b22c925c53,
+      resultStructTypeId: 0x97c283c51d6243e7,
+    ),
+  ],
+);
 
 class RepositoryClientFactory extends CapabilityFactory<RepositoryClient> {
   @override
@@ -7495,6 +11825,7 @@ abstract class RepositoryServer extends Capability {
 
 class ByteSinkClient extends Capability {
   static const int _interfaceId = 0xbef98c1dd8be91de;
+  static const InterfaceSchemaInfo schema = byteSinkSchema;
 
   final Capability _cap;
   ByteSinkClient(this._cap);
@@ -7536,6 +11867,32 @@ class ByteSinkClient extends Capability {
   @override
   Future<void> dispose() => _cap.dispose();
 }
+
+const InterfaceSchemaInfo byteSinkSchema = InterfaceSchemaInfo(
+  id: 0xbef98c1dd8be91de,
+  displayName: 'complex.capnp:ByteSink',
+  shortName: 'ByteSink',
+  methods: [
+    MethodSchemaInfo(
+      name: 'write',
+      ordinal: 0,
+      paramStructTypeId: 0xafdfb9bf0f462fee,
+      resultStructTypeId: 0x995f9a3377c0b16e,
+    ),
+    MethodSchemaInfo(
+      name: 'finish',
+      ordinal: 1,
+      paramStructTypeId: 0xa2319baef9522b7e,
+      resultStructTypeId: 0xc137170920cbe242,
+    ),
+    MethodSchemaInfo(
+      name: 'abort',
+      ordinal: 2,
+      paramStructTypeId: 0x96fc25f47cf45583,
+      resultStructTypeId: 0xeac9b85e358ad038,
+    ),
+  ],
+);
 
 class ByteSinkClientFactory extends CapabilityFactory<ByteSinkClient> {
   @override
@@ -7643,6 +12000,7 @@ abstract class ByteSinkServer extends Capability {
 
 class ByteSourceClient extends Capability {
   static const int _interfaceId = 0x8a2b2ec8ae50b170;
+  static const InterfaceSchemaInfo schema = byteSourceSchema;
 
   final Capability _cap;
   ByteSourceClient(this._cap);
@@ -7670,6 +12028,20 @@ class ByteSourceClient extends Capability {
   @override
   Future<void> dispose() => _cap.dispose();
 }
+
+const InterfaceSchemaInfo byteSourceSchema = InterfaceSchemaInfo(
+  id: 0x8a2b2ec8ae50b170,
+  displayName: 'complex.capnp:ByteSource',
+  shortName: 'ByteSource',
+  methods: [
+    MethodSchemaInfo(
+      name: 'pumpTo',
+      ordinal: 0,
+      paramStructTypeId: 0xaf9e25ee76071957,
+      resultStructTypeId: 0xa5ec2941660b8125,
+    ),
+  ],
+);
 
 class ByteSourceClientFactory extends CapabilityFactory<ByteSourceClient> {
   @override
@@ -7822,6 +12194,7 @@ final class CapabilityFactoryNewRepositoryPipeline {
 
 class CapabilityFactoryClient extends Capability {
   static const int _interfaceId = 0xccad478715fb03b0;
+  static const InterfaceSchemaInfo schema = capabilityFactorySchema;
 
   final Capability _cap;
   CapabilityFactoryClient(this._cap);
@@ -7911,6 +12284,44 @@ class CapabilityFactoryClient extends Capability {
   @override
   Future<void> dispose() => _cap.dispose();
 }
+
+const InterfaceSchemaInfo capabilityFactorySchema = InterfaceSchemaInfo(
+  id: 0xccad478715fb03b0,
+  displayName: 'complex.capnp:CapabilityFactory',
+  shortName: 'CapabilityFactory',
+  methods: [
+    MethodSchemaInfo(
+      name: 'newCell',
+      ordinal: 0,
+      paramStructTypeId: 0xec9febe961558d81,
+      resultStructTypeId: 0x8b05b4a25440230f,
+    ),
+    MethodSchemaInfo(
+      name: 'newEmptyCell',
+      ordinal: 1,
+      paramStructTypeId: 0xf13ecef7827cc706,
+      resultStructTypeId: 0xa1aace366c5c1ee0,
+    ),
+    MethodSchemaInfo(
+      name: 'newRepository',
+      ordinal: 2,
+      paramStructTypeId: 0xcdd5b5e6c9ba03cc,
+      resultStructTypeId: 0x9a728496ffd3d837,
+    ),
+    MethodSchemaInfo(
+      name: 'echoCapability',
+      ordinal: 3,
+      paramStructTypeId: 0xd289d712c47b67c4,
+      resultStructTypeId: 0xa2dd5da9a79ba44a,
+    ),
+    MethodSchemaInfo(
+      name: 'getUntyped',
+      ordinal: 4,
+      paramStructTypeId: 0xb4b6893326debbbc,
+      resultStructTypeId: 0x87b11c7f9df9ca5d,
+    ),
+  ],
+);
 
 class CapabilityFactoryClientFactory
     extends CapabilityFactory<CapabilityFactoryClient> {
@@ -8066,6 +12477,7 @@ abstract class CapabilityFactoryServer extends Capability {
 
 class ParentClient extends Capability {
   static const int _interfaceId = 0x882e0e49903e08ff;
+  static const InterfaceSchemaInfo schema = parentSchema;
 
   final Capability _cap;
   ParentClient(this._cap);
@@ -8085,6 +12497,20 @@ class ParentClient extends Capability {
   @override
   Future<void> dispose() => _cap.dispose();
 }
+
+const InterfaceSchemaInfo parentSchema = InterfaceSchemaInfo(
+  id: 0x882e0e49903e08ff,
+  displayName: 'complex.capnp:Parent',
+  shortName: 'Parent',
+  methods: [
+    MethodSchemaInfo(
+      name: 'getName',
+      ordinal: 0,
+      paramStructTypeId: 0xf8a6f2630857f7c5,
+      resultStructTypeId: 0x8ce9bbc8d281e1e6,
+    ),
+  ],
+);
 
 class ParentClientFactory extends CapabilityFactory<ParentClient> {
   @override
@@ -8158,6 +12584,7 @@ abstract class ParentServer extends Capability {
 
 class LeftClient extends Capability {
   static const int _interfaceId = 0xdc9405e2c5728627;
+  static const InterfaceSchemaInfo schema = leftSchema;
 
   final Capability _cap;
   LeftClient(this._cap);
@@ -8188,6 +12615,21 @@ class LeftClient extends Capability {
   @override
   Future<void> dispose() => _cap.dispose();
 }
+
+const InterfaceSchemaInfo leftSchema = InterfaceSchemaInfo(
+  id: 0xdc9405e2c5728627,
+  displayName: 'complex.capnp:Left',
+  shortName: 'Left',
+  superclassIds: [0x882e0e49903e08ff],
+  methods: [
+    MethodSchemaInfo(
+      name: 'left',
+      ordinal: 0,
+      paramStructTypeId: 0xe95c21718e5543d1,
+      resultStructTypeId: 0xf262eb425f2f06b5,
+    ),
+  ],
+);
 
 class LeftClientFactory extends CapabilityFactory<LeftClient> {
   @override
@@ -8285,6 +12727,7 @@ abstract class LeftServer extends Capability {
 
 class RightClient extends Capability {
   static const int _interfaceId = 0xc43c47560508dc7d;
+  static const InterfaceSchemaInfo schema = rightSchema;
 
   final Capability _cap;
   RightClient(this._cap);
@@ -8315,6 +12758,21 @@ class RightClient extends Capability {
   @override
   Future<void> dispose() => _cap.dispose();
 }
+
+const InterfaceSchemaInfo rightSchema = InterfaceSchemaInfo(
+  id: 0xc43c47560508dc7d,
+  displayName: 'complex.capnp:Right',
+  shortName: 'Right',
+  superclassIds: [0x882e0e49903e08ff],
+  methods: [
+    MethodSchemaInfo(
+      name: 'right',
+      ordinal: 0,
+      paramStructTypeId: 0xb3483ea8606f0573,
+      resultStructTypeId: 0xf8a7a01702aa85a6,
+    ),
+  ],
+);
 
 class RightClientFactory extends CapabilityFactory<RightClient> {
   @override
@@ -8413,6 +12871,7 @@ abstract class RightServer extends Capability {
 
 class DiamondClient extends Capability {
   static const int _interfaceId = 0xdbf219de6a215361;
+  static const InterfaceSchemaInfo schema = diamondSchema;
 
   final Capability _cap;
   DiamondClient(this._cap);
@@ -8465,6 +12924,21 @@ class DiamondClient extends Capability {
   @override
   Future<void> dispose() => _cap.dispose();
 }
+
+const InterfaceSchemaInfo diamondSchema = InterfaceSchemaInfo(
+  id: 0xdbf219de6a215361,
+  displayName: 'complex.capnp:Diamond',
+  shortName: 'Diamond',
+  superclassIds: [0xdc9405e2c5728627, 0xc43c47560508dc7d],
+  methods: [
+    MethodSchemaInfo(
+      name: 'both',
+      ordinal: 0,
+      paramStructTypeId: 0xcf56406a2452589e,
+      resultStructTypeId: 0x82cda5048998b05a,
+    ),
+  ],
+);
 
 class DiamondClientFactory extends CapabilityFactory<DiamondClient> {
   @override
@@ -8667,6 +13141,7 @@ final class PipelineTargetGetRepositoryPipeline {
 
 class PipelineTargetClient extends Capability {
   static const int _interfaceId = 0xe211443879f3b6bb;
+  static const InterfaceSchemaInfo schema = pipelineTargetSchema;
 
   final Capability _cap;
   PipelineTargetClient(this._cap);
@@ -8724,6 +13199,32 @@ class PipelineTargetClient extends Capability {
   @override
   Future<void> dispose() => _cap.dispose();
 }
+
+const InterfaceSchemaInfo pipelineTargetSchema = InterfaceSchemaInfo(
+  id: 0xe211443879f3b6bb,
+  displayName: 'complex.capnp:PipelineTarget',
+  shortName: 'PipelineTarget',
+  methods: [
+    MethodSchemaInfo(
+      name: 'getChild',
+      ordinal: 0,
+      paramStructTypeId: 0xbb5838cc7e8c6022,
+      resultStructTypeId: 0xea029d19d63a2b01,
+    ),
+    MethodSchemaInfo(
+      name: 'getRepository',
+      ordinal: 1,
+      paramStructTypeId: 0xb9e44b818e6eca9c,
+      resultStructTypeId: 0xae223ac78af3245f,
+    ),
+    MethodSchemaInfo(
+      name: 'ping',
+      ordinal: 2,
+      paramStructTypeId: 0xae0a87680b83b4b5,
+      resultStructTypeId: 0xb8231d9344127d33,
+    ),
+  ],
+);
 
 class PipelineTargetClientFactory
     extends CapabilityFactory<PipelineTargetClient> {
@@ -9032,6 +13533,7 @@ final class ComplexTestServiceEchoPipelineTargetLaterPipeline {
 
 class ComplexTestServiceClient extends Capability {
   static const int _interfaceId = 0xd7fb0472c16375ee;
+  static const InterfaceSchemaInfo schema = complexTestServiceSchema;
 
   final Capability _cap;
   ComplexTestServiceClient(this._cap);
@@ -9354,6 +13856,122 @@ class ComplexTestServiceClient extends Capability {
   @override
   Future<void> dispose() => _cap.dispose();
 }
+
+const InterfaceSchemaInfo complexTestServiceSchema = InterfaceSchemaInfo(
+  id: 0xd7fb0472c16375ee,
+  displayName: 'complex.capnp:ComplexTestService',
+  shortName: 'ComplexTestService',
+  methods: [
+    MethodSchemaInfo(
+      name: 'echo',
+      ordinal: 0,
+      paramStructTypeId: 0xbabd818c1536ec0f,
+      resultStructTypeId: 0x8c6ebb148e13b0c5,
+    ),
+    MethodSchemaInfo(
+      name: 'echoScalars',
+      ordinal: 1,
+      paramStructTypeId: 0xad3395b1fb42ebe2,
+      resultStructTypeId: 0xc8b5893f587a43cc,
+    ),
+    MethodSchemaInfo(
+      name: 'echoLists',
+      ordinal: 2,
+      paramStructTypeId: 0x9abf96f9ef2bfdb3,
+      resultStructTypeId: 0xf19304c600f7058d,
+    ),
+    MethodSchemaInfo(
+      name: 'echoUnion',
+      ordinal: 3,
+      paramStructTypeId: 0xcabd1d920b68740a,
+      resultStructTypeId: 0xbf99c26089546ade,
+    ),
+    MethodSchemaInfo(
+      name: 'echoAnyPointer',
+      ordinal: 4,
+      paramStructTypeId: 0x88f4dfe3ca9e7a59,
+      resultStructTypeId: 0x9a60ea4618245767,
+    ),
+    MethodSchemaInfo(
+      name: 'exchangeCapabilities',
+      ordinal: 5,
+      paramStructTypeId: 0xe2db873b433ba9f0,
+      resultStructTypeId: 0xa9f271d439f0f4de,
+    ),
+    MethodSchemaInfo(
+      name: 'callObserver',
+      ordinal: 6,
+      paramStructTypeId: 0x8b2545063898928c,
+      resultStructTypeId: 0xafef2ae4ce506559,
+    ),
+    MethodSchemaInfo(
+      name: 'makePipeline',
+      ordinal: 7,
+      paramStructTypeId: 0xc99cb70875beda41,
+      resultStructTypeId: 0xe6e9a23d205e8aa1,
+    ),
+    MethodSchemaInfo(
+      name: 'openUpload',
+      ordinal: 8,
+      paramStructTypeId: 0xa59a2201191e4004,
+      resultStructTypeId: 0x9cd82d2e804f72ab,
+    ),
+    MethodSchemaInfo(
+      name: 'openDownload',
+      ordinal: 9,
+      paramStructTypeId: 0x918b6400de54f317,
+      resultStructTypeId: 0x981ed34f5fa9fab4,
+    ),
+    MethodSchemaInfo(
+      name: 'getRepository',
+      ordinal: 10,
+      paramStructTypeId: 0xf3f0ee20dbd34805,
+      resultStructTypeId: 0x8574ed6d3b2cd7e2,
+    ),
+    MethodSchemaInfo(
+      name: 'getFactory',
+      ordinal: 11,
+      paramStructTypeId: 0xa8b93c52bfe7d01b,
+      resultStructTypeId: 0xb28bc0b96e02ff52,
+    ),
+    MethodSchemaInfo(
+      name: 'useDiamond',
+      ordinal: 12,
+      paramStructTypeId: 0xed819fe46e3aa4d7,
+      resultStructTypeId: 0x9f451ea2bd479eb1,
+    ),
+    MethodSchemaInfo(
+      name: 'failIntentionally',
+      ordinal: 13,
+      paramStructTypeId: 0x98bbebceafacb8b2,
+      resultStructTypeId: 0xbaa9743da012a782,
+    ),
+    MethodSchemaInfo(
+      name: 'shutdown',
+      ordinal: 14,
+      paramStructTypeId: 0x9503a90e4a6dfdaa,
+      resultStructTypeId: 0x8fb7e0459a18e5e2,
+    ),
+    MethodSchemaInfo(
+      name: 'probePipelineTarget',
+      ordinal: 15,
+      paramStructTypeId: 0xb371dcbc1b22f92b,
+      resultStructTypeId: 0xe712f12a94590f5d,
+    ),
+    MethodSchemaInfo(
+      name: 'makePromisedPipeline',
+      ordinal: 16,
+      paramStructTypeId: 0xfdde68efc7d0f57a,
+      resultStructTypeId: 0xe5f71a26002eb5e7,
+    ),
+    MethodSchemaInfo(
+      name: 'echoPipelineTargetLater',
+      ordinal: 17,
+      paramStructTypeId: 0xff8dcb50bdfcc1bb,
+      resultStructTypeId: 0xca3f53fcbe05cecf,
+    ),
+  ],
+);
 
 class ComplexTestServiceClientFactory
     extends CapabilityFactory<ComplexTestServiceClient> {

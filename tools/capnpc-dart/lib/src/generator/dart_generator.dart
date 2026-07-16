@@ -136,6 +136,7 @@ void _writeInterface(
   Map<int, SchemaNode> nodeMap,
 ) {
   final name = _dartClassName(node.displayName);
+  final schemaConstName = _schemaConstName(name);
 
   // Collect all methods including inherited ones (depth-first from ancestors).
   final rawMethods = <({SchemaNode ifaceNode, SchemaMethod method})>[];
@@ -180,6 +181,7 @@ void _writeInterface(
   // ---- Client stub ----
   sb.writeln('class ${name}Client extends Capability {');
   sb.writeln('  static const int _interfaceId = ${_hexId(node.id)};');
+  sb.writeln('  static const InterfaceSchemaInfo schema = $schemaConstName;');
   sb.writeln();
   sb.writeln('  final Capability _cap;');
   sb.writeln('  ${name}Client(this._cap);');
@@ -193,6 +195,9 @@ void _writeInterface(
   sb.writeln('  @override');
   sb.writeln('  Future<void> dispose() => _cap.dispose();');
   sb.writeln('}');
+  sb.writeln();
+
+  _writeInterfaceSchema(sb, schemaConstName, node, body);
   sb.writeln();
 
   // ---- Factory ----
@@ -579,6 +584,7 @@ void _writeEnum(StringBuffer sb, SchemaNode node, EnumBody body) {
   final name = _dartClassName(node.displayName);
   final sorted = [...body.enumerants]
     ..sort((a, b) => a.codeOrder.compareTo(b.codeOrder));
+  final schemaConstName = _schemaConstName(name);
 
   sb.writeln('enum $name {');
   for (final e in sorted) {
@@ -586,11 +592,100 @@ void _writeEnum(StringBuffer sb, SchemaNode node, EnumBody body) {
   }
   sb.writeln('}');
   sb.writeln();
+  _writeEnumSchema(sb, schemaConstName, node, sorted);
+  sb.writeln();
   sb.writeln(
     '$name? ${_lcfirst(name)}FromUint16(int v) => '
     'v < $name.values.length ? $name.values[v] : null;',
   );
   sb.writeln('int ${_lcfirst(name)}ToUint16($name v) => v.index;');
+}
+
+void _writeEnumSchema(
+  StringBuffer sb,
+  String constName,
+  SchemaNode node,
+  List<SchemaEnumerant> enumerants,
+) {
+  sb.writeln('const EnumSchemaInfo $constName = EnumSchemaInfo(');
+  sb.writeln('  id: ${_hexId(node.id)},');
+  sb.writeln('  displayName: ${_dartString(node.displayName)},');
+  sb.writeln('  shortName: ${_dartString(node.shortName)},');
+  sb.writeln('  enumerants: [');
+  for (final e in enumerants) {
+    sb.writeln('    EnumerantSchemaInfo(');
+    sb.writeln('      name: ${_dartString(e.name)},');
+    sb.writeln('      codeOrder: ${e.codeOrder},');
+    sb.writeln('    ),');
+  }
+  sb.writeln('  ],');
+  sb.writeln(');');
+}
+
+void _writeStructSchema(
+  StringBuffer sb,
+  String constName,
+  SchemaNode node,
+  StructBody body,
+  List<SchemaField> fields,
+  Map<int, SchemaNode> nodeMap,
+) {
+  sb.writeln('const StructSchemaInfo $constName = StructSchemaInfo(');
+  sb.writeln('  id: ${_hexId(node.id)},');
+  sb.writeln('  displayName: ${_dartString(node.displayName)},');
+  sb.writeln('  shortName: ${_dartString(node.shortName)},');
+  sb.writeln('  dataWords: ${body.dataWordCount},');
+  sb.writeln('  pointerWords: ${body.pointerCount},');
+  if (body.isGroup) sb.writeln('  isGroup: true,');
+  if (body.discriminantCount != 0) {
+    sb.writeln('  discriminantCount: ${body.discriminantCount},');
+  }
+  if (body.discriminantOffset != 0) {
+    sb.writeln('  discriminantOffset: ${body.discriminantOffset},');
+  }
+  if (node.parameters.isNotEmpty) {
+    sb.writeln('  typeParameters: ${_stringListExpr(node.parameters)},');
+  }
+  sb.writeln('  fields: [');
+  for (final field in fields) {
+    sb.write(_fieldSchemaExpr(field, nodeMap, indent: '    '));
+  }
+  sb.writeln('  ],');
+  sb.writeln(');');
+}
+
+void _writeInterfaceSchema(
+  StringBuffer sb,
+  String constName,
+  SchemaNode node,
+  InterfaceBody body,
+) {
+  final methods = [...body.methods]
+    ..sort((a, b) => a.ordinal.compareTo(b.ordinal));
+  sb.writeln('const InterfaceSchemaInfo $constName = InterfaceSchemaInfo(');
+  sb.writeln('  id: ${_hexId(node.id)},');
+  sb.writeln('  displayName: ${_dartString(node.displayName)},');
+  sb.writeln('  shortName: ${_dartString(node.shortName)},');
+  if (body.superclassIds.isNotEmpty) {
+    sb.writeln('  superclassIds: [');
+    for (final id in body.superclassIds) {
+      sb.writeln('    ${_hexId(id)},');
+    }
+    sb.writeln('  ],');
+  }
+  sb.writeln('  methods: [');
+  for (final method in methods) {
+    sb.writeln('    MethodSchemaInfo(');
+    sb.writeln('      name: ${_dartString(method.name)},');
+    sb.writeln('      ordinal: ${method.ordinal},');
+    sb.writeln('      paramStructTypeId: ${_hexId(method.paramStructTypeId)},');
+    sb.writeln(
+      '      resultStructTypeId: ${_hexId(method.resultStructTypeId)},',
+    );
+    sb.writeln('    ),');
+  }
+  sb.writeln('  ],');
+  sb.writeln(');');
 }
 
 // ---------------------------------------------------------------------------
@@ -606,6 +701,7 @@ void _writeStruct(
   final name = _dartClassName(node.displayName);
   final dataWords = body.dataWordCount;
   final ptrWords = body.pointerCount;
+  final schemaConstName = _schemaConstName(name);
 
   final fields = [...body.fields]
     ..sort((a, b) => a.codeOrder.compareTo(b.codeOrder));
@@ -613,6 +709,8 @@ void _writeStruct(
   // ---- Reader ----
   sb.writeln('final class ${name}Reader extends StructReader {');
   sb.writeln('  ${name}Reader(super.raw, {super.capabilities});');
+  sb.writeln();
+  sb.writeln('  static const StructSchemaInfo schema = $schemaConstName;');
 
   if (body.discriminantCount > 0) {
     final discByteOffset = body.discriminantOffset * 2;
@@ -650,6 +748,7 @@ void _writeStruct(
   // ---- Factory ----
   sb.writeln('final class _${name}Factory');
   sb.writeln('    extends StructFactory<${name}Reader, ${name}Builder> {');
+  sb.writeln('  @override StructSchemaInfo get schema => $schemaConstName;');
   sb.writeln('  @override int get dataWords => $dataWords;');
   sb.writeln('  @override int get ptrWords => $ptrWords;');
   sb.writeln('  @override');
@@ -665,6 +764,8 @@ void _writeStruct(
     '  ${name}Builder fromRawBuilder(RawStructBuilder r) => ${name}Builder(r);',
   );
   sb.writeln('}');
+  sb.writeln();
+  _writeStructSchema(sb, schemaConstName, node, body, fields, nodeMap);
   sb.writeln();
   sb.writeln('final ${_lcfirst(name)}Factory = _${name}Factory();');
 }
@@ -863,9 +964,24 @@ void _writeBuilderPointerField(
   } else if (type is ListType) {
     _writeListBuilderField(sb, fname, type, offset, nodeMap, setDisc, hasDisc);
   } else if (type is AnyPointerType || type is TypeParameterRefType) {
-    sb.writeln('  set $fname(Uint8List? v) {');
+    final ucfname = _ucfirst(fname);
+    sb.writeln('  AnyPointerBuilder init$ucfname() {');
     if (hasDisc) sb.write(setDisc);
-    sb.writeln('    if (v != null) setAnyPointerFromMessage($offset, v);');
+    sb.writeln('    return initAnyPointerField($offset);');
+    sb.writeln('  }');
+    sb.writeln();
+    sb.writeln('  set $fname(AnyPointerReader? v) {');
+    if (hasDisc) sb.write(setDisc);
+    sb.writeln('    setAnyPointerField($offset, v);');
+    sb.writeln('  }');
+    sb.writeln();
+    sb.writeln('  void set${ucfname}Message(Uint8List? v) {');
+    if (hasDisc) sb.write(setDisc);
+    sb.writeln('    if (v != null) {');
+    sb.writeln(
+      '      setAnyPointerFromMessage($offset, v, preserveCapabilityPointers: true);',
+    );
+    sb.writeln('    }');
     sb.writeln('  }');
   } else if (type is InterfaceRefType) {
     final ucfname = _ucfirst(fname);
@@ -917,7 +1033,7 @@ String _defaultSuffix(Object? v) {
   final ds = _defaultSuffix(fieldDefault);
   // TypeParameterRef is treated as opaque AnyPointer in the template class.
   if (type is TypeParameterRefType) {
-    return ('Uint8List?', 'getAnyPointerAsMessageBytes($offset)');
+    return ('AnyPointerReader?', 'getAnyPointerField($offset)');
   }
   // Concrete generic instantiation: use the specialized reader name.
   if (type is StructRefType && _allConcrete(type.typeArgs)) {
@@ -942,7 +1058,7 @@ String _defaultSuffix(Object? v) {
     Float64Type() => ('double', 'getFloat64Field(${offset * 8}$ds)'),
     TextType() => ('String?', 'getTextField($offset)'),
     DataType() => ('Uint8List?', 'getDataField($offset)'),
-    AnyPointerType() => ('Uint8List?', 'getAnyPointerAsMessageBytes($offset)'),
+    AnyPointerType() => ('AnyPointerReader?', 'getAnyPointerField($offset)'),
     EnumRefType(:final typeId) => _enumReaderGetter(
       typeId,
       offset * 2,
@@ -1488,6 +1604,116 @@ bool _isPointerType(SchemaType t) => switch (t) {
   TypeParameterRefType() => true,
   _ => false,
 };
+
+String _fieldSchemaExpr(
+  SchemaField field,
+  Map<int, SchemaNode> nodeMap, {
+  required String indent,
+}) {
+  final b = StringBuffer();
+  b.writeln('${indent}FieldSchemaInfo(');
+  b.writeln('$indent  name: ${_dartString(field.name)},');
+  b.writeln('$indent  codeOrder: ${field.codeOrder},');
+  if (field.discriminantValue != 0xFFFF) {
+    b.writeln('$indent  discriminantValue: ${field.discriminantValue},');
+  }
+  b.write(_fieldBodySchemaExpr(field.body, nodeMap, indent: '$indent  '));
+  b.writeln('$indent),');
+  return b.toString();
+}
+
+String _fieldBodySchemaExpr(
+  SchemaFieldBody body,
+  Map<int, SchemaNode> nodeMap, {
+  required String indent,
+}) {
+  final b = StringBuffer();
+  if (body is SlotField) {
+    b.writeln('${indent}body: SlotFieldSchemaInfo(');
+    b.writeln('$indent  offset: ${body.offset},');
+    b.writeln('$indent  type: ${_typeSchemaExpr(body.type, nodeMap)},');
+    if (body.hadExplicitDefault) {
+      b.writeln('$indent  hadExplicitDefault: true,');
+    }
+    if (body.defaultValue != null) {
+      b.writeln('$indent  defaultValue: ${_literalExpr(body.defaultValue)},');
+    }
+    b.writeln('$indent),');
+  } else if (body is GroupField) {
+    b.writeln(
+      '${indent}body: GroupFieldSchemaInfo(typeId: ${_hexId(body.typeId)}),',
+    );
+  }
+  return b.toString();
+}
+
+String _typeSchemaExpr(SchemaType type, Map<int, SchemaNode> nodeMap) {
+  return switch (type) {
+    VoidType() => "PrimitiveTypeSchemaInfo('Void')",
+    BoolType() => "PrimitiveTypeSchemaInfo('Bool')",
+    Int8Type() => "PrimitiveTypeSchemaInfo('Int8')",
+    Int16Type() => "PrimitiveTypeSchemaInfo('Int16')",
+    Int32Type() => "PrimitiveTypeSchemaInfo('Int32')",
+    Int64Type() => "PrimitiveTypeSchemaInfo('Int64')",
+    UInt8Type() => "PrimitiveTypeSchemaInfo('UInt8')",
+    UInt16Type() => "PrimitiveTypeSchemaInfo('UInt16')",
+    UInt32Type() => "PrimitiveTypeSchemaInfo('UInt32')",
+    UInt64Type() => "PrimitiveTypeSchemaInfo('UInt64')",
+    Float32Type() => "PrimitiveTypeSchemaInfo('Float32')",
+    Float64Type() => "PrimitiveTypeSchemaInfo('Float64')",
+    TextType() => "PrimitiveTypeSchemaInfo('Text')",
+    DataType() => "PrimitiveTypeSchemaInfo('Data')",
+    AnyPointerType() => 'AnyPointerTypeSchemaInfo()',
+    TypeParameterRefType(:final parameterIndex) =>
+      'TypeParameterSchemaInfo($parameterIndex)',
+    ListType(:final elementType) =>
+      'ListTypeSchemaInfo(${_typeSchemaExpr(elementType, nodeMap)})',
+    StructRefType(:final typeId, :final typeArgs) =>
+      'StructRefTypeSchemaInfo(${_hexId(typeId)}'
+          '${_typeArgsSchemaSuffix(typeArgs, nodeMap)})',
+    EnumRefType(:final typeId) => 'EnumRefTypeSchemaInfo(${_hexId(typeId)})',
+    InterfaceRefType(:final typeId, :final typeArgs) =>
+      'InterfaceRefTypeSchemaInfo(${_hexId(typeId)}'
+          '${_typeArgsSchemaSuffix(typeArgs, nodeMap)})',
+    _ => "PrimitiveTypeSchemaInfo('Unknown')",
+  };
+}
+
+String _typeArgsSchemaSuffix(
+  List<SchemaType> typeArgs,
+  Map<int, SchemaNode> nodeMap,
+) {
+  if (typeArgs.isEmpty) return '';
+  final args = typeArgs.map((t) => _typeSchemaExpr(t, nodeMap)).join(', ');
+  return ', typeArgs: [$args]';
+}
+
+String _schemaConstName(String dartName) => '${_lcfirst(dartName)}Schema';
+
+String _dartString(String value) {
+  final escaped = value
+      .replaceAll(r'\', r'\\')
+      .replaceAll("'", r"\'")
+      .replaceAll(r'$', r'\$')
+      .replaceAll('\n', r'\n')
+      .replaceAll('\r', r'\r')
+      .replaceAll('\t', r'\t');
+  return "'$escaped'";
+}
+
+String _stringListExpr(List<String> values) =>
+    '[${values.map(_dartString).join(', ')}]';
+
+String _literalExpr(Object? value) {
+  if (value == null) return 'null';
+  if (value is String) return _dartString(value);
+  if (value is double) {
+    if (value.isNaN) return 'double.nan';
+    if (value == double.infinity) return 'double.infinity';
+    if (value == double.negativeInfinity) return 'double.negativeInfinity';
+  }
+  return '$value';
+}
 
 // ---------------------------------------------------------------------------
 // Identifier helpers

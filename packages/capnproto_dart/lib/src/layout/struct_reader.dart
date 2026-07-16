@@ -5,6 +5,7 @@ import '../exception/decode_exception.dart';
 import '../message/message_copy.dart';
 import '../wire/pointer.dart';
 import '../wire/wire_helpers.dart';
+import 'any_pointer.dart';
 import 'list_reader.dart';
 
 /// Base class for all generated struct readers.
@@ -208,6 +209,16 @@ abstract class StructReader {
       ptrIndex,
       preserveCapabilityPointers: preserveCapabilityPointers,
     );
+  }
+
+  /// Returns a typed view of the AnyPointer at [ptrIndex].
+  AnyPointerReader? getAnyPointerField(int ptrIndex) {
+    if (ptrIndex < 0 || ptrIndex >= _raw.ptrWords) return null;
+    final wordOffset = _raw.ptrWordOffset + ptrIndex;
+    if (WirePointer.decode(_raw.segment.data, wordOffset) is NullPointer) {
+      return null;
+    }
+    return AnyPointerReader(_raw, ptrIndex, capabilities: _capabilities);
   }
 
   /// Reads a nested struct from the pointer at [ptrIndex].

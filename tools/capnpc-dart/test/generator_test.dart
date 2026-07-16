@@ -145,6 +145,9 @@ void main() {
       expect(src, contains('blue,'));
       expect(src, contains('Color? colorFromUint16(int v)'));
       expect(src, contains('int colorToUint16(Color v)'));
+      expect(src, contains('const EnumSchemaInfo colorSchema'));
+      expect(src, contains("name: 'red'"));
+      expect(src, contains('codeOrder: 0'));
     });
 
     test('sorts enumerants by codeOrder', () {
@@ -206,6 +209,22 @@ void main() {
 
     test('generates factory singleton', () {
       expect(src, contains('final personFactory = _PersonFactory()'));
+    });
+
+    test('generates struct reflection metadata', () {
+      expect(src, contains('const StructSchemaInfo personSchema'));
+      expect(src, contains("shortName: 'Person'"));
+      expect(src, contains('dataWords: 1'));
+      expect(src, contains('pointerWords: 1'));
+      expect(src, contains("name: 'age'"));
+      expect(src, contains("type: PrimitiveTypeSchemaInfo('UInt32')"));
+      expect(src, contains("name: 'name'"));
+      expect(src, contains("type: PrimitiveTypeSchemaInfo('Text')"));
+      expect(src, contains('StructSchemaInfo get schema => personSchema'));
+      expect(
+        src,
+        contains('static const StructSchemaInfo schema = personSchema'),
+      );
     });
   });
 
@@ -483,6 +502,10 @@ void main() {
         src,
         contains('static const int _interfaceId = 0x000000001234abcd'),
       );
+      expect(
+        src,
+        contains('static const InterfaceSchemaInfo schema = greeterSchema'),
+      );
     });
 
     test('generates typed greet method', () {
@@ -506,6 +529,15 @@ void main() {
         ),
       );
       expect(src, contains('GreeterClient fromCapability(Capability cap)'));
+    });
+
+    test('generates interface reflection metadata', () {
+      expect(src, contains('const InterfaceSchemaInfo greeterSchema'));
+      expect(src, contains("shortName: 'Greeter'"));
+      expect(src, contains("name: 'greet'"));
+      expect(src, contains('ordinal: 0'));
+      expect(src, contains('paramStructTypeId: 0x000000000000001e'));
+      expect(src, contains('resultStructTypeId: 0x000000000000001f'));
     });
   });
 
@@ -540,7 +572,12 @@ void main() {
       final file = fileNode(1, [SchemaNestedNode(name: 'S', id: 20)]);
       final src = generateDartFile(file, [file, sNode]);
 
-      expect(src, isNot(contains('defaultValue:')));
+      expect(src, contains('getUint32Field(0)'));
+      expect(src, contains('setUint32Field(0, v)'));
+      expect(src, contains('getBoolField(1)'));
+      expect(src, contains('setBoolField(1, v)'));
+      expect(src, contains('defaultValue: 0'));
+      expect(src, contains('defaultValue: false'));
     });
 
     test('null defaultValue does not emit defaultValue: arg', () {
@@ -610,7 +647,7 @@ void main() {
     ]);
 
     test(
-      'TypeParameterRefType field generates Uint8List? AnyPointer getter in template',
+      'TypeParameterRefType field generates AnyPointer reader in template',
       () {
         final kv = keyValueTemplate();
         final file = fileNode(1, [SchemaNestedNode(name: 'KeyValue', id: 100)]);
@@ -619,25 +656,26 @@ void main() {
         expect(src, contains('KeyValueReader'));
         expect(
           src,
-          contains('Uint8List? get key => getAnyPointerAsMessageBytes(0)'),
+          contains('AnyPointerReader? get key => getAnyPointerField(0)'),
         );
         expect(
           src,
-          contains('Uint8List? get value => getAnyPointerAsMessageBytes(1)'),
+          contains('AnyPointerReader? get value => getAnyPointerField(1)'),
         );
       },
     );
 
     test(
-      'TypeParameterRefType field generates AnyPointer setter in template builder',
+      'TypeParameterRefType field generates AnyPointer builder API in template builder',
       () {
         final kv = keyValueTemplate();
         final file = fileNode(1, [SchemaNestedNode(name: 'KeyValue', id: 100)]);
         final src = generateDartFile(file, [file, kv]);
 
-        expect(src, contains('set key(Uint8List? v)'));
-        expect(src, contains('set value(Uint8List? v)'));
-        expect(src, contains('setAnyPointerFromMessage(0, v)'));
+        expect(src, contains('AnyPointerBuilder initKey()'));
+        expect(src, contains('set key(AnyPointerReader? v)'));
+        expect(src, contains('void setKeyMessage(Uint8List? v)'));
+        expect(src, contains('setAnyPointerField(0, v)'));
       },
     );
 

@@ -55,7 +55,9 @@ export 'src/layout/list_builder.dart'
 export 'src/message/message_reader_options.dart';
 export 'src/message/message_reader.dart';
 export 'src/message/message_builder.dart';
+export 'src/schema/reflection.dart';
 export 'src/stream/message_stream.dart';
+export 'src/layout/any_pointer.dart';
 
 // ---------------------------------------------------------------------------
 // For use by capnpc-dart generated code

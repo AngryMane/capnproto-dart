@@ -132,7 +132,7 @@ void checkNear(String label, double actual, double expected,
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 Future<void> main() async {
-  return runZonedGuarded(_run, (e, _) {
+  await runZonedGuarded(_run, (e, _) {
     if (e.toString().contains('Broken pipe') ||
         e.toString().contains('SocketException')) return;
     print('[zone error] $e');
@@ -155,6 +155,7 @@ Future<void> _run() async {
   await _s07_genericStructs(svc);
   await _s08_recursive(svc);
   _s09_anyPointer();
+  await _s09_anyPointerRpc(svc);
   await _s10_basicRpc(svc);
   await _s11_complexEcho(svc);
   await _s12_capabilityArgs(svc);
@@ -162,7 +163,7 @@ Future<void> _run() async {
   await _s14_capsInStructs(svc);
   await _s15_pipelining(svc);
   await _s16_genericInterface(svc);
-  _s17_genericMethods();
+  await _s17_genericMethods(svc);
   await _s18_interfaceInheritance(svc);
   await _s19_repositoryOps(svc);
   _s20_subscription();
@@ -227,6 +228,53 @@ Future<void> _s01_codeGeneration() async {
 
   // Annotation-annotated items compile (annotation values are not generated)
   check('annotation processed without error', true);
+
+  // Schema reflection metadata is emitted next to generated types.
+  checkEq('Color schema shortName', colorSchema.shortName, 'Color');
+  checkEq('Color schema enumerants', colorSchema.enumerants.length, 4);
+  checkEq(
+    'Color schema enumerant order',
+    colorSchema.enumerants[2].name,
+    'blue',
+  );
+  checkEq(
+    'AllScalars factory schema name',
+    allScalarsFactory.schema.shortName,
+    'AllScalars',
+  );
+  checkEq('AllScalars schema dataWords', AllScalarsReader.schema.dataWords, 6);
+  checkEq(
+    'AllScalars schema pointerWords',
+    AllScalarsReader.schema.pointerWords,
+    2,
+  );
+  final int32Field = AllScalarsReader.schema.fieldByName('int32Value');
+  check('schema field lookup works', int32Field != null);
+  final int32Slot = int32Field?.body as SlotFieldSchemaInfo?;
+  checkEq('schema field offset', int32Slot?.offset, 1);
+  check(
+    'schema field type',
+    int32Slot?.type is PrimitiveTypeSchemaInfo &&
+        (int32Slot!.type as PrimitiveTypeSchemaInfo).name == 'Int32',
+  );
+  checkEq(
+    'schema explicit default preserved',
+    int32Slot?.defaultValue,
+    -320000,
+  );
+  checkEq('generic schema parameters', keyValueSchema.typeParameters.length, 2);
+  checkEq(
+    'generic schema parameter name',
+    keyValueSchema.typeParameters[0],
+    'Key',
+  );
+  checkEq(
+    'interface schema method count',
+    ComplexTestServiceClient.schema.methods.length,
+    18,
+  );
+  final echoMethod = ComplexTestServiceClient.schema.methodByName('echo');
+  checkEq('interface schema method ordinal', echoMethod?.ordinal, 0);
 
   // Dart analyze passes (verified by running the file)
   check('dart analyze (compile-time)', true);
@@ -827,9 +875,184 @@ Future<void> _s08_recursive(ComplexTestServiceClient svc) async {
 
 void _s09_anyPointer() {
   section(9, 'AnyPointer');
-  skip('AnyPointer fields - codegen marks as /* unsupported type */');
-  skip('DynamicEnvelope.payload - AnyPointer unsupported');
-  skip('CapabilityFactory.getUntyped - AnyPointer unsupported');
+  final scalarMsg = MessageBuilder();
+  final scalar = scalarMsg.initRoot(allScalarsFactory);
+  scalar.int32Value = 20260716;
+  scalar.textValue = 'any-pointer-payload';
+
+  final envelopeMsg = MessageBuilder();
+  final envelope = envelopeMsg.initRoot(dynamicEnvelopeFactory);
+  envelope.typeName = 'AllScalars';
+  envelope.setPayloadMessage(scalarMsg.serialize());
+
+  final envelopeReader = MessageReader.deserialize(
+    envelopeMsg.serialize(),
+  ).getRoot(dynamicEnvelopeFactory);
+  final payload = envelopeReader.payload;
+  final typedPayload = payload?.asStruct(allScalarsFactory);
+  check('AnyPointer field exposes typed view', payload != null);
+  checkEq(
+    'AnyPointer.asStruct reads scalar payload',
+    typedPayload?.int32Value,
+    20260716,
+  );
+  checkEq(
+    'DynamicEnvelope.payload preserves text field',
+    typedPayload?.textValue,
+    'any-pointer-payload',
+  );
+  checkEq(
+    'AnyPointer.asDynamicStruct reads raw field',
+    payload?.asDynamicStruct()?.getInt32Field(4, defaultValue: -320000),
+    20260716,
+  );
+
+  final inlineMsg = MessageBuilder();
+  final inlinePayload = inlineMsg
+      .initRoot(dynamicEnvelopeFactory)
+      .initPayload()
+      .initStruct(allScalarsFactory);
+  inlinePayload.uint16Value = 4242;
+  final inlineReader = MessageReader.deserialize(
+    inlineMsg.serialize(),
+  ).getRoot(dynamicEnvelopeFactory);
+  checkEq(
+    'AnyPointerBuilder.initStruct writes typed payload',
+    inlineReader.payload?.asStruct(allScalarsFactory)?.uint16Value,
+    4242,
+  );
+
+  final capMsg = MessageBuilder();
+  capMsg.initRoot(dynamicEnvelopeFactory).initPayload().setCapability(0);
+  final cap = _PipelineTargetImpl();
+  final capReader = MessageReader.deserialize(
+    capMsg.serialize(),
+  ).getRoot(dynamicEnvelopeFactory, capabilities: [cap]);
+  check(
+    'AnyPointer preserves direct capability pointer',
+    identical(capReader.payload?.asCapability(), cap),
+  );
+
+  final listMsg = MessageBuilder();
+  final textList =
+      listMsg.initRoot(dynamicEnvelopeFactory).initPayload().initTextList(3);
+  textList[0] = 'alpha';
+  textList[1] = 'beta';
+  textList[2] = 'gamma';
+  final listReader = MessageReader.deserialize(
+    listMsg.serialize(),
+  ).getRoot(dynamicEnvelopeFactory);
+  final listPayload = listReader.payload?.asTextList();
+  checkEq('AnyPointer.asTextList length', listPayload?.length, 3);
+  checkEq('AnyPointer.asTextList value', listPayload?[1], 'beta');
+
+  final dynamicStructMsg = MessageBuilder();
+  final dynamicStruct = dynamicStructMsg
+      .initRoot(dynamicEnvelopeFactory)
+      .initPayload()
+      .initDynamicStruct(dataWords: 6, pointerWords: 2);
+  dynamicStruct.setInt32Field(4, 31337, defaultValue: -320000);
+  dynamicStruct.setTextField(0, 'dynamic api text');
+  final dynamicStructReader = MessageReader.deserialize(
+    dynamicStructMsg.serialize(),
+  ).getRoot(dynamicEnvelopeFactory).payload?.asDynamicStruct();
+  checkEq('DynamicStructReader.dataWords', dynamicStructReader?.dataWords, 6);
+  checkEq(
+    'DynamicStructReader reads int field',
+    dynamicStructReader?.getInt32Field(4, defaultValue: -320000),
+    31337,
+  );
+  checkEq(
+    'DynamicStructReader reads text field',
+    dynamicStructReader?.getTextField(0),
+    'dynamic api text',
+  );
+
+  final dynamicListMsg = MessageBuilder();
+  final dynamicInts = dynamicListMsg
+      .initRoot(dynamicEnvelopeFactory)
+      .initPayload()
+      .initDynamicList(elementSize: ListElementSize.fourBytes, count: 3);
+  dynamicInts.setInt32(0, 10);
+  dynamicInts.setInt32(1, 20);
+  dynamicInts.setInt32(2, 30);
+  final dynamicIntsReader = MessageReader.deserialize(
+    dynamicListMsg.serialize(),
+  ).getRoot(dynamicEnvelopeFactory).payload?.asDynamicList();
+  checkEq('DynamicListReader.length', dynamicIntsReader?.length, 3);
+  checkEq('DynamicListReader reads int32', dynamicIntsReader?.getInt32(1), 20);
+
+  final dynamicStructListMsg = MessageBuilder();
+  final dynamicStructs = dynamicStructListMsg
+      .initRoot(dynamicEnvelopeFactory)
+      .initPayload()
+      .initDynamicList(
+        elementSize: ListElementSize.composite,
+        count: 2,
+        structDataWords: 1,
+        structPointerWords: 1,
+      );
+  dynamicStructs.getStruct(0)
+    ..setInt32Field(0, 101)
+    ..setTextField(0, 'first');
+  dynamicStructs.getStruct(1)
+    ..setInt32Field(0, 202)
+    ..setTextField(0, 'second');
+  final dynamicStructsReader = MessageReader.deserialize(
+    dynamicStructListMsg.serialize(),
+  ).getRoot(dynamicEnvelopeFactory).payload?.asDynamicList();
+  final dynamicStructElement = dynamicStructsReader?.getStruct(1);
+  checkEq(
+    'DynamicListReader reads composite element data',
+    dynamicStructElement?.getInt32Field(0),
+    202,
+  );
+  checkEq(
+    'DynamicListReader reads composite element pointer',
+    dynamicStructElement?.getTextField(0),
+    'second',
+  );
+
+  final dynamicNestedListMsg = MessageBuilder();
+  final dynamicOuter = dynamicNestedListMsg
+      .initRoot(dynamicEnvelopeFactory)
+      .initPayload()
+      .initDynamicList(elementSize: ListElementSize.pointer, count: 1);
+  final dynamicInner = dynamicOuter.initList(
+    0,
+    elementSize: ListElementSize.twoBytes,
+    count: 2,
+  );
+  dynamicInner.setUint16(0, 111);
+  dynamicInner.setUint16(1, 222);
+  final dynamicOuterReader = MessageReader.deserialize(
+    dynamicNestedListMsg.serialize(),
+  ).getRoot(dynamicEnvelopeFactory).payload?.asDynamicList();
+  final dynamicInnerReader = dynamicOuterReader?.getList(0);
+  checkEq(
+    'DynamicListReader reads nested list',
+    dynamicInnerReader?.getUint16(1),
+    222,
+  );
+}
+
+Future<void> _s09_anyPointerRpc(ComplexTestServiceClient svc) async {
+  final factoryResult = await svc.getFactory((_) {});
+  final factory = factoryResult.factory;
+  final untyped = await factory.getUntyped((b) => b.name = 'scalars');
+  final scalars = untyped.value?.asStruct(allScalarsFactory);
+  check(
+      'CapabilityFactory.getUntyped returns AnyPointer', untyped.value != null);
+  checkEq(
+    'CapabilityFactory.getUntyped typed payload',
+    scalars?.int32Value,
+    20260717,
+  );
+  checkEq(
+    'CapabilityFactory.getUntyped text payload',
+    scalars?.textValue,
+    'untyped from Rust',
+  );
 }
 
 // ─── 10. Basic RPC ─────────────────────────────────────────────────────────────
@@ -1123,16 +1346,116 @@ Future<void> _s16_genericInterface(ComplexTestServiceClient svc) async {
 
 // ─── 17. Generic Methods ──────────────────────────────────────────────────────
 
-void _s17_genericMethods() {
+Future<void> _s17_genericMethods(ComplexTestServiceClient svc) async {
   section(17, 'Generic Methods');
-  // Generic methods use AnyPointer type erasure at runtime.
-  // CapabilityFactory.newCell<T>, newRepository<K,V> etc. cannot be invoked
-  // without knowing T, K, V at the call site (Dart codegen erases generics).
-  skip('CapabilityFactory.newCell<T> - generic type parameter erased');
-  skip('CapabilityFactory.newEmptyCell<T> - generic type parameter erased');
-  skip('CapabilityFactory.newRepository<K,V> - generic type parameter erased');
-  skip('CapabilityFactory.echoCapability<T> - generic type parameter erased');
-  skip('ComplexTestService.echoAnyPointer<T> - generic type parameter erased');
+  final factoryResult = await svc.getFactory((_) {});
+  final factory = factoryResult.factory;
+
+  Uint8List scalarMessage(int value, String text) {
+    final msg = MessageBuilder();
+    final scalar = msg.initRoot(allScalarsFactory);
+    scalar.int32Value = value;
+    scalar.textValue = text;
+    return msg.serialize();
+  }
+
+  final cellResult = await factory.newCell(
+      (b) => b.setInitialValueMessage(scalarMessage(11, 'cell initial')));
+  final cell = cellResult.cell;
+  final cellRead1 = await cell.read((_) {});
+  checkEq(
+    'CapabilityFactory.newCell<T> initial value',
+    cellRead1.value?.asStruct(allScalarsFactory)?.int32Value,
+    11,
+  );
+  await cell.write((b) => b.setValueMessage(scalarMessage(12, 'cell updated')));
+  final cellRead2 = await cell.read((_) {});
+  checkEq(
+    'CapabilityFactory.newCell<T> write/read',
+    cellRead2.value?.asStruct(allScalarsFactory)?.textValue,
+    'cell updated',
+  );
+
+  final emptyCell = (await factory.newEmptyCell((_) {})).cell;
+  await emptyCell.write(
+    (b) => b.setValueMessage(scalarMessage(21, 'empty cell populated')),
+  );
+  final emptyRead = await emptyCell.read((_) {});
+  checkEq(
+    'CapabilityFactory.newEmptyCell<T> write/read',
+    emptyRead.value?.asStruct(allScalarsFactory)?.int32Value,
+    21,
+  );
+
+  final genericRepo = (await factory.newRepository((_) {})).repository;
+  final keyBytes = scalarMessage(31, 'repo key');
+  final valueBytes = scalarMessage(32, 'repo value');
+  final putGeneric = await genericRepo.put((b) {
+    b.setKeyMessage(keyBytes);
+    b.setValueMessage(valueBytes);
+  });
+  check('CapabilityFactory.newRepository<K,V> put', putGeneric.newRevision > 0);
+  final getGeneric = await genericRepo.get((b) => b.setKeyMessage(keyBytes));
+  checkEq('generic repository get is some', getGeneric.result?.which, 1);
+  checkEq(
+    'generic repository value',
+    getGeneric.result?.some?.asStruct(allScalarsFactory)?.textValue,
+    'repo value',
+  );
+  final listGeneric = await genericRepo.list((_) {});
+  checkEq('generic repository list length', listGeneric.entries?.length, 1);
+  checkEq(
+    'generic repository list key',
+    listGeneric.entries?[0].key?.asStruct(allScalarsFactory)?.int32Value,
+    31,
+  );
+
+  final target = _PipelineTargetImpl();
+  final capMsg = MessageBuilder();
+  capMsg
+      .initRoot(capabilityFactoryEchoCapabilityParamsFactory)
+      .initCapability()
+      .setCapability(0);
+  final capResult = await factory.capability.dispatch(
+    0xccad478715fb03b0,
+    3,
+    capMsg.serialize(),
+    paramsCapabilities: [target],
+  );
+  final echoedCap = MessageReader.deserialize(capResult.bytes)
+      .getRoot(
+        capabilityFactoryEchoCapabilityResultsFactory,
+        capabilities: capResult.caps,
+      )
+      .sameCapability
+      ?.asCapability();
+  final echoedTarget = PipelineTargetClient(echoedCap as Capability);
+  final ping = await echoedTarget.ping(
+    (b) => b.payload = Uint8List.fromList([17]),
+  );
+  checkEq('CapabilityFactory.echoCapability<T> returned cap callable',
+      ping.payload?[0], 17);
+
+  final scalarMsg = MessageBuilder();
+  final scalar = scalarMsg.initRoot(allScalarsFactory);
+  scalar.int32Value = 1701;
+  scalar.textValue = 'generic echo';
+  final echoed = await svc.echoAnyPointer(
+    (b) => b.setValueMessage(scalarMsg.serialize()),
+  );
+  final echoedScalar = echoed.value?.asStruct(allScalarsFactory);
+  check('ComplexTestService.echoAnyPointer<T> returns AnyPointer',
+      echoed.value != null);
+  checkEq(
+    'ComplexTestService.echoAnyPointer<T> int32',
+    echoedScalar?.int32Value,
+    1701,
+  );
+  checkEq(
+    'ComplexTestService.echoAnyPointer<T> text',
+    echoedScalar?.textValue,
+    'generic echo',
+  );
 }
 
 // ─── 18. Interface Inheritance ────────────────────────────────────────────────
@@ -1331,8 +1654,8 @@ Future<void> _s22_errorHandling(ComplexTestServiceClient svc) async {
 
   // 22c: Calling not-implemented methods returns error
   try {
-    await svc.echoAnyPointer((b) {});
-    fail('echoAnyPointer should fail');
+    await svc.exchangeCapabilities((_) {});
+    fail('exchangeCapabilities should fail');
   } catch (e) {
     pass('not-implemented method returns error');
   }

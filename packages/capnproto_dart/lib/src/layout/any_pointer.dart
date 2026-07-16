@@ -1,0 +1,553 @@
+import 'dart:typed_data';
+
+import '../arena/arena_builder.dart';
+import '../arena/arena_reader.dart';
+import '../exception/decode_exception.dart';
+import '../message/message_copy.dart';
+import '../message/message_reader.dart';
+import '../wire/pointer.dart';
+import '../wire/wire_helpers.dart';
+import 'list_builder.dart';
+import 'list_reader.dart';
+import 'struct_builder.dart';
+import 'struct_factory.dart';
+import 'struct_reader.dart';
+
+/// Read-only view of an `AnyPointer` field.
+///
+/// The view keeps the message capability table next to the raw pointer. This
+/// lets callers reinterpret capability-bearing payloads without degrading them
+/// to plain bytes.
+final class AnyPointerReader {
+  final RawStructReader _owner;
+  final int _ptrIndex;
+  final List<Object?> _capabilities;
+
+  const AnyPointerReader(
+    this._owner,
+    this._ptrIndex, {
+    List<Object?> capabilities = const [],
+  }) : _capabilities = capabilities;
+
+  List<Object?> get capabilityTable => _capabilities;
+
+  bool get isNull {
+    if (_ptrIndex < 0 || _ptrIndex >= _owner.ptrWords) return true;
+    return WirePointer.decode(
+          _owner.segment.data,
+          _owner.ptrWordOffset + _ptrIndex,
+        )
+        is NullPointer;
+  }
+
+  Uint8List? asMessageBytes({bool preserveCapabilityPointers = false}) {
+    if (_ptrIndex < 0 || _ptrIndex >= _owner.ptrWords) return null;
+    return copyAnyPointerToNewMessage(
+      _owner,
+      _ptrIndex,
+      preserveCapabilityPointers: preserveCapabilityPointers,
+    );
+  }
+
+  R? asStruct<R extends StructReader, B extends StructBuilder>(
+    StructFactory<R, B> factory,
+  ) {
+    final bytes = asMessageBytes(preserveCapabilityPointers: true);
+    if (bytes == null) return null;
+    return MessageReader.deserialize(
+      bytes,
+    ).getRoot(factory, capabilities: _capabilities);
+  }
+
+  DynamicStructReader? asDynamicStruct() {
+    if (_ptrIndex < 0 || _ptrIndex >= _owner.ptrWords) return null;
+    final raw = _owner.arena.resolveOptionalStructAt(
+      _owner.segment,
+      _owner.ptrWordOffset + _ptrIndex,
+      _owner.nestingLimit,
+    );
+    return raw == null
+        ? null
+        : DynamicStructReader(raw, capabilities: _capabilities);
+  }
+
+  ListReader<T>? asListWith<T>(
+    ListReader<T> Function(RawListReader raw, List<Object?> capabilities)
+    fromRaw,
+  ) {
+    if (_ptrIndex < 0 || _ptrIndex >= _owner.ptrWords) return null;
+    final raw = _owner.arena.resolveListAt(
+      _owner.segment,
+      _owner.ptrWordOffset + _ptrIndex,
+      _owner.nestingLimit,
+    );
+    if (raw == null) return null;
+    return fromRaw(raw, _capabilities);
+  }
+
+  ListReader<String?>? asTextList() =>
+      asListWith((raw, _) => TextListReader(raw));
+
+  ListReader<Uint8List?>? asDataList() =>
+      asListWith((raw, _) => DataListReader(raw));
+
+  ListReader<R>? asStructList<R extends StructReader, B extends StructBuilder>(
+    StructFactory<R, B> factory,
+  ) => asListWith(
+    (raw, capabilities) => StructListReader<R>(
+      raw,
+      (r) => factory.fromRawReaderWithCapabilities(r, capabilities),
+    ),
+  );
+
+  DynamicListReader? asDynamicList() {
+    if (_ptrIndex < 0 || _ptrIndex >= _owner.ptrWords) return null;
+    final raw = _owner.arena.resolveListAt(
+      _owner.segment,
+      _owner.ptrWordOffset + _ptrIndex,
+      _owner.nestingLimit,
+    );
+    return raw == null
+        ? null
+        : DynamicListReader(raw, capabilities: _capabilities);
+  }
+
+  int get capabilityIndex {
+    if (_ptrIndex < 0 || _ptrIndex >= _owner.ptrWords) return -1;
+    final ptr = WirePointer.decode(
+      _owner.segment.data,
+      _owner.ptrWordOffset + _ptrIndex,
+    );
+    return ptr is CapabilityPointer ? ptr.capabilityIndex : -1;
+  }
+
+  Object? asCapability() {
+    final index = capabilityIndex;
+    if (index < 0) return null;
+    if (index >= _capabilities.length) {
+      throw DecodeException(
+        'capability table index $index is out of range for ${_capabilities.length} capabilities',
+      );
+    }
+    final cap = _capabilities[index];
+    if (cap == null) {
+      throw DecodeException('capability table index $index is null');
+    }
+    return cap;
+  }
+}
+
+/// Schema-less struct reader used by the dynamic API.
+final class DynamicStructReader extends StructReader {
+  DynamicStructReader(super.raw, {super.capabilities});
+
+  int get dataWords => raw.dataWords;
+
+  int get pointerWords => raw.ptrWords;
+
+  AnyPointerReader? getPointerField(int ptrIndex) =>
+      getAnyPointerField(ptrIndex);
+
+  DynamicStructReader? getStructField(int ptrIndex) =>
+      getPointerField(ptrIndex)?.asDynamicStruct();
+
+  DynamicListReader? getListField(int ptrIndex) =>
+      getPointerField(ptrIndex)?.asDynamicList();
+
+  Object? getCapabilityObject(int ptrIndex) =>
+      getCapabilityObjectField(ptrIndex);
+}
+
+/// Schema-less list reader metadata used by the dynamic API.
+final class DynamicListReader {
+  final RawListReader raw;
+  final List<Object?> capabilities;
+
+  const DynamicListReader(this.raw, {this.capabilities = const []});
+
+  int get length => raw.elementCount;
+
+  ListElementSize get elementSize => raw.elementSize;
+
+  int get structDataWords => raw.structDataWords;
+
+  int get structPointerWords => raw.structPtrWords;
+
+  bool getBool(int index) => BoolListReader(raw)[index];
+
+  int getInt8(int index) => PrimitiveIntListReader(raw, readInt8, 1)[index];
+
+  int getUint8(int index) => PrimitiveIntListReader(raw, readUint8, 1)[index];
+
+  int getInt16(int index) => PrimitiveIntListReader(raw, readInt16, 2)[index];
+
+  int getUint16(int index) => PrimitiveIntListReader(raw, readUint16, 2)[index];
+
+  int getInt32(int index) => PrimitiveIntListReader(raw, readInt32, 4)[index];
+
+  int getUint32(int index) => PrimitiveIntListReader(raw, readUint32, 4)[index];
+
+  int getInt64(int index) => PrimitiveIntListReader(raw, readInt64, 8)[index];
+
+  int getUint64(int index) => PrimitiveIntListReader(raw, readUint64, 8)[index];
+
+  double getFloat32(int index) =>
+      PrimitiveDoubleListReader(raw, readFloat32, 4)[index];
+
+  double getFloat64(int index) =>
+      PrimitiveDoubleListReader(raw, readFloat64, 8)[index];
+
+  String? getText(int index) => TextListReader(raw)[index];
+
+  Uint8List? getData(int index) => DataListReader(raw)[index];
+
+  int getCapabilityIndex(int index) => CapabilityListReader(raw)[index];
+
+  Object? getCapabilityObject(int index) {
+    final capIndex = getCapabilityIndex(index);
+    if (capIndex < 0) return null;
+    if (capIndex >= capabilities.length) {
+      throw DecodeException(
+        'capability table index $capIndex is out of range for ${capabilities.length} capabilities',
+      );
+    }
+    final cap = capabilities[capIndex];
+    if (cap == null) {
+      throw DecodeException('capability table index $capIndex is null');
+    }
+    return cap;
+  }
+
+  DynamicStructReader getStruct(int index) {
+    RangeError.checkValidIndex(index, this);
+    if (raw.elementSize != ListElementSize.composite) {
+      throw DecodeException('expected composite list, got ${raw.elementSize}');
+    }
+    final stride = (raw.structDataWords + raw.structPtrWords) * bytesPerWord;
+    final elementWordOffset =
+        (raw.dataByteOffset + index * stride) ~/ bytesPerWord;
+    return DynamicStructReader(
+      RawStructReader(
+        segment: raw.segment,
+        arena: raw.arena,
+        dataWordOffset: elementWordOffset,
+        dataWords: raw.structDataWords,
+        ptrWordOffset: elementWordOffset + raw.structDataWords,
+        ptrWords: raw.structPtrWords,
+        nestingLimit: raw.nestingLimit,
+      ),
+      capabilities: capabilities,
+    );
+  }
+
+  DynamicListReader? getList(int index) {
+    RangeError.checkValidIndex(index, this);
+    if (raw.elementSize != ListElementSize.pointer) {
+      throw DecodeException('expected pointer list, got ${raw.elementSize}');
+    }
+    final ptrWordOffset = raw.dataByteOffset ~/ bytesPerWord + index;
+    final inner = raw.arena.resolveListAt(
+      raw.segment,
+      ptrWordOffset,
+      raw.nestingLimit,
+    );
+    return inner == null
+        ? null
+        : DynamicListReader(inner, capabilities: capabilities);
+  }
+}
+
+/// Schema-less struct builder used by the dynamic API.
+final class DynamicStructBuilder extends StructBuilder {
+  DynamicStructBuilder(super.raw);
+
+  int get dataWords => raw.dataWords;
+
+  int get pointerWords => raw.ptrWords;
+
+  @override
+  DynamicStructReader asReader() => DynamicStructReader(rawToReader());
+
+  AnyPointerBuilder initPointerField(int ptrIndex) =>
+      initAnyPointerField(ptrIndex);
+
+  DynamicStructBuilder initDynamicStructField(
+    int ptrIndex, {
+    required int dataWords,
+    required int pointerWords,
+  }) => initStructFieldWith(
+    ptrIndex,
+    DynamicStructBuilder.new,
+    dataWords,
+    pointerWords,
+  );
+
+  DynamicListBuilder initDynamicListField(
+    int ptrIndex, {
+    required ListElementSize elementSize,
+    required int count,
+    int structDataWords = 0,
+    int structPointerWords = 0,
+  }) {
+    final rawList = raw.arena.allocateList(
+      ptrSeg: raw.segment,
+      ptrWordOffset: raw.ptrWordOffset + ptrIndex,
+      elementSize: elementSize,
+      elementCount: count,
+      structDataWords: structDataWords,
+      structPtrWords: structPointerWords,
+    );
+    return DynamicListBuilder(rawList);
+  }
+}
+
+/// Schema-less list builder used by the dynamic API.
+final class DynamicListBuilder {
+  final RawListBuilder raw;
+
+  const DynamicListBuilder(this.raw);
+
+  int get length => raw.elementCount;
+
+  ListElementSize get elementSize => raw.elementSize;
+
+  int get structDataWords => raw.structDataWords;
+
+  int get structPointerWords => raw.structPtrWords;
+
+  bool getBool(int index) => BoolListBuilder(raw)[index];
+
+  void setBool(int index, bool value) => BoolListBuilder(raw)[index] = value;
+
+  int getInt8(int index) =>
+      PrimitiveIntListBuilder(raw, readInt8, writeInt8, 1)[index];
+
+  void setInt8(int index, int value) =>
+      PrimitiveIntListBuilder(raw, readInt8, writeInt8, 1)[index] = value;
+
+  int getUint8(int index) =>
+      PrimitiveIntListBuilder(raw, readUint8, writeUint8, 1)[index];
+
+  void setUint8(int index, int value) =>
+      PrimitiveIntListBuilder(raw, readUint8, writeUint8, 1)[index] = value;
+
+  int getInt16(int index) =>
+      PrimitiveIntListBuilder(raw, readInt16, writeInt16, 2)[index];
+
+  void setInt16(int index, int value) =>
+      PrimitiveIntListBuilder(raw, readInt16, writeInt16, 2)[index] = value;
+
+  int getUint16(int index) =>
+      PrimitiveIntListBuilder(raw, readUint16, writeUint16, 2)[index];
+
+  void setUint16(int index, int value) =>
+      PrimitiveIntListBuilder(raw, readUint16, writeUint16, 2)[index] = value;
+
+  int getInt32(int index) =>
+      PrimitiveIntListBuilder(raw, readInt32, writeInt32, 4)[index];
+
+  void setInt32(int index, int value) =>
+      PrimitiveIntListBuilder(raw, readInt32, writeInt32, 4)[index] = value;
+
+  int getUint32(int index) =>
+      PrimitiveIntListBuilder(raw, readUint32, writeUint32, 4)[index];
+
+  void setUint32(int index, int value) =>
+      PrimitiveIntListBuilder(raw, readUint32, writeUint32, 4)[index] = value;
+
+  int getInt64(int index) =>
+      PrimitiveIntListBuilder(raw, readInt64, writeInt64, 8)[index];
+
+  void setInt64(int index, int value) =>
+      PrimitiveIntListBuilder(raw, readInt64, writeInt64, 8)[index] = value;
+
+  int getUint64(int index) =>
+      PrimitiveIntListBuilder(raw, readUint64, writeUint64, 8)[index];
+
+  void setUint64(int index, int value) =>
+      PrimitiveIntListBuilder(raw, readUint64, writeUint64, 8)[index] = value;
+
+  double getFloat32(int index) =>
+      PrimitiveDoubleListBuilder(raw, readFloat32, writeFloat32, 4)[index];
+
+  void setFloat32(int index, double value) =>
+      PrimitiveDoubleListBuilder(raw, readFloat32, writeFloat32, 4)[index] =
+          value;
+
+  double getFloat64(int index) =>
+      PrimitiveDoubleListBuilder(raw, readFloat64, writeFloat64, 8)[index];
+
+  void setFloat64(int index, double value) =>
+      PrimitiveDoubleListBuilder(raw, readFloat64, writeFloat64, 8)[index] =
+          value;
+
+  void setText(int index, String? value) => TextListBuilder(raw)[index] = value;
+
+  void setData(int index, Uint8List? value) =>
+      DataListBuilder(raw)[index] = value;
+
+  int getCapabilityIndex(int index) => CapabilityListBuilder(raw)[index];
+
+  void setCapabilityIndex(int index, int capTableIndex) =>
+      CapabilityListBuilder(raw)[index] = capTableIndex;
+
+  DynamicStructBuilder getStruct(int index) {
+    RangeError.checkValidIndex(index, this, 'index', raw.elementCount);
+    if (raw.elementSize != ListElementSize.composite) {
+      throw DecodeException('expected composite list, got ${raw.elementSize}');
+    }
+    final stride = (raw.structDataWords + raw.structPtrWords) * bytesPerWord;
+    final elementWordOffset =
+        (raw.dataByteOffset + index * stride) ~/ bytesPerWord;
+    return DynamicStructBuilder(
+      RawStructBuilder(
+        segment: raw.segment,
+        arena: raw.arena,
+        dataWordOffset: elementWordOffset,
+        dataWords: raw.structDataWords,
+        ptrWordOffset: elementWordOffset + raw.structDataWords,
+        ptrWords: raw.structPtrWords,
+      ),
+    );
+  }
+
+  DynamicListBuilder initList(
+    int index, {
+    required ListElementSize elementSize,
+    required int count,
+    int structDataWords = 0,
+    int structPointerWords = 0,
+  }) {
+    RangeError.checkValidIndex(index, this, 'index', raw.elementCount);
+    if (raw.elementSize != ListElementSize.pointer) {
+      throw DecodeException('expected pointer list, got ${raw.elementSize}');
+    }
+    final ptrWordOffset = raw.dataByteOffset ~/ bytesPerWord + index;
+    final inner = raw.arena.allocateList(
+      ptrSeg: raw.segment,
+      ptrWordOffset: ptrWordOffset,
+      elementSize: elementSize,
+      elementCount: count,
+      structDataWords: structDataWords,
+      structPtrWords: structPointerWords,
+    );
+    return DynamicListBuilder(inner);
+  }
+}
+
+/// Writable view of an `AnyPointer` field.
+final class AnyPointerBuilder {
+  final RawStructBuilder _owner;
+  final int _ptrIndex;
+
+  const AnyPointerBuilder(this._owner, this._ptrIndex);
+
+  RawListBuilder _allocateList(
+    ListElementSize elementSize,
+    int count, {
+    int structDataWords = 0,
+    int structPtrWords = 0,
+  }) => _owner.arena.allocateList(
+    ptrSeg: _owner.segment,
+    ptrWordOffset: _owner.ptrWordOffset + _ptrIndex,
+    elementSize: elementSize,
+    elementCount: count,
+    structDataWords: structDataWords,
+    structPtrWords: structPtrWords,
+  );
+
+  void setMessageBytes(
+    Uint8List? messageBytes, {
+    bool preserveCapabilityPointers = false,
+  }) {
+    if (messageBytes == null) return;
+    _owner.arena.writeAnyPointerFromMessage(
+      _owner.segment,
+      _owner.ptrWordOffset + _ptrIndex,
+      ensureSingleSegment(
+        messageBytes,
+        preserveCapabilityPointers: preserveCapabilityPointers,
+      ),
+    );
+  }
+
+  void setFromReader(
+    AnyPointerReader? reader, {
+    bool preserveCapabilityPointers = true,
+  }) {
+    if (reader == null) return;
+    setMessageBytes(
+      reader.asMessageBytes(
+        preserveCapabilityPointers: preserveCapabilityPointers,
+      ),
+      preserveCapabilityPointers: preserveCapabilityPointers,
+    );
+  }
+
+  void setCapability(int capTableIndex) {
+    CapabilityPointer(
+      capabilityIndex: capTableIndex,
+    ).encode(_owner.segment.data, _owner.ptrWordOffset + _ptrIndex);
+  }
+
+  ListBuilder<String?> initTextList(int count) =>
+      TextListBuilder(_allocateList(ListElementSize.pointer, count));
+
+  ListBuilder<Uint8List?> initDataList(int count) =>
+      DataListBuilder(_allocateList(ListElementSize.pointer, count));
+
+  ListBuilder<B> initStructList<
+    R extends StructReader,
+    B extends StructBuilder
+  >(StructFactory<R, B> factory, int count) => StructListBuilder<B>(
+    _allocateList(
+      ListElementSize.composite,
+      count,
+      structDataWords: factory.dataWords,
+      structPtrWords: factory.ptrWords,
+    ),
+    factory.fromRawBuilder,
+  );
+
+  B initStruct<R extends StructReader, B extends StructBuilder>(
+    StructFactory<R, B> factory,
+  ) {
+    final raw = _owner.arena.allocateStruct(
+      ptrSeg: _owner.segment,
+      ptrWordOffset: _owner.ptrWordOffset + _ptrIndex,
+      dataWords: factory.dataWords,
+      ptrWords: factory.ptrWords,
+    );
+    return factory.fromRawBuilder(raw);
+  }
+
+  DynamicStructBuilder initDynamicStruct({
+    required int dataWords,
+    required int pointerWords,
+  }) {
+    final raw = _owner.arena.allocateStruct(
+      ptrSeg: _owner.segment,
+      ptrWordOffset: _owner.ptrWordOffset + _ptrIndex,
+      dataWords: dataWords,
+      ptrWords: pointerWords,
+    );
+    return DynamicStructBuilder(raw);
+  }
+
+  DynamicListBuilder initDynamicList({
+    required ListElementSize elementSize,
+    required int count,
+    int structDataWords = 0,
+    int structPointerWords = 0,
+  }) {
+    final raw = _owner.arena.allocateList(
+      ptrSeg: _owner.segment,
+      ptrWordOffset: _owner.ptrWordOffset + _ptrIndex,
+      elementSize: elementSize,
+      elementCount: count,
+      structDataWords: structDataWords,
+      structPtrWords: structPointerWords,
+    );
+    return DynamicListBuilder(raw);
+  }
+}

@@ -5,6 +5,7 @@ import '../arena/arena_reader.dart' show ArenaReader, RawStructReader;
 import '../message/message_copy.dart' show ensureSingleSegment;
 import '../wire/pointer.dart' show ListElementSize, CapabilityPointer;
 import '../wire/wire_helpers.dart';
+import 'any_pointer.dart';
 import 'list_builder.dart';
 import 'struct_reader.dart';
 
@@ -196,6 +197,18 @@ abstract class StructBuilder {
       ),
     );
   }
+
+  AnyPointerBuilder initAnyPointerField(int ptrIndex) =>
+      AnyPointerBuilder(_raw, ptrIndex);
+
+  void setAnyPointerField(
+    int ptrIndex,
+    AnyPointerReader? reader, {
+    bool preserveCapabilityPointers = true,
+  }) => initAnyPointerField(ptrIndex).setFromReader(
+    reader,
+    preserveCapabilityPointers: preserveCapabilityPointers,
+  );
 
   /// Writes a capability pointer at [ptrIndex] referencing [capTableIndex]
   /// within the message's capability table.
