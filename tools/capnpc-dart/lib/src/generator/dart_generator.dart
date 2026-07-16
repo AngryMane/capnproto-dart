@@ -575,6 +575,9 @@ void _writeReaderField(
   final type = sf.type;
   final offset = sf.offset;
 
+  // Void fields carry no data; reading them is meaningless, so skip.
+  if (type is VoidType) return;
+
   // Capability pointer fields expose the cap-table index so callers can
   // look up the capability from DispatchResult.caps.
   if (type is InterfaceRefType) {
@@ -619,6 +622,19 @@ void _writeBuilderField(
   final sf = field.body as SlotField;
   final type = sf.type;
   final offset = sf.offset;
+
+  // Void field: no setter is meaningful.
+  // For a union member emit a selection method so callers can set the
+  // discriminant; for non-union Void fields emit nothing at all.
+  if (type is VoidType) {
+    if (hasDisc) {
+      sb.writeln();
+      sb.writeln('  void select${_ucfirst(fname)}() {');
+      sb.writeln('    setUint16Field($discByteOffset, $discVal);');
+      sb.writeln('  }');
+    }
+    return;
+  }
 
   sb.writeln();
 

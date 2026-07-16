@@ -195,6 +195,63 @@ void main() {
     });
   });
 
+  group('generateDartFile — Void field accessors (GEN-009)', () {
+    test('non-union Void field produces no reader getter', () {
+      final s = structNode(20, 'S', 1, 0, [
+        dataField('nothing', 0, 0, const VoidType()),
+        dataField('x', 1, 4, const UInt32Type()),
+      ]);
+      final file = fileNode(1, [SchemaNestedNode(name: 'S', id: 20)]);
+      final src = generateDartFile(file, [file, s]);
+      expect(src, isNot(contains('void get nothing')));
+      expect(src, isNot(contains('set nothing')));
+    });
+
+    test('non-union Void field produces no builder setter', () {
+      final s = structNode(20, 'S', 1, 0, [
+        dataField('nothing', 0, 0, const VoidType()),
+        dataField('x', 1, 4, const UInt32Type()),
+      ]);
+      final file = fileNode(1, [SchemaNestedNode(name: 'S', id: 20)]);
+      final src = generateDartFile(file, [file, s]);
+      expect(src, isNot(contains('set nothing')));
+      expect(src, isNot(contains('selectNothing')));
+    });
+
+    test('union Void member produces selectXxx() in builder', () {
+      final s = structNode(
+        20,
+        'Tag',
+        1, // 1 data word for the discriminant
+        0,
+        [
+          unionField('none', 0, 0, 0, const VoidType()),
+          unionField('value', 1, 1, 4, const UInt32Type()),
+        ],
+        discCount: 2,
+        discOffset: 4, // discriminant at byte 8 (word 1)
+      );
+      final file = fileNode(1, [SchemaNestedNode(name: 'Tag', id: 20)]);
+      final src = generateDartFile(file, [file, s]);
+      // Reader: no getter for Void union member
+      expect(src, isNot(contains('void get none')));
+      // Builder: selection method
+      expect(src, contains('void selectNone()'));
+      expect(src, contains('setUint16Field(8, 0)'));
+    });
+
+    test('union Void member produces no reader getter', () {
+      final s = structNode(
+        20, 'Tag', 1, 0,
+        [unionField('absent', 0, 3, 0, const VoidType())],
+        discCount: 1, discOffset: 0,
+      );
+      final file = fileNode(1, [SchemaNestedNode(name: 'Tag', id: 20)]);
+      final src = generateDartFile(file, [file, s]);
+      expect(src, isNot(contains('void get absent')));
+    });
+  });
+
   group('generateDartFile — integer byte offsets', () {
     test('UInt16 field uses offset*2', () {
       final sNode = structNode(20, 'S', 1, 0, [

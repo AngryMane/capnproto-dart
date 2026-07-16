@@ -95,7 +95,6 @@ final tinyFactory = _TinyFactory();
 final class AllScalarsReader extends StructReader {
   AllScalarsReader(super.raw);
 
-  void get nothing => {};
 
   bool get boolean => getBoolField(0, defaultValue: true);
 
@@ -131,10 +130,6 @@ final class AllScalarsBuilder extends StructBuilder {
 
   @override
   AllScalarsReader asReader() => AllScalarsReader(rawToReader());
-
-  set nothing(dynamic v) {
-    /* unsupported data type */;
-  }
 
   set boolean(bool v) {
     setBoolField(0, v, defaultValue: true);
@@ -251,7 +246,6 @@ final class IdentifierReader extends StructReader {
 
   Uint8List? get binary => getDataField(0);
 
-  void get absent => {};
 }
 
 final class IdentifierBuilder extends StructBuilder {
@@ -277,9 +271,8 @@ final class IdentifierBuilder extends StructBuilder {
     setDataField(0, v);
   }
 
-  set absent(dynamic v) {
+  void selectAbsent() {
     setUint16Field(8, 3);
-    /* unsupported data type */;
   }
 }
 
@@ -452,7 +445,6 @@ final class EmploymentReader extends StructReader {
 
   TimestampReader? get since => getStructFieldWith(2, (r) => TimestampReader(r));
 
-  void get active => {};
 
   TimestampReader? get endedAt => getStructFieldWith(3, (r) => TimestampReader(r));
 }
@@ -480,9 +472,8 @@ final class EmploymentBuilder extends StructBuilder {
 
   bool hasSince() => hasPointerField(2);
 
-  set active(dynamic v) {
+  void selectActive() {
     setUint16Field(0, 0);
-    /* unsupported data type */;
   }
 
   TimestampBuilder initEndedAt() {
@@ -584,7 +575,6 @@ final class OptionalReader extends StructReader {
 
   int get which => getUint16Field(0);
 
-  void get none => {};
 
   Uint8List? get some => getAnyPointerAsMessageBytes(0);
 }
@@ -597,9 +587,8 @@ final class OptionalBuilder extends StructBuilder {
 
   void _setWhich(int v) => setUint16Field(0, v);
 
-  set none(dynamic v) {
+  void selectNone() {
     setUint16Field(0, 0);
-    /* unsupported data type */;
   }
 
   set some(Uint8List? v) {
@@ -1399,7 +1388,6 @@ final class CursorResultReader extends StructReader {
 
   int get which => getUint16Field(0);
 
-  void get done => {};
 
   Uint8List? get value => getAnyPointerAsMessageBytes(0);
 }
@@ -1412,9 +1400,8 @@ final class CursorResultBuilder extends StructBuilder {
 
   void _setWhich(int v) => setUint16Field(0, v);
 
-  set done(dynamic v) {
+  void selectDone() {
     setUint16Field(0, 0);
-    /* unsupported data type */;
   }
 
   set value(Uint8List? v) {
@@ -4000,7 +3987,6 @@ final class contactReader extends StructReader {
 
   int get which => getUint16Field(4);
 
-  void get noContact => {};
 
   phoneReader get phone => phoneReader(raw);
 
@@ -4017,9 +4003,8 @@ final class contactBuilder extends StructBuilder {
 
   void _setWhich(int v) => setUint16Field(4, v);
 
-  set noContact(dynamic v) {
+  void selectNoContact() {
     setUint16Field(4, 0);
-    /* unsupported data type */;
   }
 
   phoneBuilder get phone {
@@ -4169,7 +4154,6 @@ final class payloadReader extends StructReader {
 
   int get which => getUint16Field(4);
 
-  void get empty => {};
 
   int get scalar => getInt64Field(8);
 
@@ -4192,9 +4176,8 @@ final class payloadBuilder extends StructBuilder {
 
   void _setWhich(int v) => setUint16Field(4, v);
 
-  set empty(dynamic v) {
+  void selectEmpty() {
     setUint16Field(4, 0);
-    /* unsupported data type */;
   }
 
   set scalar(int v) {
@@ -5857,7 +5840,6 @@ final class OptionalObserverPersonReader extends StructReader {
 
   int get which => getUint16Field(0);
 
-  void get none => {};
 
   int get someCapIndex => getCapabilityField(0);
 }
@@ -5885,7 +5867,6 @@ final class OptionalErrorInfoReader extends StructReader {
 
   int get which => getUint16Field(0);
 
-  void get none => {};
 
   ErrorInfoReader? get some => getStructFieldWith(0, (r) => ErrorInfoReader(r));
 }
