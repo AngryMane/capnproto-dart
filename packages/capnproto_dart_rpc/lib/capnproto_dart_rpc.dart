@@ -10,7 +10,13 @@ export 'package:capnproto_dart/capnproto_dart.dart';
 // ---------------------------------------------------------------------------
 
 export 'src/capability/capability.dart'
-    show Capability, DispatchResult, NullCapability, PipelinedCapability;
+    show
+        CapCall,
+        Capability,
+        DeferredCapability,
+        DispatchResult,
+        NullCapability,
+        PipelinedCapability;
 export 'src/capability/capability_factory.dart';
 export 'src/rpc/rpc_exception.dart';
 export 'src/rpc/rpc_server.dart';

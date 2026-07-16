@@ -15,6 +15,7 @@ import 'package:test/test.dart';
 
 const int _echoInterfaceId = 0x0001;
 const int _echoMethodId = 0;
+const int _pipelineMethodId = 1; // returns a capability in caps[0]
 
 // Simple factory to build param message { message :Text } (ptr 0)
 Uint8List _buildEchoParams(String message) {
@@ -129,6 +130,35 @@ class EchoClientFactory extends CapabilityFactory<EchoClient> {
 }
 
 // ---------------------------------------------------------------------------
+// PipelineServer — method 1 returns itself as caps[0] for pipelining tests
+// ---------------------------------------------------------------------------
+
+class PipelineServer extends Capability {
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) async {
+    if (methodId == _echoMethodId) {
+      final mr = MessageReader.deserialize(params);
+      final message =
+          mr.getRoot(_TextParamFactory()).getTextField(0) ?? '';
+      return DispatchResult(bytes: _buildEchoParams('echo: $message'));
+    }
+    if (methodId == _pipelineMethodId) {
+      // Return this server as caps[0] so the client can pipeline onto it.
+      return DispatchResult(bytes: _buildEchoParams(''), caps: [this]);
+    }
+    throw RpcException('unknown method: $methodId');
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
+// ---------------------------------------------------------------------------
 // CapReceivingServer — captures paramsCapabilities for inspection
 // ---------------------------------------------------------------------------
 
@@ -155,6 +185,125 @@ class CapReceivingServer extends Capability {
 // ---------------------------------------------------------------------------
 
 void main() {
+  group('rpc_proto — RPC-001 promisedAnswer encoding', () {
+    test('buildCallMessage with promisedAnswer target encodes disc=1', () {
+      final mb = MessageBuilder();
+      mb.initRoot(_TextParamFactory()).setTextField(0, 'x');
+      final params = mb.serialize();
+
+      final bytes = buildCallMessage(
+        questionId: 5,
+        targetPromisedAnswerQid: 3,
+        targetPtrIndex: 0,
+        interfaceId: 0xABCD,
+        methodId: 1,
+        paramsBytes: params,
+      );
+      final msg = parseRpcMessage(bytes);
+      expect(msg.type, RpcMessageType.call);
+      expect(msg.questionId, 5);
+      expect(msg.targetIsPromisedAnswer, isTrue);
+      expect(msg.targetPromisedAnswerQid, 3);
+      expect(msg.targetPtrIndex, 0);
+    });
+
+    test('importedCap target still parses correctly', () {
+      final mb = MessageBuilder();
+      mb.initRoot(_TextParamFactory());
+      final params = mb.serialize();
+
+      final bytes = buildCallMessage(
+        questionId: 7,
+        targetImportId: 42,
+        interfaceId: 0x1234,
+        methodId: 0,
+        paramsBytes: params,
+      );
+      final msg = parseRpcMessage(bytes);
+      expect(msg.targetIsPromisedAnswer, isFalse);
+      expect(msg.targetImportId, 42);
+    });
+  });
+
+  group('TwoPartyRpcConnection — RPC-001 wire-level promise pipelining', () {
+    test('two pipelined calls are sent before first Return arrives', () async {
+      // Intercept all bytes from client to server.
+      final clientToServer = StreamController<Uint8List>();
+      final serverToClient = StreamController<Uint8List>();
+      final captured = <Uint8List>[];
+
+      final interceptSink = StreamController<Uint8List>()
+        ..stream.listen((b) {
+          captured.add(b);
+          clientToServer.add(b);
+        });
+
+      final server = PipelineServer();
+      TwoPartyRpcConnection.server(
+        incoming: clientToServer.stream,
+        outgoing: serverToClient.sink,
+        bootstrap: server,
+      );
+      final client = TwoPartyRpcConnection.client(
+        incoming: serverToClient.stream,
+        outgoing: interceptSink.sink,
+      );
+
+      final bootstrapCap = client.bootstrap(EchoClientFactory());
+      await bootstrapCap.echo('warmup'); // complete bootstrap
+
+      // Call getPipeline (returns a cap) and immediately call echo on the
+      // pipelined result — both should be sent without waiting for getPipeline
+      // to complete.
+      captured.clear();
+      final call = bootstrapCap.cap.beginDispatch(
+        _echoInterfaceId, _pipelineMethodId, _buildEchoParams(''),
+      );
+      final pipelinedCap = call.pipelineResult(0);
+
+      // Dispatch a second call on the pipelined cap before the first returns.
+      final secondCall = pipelinedCap.dispatch(
+        _echoInterfaceId, _echoMethodId, _buildEchoParams('hi'),
+      );
+
+      // Await both to complete the exchange.
+      await call.result;
+      await secondCall;
+
+      // Verify both Call messages were sent as a batch (before any Return).
+      final calls = captured
+          .map(parseRpcMessage)
+          .where((m) => m.type == RpcMessageType.call)
+          .toList();
+      expect(calls.length, greaterThanOrEqualTo(2));
+
+      // The second call must target promisedAnswer, not importedCap.
+      final pipelinedCall = calls.firstWhere(
+        (m) => m.targetIsPromisedAnswer,
+        orElse: () => throw TestFailure(
+            'no promisedAnswer-targeted call found in captured messages'),
+      );
+      expect(pipelinedCall.targetPromisedAnswerQid, calls.first.questionId);
+      expect(pipelinedCall.targetPtrIndex, 0);
+
+      await client.close();
+    });
+
+    test('Capability.beginDispatch on non-RPC cap falls back to DeferredCapability', () async {
+      final server = EchoServer();
+      final call = server.beginDispatch(
+        _echoInterfaceId, _echoMethodId, _buildEchoParams('test'),
+      );
+      // pipelineResult on a non-RPC cap returns a DeferredCapability.
+      final piped = call.pipelineResult(0);
+      expect(piped, isA<DeferredCapability>());
+      // The result future still completes correctly.
+      final result = await call.result;
+      final text = _parseEchoResult(result.bytes);
+      expect(text, 'echo: test');
+    });
+  });
+
   group('rpc_proto — message encoding/decoding', () {
     test('bootstrap round-trip', () {
       final bytes = buildBootstrapMessage(42);

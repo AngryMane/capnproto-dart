@@ -55,10 +55,24 @@ const int _callIfaceId = 8;
 //   Slot assignment: UInt32 fields come before UInt16 (discriminant) in layout.
 //   bytes 0-3: importedCap (UInt32, union data slot, @0)
 //   bytes 4-5: discriminant (UInt16, discriminantOffset=2 → byte 4)
-//   ptr 0: promisedAnswer (ignored)
+//              0=importedCap, 1=promisedAnswer
+//   ptr 0: promisedAnswer (PromisedAnswer, when disc=1)
 // Verified against Rust rpc_capnp.rs: get_data_field::<u32>(0) and get_data_field::<u16>(2).
 const int _targetImportCap = 0;
 const int _targetDisc = 4;
+const int _targetPromisedAnswer = 1;
+
+// PromisedAnswer (dw=1, pw=1)
+//   bytes 0-3: questionId (UInt32, @0)
+//   ptr 0: transform (List(Op), @1)
+const int _paQid = 0;
+
+// PromisedAnswer.Op (dw=1, pw=0)
+//   bytes 0-1: discriminant (UInt16, discriminantOffset=0 → byte 0)
+//              0=noop, 1=getPointerField
+//   bytes 2-3: getPointerField value (UInt16, @1 → second UInt16 slot)
+const int _opDisc = 0;
+const int _opGetPtrField = 2;
 
 // Payload (dw=0, pw=2)
 //   ptr 0: content (AnyPointer → Data bytes in our convention)
@@ -183,6 +197,8 @@ class _MessageTargetReader extends StructReader {
   _MessageTargetReader(super.raw);
   int get disc => getUint16Field(_targetDisc);
   int get importedCap => getUint32Field(_targetImportCap);
+  _PromisedAnswerReader? get promisedAnswer =>
+      getStructFieldWith(0, _PromisedAnswerReader.new);
 }
 
 class _MessageTargetBuilder extends StructBuilder {
@@ -191,6 +207,43 @@ class _MessageTargetBuilder extends StructBuilder {
   void setImportedCap(int v) {
     setUint32Field(_targetImportCap, v);
     setUint16Field(_targetDisc, 0);
+  }
+  void setPromisedAnswer(int questionId, int ptrIndex) {
+    setUint16Field(_targetDisc, _targetPromisedAnswer);
+    final pa = initStructFieldWith(0, _PromisedAnswerBuilder.new, 1, 1);
+    pa.setQuestionId(questionId);
+    final transform = pa.initTransform(1);
+    transform[0].setGetPointerField(ptrIndex);
+  }
+}
+
+class _PromisedAnswerReader extends StructReader {
+  _PromisedAnswerReader(super.raw);
+  int get questionId => getUint32Field(_paQid);
+  ListReader<_OpReader>? get transform =>
+      getStructListFieldWith(0, _OpReader.new);
+}
+
+class _PromisedAnswerBuilder extends StructBuilder {
+  _PromisedAnswerBuilder(super.raw);
+  @override StructReader asReader() => throw UnsupportedError('internal');
+  void setQuestionId(int v) => setUint32Field(_paQid, v);
+  ListBuilder<_OpBuilder> initTransform(int count) =>
+      initStructListFieldWith(0, count, _OpBuilder.new, 1, 0);
+}
+
+class _OpReader extends StructReader {
+  _OpReader(super.raw);
+  int get disc => getUint16Field(_opDisc);
+  int get ptrIndex => getUint16Field(_opGetPtrField);
+}
+
+class _OpBuilder extends StructBuilder {
+  _OpBuilder(super.raw);
+  @override StructReader asReader() => throw UnsupportedError('internal');
+  void setGetPointerField(int ptrIndex) {
+    setUint16Field(_opDisc, 1);
+    setUint16Field(_opGetPtrField, ptrIndex);
   }
 }
 
@@ -331,7 +384,11 @@ final class RpcMessage {
   // call
   final int interfaceId;
   final int methodId;
+  // target: importedCap (targetIsPromisedAnswer=false) or promisedAnswer (true)
   final int targetImportId;
+  final bool targetIsPromisedAnswer;
+  final int targetPromisedAnswerQid;
+  final int targetPtrIndex;
   final Uint8List? paramsBytes;
   // (disc, id) pairs from the Call's capTable, in order.
   // disc: 1=senderHosted, 3=receiverHosted
@@ -359,6 +416,9 @@ final class RpcMessage {
     this.interfaceId = 0,
     this.methodId = 0,
     this.targetImportId = 0,
+    this.targetIsPromisedAnswer = false,
+    this.targetPromisedAnswerQid = 0,
+    this.targetPtrIndex = 0,
     this.paramsBytes,
     this.paramsCapTable = const [],
     this.answerId = 0,
@@ -388,12 +448,19 @@ Uint8List buildBootstrapMessage(int questionId) {
 
 /// Serializes a Call message. [paramsBytes] is a standalone serialized struct.
 ///
+/// **Target**: either importedCap or promisedAnswer (wire-level pipelining).
+/// - To target an already-imported cap: set [targetImportId] (default).
+/// - To target a pending question result: set [targetPromisedAnswerQid] and
+///   [targetPtrIndex] (the pointer-field index inside the result struct).
+///
 /// [capTableEntries] is an ordered list of `(disc, id)` pairs for the capTable:
 ///   - disc=1 (senderHosted): we export [id] to the peer
 ///   - disc=3 (receiverHosted): [id] is the peer's own export; no new export needed
 Uint8List buildCallMessage({
   required int questionId,
-  required int targetImportId,
+  int targetImportId = 0,
+  int? targetPromisedAnswerQid,
+  int targetPtrIndex = 0,
   required int interfaceId,
   required int methodId,
   required Uint8List paramsBytes,
@@ -407,7 +474,11 @@ Uint8List buildCallMessage({
   call.setInterfaceId(interfaceId);
   call.setMethodId(methodId);
   call.setSendResultsToCaller();
-  call.initTarget().setImportedCap(targetImportId);
+  if (targetPromisedAnswerQid != null) {
+    call.initTarget().setPromisedAnswer(targetPromisedAnswerQid, targetPtrIndex);
+  } else {
+    call.initTarget().setImportedCap(targetImportId);
+  }
   final params = call.initParams();
   params.setContentBytes(paramsBytes);
   if (capTableEntries.isNotEmpty) {
@@ -574,12 +645,26 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
           capTablePairs.add((entry.disc, entry.senderHostedId));
         }
       }
+      final isPA = (target?.disc ?? 0) == _targetPromisedAnswer;
+      int paQid = 0, paPtrIndex = 0;
+      if (isPA) {
+        final pa = target?.promisedAnswer;
+        paQid = pa?.questionId ?? 0;
+        final transform = pa?.transform;
+        if (transform != null && transform.isNotEmpty) {
+          final op = transform[0];
+          if (op.disc == 1) paPtrIndex = op.ptrIndex;
+        }
+      }
       return RpcMessage._(
         type: RpcMessageType.call,
         questionId: call?.questionId ?? 0,
         interfaceId: call?.interfaceId ?? 0,
         methodId: call?.methodId ?? 0,
-        targetImportId: target?.importedCap ?? 0,
+        targetImportId: isPA ? 0 : (target?.importedCap ?? 0),
+        targetIsPromisedAnswer: isPA,
+        targetPromisedAnswerQid: paQid,
+        targetPtrIndex: paPtrIndex,
         paramsBytes: params?.contentBytes,
         paramsCapTable: capTablePairs,
       );

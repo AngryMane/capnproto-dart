@@ -49,19 +49,60 @@ abstract class Capability {
       Future.error(RpcException(
           'capability does not implement interface $interfaceId method $methodId'));
 
+  /// Starts a dispatch call and returns a [CapCall] that allows creating
+  /// pipelined sub-capabilities before the round-trip completes.
+  ///
+  /// The default implementation delegates to [dispatch] and uses
+  /// [DeferredCapability] for pipelining (local deferral, not wire-level).
+  /// RPC-connected capabilities override this to return a wire-level pipelined
+  /// capability via the `promisedAnswer` target.
+  CapCall beginDispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) =>
+      _DeferredCapCall(
+          dispatch(interfaceId, methodId, params,
+              paramsCapabilities: paramsCapabilities));
+
   /// Releases this capability reference and frees any associated resources.
   Future<void> dispose();
 }
 
+class _DeferredCapCall implements CapCall {
+  @override
+  final Future<DispatchResult> result;
+  _DeferredCapCall(this.result);
+
+  @override
+  Capability pipelineResult(int ptrIndex) =>
+      DeferredCapability(result.then((r) => r.caps[ptrIndex]));
+}
+
+/// Represents an in-progress dispatch call.
+///
+/// Returned by [Capability.beginDispatch]. Carries the result future and a
+/// factory for creating a capability that pipelines onto the result's caps
+/// without waiting for the round-trip to complete.
+abstract interface class CapCall {
+  /// The eventual result of the dispatched call.
+  Future<DispatchResult> get result;
+
+  /// Returns a capability that targets pointer field [ptrIndex] of the result
+  /// struct's capTable — usable immediately, before [result] completes.
+  Capability pipelineResult(int ptrIndex);
+}
+
 /// A capability backed by a [Future] that resolves to the real capability.
 ///
-/// Used for promise pipelining: generated client stubs return a
-/// [PipelinedCapability] immediately when calling a method that returns a
-/// capability, without waiting for the RPC round-trip.
-class PipelinedCapability extends Capability {
+/// Used as the fallback for [CapCall.pipelineResult] when the underlying
+/// [Capability] is not an RPC-connected imported cap and therefore cannot
+/// send wire-level promisedAnswer messages.
+class DeferredCapability extends Capability {
   final Future<Capability> _future;
 
-  PipelinedCapability(Future<Capability> future) : _future = future {
+  DeferredCapability(Future<Capability> future) : _future = future {
     future.ignore();
   }
 
@@ -83,6 +124,9 @@ class PipelinedCapability extends Capability {
     await cap.dispose();
   }
 }
+
+/// Backward-compatible alias for [DeferredCapability].
+typedef PipelinedCapability = DeferredCapability;
 
 /// A no-op capability used as a placeholder.
 class NullCapability extends Capability {

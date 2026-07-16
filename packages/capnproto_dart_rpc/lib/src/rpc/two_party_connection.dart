@@ -3,7 +3,8 @@ import 'dart:typed_data';
 
 import 'package:capnproto_dart/capnproto_dart.dart';
 
-import '../capability/capability.dart';
+import '../capability/capability.dart'
+    show CapCall, Capability, DispatchResult, NullCapability;
 import '../capability/capability_factory.dart';
 import 'rpc_exception.dart';
 import 'rpc_proto.dart';
@@ -45,6 +46,10 @@ class TwoPartyRpcConnection implements RpcConnection {
 
   // Questions: outgoing calls waiting for a Return. Key = question ID.
   final Map<int, Completer<RpcMessage>> _questions = {};
+  // Completes when the Call message for a given question has been sent on the
+  // wire.  Pipelined calls (promisedAnswer target) await this to guarantee
+  // their Call arrives AFTER the parent Call.
+  final Map<int, Completer<void>> _questionSent = {};
   int _nextQuestionId = 0;
 
   // Imports: remote capabilities we hold. Key = import ID (= peer's export ID).
@@ -55,6 +60,13 @@ class TwoPartyRpcConnection implements RpcConnection {
   // Key = question ID from the peer; value = export IDs included in the Return.
   // Used to release result caps when the peer sends Finish(releaseResultCaps: true).
   final Map<int, List<int>> _answers = {};
+
+  // Promise-pipeline support (server side):
+  //   _answerCaps[qid]  — resolved caps for a completed incoming call
+  //   _pendingCaps[qid] — future that resolves to caps when dispatch completes
+  // Needed to handle promisedAnswer-targeted calls that arrive while qid is pending.
+  final Map<int, List<Capability>> _answerCaps = {};
+  final Map<int, Future<List<Capability>>> _pendingCaps = {};
 
   // Set to a non-null error once the connection is closed.
   Object? _closedError;
@@ -138,45 +150,111 @@ class TwoPartyRpcConnection implements RpcConnection {
   // Internal: sending a method call through an imported capability
   // ---------------------------------------------------------------------------
 
-  Future<DispatchResult> _sendCall(
-    Future<int> importIdFuture,
+  /// Allocates a question ID immediately, then asynchronously builds the
+  /// cap-table entries and sends the Call message.  Returns both the question
+  /// ID (available synchronously for pipelining) and the result future.
+  ///
+  /// Use [importIdFuture] for an `importedCap` target; set
+  /// [targetPromisedAnswerQid] + [targetPtrIndex] for a `promisedAnswer`
+  /// target (wire-level pipelining).
+  (int, Future<DispatchResult>) _startCall(
+    Future<int>? importIdFuture,
     int interfaceId,
     int methodId,
     Uint8List paramsBytes, {
     List<Capability> paramsCapabilities = const [],
-  }) async {
+    int? targetPromisedAnswerQid,
+    int targetPtrIndex = 0,
+  }) {
     if (_closedError != null) throw RpcException('connection is closed');
 
+    final qid = _nextQuestionId++;
+    final completer = Completer<RpcMessage>();
+    _questions[qid] = completer;
+    final sentCompleter = Completer<void>();
+    _questionSent[qid] = sentCompleter;
+
+    // Build cap table and send the wire message (may need async for cap resolution).
+    _buildAndSendCall(
+      qid: qid,
+      sentCompleter: sentCompleter,
+      importIdFuture: importIdFuture,
+      targetPromisedAnswerQid: targetPromisedAnswerQid,
+      targetPtrIndex: targetPtrIndex,
+      interfaceId: interfaceId,
+      methodId: methodId,
+      paramsBytes: paramsBytes,
+      paramsCapabilities: paramsCapabilities,
+    ).catchError((Object e) {
+      if (!sentCompleter.isCompleted) sentCompleter.completeError(e);
+      if (!completer.isCompleted) completer.completeError(e);
+    });
+
+    final resultFuture = _awaitReturn(qid, completer);
+    return (qid, resultFuture);
+  }
+
+  Future<void> _buildAndSendCall({
+    required int qid,
+    required Completer<void> sentCompleter,
+    required Future<int>? importIdFuture,
+    required int? targetPromisedAnswerQid,
+    required int targetPtrIndex,
+    required int interfaceId,
+    required int methodId,
+    required Uint8List paramsBytes,
+    required List<Capability> paramsCapabilities,
+  }) async {
+    // For promisedAnswer targets, wait until the parent Call is on the wire so
+    // the server always receives the parent before the pipelined call.
+    if (targetPromisedAnswerQid != null) {
+      final parentSent = _questionSent[targetPromisedAnswerQid];
+      if (parentSent != null) await parentSent.future;
+    }
+
     // Categorize each capability param:
-    //   - If it is a capability we imported from this same peer, send it back
-    //     as receiverHosted so the peer sees its own export without a proxy hop.
-    //   - Otherwise export it from our side as senderHosted.
+    //   - Imported cap from this same peer → receiverHosted
+    //   - Everything else → senderHosted export
     final capEntries = <(int, int)>[];
     for (final cap in paramsCapabilities) {
       if (cap is _ImportedCapability && cap._conn == this) {
-        final importId = await cap._importIdFuture;
-        capEntries.add((3, importId)); // disc=3: receiverHosted
+        final id = await cap._importIdFuture;
+        capEntries.add((3, id)); // disc=3: receiverHosted
       } else {
         capEntries.add((1, _getOrCreateExportId(cap))); // disc=1: senderHosted
       }
     }
 
-    final importId = await importIdFuture;
-    final qid = _nextQuestionId++;
-    final completer = Completer<RpcMessage>();
-    _questions[qid] = completer;
+    if (targetPromisedAnswerQid != null) {
+      _sendRaw(buildCallMessage(
+        questionId: qid,
+        targetPromisedAnswerQid: targetPromisedAnswerQid,
+        targetPtrIndex: targetPtrIndex,
+        interfaceId: interfaceId,
+        methodId: methodId,
+        paramsBytes: paramsBytes,
+        capTableEntries: capEntries,
+      ));
+    } else {
+      final importId = await importIdFuture!;
+      _sendRaw(buildCallMessage(
+        questionId: qid,
+        targetImportId: importId,
+        interfaceId: interfaceId,
+        methodId: methodId,
+        paramsBytes: paramsBytes,
+        capTableEntries: capEntries,
+      ));
+    }
 
-    _sendRaw(buildCallMessage(
-      questionId: qid,
-      targetImportId: importId,
-      interfaceId: interfaceId,
-      methodId: methodId,
-      paramsBytes: paramsBytes,
-      capTableEntries: capEntries,
-    ));
+    // Signal to any pipelined calls waiting on this question.
+    if (!sentCompleter.isCompleted) sentCompleter.complete();
+    _questionSent.remove(qid);
+  }
 
+  Future<DispatchResult> _awaitReturn(
+      int qid, Completer<RpcMessage> completer) async {
     final ret = await completer.future;
-    // Send Finish once we have the return.
     _sendRaw(buildFinishMessage(qid, releaseResultCaps: false));
 
     if (ret.isReturnException) {
@@ -256,20 +334,68 @@ class TwoPartyRpcConnection implements RpcConnection {
   }
 
   void _handleCall(RpcMessage msg) {
-    final exportId = msg.targetImportId;
-    final entry = _exports[exportId];
-
-    if (entry == null) {
-      _sendRaw(buildReturnExceptionMessage(
-        answerId: msg.questionId,
-        reason: 'unknown export id: $exportId',
-      ));
+    if (msg.targetIsPromisedAnswer) {
+      _handlePipelinedCall(msg);
       return;
     }
 
+    final entry = _exports[msg.targetImportId];
+    if (entry == null) {
+      _sendRaw(buildReturnExceptionMessage(
+        answerId: msg.questionId,
+        reason: 'unknown export id: ${msg.targetImportId}',
+      ));
+      return;
+    }
+    _dispatchToCapability(msg, entry.capability);
+  }
+
+  void _handlePipelinedCall(RpcMessage msg) {
+    final parentQid = msg.targetPromisedAnswerQid;
+    final ptrIndex = msg.targetPtrIndex;
+
+    // Already resolved: dispatch immediately.
+    final resolved = _answerCaps[parentQid];
+    if (resolved != null) {
+      if (ptrIndex >= resolved.length) {
+        _sendRaw(buildReturnExceptionMessage(
+          answerId: msg.questionId,
+          reason: 'pipeline cap index $ptrIndex out of range',
+        ));
+        return;
+      }
+      _dispatchToCapability(msg, resolved[ptrIndex]);
+      return;
+    }
+
+    // Still pending: queue behind the parent dispatch.
+    final pending = _pendingCaps[parentQid];
+    if (pending == null) {
+      _sendRaw(buildReturnExceptionMessage(
+        answerId: msg.questionId,
+        reason: 'unknown promisedAnswer questionId: $parentQid',
+      ));
+      return;
+    }
+    pending.then((caps) {
+      if (ptrIndex >= caps.length) {
+        _sendRaw(buildReturnExceptionMessage(
+          answerId: msg.questionId,
+          reason: 'pipeline cap index $ptrIndex out of range',
+        ));
+        return;
+      }
+      _dispatchToCapability(msg, caps[ptrIndex]);
+    }).catchError((Object err) {
+      _sendRaw(buildReturnExceptionMessage(
+        answerId: msg.questionId,
+        reason: 'parent call failed: $err',
+      ));
+    });
+  }
+
+  void _dispatchToCapability(RpcMessage msg, Capability cap) {
     final qid = msg.questionId;
-    final iid = msg.interfaceId;
-    final mid = msg.methodId;
     final params = msg.paramsBytes ?? _emptyResultBytes;
 
     // Resolve capabilities from the incoming capTable.
@@ -291,9 +417,22 @@ class TwoPartyRpcConnection implements RpcConnection {
       }
     }
 
-    entry.capability
-        .dispatch(iid, mid, params, paramsCapabilities: paramsCapabilities)
-        .then((result) {
+    final dispatchFuture = cap.dispatch(
+      msg.interfaceId, msg.methodId, params,
+      paramsCapabilities: paramsCapabilities,
+    );
+
+    // Track the caps future so pipelined calls can queue behind it.
+    // Attach .ignore() to prevent unhandled-rejection if dispatch throws —
+    // pipelined callers handle the error via their own catchError.
+    final capsFuture = dispatchFuture.then((r) => r.caps);
+    capsFuture.ignore();
+    _pendingCaps[qid] = capsFuture;
+
+    dispatchFuture.then((result) {
+      _pendingCaps.remove(qid);
+      _answerCaps[qid] = result.caps;
+
       final resultExportIds = <int>[];
       if (result.caps.isEmpty) {
         _sendRaw(buildReturnResultsMessage(
@@ -301,9 +440,8 @@ class TwoPartyRpcConnection implements RpcConnection {
           resultsBytes: result.bytes,
         ));
       } else {
-        // Register returned capabilities as exports; reuse IDs for dedup.
-        for (final cap in result.caps) {
-          resultExportIds.add(_getOrCreateExportId(cap));
+        for (final c in result.caps) {
+          resultExportIds.add(_getOrCreateExportId(c));
         }
         _sendRaw(buildReturnResultsWithCapsMessage(
           answerId: qid,
@@ -311,9 +449,10 @@ class TwoPartyRpcConnection implements RpcConnection {
           exportIds: resultExportIds,
         ));
       }
-      // Track which export IDs were returned so Finish can release them.
       _answers[qid] = resultExportIds;
     }).catchError((Object err) {
+      _pendingCaps.remove(qid);
+      _answerCaps.remove(qid);
       _answers[qid] = const [];
       _sendRaw(buildReturnExceptionMessage(
         answerId: qid,
@@ -323,7 +462,9 @@ class TwoPartyRpcConnection implements RpcConnection {
   }
 
   void _handleFinish(RpcMessage msg) {
-    final resultExportIds = _answers.remove(msg.questionId);
+    final qid = msg.questionId;
+    _answerCaps.remove(qid);
+    final resultExportIds = _answers.remove(qid);
     if (resultExportIds == null || !msg.releaseResultCaps) return;
     for (final eid in resultExportIds) {
       _releaseExport(eid);
@@ -419,6 +560,10 @@ class TwoPartyRpcConnection implements RpcConnection {
       }
     }
     _questions.clear();
+    for (final c in _questionSent.values) {
+      if (!c.isCompleted) c.completeError(err);
+    }
+    _questionSent.clear();
 
     if (_bootstrapCompleter != null && !_bootstrapCompleter!.isCompleted) {
       _bootstrapCompleter!.future.ignore();
@@ -432,6 +577,8 @@ class TwoPartyRpcConnection implements RpcConnection {
     _exports.clear();
     _exportIds.clear();
     _answers.clear();
+    _answerCaps.clear();
+    _pendingCaps.clear();
 
     try {
       await _outgoing.close();
@@ -487,14 +634,110 @@ class _ImportedCapability extends Capability {
     int methodId,
     Uint8List params, {
     List<Capability> paramsCapabilities = const [],
-  }) =>
-      _conn._sendCall(_importIdFuture, interfaceId, methodId, params,
-          paramsCapabilities: paramsCapabilities);
+  }) {
+    final (_, future) = _conn._startCall(
+      _importIdFuture,
+      interfaceId,
+      methodId,
+      params,
+      paramsCapabilities: paramsCapabilities,
+    );
+    return future;
+  }
+
+  @override
+  CapCall beginDispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) {
+    final (qid, future) = _conn._startCall(
+      _importIdFuture,
+      interfaceId,
+      methodId,
+      params,
+      paramsCapabilities: paramsCapabilities,
+    );
+    return _WireCapCall(future, _conn, qid);
+  }
 
   @override
   Future<void> dispose() async {
     final id = await _importIdFuture.catchError((_) => -1);
     if (id >= 0) await _conn._releaseImport(id);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// _WireCapCall: CapCall backed by a pending question on the wire
+// ---------------------------------------------------------------------------
+
+class _WireCapCall implements CapCall {
+  @override
+  final Future<DispatchResult> result;
+  final TwoPartyRpcConnection _conn;
+  final int _qid;
+
+  _WireCapCall(this.result, this._conn, this._qid);
+
+  @override
+  Capability pipelineResult(int ptrIndex) =>
+      _WirePipelinedCapability(_conn, _qid, ptrIndex);
+}
+
+// ---------------------------------------------------------------------------
+// _WirePipelinedCapability: targets a promisedAnswer on the wire immediately
+// ---------------------------------------------------------------------------
+
+class _WirePipelinedCapability extends Capability {
+  final TwoPartyRpcConnection _conn;
+  final int _parentQid;
+  final int _ptrIndex;
+
+  _WirePipelinedCapability(this._conn, this._parentQid, this._ptrIndex);
+
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) {
+    final (_, future) = _conn._startCall(
+      null,
+      interfaceId,
+      methodId,
+      params,
+      paramsCapabilities: paramsCapabilities,
+      targetPromisedAnswerQid: _parentQid,
+      targetPtrIndex: _ptrIndex,
+    );
+    return future;
+  }
+
+  @override
+  CapCall beginDispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) {
+    final (qid, future) = _conn._startCall(
+      null,
+      interfaceId,
+      methodId,
+      params,
+      paramsCapabilities: paramsCapabilities,
+      targetPromisedAnswerQid: _parentQid,
+      targetPtrIndex: _ptrIndex,
+    );
+    return _WireCapCall(future, _conn, qid);
+  }
+
+  @override
+  Future<void> dispose() async {
+    // When the parent resolves, we could send a Release; for now no-op.
   }
 }
 

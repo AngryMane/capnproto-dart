@@ -216,9 +216,9 @@ void _writeClientMethod(
       sb.writeln('    final mb = MessageBuilder();');
       sb.writeln('    build(mb.initRoot(${_lcfirst(paramsName)}Factory));');
       sb.writeln(
-          '    final f = _cap.dispatch($ifaceId, $ordinal, mb.serialize());');
+          '    final call = _cap.beginDispatch($ifaceId, $ordinal, mb.serialize());');
       sb.writeln(
-          '    return ${capIfaceName}Client(PipelinedCapability(f.then((r) => r.caps[0])));');
+          '    return ${capIfaceName}Client(call.pipelineResult(0));');
       sb.writeln('  }');
     } else {
       final resultsName =
@@ -251,9 +251,9 @@ void _writeClientMethod(
       }
       sb.writeln('    build(b);');
       sb.writeln(
-          '    final f = _cap.dispatch($ifaceId, $ordinal, mb.serialize(), paramsCapabilities: [$capsList]);');
+          '    final call = _cap.beginDispatch($ifaceId, $ordinal, mb.serialize(), paramsCapabilities: [$capsList]);');
       sb.writeln(
-          '    return ${capIfaceName}Client(PipelinedCapability(f.then((r) => r.caps[0])));');
+          '    return ${capIfaceName}Client(call.pipelineResult(0));');
       sb.writeln('  }');
     } else {
       final resultsName =
