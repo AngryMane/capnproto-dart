@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../arena/arena_builder.dart';
+import '../wire/pointer.dart' show CapabilityPointer;
 import '../wire/wire_helpers.dart';
 
 /// Writable view of a Cap'n Proto list field.
@@ -338,4 +339,38 @@ ListBuilder<E> enumListBuilderFromRaw<E>(
 ListBuilder<B> structListBuilderFromRaw<B>(
         RawListBuilder raw, B Function(RawStructBuilder) fromRaw) =>
     StructListBuilder<B>(raw, fromRaw);
+
+/// List builder for capability fields stored as cap-table indices.
+///
+/// Each element is an 8-byte pointer slot encoded as a [CapabilityPointer].
+/// The integer value stored/read at each position is the cap table index.
+/// Generated code uses [StructBuilder.initCapabilityListField] rather than
+/// constructing this directly.
+class CapabilityListBuilder extends ListBuilder<int> {
+  final RawListBuilder _raw;
+
+  CapabilityListBuilder(this._raw);
+
+  @override
+  int get length => _raw.elementCount;
+
+  @override
+  int operator [](int index) {
+    RangeError.checkValidIndex(index, this, 'index', _raw.elementCount);
+    return readUint32(
+        _raw.segment.data, _raw.dataByteOffset + index * bytesPerWord + 4);
+  }
+
+  @override
+  void operator []=(int index, int capTableIndex) {
+    RangeError.checkValidIndex(index, this, 'index', _raw.elementCount);
+    final byteOffset = _raw.dataByteOffset + index * bytesPerWord;
+    CapabilityPointer(capabilityIndex: capTableIndex)
+        .encode(_raw.segment.data, byteOffset ~/ bytesPerWord);
+  }
+}
+
+/// Creates a [CapabilityListBuilder] from a [RawListBuilder].
+ListBuilder<int> capabilityListBuilderFromRaw(RawListBuilder raw) =>
+    CapabilityListBuilder(raw);
 

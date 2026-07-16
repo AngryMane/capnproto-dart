@@ -273,4 +273,14 @@ abstract class StructReader {
     final raw = _resolveListField(ptrIndex);
     return raw == null ? null : NestedListReader<T>(raw, fromRaw);
   }
+
+  /// Reads a `List(Interface)` field at [ptrIndex].
+  ///
+  /// Returns a [ListReader<int>] whose elements are cap-table indices.
+  /// Use the companion cap-table list (e.g. `paramsCapabilities`) to
+  /// obtain the actual [Capability] objects: `caps[reader[i]]`.
+  ListReader<int>? getCapabilityListField(int ptrIndex) {
+    final raw = _resolveListField(ptrIndex);
+    return raw == null ? null : CapabilityListReader(raw);
+  }
 }

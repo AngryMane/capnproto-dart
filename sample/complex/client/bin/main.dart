@@ -896,10 +896,21 @@ Future<void> _s14_capsInStructs(ComplexTestServiceClient svc) async {
 
   await target14.dispose();
 
-  // Capability in Optional/List positions - only testable via repository
-  // (CapabilityBundle with PipelineTarget list is in ComplexRequest, not directly accessible)
+  // List(Interface) field: build a CapabilityBundle with two cap indices and
+  // round-trip it through serialize/deserialize to verify the generated accessor.
+  final mb14 = MessageBuilder();
+  final bundle14 = mb14.initRoot(capabilityBundleFactory);
+  final tgts14 = bundle14.initTargets(2);
+  tgts14[0] = 0;
+  tgts14[1] = 1;
+  final reader14 = CapabilityBundleReader(
+      MessageReader.deserialize(mb14.serialize()).getRootRaw());
+  final list14 = reader14.targets;
+  checkEq('List(Interface) length', list14?.length, 2);
+  checkEq('List(Interface) index 0', list14?[0], 0);
+  checkEq('List(Interface) index 1', list14?[1], 1);
+
   skip('Capability in Optional - requires AnyPointer support');
-  skip('List of capabilities - requires AnyPointer support');
   skip('null capability - not yet distinguished from missing');
 }
 

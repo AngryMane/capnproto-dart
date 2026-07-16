@@ -26,7 +26,9 @@ export 'src/layout/list_reader.dart'
         textListFromRaw,
         dataListFromRaw,
         enumListFromRaw,
-        structListFromRaw;
+        structListFromRaw,
+        CapabilityListReader,
+        capabilityListFromRaw;
 export 'src/layout/list_builder.dart'
     show
         ListBuilder,
@@ -46,7 +48,9 @@ export 'src/layout/list_builder.dart'
         textListBuilderFromRaw,
         dataListBuilderFromRaw,
         enumListBuilderFromRaw,
-        structListBuilderFromRaw;
+        structListBuilderFromRaw,
+        CapabilityListBuilder,
+        capabilityListBuilderFromRaw;
 export 'src/message/message_reader_options.dart';
 export 'src/message/message_reader.dart';
 export 'src/message/message_builder.dart';

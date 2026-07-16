@@ -848,6 +848,8 @@ String _defaultSuffix(Object? v) {
     VoidType() => ('ListReader<Null>?', 'getVoidListField($ptrIndex)'),
     EnumRefType(:final typeId) =>
       _enumListReaderGetter(typeId, ptrIndex, nodeMap),
+    InterfaceRefType() =>
+      ('ListReader<int>?', 'getCapabilityListField($ptrIndex)'),
     ListType(:final elementType) =>
       _nestedListReaderGetter(elementType, ptrIndex, nodeMap),
     _ => ('ListReader<dynamic>?', 'null /* unsupported list element */'),
@@ -891,6 +893,7 @@ String _defaultSuffix(Object? v) {
     DataType() => ('Uint8List?', 'dataListFromRaw'),
     StructRefType(:final typeId) => _structListFromRawExpr(typeId, nodeMap),
     EnumRefType(:final typeId) => _enumListFromRawExpr(typeId, nodeMap),
+    InterfaceRefType() => ('int', 'capabilityListFromRaw'),
     ListType(:final elementType) => _nestedNestedListFromRawExpr(elementType, nodeMap),
     _ => ('dynamic', '(raw) => null /* unsupported nested list element */'),
   };
@@ -993,6 +996,8 @@ String _defaultSuffix(Object? v) {
       ('initVoidListField($ptrIndex, length)', 'ListBuilder<Null>'),
     EnumRefType(:final typeId) =>
       _enumListInitCall(typeId, ptrIndex, nodeMap),
+    InterfaceRefType() =>
+      ('initCapabilityListField($ptrIndex, length)', 'ListBuilder<int>'),
     ListType(:final elementType) =>
       _nestedListInitCall(elementType, ptrIndex, nodeMap),
     _ => ('/* unsupported */', 'dynamic'),
@@ -1051,6 +1056,8 @@ String _defaultSuffix(Object? v) {
       _enumInnerListBuilderExpr(typeId, nodeMap),
     StructRefType(:final typeId) =>
       _structInnerListBuilderExpr(typeId, nodeMap),
+    InterfaceRefType() =>
+      ('capabilityListBuilderFromRaw', 'ListElementSize.pointer', '', 'int'),
     _ => ('(raw) => throw UnimplementedError()', 'ListElementSize.void_', '', 'dynamic'),
   };
 }

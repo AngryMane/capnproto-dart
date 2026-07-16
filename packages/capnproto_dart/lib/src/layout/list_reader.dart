@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../arena/arena_reader.dart';
+import '../wire/pointer.dart' show CapabilityPointer, WirePointer;
 import '../wire/wire_helpers.dart';
 
 /// Read-only, iterable view of a Cap'n Proto list field.
@@ -256,3 +257,31 @@ ListReader<E?> enumListFromRaw<E>(RawListReader raw, E? Function(int) fromInt) =
 ListReader<R> structListFromRaw<R>(
         RawListReader raw, R Function(RawStructReader) fromRaw) =>
     StructListReader<R>(raw, fromRaw);
+
+/// List of capability references stored as cap-table indices.
+///
+/// In Cap'n Proto, `List(Interface)` encodes each element as a
+/// [CapabilityPointer] word. This reader decodes the high-32-bit
+/// capabilityIndex from each word and returns it as an [int].
+/// Generated code wraps these indices using the companion cap-table list
+/// (e.g. `paramsCapabilities[index]`) to obtain actual [Capability] objects.
+class CapabilityListReader extends ListReader<int> {
+  final RawListReader _raw;
+
+  CapabilityListReader(this._raw);
+
+  @override
+  int get length => _raw.elementCount;
+
+  @override
+  int operator [](int index) {
+    RangeError.checkValidIndex(index, this);
+    final ptrWordOffset = _raw.dataByteOffset ~/ bytesPerWord + index;
+    final ptr = WirePointer.decode(_raw.segment.data, ptrWordOffset);
+    return ptr is CapabilityPointer ? ptr.capabilityIndex : -1;
+  }
+}
+
+/// Creates a [CapabilityListReader] from a [RawListReader].
+ListReader<int> capabilityListFromRaw(RawListReader raw) =>
+    CapabilityListReader(raw);

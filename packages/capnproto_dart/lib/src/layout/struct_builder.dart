@@ -272,6 +272,15 @@ abstract class StructBuilder {
         fromRaw,
       );
 
+  /// Allocates a `List(Interface)` field with [count] capability pointer slots.
+  ///
+  /// Returns a [ListBuilder<int>] whose elements are cap-table indices.
+  /// Set each element to the appropriate cap-table index (matching the position
+  /// in the `paramsCapabilities` list passed to [dispatch]).
+  ListBuilder<int> initCapabilityListField(int ptrIndex, int count) =>
+      CapabilityListBuilder(
+          _allocateListField(ptrIndex, ListElementSize.pointer, count));
+
   /// Allocates a `List(List(T))` field and returns a builder for the outer list.
   ///
   /// Call [NestedListBuilder.initAt] for each outer slot to allocate the inner
