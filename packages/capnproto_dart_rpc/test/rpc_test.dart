@@ -749,6 +749,44 @@ void main() {
       await client.close();
       await serverConn.close();
     });
+
+    test(
+      'failed call send preparation cleans pending question state',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        final outgoing = StreamController<Uint8List>();
+
+        outgoing.stream.listen(clientToServer.add);
+        TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: PipelineServer(),
+        );
+        final client = TwoPartyRpcConnection.client(
+          incoming: serverToClient.stream,
+          outgoing: outgoing.sink,
+        );
+
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        await bootstrapCap.echo('warmup');
+        expect(client.debugPendingQuestionCount, equals(0));
+        expect(client.debugPendingQuestionSentCount, equals(0));
+
+        await outgoing.close();
+        final result = bootstrapCap.cap.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          _buildEchoParams('will-fail-before-send'),
+        );
+
+        await expectLater(result, throwsA(anything));
+        expect(client.debugPendingQuestionCount, equals(0));
+        expect(client.debugPendingQuestionSentCount, equals(0));
+
+        await client.close();
+      },
+    );
   });
 
   group('rpc_proto — message encoding/decoding', () {

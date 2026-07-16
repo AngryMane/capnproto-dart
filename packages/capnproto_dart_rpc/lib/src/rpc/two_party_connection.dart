@@ -180,6 +180,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     final completer = Completer<RpcMessage>();
     _questions[qid] = completer;
     final sentCompleter = Completer<void>();
+    sentCompleter.future.ignore();
     _questionSent[qid] = sentCompleter;
 
     // Build cap table and send the wire message (may need async for cap resolution).
@@ -193,9 +194,11 @@ class TwoPartyRpcConnection implements RpcConnection {
       methodId: methodId,
       paramsBytes: paramsBytes,
       paramsCapabilities: paramsCapabilities,
-    ).catchError((Object e) {
-      if (!sentCompleter.isCompleted) sentCompleter.completeError(e);
-      if (!completer.isCompleted) completer.completeError(e);
+    ).catchError((Object e, StackTrace st) {
+      _questions.remove(qid);
+      _questionSent.remove(qid);
+      if (!sentCompleter.isCompleted) sentCompleter.completeError(e, st);
+      if (!completer.isCompleted) completer.completeError(e, st);
     });
 
     final resultFuture = _awaitReturn(qid, completer);
@@ -667,6 +670,9 @@ class TwoPartyRpcConnection implements RpcConnection {
 
   /// A future that completes when the connection is closed.
   Future<void> get done => _closedCompleter.future;
+
+  int get debugPendingQuestionCount => _questions.length;
+  int get debugPendingQuestionSentCount => _questionSent.length;
 }
 
 // ---------------------------------------------------------------------------
