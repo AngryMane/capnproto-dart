@@ -16,8 +16,7 @@ class DispatchResult {
   /// Pre-built 16-byte message: single segment, null root pointer.
   /// Used as the result for `-> stream` and void methods.
   static final empty = DispatchResult(
-    bytes: Uint8List.fromList(
-        [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+    bytes: Uint8List.fromList([0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
   );
 }
 
@@ -47,9 +46,11 @@ abstract class Capability {
     int methodId,
     Uint8List params, {
     List<Capability> paramsCapabilities = const [],
-  }) =>
-      Future.error(RpcException(
-          'capability does not implement interface $interfaceId method $methodId'));
+  }) => Future.error(
+    RpcException(
+      'capability does not implement interface $interfaceId method $methodId',
+    ),
+  );
 
   /// Starts a dispatch call and returns a [CapCall] that allows creating
   /// pipelined sub-capabilities before the round-trip completes.
@@ -63,10 +64,14 @@ abstract class Capability {
     int methodId,
     Uint8List params, {
     List<Capability> paramsCapabilities = const [],
-  }) =>
-      _DeferredCapCall(
-          dispatch(interfaceId, methodId, params,
-              paramsCapabilities: paramsCapabilities));
+  }) => _DeferredCapCall(
+    dispatch(
+      interfaceId,
+      methodId,
+      params,
+      paramsCapabilities: paramsCapabilities,
+    ),
+  );
 
   /// Releases this capability reference and frees any associated resources.
   Future<void> dispose();
@@ -79,7 +84,8 @@ class _DeferredCapCall implements CapCall {
 
   @override
   Capability pipelineResult(int ptrIndex) => DeferredCapability(
-      result.then((r) => capabilityFromResult(r, ptrIndex) ?? NullCapability()));
+    result.then((r) => requireCapabilityFromResult(r, ptrIndex)),
+  );
 }
 
 /// Resolves the capability at pointer slot [ptrIndex] of a [DispatchResult].
@@ -87,24 +93,51 @@ class _DeferredCapCall implements CapCall {
 /// Deserializes [result.bytes], reads the [CapabilityPointer] at [ptrIndex] of
 /// the root struct, and returns the corresponding entry from [result.caps].
 /// Returns null when [ptrIndex] is out of range, the pointer is not a
-/// [CapabilityPointer], or the cap table index is out of range.
+/// [CapabilityPointer], the cap table index is out of range, or the result
+/// bytes cannot be decoded.
 ///
 /// Used by both [_DeferredCapCall] (local pipelining) and the RPC layer's
 /// `_WirePipelinedCapability` (wire-level pipelining) so they share the same
 /// pointer-slot → cap-table-index mapping logic.
 Capability? capabilityFromResult(DispatchResult result, int ptrIndex) {
-  if (result.caps.isEmpty) return null;
   try {
-    final root = MessageReader.deserialize(result.bytes).getRootRaw();
-    if (ptrIndex >= root.ptrWords) return null;
-    final ptr =
-        WirePointer.decode(root.segment.data, root.ptrWordOffset + ptrIndex);
-    if (ptr is! CapabilityPointer) return null;
-    final capIdx = ptr.capabilityIndex;
-    if (capIdx >= result.caps.length) return null;
-    return result.caps[capIdx];
+    return requireCapabilityFromResult(result, ptrIndex);
   } catch (_) {
     return null;
+  }
+}
+
+/// Resolves the capability at pointer slot [ptrIndex], or throws an
+/// [RpcException] that preserves why the pipeline target could not resolve.
+Capability requireCapabilityFromResult(DispatchResult result, int ptrIndex) {
+  if (result.caps.isEmpty) {
+    throw const RpcException('result has no capability table entries');
+  }
+  try {
+    final root = MessageReader.deserialize(result.bytes).getRootRaw();
+    if (ptrIndex >= root.ptrWords) {
+      throw RpcException('pointer slot $ptrIndex is out of range');
+    }
+    final ptr = WirePointer.decode(
+      root.segment.data,
+      root.ptrWordOffset + ptrIndex,
+    );
+    if (ptr is! CapabilityPointer) {
+      throw RpcException(
+        'pointer slot $ptrIndex in result struct is not a capability',
+      );
+    }
+    final capIdx = ptr.capabilityIndex;
+    if (capIdx >= result.caps.length) {
+      throw RpcException(
+        'capability table index $capIdx is out of range for ${result.caps.length} result capabilities',
+      );
+    }
+    return result.caps[capIdx];
+  } on RpcException {
+    rethrow;
+  } catch (e) {
+    throw RpcException('failed to decode result capability: $e');
   }
 }
 
@@ -142,8 +175,12 @@ class DeferredCapability extends Capability {
     List<Capability> paramsCapabilities = const [],
   }) async {
     final cap = await _future;
-    return cap.dispatch(interfaceId, methodId, params,
-        paramsCapabilities: paramsCapabilities);
+    return cap.dispatch(
+      interfaceId,
+      methodId,
+      params,
+      paramsCapabilities: paramsCapabilities,
+    );
   }
 
   @override
@@ -166,8 +203,7 @@ class NullCapability extends Capability {
     int methodId,
     Uint8List params, {
     List<Capability> paramsCapabilities = const [],
-  }) =>
-      Future.error(const RpcException('null capability'));
+  }) => Future.error(const RpcException('null capability'));
 
   @override
   Future<void> dispose() async {}

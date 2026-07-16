@@ -4,7 +4,14 @@ import 'dart:typed_data';
 import 'package:capnproto_dart/capnproto_dart.dart';
 
 import '../capability/capability.dart'
-    show CapCall, Capability, DispatchResult, NullCapability, capabilityFromResult;
+    show
+        CapCall,
+        Capability,
+        DeferredCapability,
+        DispatchResult,
+        NullCapability,
+        capabilityFromResult,
+        requireCapabilityFromResult;
 import '../capability/capability_factory.dart';
 import 'rpc_exception.dart';
 import 'rpc_proto.dart';
@@ -95,8 +102,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   factory TwoPartyRpcConnection.client({
     required Stream<Uint8List> incoming,
     required StreamSink<Uint8List> outgoing,
-  }) =>
-      TwoPartyRpcConnection._(incoming, outgoing, true);
+  }) => TwoPartyRpcConnection._(incoming, outgoing, true);
 
   /// Creates a server-side connection.
   factory TwoPartyRpcConnection.server({
@@ -228,25 +234,29 @@ class TwoPartyRpcConnection implements RpcConnection {
     }
 
     if (targetPromisedAnswerQid != null) {
-      _sendRaw(buildCallMessage(
-        questionId: qid,
-        targetPromisedAnswerQid: targetPromisedAnswerQid,
-        targetPtrIndex: targetPtrIndex,
-        interfaceId: interfaceId,
-        methodId: methodId,
-        paramsBytes: paramsBytes,
-        capTableEntries: capEntries,
-      ));
+      _sendRaw(
+        buildCallMessage(
+          questionId: qid,
+          targetPromisedAnswerQid: targetPromisedAnswerQid,
+          targetPtrIndex: targetPtrIndex,
+          interfaceId: interfaceId,
+          methodId: methodId,
+          paramsBytes: paramsBytes,
+          capTableEntries: capEntries,
+        ),
+      );
     } else {
       final importId = await importIdFuture!;
-      _sendRaw(buildCallMessage(
-        questionId: qid,
-        targetImportId: importId,
-        interfaceId: interfaceId,
-        methodId: methodId,
-        paramsBytes: paramsBytes,
-        capTableEntries: capEntries,
-      ));
+      _sendRaw(
+        buildCallMessage(
+          questionId: qid,
+          targetImportId: importId,
+          interfaceId: interfaceId,
+          methodId: methodId,
+          paramsBytes: paramsBytes,
+          capTableEntries: capEntries,
+        ),
+      );
     }
 
     // Signal to any pipelined calls waiting on this question.
@@ -255,7 +265,9 @@ class TwoPartyRpcConnection implements RpcConnection {
   }
 
   Future<DispatchResult> _awaitReturn(
-      int qid, Completer<RpcMessage> completer) async {
+    int qid,
+    Completer<RpcMessage> completer,
+  ) async {
     final ret = await completer.future;
     _sendRaw(buildFinishMessage(qid, releaseResultCaps: false));
 
@@ -271,13 +283,31 @@ class TwoPartyRpcConnection implements RpcConnection {
     }
 
     return DispatchResult(
-        bytes: ret.resultsBytes ?? _emptyResultBytes, caps: caps);
+      bytes: ret.resultsBytes ?? _emptyResultBytes,
+      caps: caps,
+    );
   }
 
   // Pre-built 16-byte message: single segment (1 word), null root pointer.
   // Used as fallback for `-> stream` and void methods that return no content.
-  static final _emptyResultBytes =
-      Uint8List.fromList([0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+  static final _emptyResultBytes = Uint8List.fromList([
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+  ]);
 
   Future<void> _releaseImport(int importId) async {
     final count = _importRefCounts.remove(importId);
@@ -329,10 +359,9 @@ class TwoPartyRpcConnection implements RpcConnection {
 
   void _handleBootstrap(RpcMessage msg) {
     // Server side: send Return with our bootstrap capability (export 0).
-    _sendRaw(buildBootstrapReturnMessage(
-      answerId: msg.questionId,
-      exportId: 0,
-    ));
+    _sendRaw(
+      buildBootstrapReturnMessage(answerId: msg.questionId, exportId: 0),
+    );
   }
 
   void _handleCall(RpcMessage msg) {
@@ -343,10 +372,12 @@ class TwoPartyRpcConnection implements RpcConnection {
 
     final entry = _exports[msg.targetImportId];
     if (entry == null) {
-      _sendRaw(buildReturnExceptionMessage(
-        answerId: msg.questionId,
-        reason: 'unknown export id: ${msg.targetImportId}',
-      ));
+      _sendRaw(
+        buildReturnExceptionMessage(
+          answerId: msg.questionId,
+          reason: 'unknown export id: ${msg.targetImportId}',
+        ),
+      );
       return;
     }
     _dispatchToCapability(msg, entry.capability);
@@ -361,10 +392,13 @@ class TwoPartyRpcConnection implements RpcConnection {
     if (resolved != null) {
       final cap = _capFromPtrIndex(resolved, ptrIndex);
       if (cap == null) {
-        _sendRaw(buildReturnExceptionMessage(
-          answerId: msg.questionId,
-          reason: 'pointer slot $ptrIndex in result struct is not a capability',
-        ));
+        _sendRaw(
+          buildReturnExceptionMessage(
+            answerId: msg.questionId,
+            reason:
+                'pointer slot $ptrIndex in result struct is not a capability',
+          ),
+        );
         return;
       }
       _dispatchToCapability(msg, cap);
@@ -374,34 +408,44 @@ class TwoPartyRpcConnection implements RpcConnection {
     // Still pending: queue behind the parent dispatch.
     final pending = _pendingCaps[parentQid];
     if (pending == null) {
-      _sendRaw(buildReturnExceptionMessage(
-        answerId: msg.questionId,
-        reason: 'unknown promisedAnswer questionId: $parentQid',
-      ));
+      _sendRaw(
+        buildReturnExceptionMessage(
+          answerId: msg.questionId,
+          reason: 'unknown promisedAnswer questionId: $parentQid',
+        ),
+      );
       return;
     }
-    pending.then((resolved) {
-      final cap = _capFromPtrIndex(resolved, ptrIndex);
-      if (cap == null) {
-        _sendRaw(buildReturnExceptionMessage(
-          answerId: msg.questionId,
-          reason: 'pointer slot $ptrIndex in result struct is not a capability',
-        ));
-        return;
-      }
-      _dispatchToCapability(msg, cap);
-    }).catchError((Object err) {
-      _sendRaw(buildReturnExceptionMessage(
-        answerId: msg.questionId,
-        reason: 'parent call failed: $err',
-      ));
-    });
+    pending
+        .then((resolved) {
+          final cap = _capFromPtrIndex(resolved, ptrIndex);
+          if (cap == null) {
+            _sendRaw(
+              buildReturnExceptionMessage(
+                answerId: msg.questionId,
+                reason:
+                    'pointer slot $ptrIndex in result struct is not a capability',
+              ),
+            );
+            return;
+          }
+          _dispatchToCapability(msg, cap);
+        })
+        .catchError((Object err) {
+          _sendRaw(
+            buildReturnExceptionMessage(
+              answerId: msg.questionId,
+              reason: 'parent call failed: $err',
+            ),
+          );
+        });
   }
 
   Capability? _capFromPtrIndex(_ResolvedAnswer resolved, int ptrIndex) =>
       capabilityFromResult(
-          DispatchResult(bytes: resolved.resultBytes, caps: resolved.caps),
-          ptrIndex);
+        DispatchResult(bytes: resolved.resultBytes, caps: resolved.caps),
+        ptrIndex,
+      );
 
   void _dispatchToCapability(RpcMessage msg, Capability cap) {
     final qid = msg.questionId;
@@ -427,48 +471,59 @@ class TwoPartyRpcConnection implements RpcConnection {
     }
 
     final dispatchFuture = cap.dispatch(
-      msg.interfaceId, msg.methodId, params,
+      msg.interfaceId,
+      msg.methodId,
+      params,
       paramsCapabilities: paramsCapabilities,
     );
 
     // Track the resolved-answer future so pipelined calls can queue behind it.
     // Attach .ignore() to prevent unhandled-rejection if dispatch throws —
     // pipelined callers handle the error via their own catchError.
-    final resolvedFuture = dispatchFuture
-        .then((r) => _ResolvedAnswer(r.bytes, r.caps));
+    final resolvedFuture = dispatchFuture.then(
+      (r) => _ResolvedAnswer(r.bytes, r.caps),
+    );
     resolvedFuture.ignore();
     _pendingCaps[qid] = resolvedFuture;
 
-    dispatchFuture.then((result) {
-      _pendingCaps.remove(qid);
-      _answerCaps[qid] = _ResolvedAnswer(result.bytes, result.caps);
+    dispatchFuture
+        .then((result) {
+          _pendingCaps.remove(qid);
+          _answerCaps[qid] = _ResolvedAnswer(result.bytes, result.caps);
 
-      final resultExportIds = <int>[];
-      if (result.caps.isEmpty) {
-        _sendRaw(buildReturnResultsMessage(
-          answerId: qid,
-          resultsBytes: result.bytes,
-        ));
-      } else {
-        for (final c in result.caps) {
-          resultExportIds.add(_getOrCreateExportId(c));
-        }
-        _sendRaw(buildReturnResultsWithCapsMessage(
-          answerId: qid,
-          resultsBytes: result.bytes,
-          exportIds: resultExportIds,
-        ));
-      }
-      _answers[qid] = resultExportIds;
-    }).catchError((Object err) {
-      _pendingCaps.remove(qid);
-      _answerCaps.remove(qid);
-      _answers[qid] = const [];
-      _sendRaw(buildReturnExceptionMessage(
-        answerId: qid,
-        reason: err is RpcException ? err.message : err.toString(),
-      ));
-    });
+          final resultExportIds = <int>[];
+          if (result.caps.isEmpty) {
+            _sendRaw(
+              buildReturnResultsMessage(
+                answerId: qid,
+                resultsBytes: result.bytes,
+              ),
+            );
+          } else {
+            for (final c in result.caps) {
+              resultExportIds.add(_getOrCreateExportId(c));
+            }
+            _sendRaw(
+              buildReturnResultsWithCapsMessage(
+                answerId: qid,
+                resultsBytes: result.bytes,
+                exportIds: resultExportIds,
+              ),
+            );
+          }
+          _answers[qid] = resultExportIds;
+        })
+        .catchError((Object err) {
+          _pendingCaps.remove(qid);
+          _answerCaps.remove(qid);
+          _answers[qid] = const [];
+          _sendRaw(
+            buildReturnExceptionMessage(
+              answerId: qid,
+              reason: err is RpcException ? err.message : err.toString(),
+            ),
+          );
+        });
   }
 
   void _handleFinish(RpcMessage msg) {
@@ -497,7 +552,8 @@ class TwoPartyRpcConnection implements RpcConnection {
       } else if (msg.isReturnException) {
         if (_bootstrapCompleter != null && !_bootstrapCompleter!.isCompleted) {
           _bootstrapCompleter!.completeError(
-              RpcException(msg.exceptionReason ?? 'bootstrap failed'));
+            RpcException(msg.exceptionReason ?? 'bootstrap failed'),
+          );
         }
       }
     }
@@ -558,9 +614,10 @@ class TwoPartyRpcConnection implements RpcConnection {
     if (_closedError != null) return;
     _closedError = error ?? 'closed';
 
-    final err = error != null
-        ? RpcException(error.toString())
-        : const RpcException('connection closed');
+    final err =
+        error != null
+            ? RpcException(error.toString())
+            : const RpcException('connection closed');
 
     // Fail all pending questions.
     for (final c in _questions.values) {
@@ -636,7 +693,7 @@ class _ImportedCapability extends Capability {
   }
 
   _ImportedCapability.resolved(TwoPartyRpcConnection conn, int importId)
-      : this(conn, Future.value(importId));
+    : this(conn, Future.value(importId));
 
   @override
   Future<DispatchResult> dispatch(
@@ -705,24 +762,40 @@ class _WirePipelinedCapability extends Capability {
   final TwoPartyRpcConnection _conn;
   final int _parentQid;
   final int _ptrIndex;
+  late final Future<Capability> _resolution;
 
   // Set once the parent question resolves; null while still pending.
   // After resolution all new calls go directly to this cap (no pipelining).
   Capability? _resolved;
+  Object? _resolutionError;
+  StackTrace? _resolutionStackTrace;
   bool _disposed = false;
 
   _WirePipelinedCapability(
-      this._conn, this._parentQid, this._ptrIndex, Future<DispatchResult> parentResult) {
-    parentResult.then((result) async {
-      final resolved = capabilityFromResult(result, _ptrIndex) ?? NullCapability();
-      if (_disposed) {
-        await resolved.dispose();
-        return;
-      }
-      _resolved = resolved;
-    }).catchError((_) {
-      _resolved = NullCapability();
-    });
+    this._conn,
+    this._parentQid,
+    this._ptrIndex,
+    Future<DispatchResult> parentResult,
+  ) {
+    _resolution = parentResult.then(
+      (result) => requireCapabilityFromResult(result, _ptrIndex),
+    );
+    _resolution.ignore();
+    _resolution
+        .then(
+          (resolved) async {
+            if (_disposed) {
+              await resolved.dispose();
+              return;
+            }
+            _resolved = resolved;
+          },
+          onError: (Object err, StackTrace st) {
+            _resolutionError = err;
+            _resolutionStackTrace = st;
+          },
+        )
+        .ignore();
   }
 
   @override
@@ -734,8 +807,19 @@ class _WirePipelinedCapability extends Capability {
   }) {
     final r = _resolved;
     if (r != null) {
-      return r.dispatch(interfaceId, methodId, params,
-          paramsCapabilities: paramsCapabilities);
+      return r.dispatch(
+        interfaceId,
+        methodId,
+        params,
+        paramsCapabilities: paramsCapabilities,
+      );
+    }
+    final resolutionError = _resolutionError;
+    if (resolutionError != null) {
+      return Future.error(resolutionError, _resolutionStackTrace);
+    }
+    if (_disposed) {
+      return Future.error(const RpcException('capability is disposed'));
     }
     final (_, future) = _conn._startCall(
       null,
@@ -758,8 +842,19 @@ class _WirePipelinedCapability extends Capability {
   }) {
     final r = _resolved;
     if (r != null) {
-      return r.beginDispatch(interfaceId, methodId, params,
-          paramsCapabilities: paramsCapabilities);
+      return r.beginDispatch(
+        interfaceId,
+        methodId,
+        params,
+        paramsCapabilities: paramsCapabilities,
+      );
+    }
+    final resolutionError = _resolutionError;
+    if (resolutionError != null) {
+      return _ErrorCapCall(resolutionError, _resolutionStackTrace);
+    }
+    if (_disposed) {
+      return _ErrorCapCall(const RpcException('capability is disposed'));
     }
     final (qid, future) = _conn._startCall(
       null,
@@ -781,6 +876,21 @@ class _WirePipelinedCapability extends Capability {
       await resolved.dispose();
     }
   }
+}
+
+class _ErrorCapCall implements CapCall {
+  @override
+  final Future<DispatchResult> result;
+
+  _ErrorCapCall(Object error, [StackTrace? stackTrace])
+    : result = Future.error(error, stackTrace) {
+    result.ignore();
+  }
+
+  @override
+  Capability pipelineResult(int ptrIndex) => DeferredCapability(
+    result.then((r) => requireCapabilityFromResult(r, ptrIndex)),
+  );
 }
 
 // ---------------------------------------------------------------------------

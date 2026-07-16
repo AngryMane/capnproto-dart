@@ -560,6 +560,84 @@ void main() {
         await interceptSink.close();
       },
     );
+
+    test(
+      'parent failure is preserved for resolved pipelined capability',
+      () async {
+        final server = PipelineServer();
+        final (client, serverConn) = _makePipe(server);
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        await bootstrapCap.echo('warmup');
+
+        final call = bootstrapCap.cap.beginDispatch(
+          _echoInterfaceId,
+          999,
+          _buildEchoParams(''),
+        );
+        final pipelinedCap = call.pipelineResult(0);
+
+        await expectLater(call.result, throwsA(isA<RpcException>()));
+        await Future<void>.delayed(Duration.zero);
+
+        await expectLater(
+          pipelinedCap.dispatch(
+            _echoInterfaceId,
+            _echoMethodId,
+            _buildEchoParams('piped'),
+          ),
+          throwsA(
+            allOf(
+              isA<RpcException>(),
+              predicate<Object>(
+                (e) =>
+                    e.toString().contains('unknown method') &&
+                    !e.toString().contains('null capability'),
+              ),
+            ),
+          ),
+        );
+
+        await client.close();
+        await serverConn.close();
+      },
+    );
+
+    test('invalid result pointer is preserved for resolved pipeline', () async {
+      final server = MixedResultServer();
+      final (client, serverConn) = _makePipe(server);
+      final bootstrapCap = client.bootstrap(EchoClientFactory());
+      await bootstrapCap.echo('warmup');
+
+      final call = bootstrapCap.cap.beginDispatch(
+        _echoInterfaceId,
+        _mixedMethodId,
+        _buildEchoParams(''),
+      );
+      final pipelinedCap = call.pipelineResult(0);
+      await call.result;
+      await Future<void>.delayed(Duration.zero);
+
+      await expectLater(
+        pipelinedCap.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          _buildEchoParams('piped'),
+        ),
+        throwsA(
+          allOf(
+            isA<RpcException>(),
+            predicate<Object>(
+              (e) =>
+                  e.toString().contains('not a capability') &&
+                  !e.toString().contains('null capability'),
+            ),
+          ),
+        ),
+      );
+
+      await client.close();
+      await serverConn.close();
+    });
   });
 
   group('rpc_proto — message encoding/decoding', () {
