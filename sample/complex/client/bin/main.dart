@@ -1389,6 +1389,61 @@ Future<void> _s14_capsInStructs(ComplexTestServiceClient svc) async {
       'Optional capability none which', noneReader.optionalObserver?.which, 0);
   check('Optional capability none has no cap',
       noneReader.optionalObserver?.some == null);
+
+  // 14g: List(Interface) RPC round-trip via exchangeCapabilities
+  // Uses raw dispatch because the generated stub does not expose paramsCapabilities
+  // for capabilities nested inside a CapabilityBundle struct parameter.
+  try {
+    final r1 = await svc.makePipeline((b) => b.depth = 1);
+    final target14g_1 = r1.target;
+    final r2 = await svc.makePipeline((b) => b.depth = 2);
+    final target14g_2 = r2.target;
+
+    final mb = MessageBuilder();
+    final bundleBuilder =
+        mb.initRoot(complexTestServiceExchangeCapabilitiesParamsFactory).initBundle();
+    bundleBuilder.setPrimary(0); // cap index 0 → target14g_1
+    final tgts = bundleBuilder.initTargets(2);
+    tgts[0] = 0; // cap index 0 → target14g_1
+    tgts[1] = 1; // cap index 1 → target14g_2
+
+    final rawResult = await svc.capability.dispatch(
+      0xd7fb0472c16375ee, // ComplexTestService interface ID
+      5, // exchangeCapabilities method ID
+      mb.serialize(),
+      paramsCapabilities: [target14g_1.capability, target14g_2.capability],
+    );
+
+    final resultReader = MessageReader.deserialize(rawResult.bytes).getRoot(
+      complexTestServiceExchangeCapabilitiesResultsFactory,
+      capabilities: rawResult.caps,
+    );
+    final bundle = resultReader.bundle;
+    check('exchangeCapabilities returns bundle', bundle != null);
+
+    final echoTargets = bundle?.targets;
+    checkEq('exchangeCapabilities echoes 2 targets', echoTargets?.length, 2);
+
+    final t0 = echoTargets![0];
+    final t1 = echoTargets[1];
+    check('echoed target[0] not null', t0 != null);
+    check('echoed target[1] not null', t1 != null);
+
+    final ping0 =
+        await t0!.ping((b) => b.payload = Uint8List.fromList([0x1A]));
+    checkEq('echoed target[0].ping()', ping0.payload?[0], 0x1A);
+    final ping1 =
+        await t1!.ping((b) => b.payload = Uint8List.fromList([0x2B]));
+    checkEq('echoed target[1].ping()', ping1.payload?[0], 0x2B);
+
+    check('List(Interface) RPC round-trip passed', true);
+    await t0.dispose();
+    await t1.dispose();
+    await target14g_1.dispose();
+    await target14g_2.dispose();
+  } catch (e) {
+    fail('exchangeCapabilities List(Interface) RPC round-trip', e.toString());
+  }
 }
 
 // ─── 15. Promise Pipelining ────────────────────────────────────────────────────

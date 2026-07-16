@@ -740,12 +740,18 @@ impl complex_test_service::Server for ComplexTestServiceImpl {
 
     fn exchange_capabilities(
         &mut self,
-        _params: complex_test_service::ExchangeCapabilitiesParams,
-        _results: complex_test_service::ExchangeCapabilitiesResults,
+        params: complex_test_service::ExchangeCapabilitiesParams,
+        mut results: complex_test_service::ExchangeCapabilitiesResults,
     ) -> Promise<(), capnp::Error> {
-        Promise::err(capnp::Error::failed(
-            "exchangeCapabilities: not implemented".to_string(),
-        ))
+        println!("[server] exchangeCapabilities");
+        let p = pry!(params.get());
+        let in_bundle = pry!(p.get_bundle());
+        let primary = pry!(in_bundle.get_primary());
+        let in_targets = pry!(in_bundle.get_targets());
+        let mut out_bundle = results.get().init_bundle();
+        out_bundle.set_primary(primary);
+        pry!(out_bundle.set_targets(in_targets));
+        Promise::ok(())
     }
 
     fn call_observer(

@@ -20,6 +20,8 @@ const int _mixedMethodId = 2; // result has non-cap at slot 0, cap at slot 1
 const int _duplicateCapsMethodId = 3; // returns the same cap in two slots
 const int _largeCapResultMethodId = 4; // result has large data + cap
 const int _largeCapParamMethodId = 5; // params have large data + cap
+const int _listCapsResultMethodId = 6; // result has List(Interface) in ptr[0]
+const int _listCapsParamMethodId = 7; // params have List(Interface) in ptr[0]
 
 // Simple factory to build param message { message :Text } (ptr 0)
 Uint8List _buildEchoParams(String message) {
@@ -407,6 +409,53 @@ class LargeCapabilityPayloadServer extends Capability {
       return DispatchResult(bytes: _buildEchoParams('ok'));
     }
 
+    throw RpcException('unknown method: $methodId');
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
+// ---------------------------------------------------------------------------
+// ListCapsServer — tests List(Interface) over RPC
+//   method 6 (_listCapsResultMethodId): returns struct with List(Interface) in ptr[0]
+//   method 7 (_listCapsParamMethodId):  reads List(Interface) from params, calls each
+// ---------------------------------------------------------------------------
+
+class ListCapsServer extends Capability {
+  final EchoServer child0 = EchoServer();
+  final EchoServer child1 = EchoServer();
+
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) async {
+    if (methodId == _echoMethodId) {
+      return DispatchResult(bytes: _buildEchoParams('ok'));
+    }
+    if (methodId == _listCapsResultMethodId) {
+      final mb = MessageBuilder();
+      final list = mb.initRoot(_TextParamFactory()).initCapabilityListField(0, 2);
+      list[0] = 0;
+      list[1] = 1;
+      return DispatchResult(bytes: mb.serialize(), caps: [child0, child1]);
+    }
+    if (methodId == _listCapsParamMethodId) {
+      final root = MessageReader.deserialize(params).getRoot(_TextParamFactory());
+      final rawList = root.getCapabilityListField(0);
+      if (rawList == null || rawList.length < 2) {
+        throw const RpcException('expected List(Interface) with 2 caps in ptr[0]');
+      }
+      final cap0 = paramsCapabilities[rawList[0]];
+      final cap1 = paramsCapabilities[rawList[1]];
+      final r0 = await cap0.dispatch(_echoInterfaceId, _echoMethodId, _buildEchoParams('a'));
+      final r1 = await cap1.dispatch(_echoInterfaceId, _echoMethodId, _buildEchoParams('b'));
+      final reply = '${_parseEchoResult(r0.bytes)}|${_parseEchoResult(r1.bytes)}';
+      return DispatchResult(bytes: _buildEchoParams(reply));
+    }
     throw RpcException('unknown method: $methodId');
   }
 
@@ -2306,5 +2355,83 @@ void main() {
       await expectLater(stub.echo('after close'), throwsA(isA<RpcException>()));
       await server.close();
     });
+  });
+
+  group('TwoPartyRpcConnection — List(Interface) over RPC', () {
+    test(
+      'server returns List(Interface) in result, client reads and calls each cap',
+      () async {
+        final server = ListCapsServer();
+        final (client, serverConn) = _makePipe(server);
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        await bootstrapCap.echo('warmup');
+
+        final result = await bootstrapCap.cap.dispatch(
+          _echoInterfaceId,
+          _listCapsResultMethodId,
+          DispatchResult.empty.bytes,
+        );
+
+        final root = MessageReader.deserialize(
+          result.bytes,
+        ).getRoot(_TextParamFactory());
+        final rawList = root.getCapabilityListField(0);
+        expect(rawList?.length, 2);
+
+        final cap0 = result.caps[rawList![0]];
+        final cap1 = result.caps[rawList[1]];
+
+        final r0 = await cap0.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          _buildEchoParams('foo'),
+        );
+        expect(_parseEchoResult(r0.bytes), 'echo: foo');
+
+        final r1 = await cap1.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          _buildEchoParams('bar'),
+        );
+        expect(_parseEchoResult(r1.bytes), 'echo: bar');
+
+        await bootstrapCap.dispose();
+        await client.close();
+        await serverConn.close();
+      },
+    );
+
+    test(
+      'client sends List(Interface) in params, server reads and calls each cap',
+      () async {
+        final echoA = EchoServer();
+        final echoB = EchoServer();
+        final server = ListCapsServer();
+        final (client, serverConn) = _makePipe(server);
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        await bootstrapCap.echo('warmup');
+
+        final mb = MessageBuilder();
+        final list =
+            mb.initRoot(_TextParamFactory()).initCapabilityListField(0, 2);
+        list[0] = 0;
+        list[1] = 1;
+
+        final result = await bootstrapCap.cap.dispatch(
+          _echoInterfaceId,
+          _listCapsParamMethodId,
+          mb.serialize(),
+          paramsCapabilities: [echoA, echoB],
+        );
+
+        expect(_parseEchoResult(result.bytes), 'echo: a|echo: b');
+
+        await bootstrapCap.dispose();
+        await echoA.dispose();
+        await echoB.dispose();
+        await client.close();
+        await serverConn.close();
+      },
+    );
   });
 }
