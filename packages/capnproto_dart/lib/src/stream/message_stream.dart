@@ -22,7 +22,17 @@ class MessageStream {
   static Stream<MessageReader> deserializeStream(
     Stream<Uint8List> bytes, [
     MessageReaderOptions options = const MessageReaderOptions(),
-  ]) async* {
+  ]) =>
+      deserializeStreamRaw(bytes)
+          .map((raw) => MessageReader.deserialize(raw, options));
+
+  /// Like [deserializeStream] but yields the raw framed bytes for each message
+  /// instead of a parsed [MessageReader].  Useful when the caller needs both
+  /// the parsed content and the original bytes (e.g., to echo them back in an
+  /// Unimplemented response).
+  static Stream<Uint8List> deserializeStreamRaw(
+    Stream<Uint8List> bytes,
+  ) async* {
     final buffer = <int>[];
 
     await for (final chunk in bytes) {
@@ -54,7 +64,7 @@ class MessageStream {
         final msgBytes = Uint8List.fromList(buffer.sublist(0, totalBytes));
         buffer.removeRange(0, totalBytes);
 
-        yield MessageReader.deserialize(msgBytes, options);
+        yield msgBytes;
       }
     }
 

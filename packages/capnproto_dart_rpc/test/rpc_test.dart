@@ -129,6 +129,28 @@ class EchoClientFactory extends CapabilityFactory<EchoClient> {
 }
 
 // ---------------------------------------------------------------------------
+// CapReceivingServer — captures paramsCapabilities for inspection
+// ---------------------------------------------------------------------------
+
+class CapReceivingServer extends Capability {
+  List<Capability> lastParams = const [];
+
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) async {
+    lastParams = List.of(paramsCapabilities);
+    return DispatchResult(bytes: _buildEchoParams('ok'));
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -223,6 +245,177 @@ void main() {
       final msg = parseRpcMessage(bytes);
       expect(msg.type, RpcMessageType.abort);
       expect(msg.exceptionReason, 'fatal error');
+    });
+  });
+
+  group('rpc_proto — RPC-003 receiverHosted encoding', () {
+    test('buildCallMessage with receiverHosted entry encodes disc=3', () {
+      final mb = MessageBuilder();
+      mb.initRoot(_TextParamFactory()).setTextField(0, 'x');
+      final params = mb.serialize();
+
+      final bytes = buildCallMessage(
+        questionId: 1,
+        targetImportId: 0,
+        interfaceId: 0xABCD,
+        methodId: 0,
+        paramsBytes: params,
+        capTableEntries: const [(3, 42)], // receiverHosted, importId=42
+      );
+      final msg = parseRpcMessage(bytes);
+      expect(msg.paramsCapTable, hasLength(1));
+      expect(msg.paramsCapTable[0].$1, equals(3)); // disc=3: receiverHosted
+      expect(msg.paramsCapTable[0].$2, equals(42));
+    });
+
+    test('buildCallMessage with senderHosted entry encodes disc=1', () {
+      final mb = MessageBuilder();
+      mb.initRoot(_TextParamFactory());
+      final params = mb.serialize();
+
+      final bytes = buildCallMessage(
+        questionId: 1,
+        targetImportId: 0,
+        interfaceId: 0xABCD,
+        methodId: 0,
+        paramsBytes: params,
+        capTableEntries: const [(1, 7)], // senderHosted, exportId=7
+      );
+      final msg = parseRpcMessage(bytes);
+      expect(msg.paramsCapTable[0].$1, equals(1));
+      expect(msg.paramsCapTable[0].$2, equals(7));
+    });
+  });
+
+  group('rpc_proto — RPC-007 Unimplemented encoding', () {
+    test('buildUnimplementedMessage has disc=0 (unimplemented)', () {
+      final original = buildAbortMessage('test');
+      final unimpl = buildUnimplementedMessage(original);
+      final msg = parseRpcMessage(unimpl);
+      expect(msg.type, equals(RpcMessageType.unimplemented));
+    });
+
+    test('unknown disc value parses as RpcMessageType.other', () {
+      // Start from a known message and overwrite the disc field with an
+      // unknown value (99).  Message layout in the framed bytes:
+      //   [0..7]  framing header (8 bytes, 1 segment)
+      //   [8..15] segment word 0: root struct pointer
+      //   [16..23] segment word 1: Message data section (bytes 0-1 = disc)
+      final releaseBytes = buildReleaseMessage(1, 1);
+      final mangled = Uint8List.fromList(releaseBytes);
+      mangled[16] = 99; // disc lo byte
+      mangled[17] = 0;  // disc hi byte
+      expect(parseRpcMessage(mangled).type, equals(RpcMessageType.other));
+    });
+  });
+
+  group('TwoPartyRpcConnection — RPC-003 receiverHosted (imported cap returned to same peer)', () {
+    test('capability received from server and sent back arrives as server-side object', () async {
+      final server = CapReceivingServer();
+      final (client, serverConn) = _makePipe(server);
+
+      // Bootstrap: returns the server object itself.
+      final bootstrapCap = client.bootstrap(EchoClientFactory());
+
+      // Warm up so the bootstrap exchange completes.
+      await bootstrapCap.echo('warmup');
+
+      // Call the server, passing the bootstrap capability back as a param.
+      // With RPC-003 fixed, this should be sent as receiverHosted so the server
+      // receives its own capability object — not a proxy.
+      await bootstrapCap.cap.dispatch(
+        _echoInterfaceId,
+        _echoMethodId,
+        _buildEchoParams('test'),
+        paramsCapabilities: [bootstrapCap.cap],
+      );
+
+      // The server should have received its own capability (identity check).
+      expect(server.lastParams, hasLength(1));
+      expect(server.lastParams[0], same(server));
+
+      await client.close();
+      await serverConn.close();
+    });
+
+    test('capTable wire encoding uses disc=3 (receiverHosted) for imported cap', () async {
+      // Intercept the bytes going from client to server.
+      final clientToServer = StreamController<Uint8List>();
+      final serverToClient = StreamController<Uint8List>();
+      final captured = <Uint8List>[];
+
+      final interceptSink = StreamController<Uint8List>()
+        ..stream.listen((b) {
+          captured.add(b);
+          clientToServer.add(b);
+        });
+
+      final client = TwoPartyRpcConnection.client(
+        incoming: serverToClient.stream,
+        outgoing: interceptSink.sink,
+      );
+      TwoPartyRpcConnection.server(
+        incoming: clientToServer.stream,
+        outgoing: serverToClient.sink,
+        bootstrap: EchoServer(),
+      );
+
+      final stub = client.bootstrap(EchoClientFactory());
+      await stub.echo('warmup'); // ensure bootstrap is resolved
+
+      // Call with the bootstrap cap itself as a capability param.
+      await stub.cap.dispatch(
+        _echoInterfaceId,
+        _echoMethodId,
+        _buildEchoParams(''),
+        paramsCapabilities: [stub.cap],
+      );
+
+      // Find the Call message that has a non-empty capTable.
+      final callWithCap = captured
+          .map(parseRpcMessage)
+          .where((m) => m.type == RpcMessageType.call && m.paramsCapTable.isNotEmpty)
+          .toList();
+
+      expect(callWithCap, hasLength(1));
+      // disc=3 means receiverHosted — the peer's own export, no proxy.
+      expect(callWithCap.first.paramsCapTable.first.$1, equals(3));
+
+      await client.close();
+      await interceptSink.close();
+    });
+  });
+
+  group('TwoPartyRpcConnection — RPC-007 Unimplemented for unknown messages', () {
+    test('server sends Unimplemented when it receives a message with unknown disc', () async {
+      final serverInput = StreamController<Uint8List>();
+      final serverOutput = StreamController<Uint8List>();
+      final serverReceived = <RpcMessage>[];
+
+      serverOutput.stream.listen((bytes) => serverReceived.add(parseRpcMessage(bytes)));
+
+      TwoPartyRpcConnection.server(
+        incoming: serverInput.stream,
+        outgoing: serverOutput.sink,
+        bootstrap: EchoServer(),
+      );
+
+      // Build a message with an unknown disc (99) by mangling a Release message.
+      final releaseBytes = buildReleaseMessage(1, 1);
+      final mangled = Uint8List.fromList(releaseBytes);
+      mangled[16] = 99; // overwrite disc lo byte
+      mangled[17] = 0;
+
+      serverInput.add(mangled);
+      await Future<void>.delayed(Duration.zero); // let the event loop run
+
+      expect(
+        serverReceived.any((m) => m.type == RpcMessageType.unimplemented),
+        isTrue,
+        reason: 'server should reply with Unimplemented for unknown message disc',
+      );
+
+      await serverInput.close();
     });
   });
 

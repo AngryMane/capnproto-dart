@@ -147,11 +147,18 @@ class TwoPartyRpcConnection implements RpcConnection {
   }) async {
     if (_closedError != null) throw RpcException('connection is closed');
 
-    // Register any capabilities being sent as params as exports.
-    // Reuse existing export ID if we have already exported this capability.
-    final capExportIds = <int>[];
+    // Categorize each capability param:
+    //   - If it is a capability we imported from this same peer, send it back
+    //     as receiverHosted so the peer sees its own export without a proxy hop.
+    //   - Otherwise export it from our side as senderHosted.
+    final capEntries = <(int, int)>[];
     for (final cap in paramsCapabilities) {
-      capExportIds.add(_getOrCreateExportId(cap));
+      if (cap is _ImportedCapability && cap._conn == this) {
+        final importId = await cap._importIdFuture;
+        capEntries.add((3, importId)); // disc=3: receiverHosted
+      } else {
+        capEntries.add((1, _getOrCreateExportId(cap))); // disc=1: senderHosted
+      }
     }
 
     final importId = await importIdFuture;
@@ -165,7 +172,7 @@ class TwoPartyRpcConnection implements RpcConnection {
       interfaceId: interfaceId,
       methodId: methodId,
       paramsBytes: paramsBytes,
-      paramsCapExportIds: capExportIds,
+      capTableEntries: capEntries,
     ));
 
     final ret = await completer.future;
@@ -203,17 +210,19 @@ class TwoPartyRpcConnection implements RpcConnection {
   // ---------------------------------------------------------------------------
 
   void _runMessageLoop(Stream<Uint8List> incoming) {
-    // Use MessageStream to handle framing across chunks.
-    MessageStream.deserializeStream(incoming).listen(
-      (msgReader) => _handleIncomingMessage(msgReader),
+    // Use raw-bytes stream so the Unimplemented handler can echo the original.
+    MessageStream.deserializeStreamRaw(incoming).listen(
+      (rawBytes) {
+        final msg = parseRpcMessage(rawBytes);
+        _handleIncomingMessage(msg, rawBytes);
+      },
       onError: (Object err) => _tearDown(err),
       onDone: () => _tearDown(null),
     );
   }
 
-  void _handleIncomingMessage(MessageReader mr) {
+  void _handleIncomingMessage(RpcMessage msg, Uint8List rawBytes) {
     if (_closedError != null) return;
-    final msg = parseRpcMessageFromReader(mr);
 
     switch (msg.type) {
       case RpcMessageType.bootstrap:
@@ -228,9 +237,13 @@ class TwoPartyRpcConnection implements RpcConnection {
         _handleRelease(msg);
       case RpcMessageType.abort:
         _tearDown(RpcException(msg.exceptionReason ?? 'peer aborted'));
-      case RpcMessageType.other:
-        // Ignore unknown messages.
+      case RpcMessageType.unimplemented:
+        // The peer couldn't handle a message we sent; no action needed.
         break;
+      case RpcMessageType.other:
+        // Unknown message type: echo it back as Unimplemented so the peer
+        // knows we didn't handle it, rather than silently dropping it.
+        _sendRaw(buildUnimplementedMessage(rawBytes));
     }
   }
 

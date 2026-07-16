@@ -141,6 +141,8 @@ class _MsgBuilder extends StructBuilder {
       initStructFieldWith(0, _ReleaseBuilder.new, 1, 0);
   _ExceptionBuilder initAbort() =>
       initStructFieldWith(0, _ExceptionBuilder.new, 1, 2);
+  // Embed the original message bytes as the 'unimplemented' payload (AnyPointer).
+  void setUnimplementedPayload(Uint8List bytes) => setAnyPointerFromMessage(0, bytes);
 }
 
 class _BootstrapReader extends StructReader {
@@ -223,6 +225,10 @@ class _CapDescBuilder extends StructBuilder {
   void setSenderHosted(int exportId) {
     setUint32Field(_capDescData, exportId);
     setUint16Field(_capDescDisc, _capDescSenderHosted);
+  }
+  void setReceiverHosted(int importId) {
+    setUint32Field(_capDescData, importId);
+    setUint16Field(_capDescDisc, 3); // receiverHosted
   }
 }
 
@@ -311,6 +317,7 @@ enum RpcMessageType {
   finish,
   release,
   abort,
+  unimplemented, // disc=0: peer could not handle a message we sent
   other,
 }
 
@@ -380,14 +387,17 @@ Uint8List buildBootstrapMessage(int questionId) {
 }
 
 /// Serializes a Call message. [paramsBytes] is a standalone serialized struct.
-/// [paramsCapExportIds] are senderHosted export IDs to include in the capTable.
+///
+/// [capTableEntries] is an ordered list of `(disc, id)` pairs for the capTable:
+///   - disc=1 (senderHosted): we export [id] to the peer
+///   - disc=3 (receiverHosted): [id] is the peer's own export; no new export needed
 Uint8List buildCallMessage({
   required int questionId,
   required int targetImportId,
   required int interfaceId,
   required int methodId,
   required Uint8List paramsBytes,
-  List<int> paramsCapExportIds = const [],
+  List<(int, int)> capTableEntries = const [],
 }) {
   final mb = MessageBuilder();
   final msg = mb.initRoot(_msgFactory);
@@ -400,10 +410,15 @@ Uint8List buildCallMessage({
   call.initTarget().setImportedCap(targetImportId);
   final params = call.initParams();
   params.setContentBytes(paramsBytes);
-  if (paramsCapExportIds.isNotEmpty) {
-    final capTable = params.initCapTable(paramsCapExportIds.length);
-    for (int i = 0; i < paramsCapExportIds.length; i++) {
-      capTable[i].setSenderHosted(paramsCapExportIds[i]);
+  if (capTableEntries.isNotEmpty) {
+    final capTable = params.initCapTable(capTableEntries.length);
+    for (int i = 0; i < capTableEntries.length; i++) {
+      final (disc, id) = capTableEntries[i];
+      if (disc == 3) {
+        capTable[i].setReceiverHosted(id);
+      } else {
+        capTable[i].setSenderHosted(id);
+      }
     }
   }
   return mb.serialize();
@@ -501,6 +516,19 @@ Uint8List buildReleaseMessage(int id, int referenceCount) {
   final rel = msg.initRelease();
   rel.setId(id);
   rel.setReferenceCount(referenceCount);
+  return mb.serialize();
+}
+
+/// Serializes an Unimplemented message that echoes [originalMessageBytes].
+///
+/// Per the Cap'n Proto RPC spec, when a peer receives a message it cannot
+/// handle, it should echo the original message back inside an Unimplemented
+/// envelope (disc=0) so the sender knows which message was not understood.
+Uint8List buildUnimplementedMessage(Uint8List originalMessageBytes) {
+  final mb = MessageBuilder();
+  final msg = mb.initRoot(_msgFactory);
+  msg.setDisc(_msgUnimplemented);
+  msg.setUnimplementedPayload(originalMessageBytes);
   return mb.serialize();
 }
 
@@ -611,11 +639,13 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
       );
 
     case _msgAbort:
-    case _msgUnimplemented:
       return RpcMessage._(
         type: RpcMessageType.abort,
         exceptionReason: msg.asAbort?.reason ?? 'peer aborted',
       );
+
+    case _msgUnimplemented:
+      return const RpcMessage._(type: RpcMessageType.unimplemented);
 
     default:
       return const RpcMessage._(type: RpcMessageType.other);
