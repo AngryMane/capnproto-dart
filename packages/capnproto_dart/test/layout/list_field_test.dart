@@ -46,10 +46,14 @@ class ItemBuilder extends StructBuilder {
 }
 
 class _ItemFactory extends StructFactory<ItemReader, ItemBuilder> {
-  @override int get dataWords => 1;
-  @override int get ptrWords => 1;
-  @override ItemReader fromRawReader(RawStructReader r) => ItemReader(r);
-  @override ItemBuilder fromRawBuilder(RawStructBuilder r) => ItemBuilder(r);
+  @override
+  int get dataWords => 1;
+  @override
+  int get ptrWords => 1;
+  @override
+  ItemReader fromRawReader(RawStructReader r) => ItemReader(r);
+  @override
+  ItemBuilder fromRawBuilder(RawStructBuilder r) => ItemBuilder(r);
 }
 
 final itemFactory = _ItemFactory();
@@ -57,24 +61,24 @@ final itemFactory = _ItemFactory();
 class ContainerReader extends StructReader {
   ContainerReader(super.raw);
 
-  ListReader<bool>?     get bools    => getBoolListField(0);
-  ListReader<int>?      get int32s   => getInt32ListField(1);
-  ListReader<int>?      get uint64s  => getUint64ListField(2);
-  ListReader<double>?   get floats   => getFloat64ListField(3);
-  ListReader<String?>?  get texts    => getTextListField(4);
+  ListReader<bool>? get bools => getBoolListField(0);
+  ListReader<int>? get int32s => getInt32ListField(1);
+  ListReader<int>? get uint64s => getUint64ListField(2);
+  ListReader<double>? get floats => getFloat64ListField(3);
+  ListReader<String?>? get texts => getTextListField(4);
   ListReader<Uint8List?>? get dataList => getDataListField(5);
-  ListReader<ItemReader>? get items  =>
+  ListReader<ItemReader>? get items =>
       getStructListFieldWith(6, (r) => ItemReader(r));
 }
 
 class ContainerBuilder extends StructBuilder {
   ContainerBuilder(super.raw);
 
-  ListBuilder<bool>     initBools(int n)    => initBoolListField(0, n);
-  ListBuilder<int>      initInt32s(int n)   => initInt32ListField(1, n);
-  ListBuilder<int>      initUint64s(int n)  => initUint64ListField(2, n);
-  ListBuilder<double>   initFloats(int n)   => initFloat64ListField(3, n);
-  ListBuilder<String?>  initTexts(int n)    => initTextListField(4, n);
+  ListBuilder<bool> initBools(int n) => initBoolListField(0, n);
+  ListBuilder<int> initInt32s(int n) => initInt32ListField(1, n);
+  ListBuilder<int> initUint64s(int n) => initUint64ListField(2, n);
+  ListBuilder<double> initFloats(int n) => initFloat64ListField(3, n);
+  ListBuilder<String?> initTexts(int n) => initTextListField(4, n);
   ListBuilder<Uint8List?> initDataList(int n) => initDataListField(5, n);
   ListBuilder<ItemBuilder> initItems(int n) =>
       initStructListFieldWith(6, n, (r) => ItemBuilder(r), 1, 1);
@@ -83,14 +87,54 @@ class ContainerBuilder extends StructBuilder {
   ContainerReader asReader() => throw UnimplementedError();
 }
 
-class _ContainerFactory extends StructFactory<ContainerReader, ContainerBuilder> {
-  @override int get dataWords => 0;
-  @override int get ptrWords => 7;
-  @override ContainerReader fromRawReader(RawStructReader r) => ContainerReader(r);
-  @override ContainerBuilder fromRawBuilder(RawStructBuilder r) => ContainerBuilder(r);
+class _ContainerFactory
+    extends StructFactory<ContainerReader, ContainerBuilder> {
+  @override
+  int get dataWords => 0;
+  @override
+  int get ptrWords => 7;
+  @override
+  ContainerReader fromRawReader(RawStructReader r) => ContainerReader(r);
+  @override
+  ContainerBuilder fromRawBuilder(RawStructBuilder r) => ContainerBuilder(r);
 }
 
 final containerFactory = _ContainerFactory();
+
+class CapabilityListContainerReader extends StructReader {
+  CapabilityListContainerReader(super.raw);
+
+  ListReader<int>? get caps => getCapabilityListField(0);
+}
+
+class CapabilityListContainerBuilder extends StructBuilder {
+  CapabilityListContainerBuilder(super.raw);
+
+  ListBuilder<int> initCaps(int n) => initCapabilityListField(0, n);
+
+  @override
+  CapabilityListContainerReader asReader() => throw UnimplementedError();
+}
+
+class _CapabilityListContainerFactory
+    extends
+        StructFactory<
+          CapabilityListContainerReader,
+          CapabilityListContainerBuilder
+        > {
+  @override
+  int get dataWords => 0;
+  @override
+  int get ptrWords => 1;
+  @override
+  CapabilityListContainerReader fromRawReader(RawStructReader r) =>
+      CapabilityListContainerReader(r);
+  @override
+  CapabilityListContainerBuilder fromRawBuilder(RawStructBuilder r) =>
+      CapabilityListContainerBuilder(r);
+}
+
+final capabilityListContainerFactory = _CapabilityListContainerFactory();
 
 // ---------------------------------------------------------------------------
 // Hand-written structs for nested list tests.
@@ -108,18 +152,29 @@ class NestedContainerReader extends StructReader {
   ListReader<ListReader<double>?>? get rows =>
       getNestedListField(0, float64ListFromRaw);
 
-  ListReader<ListReader<ListReader<int>?>?>? get matrices =>
-      getNestedListField(1, (raw) => NestedListReader<int>(raw, int32ListFromRaw));
+  ListReader<ListReader<ListReader<int>?>?>? get matrices => getNestedListField(
+    1,
+    (raw) => NestedListReader<int>(raw, int32ListFromRaw),
+  );
 }
 
 class NestedContainerBuilder extends StructBuilder {
   NestedContainerBuilder(super.raw);
 
-  NestedListBuilder<ListBuilder<double>> initRows(int n) =>
-      initNestedListField(0, n, float64ListBuilderFromRaw, ListElementSize.eightBytes);
+  NestedListBuilder<ListBuilder<double>> initRows(int n) => initNestedListField(
+    0,
+    n,
+    float64ListBuilderFromRaw,
+    ListElementSize.eightBytes,
+  );
 
   NestedListBuilder<NestedListBuilder<ListBuilder<int>>> initMatrices(int n) =>
-      initBiNestedListField(1, n, int32ListBuilderFromRaw, ListElementSize.fourBytes);
+      initBiNestedListField(
+        1,
+        n,
+        int32ListBuilderFromRaw,
+        ListElementSize.fourBytes,
+      );
 
   @override
   NestedContainerReader asReader() => throw UnimplementedError();
@@ -127,8 +182,10 @@ class NestedContainerBuilder extends StructBuilder {
 
 class _NestedContainerFactory
     extends StructFactory<NestedContainerReader, NestedContainerBuilder> {
-  @override int get dataWords => 0;
-  @override int get ptrWords => 2;
+  @override
+  int get dataWords => 0;
+  @override
+  int get ptrWords => 2;
   @override
   NestedContainerReader fromRawReader(RawStructReader r) =>
       NestedContainerReader(r);
@@ -152,7 +209,10 @@ T _rtNested<T>(
 // ---------------------------------------------------------------------------
 // Helper: build → serialize → deserialize → inspect.
 // ---------------------------------------------------------------------------
-T _rt<T>(void Function(ContainerBuilder) build, T Function(ContainerReader) read) {
+T _rt<T>(
+  void Function(ContainerBuilder) build,
+  T Function(ContainerReader) read,
+) {
   final msg = MessageBuilder();
   build(msg.initRoot(containerFactory));
   final bytes = msg.serialize();
@@ -171,6 +231,24 @@ void main() {
     });
   });
 
+  group('Capability list', () {
+    test('unset element reads consistently from builder and reader', () {
+      final msg = MessageBuilder();
+      final root = msg.initRoot(capabilityListContainerFactory);
+      final caps = root.initCaps(2);
+
+      expect(caps[0], -1);
+      caps[1] = 0;
+      expect(caps[1], 0);
+
+      final reader = MessageReader.deserialize(
+        msg.serialize(),
+      ).getRoot(capabilityListContainerFactory);
+      expect(reader.caps![0], -1);
+      expect(reader.caps![1], 0);
+    });
+  });
+
   group('Bool list', () {
     test('round-trip [true, false, true]', () {
       final result = _rt((b) {
@@ -185,7 +263,9 @@ void main() {
     test('all-true list with 65 elements (crosses word boundary)', () {
       final result = _rt((b) {
         final list = b.initBools(65);
-        for (var i = 0; i < 65; i++) { list[i] = true; }
+        for (var i = 0; i < 65; i++) {
+          list[i] = true;
+        }
       }, (r) => r.bools!.toList());
       expect(result, everyElement(isTrue));
       expect(result.length, equals(65));
@@ -225,7 +305,9 @@ void main() {
     test('iterable works', () {
       final sum = _rt((b) {
         final list = b.initInt32s(5);
-        for (var i = 0; i < 5; i++) { list[i] = i + 1; }
+        for (var i = 0; i < 5; i++) {
+          list[i] = i + 1;
+        }
       }, (r) => r.int32s!.fold<int>(0, (acc, v) => acc + v));
       expect(sum, equals(15));
     });
@@ -325,10 +407,7 @@ void main() {
     });
 
     test('empty struct list has length 0', () {
-      expect(
-        _rt((b) => b.initItems(0), (r) => r.items!.length),
-        equals(0),
-      );
+      expect(_rt((b) => b.initItems(0), (r) => r.items!.length), equals(0));
     });
 
     test('single-element struct list', () {
@@ -341,7 +420,9 @@ void main() {
     test('struct list with 100 elements', () {
       final result = _rt((b) {
         final items = b.initItems(100);
-        for (var i = 0; i < 100; i++) { items[i].value = i; }
+        for (var i = 0; i < 100; i++) {
+          items[i].value = i;
+        }
       }, (r) => r.items!.map((e) => e.value).toList());
       expect(result, equals(List.generate(100, (i) => i)));
     });
@@ -379,31 +460,28 @@ void main() {
 
   group('NestedListBuilder (List(List(T)))', () {
     test('round-trip List(List(Float64)) with 2 rows of varying length', () {
-      final result = _rtNested((b) {
-        final rows = b.initRows(2);
-        final row0 = rows.initAt(0, 3);
-        row0[0] = 1.0;
-        row0[1] = 2.0;
-        row0[2] = 3.0;
-        final row1 = rows.initAt(1, 2);
-        row1[0] = 4.0;
-        row1[1] = 5.0;
-      }, (r) {
-        final rows = r.rows!;
-        return [
-          rows[0]!.toList(),
-          rows[1]!.toList(),
-        ];
-      });
+      final result = _rtNested(
+        (b) {
+          final rows = b.initRows(2);
+          final row0 = rows.initAt(0, 3);
+          row0[0] = 1.0;
+          row0[1] = 2.0;
+          row0[2] = 3.0;
+          final row1 = rows.initAt(1, 2);
+          row1[0] = 4.0;
+          row1[1] = 5.0;
+        },
+        (r) {
+          final rows = r.rows!;
+          return [rows[0]!.toList(), rows[1]!.toList()];
+        },
+      );
       expect(result[0], equals([1.0, 2.0, 3.0]));
       expect(result[1], equals([4.0, 5.0]));
     });
 
     test('empty outer list round-trips', () {
-      final result = _rtNested(
-        (b) => b.initRows(0),
-        (r) => r.rows!.length,
-      );
+      final result = _rtNested((b) => b.initRows(0), (r) => r.rows!.length);
       expect(result, equals(0));
     });
 
@@ -425,25 +503,49 @@ void main() {
 
   group('NestedListBuilder (List(List(List(Int32))))', () {
     test('round-trip 2×2×3 tensor', () {
-      final result = _rtNested((b) {
-        final mats = b.initMatrices(2);
-        final mat0 = mats.initAt(0, 2);
-        mat0.initAt(0, 3)..[0] = 1..[1] = 2..[2] = 3;
-        mat0.initAt(1, 3)..[0] = 4..[1] = 5..[2] = 6;
-        final mat1 = mats.initAt(1, 2);
-        mat1.initAt(0, 3)..[0] = 7..[1] = 8..[2] = 9;
-        mat1.initAt(1, 3)..[0] = 10..[1] = 11..[2] = 12;
-      }, (r) {
-        final mats = r.matrices!;
-        return [
-          for (var i = 0; i < 2; i++)
-            [for (var j = 0; j < 2; j++) mats[i]![j]!.toList()],
-        ];
-      });
-      expect(result, equals([
-        [[1, 2, 3], [4, 5, 6]],
-        [[7, 8, 9], [10, 11, 12]],
-      ]));
+      final result = _rtNested(
+        (b) {
+          final mats = b.initMatrices(2);
+          final mat0 = mats.initAt(0, 2);
+          mat0.initAt(0, 3)
+            ..[0] = 1
+            ..[1] = 2
+            ..[2] = 3;
+          mat0.initAt(1, 3)
+            ..[0] = 4
+            ..[1] = 5
+            ..[2] = 6;
+          final mat1 = mats.initAt(1, 2);
+          mat1.initAt(0, 3)
+            ..[0] = 7
+            ..[1] = 8
+            ..[2] = 9;
+          mat1.initAt(1, 3)
+            ..[0] = 10
+            ..[1] = 11
+            ..[2] = 12;
+        },
+        (r) {
+          final mats = r.matrices!;
+          return [
+            for (var i = 0; i < 2; i++)
+              [for (var j = 0; j < 2; j++) mats[i]![j]!.toList()],
+          ];
+        },
+      );
+      expect(
+        result,
+        equals([
+          [
+            [1, 2, 3],
+            [4, 5, 6],
+          ],
+          [
+            [7, 8, 9],
+            [10, 11, 12],
+          ],
+        ]),
+      );
     });
   });
 }

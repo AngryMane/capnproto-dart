@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import '../arena/arena_builder.dart';
-import '../wire/pointer.dart' show CapabilityPointer;
+import '../wire/pointer.dart' show CapabilityPointer, WirePointer;
 import '../wire/wire_helpers.dart';
 
 /// Writable view of a Cap'n Proto list field.
@@ -60,7 +60,11 @@ class PrimitiveIntListBuilder extends ListBuilder<int> {
   final int _elementBytes;
 
   PrimitiveIntListBuilder(
-      this._raw, this._read, this._write, this._elementBytes);
+    this._raw,
+    this._read,
+    this._write,
+    this._elementBytes,
+  );
 
   @override
   int get length => _raw.elementCount;
@@ -68,14 +72,20 @@ class PrimitiveIntListBuilder extends ListBuilder<int> {
   @override
   int operator [](int index) {
     RangeError.checkValidIndex(index, this, 'index', _raw.elementCount);
-    return _read(_raw.segment.data, _raw.dataByteOffset + index * _elementBytes);
+    return _read(
+      _raw.segment.data,
+      _raw.dataByteOffset + index * _elementBytes,
+    );
   }
 
   @override
   void operator []=(int index, int value) {
     RangeError.checkValidIndex(index, this, 'index', _raw.elementCount);
     _write(
-        _raw.segment.data, _raw.dataByteOffset + index * _elementBytes, value);
+      _raw.segment.data,
+      _raw.dataByteOffset + index * _elementBytes,
+      value,
+    );
   }
 }
 
@@ -87,7 +97,11 @@ class PrimitiveDoubleListBuilder extends ListBuilder<double> {
   final int _elementBytes;
 
   PrimitiveDoubleListBuilder(
-      this._raw, this._read, this._write, this._elementBytes);
+    this._raw,
+    this._read,
+    this._write,
+    this._elementBytes,
+  );
 
   @override
   int get length => _raw.elementCount;
@@ -95,14 +109,20 @@ class PrimitiveDoubleListBuilder extends ListBuilder<double> {
   @override
   double operator [](int index) {
     RangeError.checkValidIndex(index, this, 'index', _raw.elementCount);
-    return _read(_raw.segment.data, _raw.dataByteOffset + index * _elementBytes);
+    return _read(
+      _raw.segment.data,
+      _raw.dataByteOffset + index * _elementBytes,
+    );
   }
 
   @override
   void operator []=(int index, double value) {
     RangeError.checkValidIndex(index, this, 'index', _raw.elementCount);
     _write(
-        _raw.segment.data, _raw.dataByteOffset + index * _elementBytes, value);
+      _raw.segment.data,
+      _raw.dataByteOffset + index * _elementBytes,
+      value,
+    );
   }
 }
 
@@ -121,7 +141,8 @@ class TextListBuilder extends ListBuilder<String?> {
   @override
   String? operator [](int index) {
     throw UnsupportedError(
-        'reading from TextListBuilder is not supported; serialize and deserialize to read back');
+      'reading from TextListBuilder is not supported; serialize and deserialize to read back',
+    );
   }
 
   @override
@@ -144,7 +165,8 @@ class DataListBuilder extends ListBuilder<Uint8List?> {
   @override
   Uint8List? operator [](int index) {
     throw UnsupportedError(
-        'reading from DataListBuilder is not supported; serialize and deserialize to read back');
+      'reading from DataListBuilder is not supported; serialize and deserialize to read back',
+    );
   }
 
   @override
@@ -195,13 +217,18 @@ class EnumListBuilder<E> extends ListBuilder<E> {
   @override
   E operator [](int index) =>
       throw UnsupportedError(
-          'reading from EnumListBuilder is not supported; '
-          'serialize and deserialize to read back');
+        'reading from EnumListBuilder is not supported; '
+        'serialize and deserialize to read back',
+      );
 
   @override
   void operator []=(int index, E value) {
     RangeError.checkValidIndex(index, this, 'index', _raw.elementCount);
-    writeUint16(_raw.segment.data, _raw.dataByteOffset + index * 2, _toInt(value));
+    writeUint16(
+      _raw.segment.data,
+      _raw.dataByteOffset + index * 2,
+      _toInt(value),
+    );
   }
 }
 
@@ -221,24 +248,26 @@ class StructListBuilder<B> extends ListBuilder<B> {
   @override
   B operator [](int index) {
     RangeError.checkValidIndex(index, this, 'index', _raw.elementCount);
-    final stride =
-        (_raw.structDataWords + _raw.structPtrWords) * bytesPerWord;
+    final stride = (_raw.structDataWords + _raw.structPtrWords) * bytesPerWord;
     final elementWordOffset =
         (_raw.dataByteOffset + index * stride) ~/ bytesPerWord;
-    return _fromRaw(RawStructBuilder(
-      segment: _raw.segment,
-      arena: _raw.arena,
-      dataWordOffset: elementWordOffset,
-      dataWords: _raw.structDataWords,
-      ptrWordOffset: elementWordOffset + _raw.structDataWords,
-      ptrWords: _raw.structPtrWords,
-    ));
+    return _fromRaw(
+      RawStructBuilder(
+        segment: _raw.segment,
+        arena: _raw.arena,
+        dataWordOffset: elementWordOffset,
+        dataWords: _raw.structDataWords,
+        ptrWordOffset: elementWordOffset + _raw.structDataWords,
+        ptrWords: _raw.structPtrWords,
+      ),
+    );
   }
 
   @override
   void operator []=(int index, B value) {
     throw UnsupportedError(
-        'use builder[i] to get a struct element builder and modify it in place');
+      'use builder[i] to get a struct element builder and modify it in place',
+    );
   }
 }
 
@@ -257,8 +286,10 @@ class NestedListBuilder<T> {
   final int length;
   final T Function(int index, int innerCount) _initAt;
 
-  NestedListBuilder({required this.length, required T Function(int, int) initAt})
-      : _initAt = initAt;
+  NestedListBuilder({
+    required this.length,
+    required T Function(int, int) initAt,
+  }) : _initAt = initAt;
 
   /// Allocates [innerCount]-element inner list at outer slot [index] and
   /// returns a builder for it.
@@ -331,14 +362,16 @@ ListBuilder<Uint8List?> dataListBuilderFromRaw(RawListBuilder raw) =>
 
 /// Creates an [EnumListBuilder] from a [RawListBuilder] and a `toInt` function.
 ListBuilder<E> enumListBuilderFromRaw<E>(
-        RawListBuilder raw, int Function(E) toInt) =>
-    EnumListBuilder<E>(raw, toInt);
+  RawListBuilder raw,
+  int Function(E) toInt,
+) => EnumListBuilder<E>(raw, toInt);
 
 /// Creates a [StructListBuilder] from a [RawListBuilder] and a `fromRaw`
 /// factory function.
 ListBuilder<B> structListBuilderFromRaw<B>(
-        RawListBuilder raw, B Function(RawStructBuilder) fromRaw) =>
-    StructListBuilder<B>(raw, fromRaw);
+  RawListBuilder raw,
+  B Function(RawStructBuilder) fromRaw,
+) => StructListBuilder<B>(raw, fromRaw);
 
 /// List builder for capability fields stored as cap-table indices.
 ///
@@ -357,20 +390,21 @@ class CapabilityListBuilder extends ListBuilder<int> {
   @override
   int operator [](int index) {
     RangeError.checkValidIndex(index, this, 'index', _raw.elementCount);
-    return readUint32(
-        _raw.segment.data, _raw.dataByteOffset + index * bytesPerWord + 4);
+    final ptrWordOffset = _raw.dataByteOffset ~/ bytesPerWord + index;
+    final ptr = WirePointer.decode(_raw.segment.data, ptrWordOffset);
+    return ptr is CapabilityPointer ? ptr.capabilityIndex : -1;
   }
 
   @override
   void operator []=(int index, int capTableIndex) {
     RangeError.checkValidIndex(index, this, 'index', _raw.elementCount);
     final byteOffset = _raw.dataByteOffset + index * bytesPerWord;
-    CapabilityPointer(capabilityIndex: capTableIndex)
-        .encode(_raw.segment.data, byteOffset ~/ bytesPerWord);
+    CapabilityPointer(
+      capabilityIndex: capTableIndex,
+    ).encode(_raw.segment.data, byteOffset ~/ bytesPerWord);
   }
 }
 
 /// Creates a [CapabilityListBuilder] from a [RawListBuilder].
 ListBuilder<int> capabilityListBuilderFromRaw(RawListBuilder raw) =>
     CapabilityListBuilder(raw);
-
