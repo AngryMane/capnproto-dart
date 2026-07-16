@@ -634,7 +634,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     if (entry.remoteRefCount <= 0) {
       _exports.remove(msg.releaseId);
       _exportIds.remove(entry.capability);
-      entry.capability.dispose();
+      entry.capability.dispose().ignore();
     }
   }
 
@@ -733,7 +733,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     if (entry.remoteRefCount <= 0) {
       _exports.remove(eid);
       _exportIds.remove(entry.capability);
-      entry.capability.dispose();
+      entry.capability.dispose().ignore();
     }
   }
 
@@ -828,7 +828,7 @@ class TwoPartyRpcConnection implements RpcConnection {
 
     // Dispose all exported capabilities.
     for (final entry in _exports.values) {
-      entry.capability.dispose();
+      entry.capability.dispose().ignore();
     }
     _exports.clear();
     _exportIds.clear();
@@ -1141,14 +1141,12 @@ class _WirePipelinedCapability extends Capability {
 
   Future<T> _trackPipelinedCall<T>(Future<T> future) {
     _pendingPipelinedCalls++;
-    future
-        .whenComplete(() {
-          _pendingPipelinedCalls--;
-          if (_disposed) {
-            _disposeResolvedIfIdle().ignore();
-          }
-        })
-        .ignore();
+    future.whenComplete(() {
+      _pendingPipelinedCalls--;
+      if (_disposed) {
+        _disposeResolvedIfIdle().ignore();
+      }
+    }).ignore();
     return future;
   }
 

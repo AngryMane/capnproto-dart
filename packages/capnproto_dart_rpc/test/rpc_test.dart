@@ -124,6 +124,22 @@ class EchoServer extends Capability {
   Future<void> dispose() async {}
 }
 
+class ThrowingDisposeCapability extends Capability {
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) => Future.error(UnsupportedError('not used'));
+
+  @override
+  Future<void> dispose() async {
+    await Future<void>.delayed(Duration.zero);
+    throw StateError('dispose failed');
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Echo client stub
 // ---------------------------------------------------------------------------
@@ -1160,6 +1176,74 @@ void main() {
   });
 
   group('TwoPartyRpcConnection — RPC-005/RPC-006 lifecycle', () {
+    test(
+      'Release ignores async exported capability dispose failures',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        final captured = <Uint8List>[];
+        final uncaught = <Object>[];
+
+        final interceptSink =
+            StreamController<Uint8List>()
+              ..stream.listen((b) {
+                captured.add(b);
+                clientToServer.add(b);
+              });
+
+        TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: EchoServer(),
+        );
+        final client = TwoPartyRpcConnection.client(
+          incoming: serverToClient.stream,
+          outgoing: interceptSink.sink,
+        );
+
+        final bodyDone = Completer<void>();
+        runZonedGuarded(() {
+          () async {
+            try {
+              final bootstrapCap = client.bootstrap(EchoClientFactory());
+              await bootstrapCap.echo('warmup');
+
+              captured.clear();
+              await bootstrapCap.cap.dispatch(
+                _echoInterfaceId,
+                _echoMethodId,
+                _buildEchoParams('with-cap'),
+                paramsCapabilities: [ThrowingDisposeCapability()],
+              );
+
+              final callWithCap =
+                  captured
+                      .map(parseRpcMessage)
+                      .where(
+                        (m) =>
+                            m.type == RpcMessageType.call &&
+                            m.capTableDescriptors.isNotEmpty,
+                      )
+                      .single;
+              final exportId = callWithCap.capTableDescriptors.single.id;
+
+              serverToClient.add(buildReleaseMessage(exportId, 1));
+              await Future<void>.delayed(const Duration(milliseconds: 20));
+              bodyDone.complete();
+            } catch (error, stackTrace) {
+              bodyDone.completeError(error, stackTrace);
+            }
+          }();
+        }, (error, _) => uncaught.add(error));
+
+        await bodyDone.future;
+        expect(uncaught, isEmpty);
+
+        await client.close();
+        await interceptSink.close();
+      },
+    );
+
     test(
       'bootstrap Return without a capability fails the bootstrap cap',
       () async {
