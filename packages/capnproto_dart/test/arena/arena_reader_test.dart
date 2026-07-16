@@ -349,4 +349,81 @@ void main() {
       expect(() => resolveCompositeList(bytes), returnsNormally);
     });
   });
+
+  // ---- RUNTIME-003: Text NUL terminator validation -------------------------
+  //
+  // Layout:
+  //   word 0: root struct ptr (dw=0, pw=1)
+  //   word 1: list ptr (offset=0, elementSize=byte, elementCount=N)
+  //   word 2: list data (text bytes, padded to word boundary)
+  group('resolveTextAt NUL terminator validation (RUNTIME-003)', () {
+    Uint8List buildTextMessage(List<int> textBytes) {
+      final dataLen = textBytes.length;
+      final paddedWords =
+          dataLen == 0 ? 0 : (dataLen + bytesPerWord - 1) ~/ bytesPerWord;
+      // Always allocate at least one word at the list-data position so that
+      // _resolveByteListPointer does not hit a bounds error before our check.
+      final segWords = 2 + (paddedWords == 0 ? 1 : paddedWords);
+      final seg = ByteData(segWords * bytesPerWord);
+
+      StructPointer(offset: 0, dataWords: 0, ptrWords: 1).encode(seg, 0);
+      ListPointer(
+        offset: 0,
+        elementSize: ListElementSize.byte,
+        elementCountOrWordCount: dataLen,
+      ).encode(seg, 1);
+      for (var i = 0; i < dataLen; i++) {
+        seg.setUint8(2 * bytesPerWord + i, textBytes[i]);
+      }
+
+      final out = Uint8List(8 + segWords * bytesPerWord);
+      final hdr = ByteData.view(out.buffer);
+      writeUint32(hdr, 0, 0);
+      writeUint32(hdr, 4, segWords);
+      out.setRange(8, 8 + segWords * bytesPerWord,
+          seg.buffer.asUint8List(0, segWords * bytesPerWord));
+      return out;
+    }
+
+    String? resolveText(Uint8List bytes) {
+      final arena = ArenaReader.fromBytes(bytes, const MessageReaderOptions());
+      final raw = arena.getRootRaw();
+      // struct has dw=0, pw=1 → pointer section starts at same word as struct.
+      return arena.resolveTextAt(raw.segment, raw.ptrWordOffset);
+    }
+
+    test('elementCount=0 throws DecodeException', () {
+      expect(
+        () => resolveText(buildTextMessage([])),
+        throwsA(isA<DecodeException>()),
+      );
+    });
+
+    test('missing NUL terminator throws DecodeException', () {
+      // "hello" without trailing NUL
+      expect(
+        () => resolveText(buildTextMessage([0x68, 0x65, 0x6C, 0x6C, 0x6F])),
+        throwsA(isA<DecodeException>()),
+      );
+    });
+
+    test('valid text with NUL decodes correctly', () {
+      expect(
+        resolveText(buildTextMessage([0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x00])),
+        equals('hello'),
+      );
+    });
+
+    test('only NUL byte decodes to empty string', () {
+      expect(resolveText(buildTextMessage([0x00])), equals(''));
+    });
+
+    test('invalid UTF-8 bytes throw FormatException', () {
+      // 0xFF is not valid UTF-8; followed by NUL so it passes our checks.
+      expect(
+        () => resolveText(buildTextMessage([0xFF, 0x00])),
+        throwsA(isA<FormatException>()),
+      );
+    });
+  });
 }

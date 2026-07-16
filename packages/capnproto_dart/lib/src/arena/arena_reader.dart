@@ -352,13 +352,30 @@ class ArenaReader {
 
   /// Reads a Text (UTF-8 string) from a byte-list pointer at [wordOffset].
   /// Returns null for a null pointer.
+  ///
+  /// Throws [DecodeException] if the Cap'n Proto Text invariants are violated:
+  /// - `elementCount` must be >= 1 (every Text value has at least a NUL byte).
+  /// - The last byte must be `0x00` (NUL terminator).
+  ///
+  /// Invalid UTF-8 sequences cause [utf8.decode] to throw a [FormatException].
+  /// Callers that need lenient decoding can catch it and retry with
+  /// `utf8.decode(bytes, allowMalformed: true)`.
   String? resolveTextAt(SegmentReader seg, int wordOffset) {
     final ptr = WirePointer.decode(seg.data, wordOffset);
     if (ptr is NullPointer) return null;
     final (listSeg, dataByteOffset, elementCount) =
         _resolveByteListPointer(seg, wordOffset, ptr);
-    if (elementCount == 0) return '';
-    // Text always includes a null terminator counted in elementCount.
+    // The spec requires at least one byte: the NUL terminator.
+    if (elementCount < 1) {
+      throw DecodeException(
+          'Text field has elementCount=$elementCount; must be >= 1');
+    }
+    // Validate the NUL terminator.
+    final nulOffset = listSeg.data.offsetInBytes + dataByteOffset + elementCount - 1;
+    if (listSeg.data.buffer.asUint8List()[nulOffset] != 0) {
+      throw DecodeException('Text field is missing NUL terminator');
+    }
+    // Decode the content bytes (everything before the NUL).
     final bytes = Uint8List.view(
       listSeg.data.buffer,
       listSeg.data.offsetInBytes + dataByteOffset,
