@@ -16,6 +16,7 @@ import 'package:test/test.dart';
 const int _echoInterfaceId = 0x0001;
 const int _echoMethodId = 0;
 const int _pipelineMethodId = 1; // returns a capability in caps[0]
+const int _mixedMethodId = 2;    // result has non-cap at slot 0, cap at slot 1
 
 // Simple factory to build param message { message :Text } (ptr 0)
 Uint8List _buildEchoParams(String message) {
@@ -36,6 +37,17 @@ final class _TextParamFactory
     extends StructFactory<_TextParamReader, _TextParamBuilder> {
   @override int get dataWords => 0;
   @override int get ptrWords => 1;
+  @override _TextParamReader fromRawReader(RawStructReader r) =>
+      _TextParamReader(r);
+  @override _TextParamBuilder fromRawBuilder(RawStructBuilder r) =>
+      _TextParamBuilder(r);
+}
+
+// A struct factory with 0 dataWords and 2 ptrWords (for mixed-result tests).
+final class _TwoPtrFactory
+    extends StructFactory<_TextParamReader, _TextParamBuilder> {
+  @override int get dataWords => 0;
+  @override int get ptrWords => 2;
   @override _TextParamReader fromRawReader(RawStructReader r) =>
       _TextParamReader(r);
   @override _TextParamBuilder fromRawBuilder(RawStructBuilder r) =>
@@ -148,8 +160,42 @@ class PipelineServer extends Capability {
       return DispatchResult(bytes: _buildEchoParams('echo: $message'));
     }
     if (methodId == _pipelineMethodId) {
-      // Return this server as caps[0] so the client can pipeline onto it.
-      return DispatchResult(bytes: _buildEchoParams(''), caps: [this]);
+      // Result struct: 1 pointer slot.
+      // slot 0: CapabilityPointer(capTableIndex=0) → caps[0] = this server.
+      final mb = MessageBuilder();
+      mb.initRoot(_TextParamFactory()).setCapabilityField(0, 0);
+      return DispatchResult(bytes: mb.serialize(), caps: [this]);
+    }
+    throw RpcException('unknown method: $methodId');
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
+// MixedResultServer: method 2 returns a result struct with 2 pointer slots
+// where slot 0 is NOT a capability and slot 1 IS a capability (cap table index 0).
+// This is the scenario that exposed the RPC-001 bug (ptrIndex ≠ capTableIndex).
+class MixedResultServer extends Capability {
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) async {
+    if (methodId == _echoMethodId) {
+      final mr = MessageReader.deserialize(params);
+      final message = mr.getRoot(_TextParamFactory()).getTextField(0) ?? '';
+      return DispatchResult(bytes: _buildEchoParams('echo: $message'));
+    }
+    if (methodId == _mixedMethodId) {
+      // Result struct: 2 pointer slots.
+      // slot 0: null (not a capability)
+      // slot 1: CapabilityPointer(capTableIndex=0) → caps[0] = this server.
+      final mb = MessageBuilder();
+      mb.initRoot(_TwoPtrFactory()).setCapabilityField(1, 0);
+      return DispatchResult(bytes: mb.serialize(), caps: [this]);
     }
     throw RpcException('unknown method: $methodId');
   }
@@ -287,6 +333,30 @@ void main() {
       expect(pipelinedCall.targetPtrIndex, 0);
 
       await client.close();
+    });
+
+    test('pipelined call on ptr slot 1 (cap after non-cap slot) resolves correctly', () async {
+      // This is the RPC-001 regression test.
+      // The result struct has slot 0 = null (not a cap) and slot 1 = capability.
+      // ptrIndex=1 must resolve to caps[0], not caps[1] (which would be OOB).
+      final server = MixedResultServer();
+      final (client, serverConn) = _makePipe(server);
+      final bootstrapCap = client.bootstrap(EchoClientFactory());
+      await bootstrapCap.echo('warmup');
+
+      final call = bootstrapCap.cap.beginDispatch(
+        _echoInterfaceId, _mixedMethodId, _buildEchoParams(''),
+      );
+      // Pipeline onto ptr slot 1 (not slot 0), where the capability lives.
+      final pipelinedCap = call.pipelineResult(1);
+
+      final secondResult = await pipelinedCap.dispatch(
+        _echoInterfaceId, _echoMethodId, _buildEchoParams('piped'),
+      );
+      expect(_parseEchoResult(secondResult.bytes), equals('echo: piped'));
+
+      await client.close();
+      await serverConn.close();
     });
 
     test('Capability.beginDispatch on non-RPC cap falls back to DeferredCapability', () async {

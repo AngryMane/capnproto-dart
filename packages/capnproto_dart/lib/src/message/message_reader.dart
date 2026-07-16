@@ -28,4 +28,10 @@ class MessageReader {
     StructFactory<R, B> factory,
   ) =>
       factory.fromRawReader(_arena.getRootRaw());
+
+  /// Returns the raw struct reader for the root object.
+  ///
+  /// Used by low-level consumers (e.g. the RPC layer) that need to inspect
+  /// pointer slots directly without a typed factory.
+  RawStructReader getRootRaw() => _arena.getRootRaw();
 }

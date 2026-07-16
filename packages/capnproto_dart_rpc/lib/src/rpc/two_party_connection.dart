@@ -62,11 +62,13 @@ class TwoPartyRpcConnection implements RpcConnection {
   final Map<int, List<int>> _answers = {};
 
   // Promise-pipeline support (server side):
-  //   _answerCaps[qid]  — resolved caps for a completed incoming call
-  //   _pendingCaps[qid] — future that resolves to caps when dispatch completes
+  //   _answerCaps[qid]  — resolved answer for a completed incoming call
+  //   _pendingCaps[qid] — future that resolves to the answer when dispatch completes
   // Needed to handle promisedAnswer-targeted calls that arrive while qid is pending.
-  final Map<int, List<Capability>> _answerCaps = {};
-  final Map<int, Future<List<Capability>>> _pendingCaps = {};
+  // Both store _ResolvedAnswer (result bytes + cap table) so that
+  // _handlePipelinedCall can parse the pointer slot to get the correct cap table index.
+  final Map<int, _ResolvedAnswer> _answerCaps = {};
+  final Map<int, Future<_ResolvedAnswer>> _pendingCaps = {};
 
   // Set to a non-null error once the connection is closed.
   Object? _closedError;
@@ -357,14 +359,15 @@ class TwoPartyRpcConnection implements RpcConnection {
     // Already resolved: dispatch immediately.
     final resolved = _answerCaps[parentQid];
     if (resolved != null) {
-      if (ptrIndex >= resolved.length) {
+      final cap = _capFromPtrIndex(resolved, ptrIndex);
+      if (cap == null) {
         _sendRaw(buildReturnExceptionMessage(
           answerId: msg.questionId,
-          reason: 'pipeline cap index $ptrIndex out of range',
+          reason: 'pointer slot $ptrIndex in result struct is not a capability',
         ));
         return;
       }
-      _dispatchToCapability(msg, resolved[ptrIndex]);
+      _dispatchToCapability(msg, cap);
       return;
     }
 
@@ -377,21 +380,43 @@ class TwoPartyRpcConnection implements RpcConnection {
       ));
       return;
     }
-    pending.then((caps) {
-      if (ptrIndex >= caps.length) {
+    pending.then((resolved) {
+      final cap = _capFromPtrIndex(resolved, ptrIndex);
+      if (cap == null) {
         _sendRaw(buildReturnExceptionMessage(
           answerId: msg.questionId,
-          reason: 'pipeline cap index $ptrIndex out of range',
+          reason: 'pointer slot $ptrIndex in result struct is not a capability',
         ));
         return;
       }
-      _dispatchToCapability(msg, caps[ptrIndex]);
+      _dispatchToCapability(msg, cap);
     }).catchError((Object err) {
       _sendRaw(buildReturnExceptionMessage(
         answerId: msg.questionId,
         reason: 'parent call failed: $err',
       ));
     });
+  }
+
+  /// Resolves the capability at pointer slot [ptrIndex] of the result struct
+  /// encoded in [resolved].
+  ///
+  /// Returns null if [ptrIndex] is out of range, the pointer at that slot is
+  /// not a [CapabilityPointer], or the cap table index is out of range.
+  Capability? _capFromPtrIndex(_ResolvedAnswer resolved, int ptrIndex) {
+    if (resolved.caps.isEmpty) return null;
+    try {
+      final root = MessageReader.deserialize(resolved.resultBytes).getRootRaw();
+      if (ptrIndex >= root.ptrWords) return null;
+      final ptr = WirePointer.decode(
+          root.segment.data, root.ptrWordOffset + ptrIndex);
+      if (ptr is! CapabilityPointer) return null;
+      final capIdx = ptr.capabilityIndex;
+      if (capIdx >= resolved.caps.length) return null;
+      return resolved.caps[capIdx];
+    } catch (_) {
+      return null;
+    }
   }
 
   void _dispatchToCapability(RpcMessage msg, Capability cap) {
@@ -422,16 +447,17 @@ class TwoPartyRpcConnection implements RpcConnection {
       paramsCapabilities: paramsCapabilities,
     );
 
-    // Track the caps future so pipelined calls can queue behind it.
+    // Track the resolved-answer future so pipelined calls can queue behind it.
     // Attach .ignore() to prevent unhandled-rejection if dispatch throws —
     // pipelined callers handle the error via their own catchError.
-    final capsFuture = dispatchFuture.then((r) => r.caps);
-    capsFuture.ignore();
-    _pendingCaps[qid] = capsFuture;
+    final resolvedFuture = dispatchFuture
+        .then((r) => _ResolvedAnswer(r.bytes, r.caps));
+    resolvedFuture.ignore();
+    _pendingCaps[qid] = resolvedFuture;
 
     dispatchFuture.then((result) {
       _pendingCaps.remove(qid);
-      _answerCaps[qid] = result.caps;
+      _answerCaps[qid] = _ResolvedAnswer(result.bytes, result.caps);
 
       final resultExportIds = <int>[];
       if (result.caps.isEmpty) {
@@ -739,6 +765,22 @@ class _WirePipelinedCapability extends Capability {
   Future<void> dispose() async {
     // When the parent resolves, we could send a Release; for now no-op.
   }
+}
+
+// ---------------------------------------------------------------------------
+// _ResolvedAnswer: result bytes + cap table for a completed server dispatch
+// ---------------------------------------------------------------------------
+
+/// Holds the serialized result message and the corresponding cap table for a
+/// completed incoming call.  Both are needed by [TwoPartyRpcConnection] to
+/// resolve promise-pipelined calls: the result bytes encode which pointer slot
+/// maps to which cap table index via a [CapabilityPointer], so the lookup must
+/// parse the pointer rather than using the pointer-slot number as a cap table
+/// index directly.
+class _ResolvedAnswer {
+  final Uint8List resultBytes;
+  final List<Capability> caps;
+  _ResolvedAnswer(this.resultBytes, this.caps);
 }
 
 // ---------------------------------------------------------------------------

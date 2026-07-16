@@ -38,6 +38,7 @@ export 'src/stream/message_stream.dart';
 // ---------------------------------------------------------------------------
 
 export 'src/arena/arena_reader.dart' show RawStructReader, RawListReader;
+export 'src/wire/pointer.dart' show WirePointer, CapabilityPointer;
 export 'src/arena/arena_builder.dart' show RawStructBuilder;
 export 'src/layout/struct_factory.dart';
 export 'src/layout/struct_reader.dart';
