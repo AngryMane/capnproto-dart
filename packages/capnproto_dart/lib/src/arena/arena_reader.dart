@@ -489,6 +489,16 @@ class ArenaReader {
     return ArenaReader(segments, options);
   }
 
+  /// Creates a **live-view** reader that shares the builder's buffer.
+  ///
+  /// The returned [ArenaReader] wraps the same segment data as [builder].
+  /// Subsequent writes through the builder are immediately visible through
+  /// the returned reader.
+  ///
+  /// If you need an immutable snapshot, serialize and deserialize instead:
+  /// ```dart
+  /// final snapshot = MessageReader.deserialize(messageBuilder.serialize());
+  /// ```
   factory ArenaReader.fromBuilder(
     ArenaBuilder builder, [
     MessageReaderOptions options = const MessageReaderOptions(),

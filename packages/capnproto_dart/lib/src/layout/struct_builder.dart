@@ -21,7 +21,17 @@ abstract class StructBuilder {
   /// capnpc-dart can forward the same raw bytes to their own constructor.
   RawStructBuilder get raw => _raw;
 
-  /// Returns a read-only view of this builder's current state.
+  /// Returns a read-only **live view** over this builder's data.
+  ///
+  /// The returned reader shares the same underlying buffer as the builder.
+  /// Subsequent writes through the builder are immediately visible through
+  /// the returned reader.
+  ///
+  /// If you need an immutable snapshot, serialize and deserialize the message:
+  /// ```dart
+  /// final snapshot = MessageReader.deserialize(builder.serialize());
+  /// ```
+  ///
   /// Generated subclasses override this to return the typed reader.
   StructReader asReader();
 
@@ -253,7 +263,11 @@ abstract class StructBuilder {
         fromRaw,
       );
 
-  /// Returns a read-only view of this builder's current contents.
+  /// Returns a read-only **live view** over this builder's current contents.
+  ///
+  /// The returned [RawStructReader] shares the same underlying buffer as the
+  /// builder. Subsequent writes through the builder are immediately visible
+  /// through the returned reader.
   RawStructReader rawToReader() {
     final arena = ArenaReader.fromBuilder(_raw.arena);
     return RawStructReader(
