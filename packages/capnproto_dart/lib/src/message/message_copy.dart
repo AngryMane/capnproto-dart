@@ -18,6 +18,10 @@ import 'message_reader_options.dart';
 /// This is a bytes-only copy: capability pointers are zeroed because their
 /// indices are meaningful only together with the original message's capability
 /// table, which is not represented in raw serialized bytes.
+///
+/// When [preserveCapabilityPointers] is true and [messageBytes] is already a
+/// single-segment message, this returns [messageBytes] unchanged. Callers must
+/// treat the returned bytes as sharing ownership with the input.
 Uint8List ensureSingleSegment(
   Uint8List messageBytes, {
   bool preserveCapabilityPointers = false,
@@ -90,19 +94,35 @@ void copyMessageRootToBuilder(
 
 /// Reads the AnyPointer at ptr slot [ptrIndex] of [host], deep-copies the
 /// referenced struct into a new standalone message, and returns the serialized
-/// bytes.  Returns null if the pointer is null or a CapabilityPointer
-/// (capabilities cannot be deep-copied).
+/// bytes. Returns null if the pointer is null. Top-level capability pointers
+/// are returned only when [preserveCapabilityPointers] is true.
 Uint8List? copyAnyPointerToNewMessage(
   RawStructReader host,
   int ptrIndex, {
   bool preserveCapabilityPointers = false,
 }) {
-  if (ptrIndex >= host.ptrWords) return null;
+  if (ptrIndex < 0 || ptrIndex >= host.ptrWords) return null;
   final ptrWordOffset = host.ptrWordOffset + ptrIndex;
 
   // Peek at the pointer type before attempting resolution.
   final peeked = WirePointer.decode(host.segment.data, ptrWordOffset);
-  if (peeked is NullPointer || peeked is CapabilityPointer) return null;
+  if (peeked is NullPointer) return null;
+  if (peeked is CapabilityPointer) {
+    if (!preserveCapabilityPointers) return null;
+    final dst = ArenaBuilder();
+    final (ptrSeg, rootPtrOffset) = dst.allocate(1);
+    _copyPointer(
+      host.arena,
+      host.segment,
+      ptrWordOffset,
+      host.nestingLimit,
+      dst,
+      ptrSeg,
+      rootPtrOffset,
+      preserveCapabilityPointers: true,
+    );
+    return dst.serialize();
+  }
 
   final src = host.arena.resolveOptionalStructAt(
     host.segment,

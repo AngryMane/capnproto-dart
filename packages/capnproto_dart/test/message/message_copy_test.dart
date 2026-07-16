@@ -320,6 +320,30 @@ void main() {
       expect(any.asCapability(), same(cap));
     });
 
+    test(
+      'copyAnyPointerToNewMessage preserves top-level capability pointer',
+      () {
+        final hostBuilder = MessageBuilder();
+        hostBuilder.initRoot(anyHostFactory).initAnyPayload().setCapability(4);
+
+        final hostReader = MessageReader.deserialize(
+          hostBuilder.serialize(),
+        ).getRoot(anyHostFactory);
+
+        expect(hostReader.anyPayload!.asMessageBytes(), isNull);
+
+        final copiedBytes = hostReader.anyPayload!.asMessageBytes(
+          preserveCapabilityPointers: true,
+        );
+        expect(copiedBytes, isNotNull);
+
+        final segmentData = ByteData.sublistView(copiedBytes!, 8);
+        final rootPointer = WirePointer.decode(segmentData, 0);
+        expect(rootPointer, isA<CapabilityPointer>());
+        expect((rootPointer as CapabilityPointer).capabilityIndex, equals(4));
+      },
+    );
+
     test('dynamic struct API reads and writes data and pointer fields', () {
       final hostBuilder = MessageBuilder();
       final dynamicStruct = hostBuilder
