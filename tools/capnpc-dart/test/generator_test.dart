@@ -306,7 +306,12 @@ void main() {
       final src = generateDartFile(file, [file, sNode, addrNode]);
 
       expect(src, contains('AddressReader? get address =>'));
-      expect(src, contains('getStructFieldWith(0, (r) => AddressReader(r))'));
+      expect(
+        src,
+        contains(
+          'getStructFieldWith(0, (r) => AddressReader(r, capabilities: capabilityTable))',
+        ),
+      );
       expect(src, contains('AddressBuilder initAddress()'));
       expect(src, contains('bool hasAddress()'));
     });
@@ -340,6 +345,32 @@ void main() {
 
       expect(src, contains('ListReader<ItemReader>? get items'));
       expect(src, contains('ListBuilder<ItemBuilder> initItems(int length)'));
+    });
+
+    test('interface list reader exposes typed clients and cap indices', () {
+      const sessionId = 41;
+      final sessionNode = interfaceNode(sessionId, 'Session', []);
+      final sNode = structNode(20, 'S', 0, 1, [
+        ptrField('sessions', 0, 0, ListType(InterfaceRefType(sessionId))),
+      ]);
+      final file = fileNode(1, [
+        SchemaNestedNode(name: 'S', id: 20),
+        SchemaNestedNode(name: 'Session', id: sessionId),
+      ]);
+      final src = generateDartFile(file, [file, sNode, sessionNode]);
+
+      expect(
+        src,
+        contains(
+          'ListReader<SessionClient?>? get sessions => getCapabilityListFieldWith<SessionClient>(0, (cap) => SessionClient(cap as Capability))',
+        ),
+      );
+      expect(
+        src,
+        contains(
+          'ListReader<int>? get sessionsCapIndices => getCapabilityListField(0)',
+        ),
+      );
     });
   });
 
@@ -461,7 +492,10 @@ void main() {
         src,
         contains('_cap.dispatch(0x000000001234abcd, 0, mb.serialize())'),
       );
-      expect(src, contains('.getRoot(greetResultsFactory)'));
+      expect(
+        src,
+        contains('.getRoot(greetResultsFactory, capabilities: result.caps)'),
+      );
     });
 
     test('generates factory', () {
@@ -634,7 +668,7 @@ void main() {
         expect(
           src,
           contains(
-            'KeyValueTextTextReader? get pair => getStructFieldWith(0, (r) => KeyValueTextTextReader(r))',
+            'KeyValueTextTextReader? get pair => getStructFieldWith(0, (r) => KeyValueTextTextReader(r, capabilities: capabilityTable))',
           ),
         );
       },
@@ -670,7 +704,7 @@ void main() {
         expect(
           src,
           contains(
-            'ListReader<KeyValueTextTextReader>? get entries => getStructListFieldWith(0, (r) => KeyValueTextTextReader(r))',
+            'ListReader<KeyValueTextTextReader>? get entries => getStructListFieldWith(0, (r) => KeyValueTextTextReader(r, capabilities: capabilityTable))',
           ),
         );
       },

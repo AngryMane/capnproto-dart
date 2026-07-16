@@ -102,9 +102,11 @@ class _ContainerFactory
 final containerFactory = _ContainerFactory();
 
 class CapabilityListContainerReader extends StructReader {
-  CapabilityListContainerReader(super.raw);
+  CapabilityListContainerReader(super.raw, {super.capabilities});
 
   ListReader<int>? get caps => getCapabilityListField(0);
+  ListReader<String?>? get typedCaps =>
+      getCapabilityListFieldWith<String>(0, (cap) => cap as String);
 }
 
 class CapabilityListContainerBuilder extends StructBuilder {
@@ -129,6 +131,11 @@ class _CapabilityListContainerFactory
   @override
   CapabilityListContainerReader fromRawReader(RawStructReader r) =>
       CapabilityListContainerReader(r);
+  @override
+  CapabilityListContainerReader fromRawReaderWithCapabilities(
+    RawStructReader r,
+    List<Object?> capabilities,
+  ) => CapabilityListContainerReader(r, capabilities: capabilities);
   @override
   CapabilityListContainerBuilder fromRawBuilder(RawStructBuilder r) =>
       CapabilityListContainerBuilder(r);
@@ -246,6 +253,22 @@ void main() {
       ).getRoot(capabilityListContainerFactory);
       expect(reader.caps![0], -1);
       expect(reader.caps![1], 0);
+    });
+
+    test('typed reader resolves capability pointers through cap table', () {
+      final msg = MessageBuilder();
+      final root = msg.initRoot(capabilityListContainerFactory);
+      final caps = root.initCaps(2);
+      caps[0] = 1;
+      caps[1] = 0;
+
+      final reader = MessageReader.deserialize(msg.serialize()).getRoot(
+        capabilityListContainerFactory,
+        capabilities: ['alpha', 'bravo'],
+      );
+
+      expect(reader.caps!.toList(), equals([1, 0]));
+      expect(reader.typedCaps!.toList(), equals(['bravo', 'alpha']));
     });
   });
 

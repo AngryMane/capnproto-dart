@@ -41,7 +41,7 @@ Relationship? relationshipFromUint16(int v) => v < Relationship.values.length ? 
 int relationshipToUint16(Relationship v) => v.index;
 
 final class EmptyReader extends StructReader {
-  EmptyReader(super.raw);
+  EmptyReader(super.raw, {super.capabilities});
 }
 
 final class EmptyBuilder extends StructBuilder {
@@ -58,13 +58,15 @@ final class _EmptyFactory
   @override
   EmptyReader fromRawReader(RawStructReader r) => EmptyReader(r);
   @override
+  EmptyReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => EmptyReader(r, capabilities: capabilities);
+  @override
   EmptyBuilder fromRawBuilder(RawStructBuilder r) => EmptyBuilder(r);
 }
 
 final emptyFactory = _EmptyFactory();
 
 final class TinyReader extends StructReader {
-  TinyReader(super.raw);
+  TinyReader(super.raw, {super.capabilities});
 
   bool get flag => getBoolField(0);
 }
@@ -87,13 +89,15 @@ final class _TinyFactory
   @override
   TinyReader fromRawReader(RawStructReader r) => TinyReader(r);
   @override
+  TinyReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => TinyReader(r, capabilities: capabilities);
+  @override
   TinyBuilder fromRawBuilder(RawStructBuilder r) => TinyBuilder(r);
 }
 
 final tinyFactory = _TinyFactory();
 
 final class AllScalarsReader extends StructReader {
-  AllScalarsReader(super.raw);
+  AllScalarsReader(super.raw, {super.capabilities});
 
 
   bool get boolean => getBoolField(0, defaultValue: true);
@@ -195,13 +199,15 @@ final class _AllScalarsFactory
   @override
   AllScalarsReader fromRawReader(RawStructReader r) => AllScalarsReader(r);
   @override
+  AllScalarsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => AllScalarsReader(r, capabilities: capabilities);
+  @override
   AllScalarsBuilder fromRawBuilder(RawStructBuilder r) => AllScalarsBuilder(r);
 }
 
 final allScalarsFactory = _AllScalarsFactory();
 
 final class TimestampReader extends StructReader {
-  TimestampReader(super.raw);
+  TimestampReader(super.raw, {super.capabilities});
 
   int get seconds => getInt64Field(0);
 
@@ -230,13 +236,15 @@ final class _TimestampFactory
   @override
   TimestampReader fromRawReader(RawStructReader r) => TimestampReader(r);
   @override
+  TimestampReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => TimestampReader(r, capabilities: capabilities);
+  @override
   TimestampBuilder fromRawBuilder(RawStructBuilder r) => TimestampBuilder(r);
 }
 
 final timestampFactory = _TimestampFactory();
 
 final class IdentifierReader extends StructReader {
-  IdentifierReader(super.raw);
+  IdentifierReader(super.raw, {super.capabilities});
 
   int get which => getUint16Field(8);
 
@@ -283,13 +291,15 @@ final class _IdentifierFactory
   @override
   IdentifierReader fromRawReader(RawStructReader r) => IdentifierReader(r);
   @override
+  IdentifierReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => IdentifierReader(r, capabilities: capabilities);
+  @override
   IdentifierBuilder fromRawBuilder(RawStructBuilder r) => IdentifierBuilder(r);
 }
 
 final identifierFactory = _IdentifierFactory();
 
 final class AddressReader extends StructReader {
-  AddressReader(super.raw);
+  AddressReader(super.raw, {super.capabilities});
 
   String? get country => getTextField(0);
 
@@ -336,15 +346,17 @@ final class _AddressFactory
   @override
   AddressReader fromRawReader(RawStructReader r) => AddressReader(r);
   @override
+  AddressReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => AddressReader(r, capabilities: capabilities);
+  @override
   AddressBuilder fromRawBuilder(RawStructBuilder r) => AddressBuilder(r);
 }
 
 final addressFactory = _AddressFactory();
 
 final class PersonReader extends StructReader {
-  PersonReader(super.raw);
+  PersonReader(super.raw, {super.capabilities});
 
-  IdentifierReader? get id => getStructFieldWith(0, (r) => IdentifierReader(r));
+  IdentifierReader? get id => getStructFieldWith(0, (r) => IdentifierReader(r, capabilities: capabilityTable));
 
   String? get name => getTextField(1);
 
@@ -354,17 +366,17 @@ final class PersonReader extends StructReader {
 
   Color? get favoriteColor => colorFromUint16(getUint16Field(2, defaultValue: 3));
 
-  TimestampReader? get createdAt => getStructFieldWith(3, (r) => TimestampReader(r));
+  TimestampReader? get createdAt => getStructFieldWith(3, (r) => TimestampReader(r, capabilities: capabilityTable));
 
-  contactReader get contact => contactReader(raw);
+  contactReader get contact => contactReader(raw, capabilities: capabilityTable);
 
   ListReader<String?>? get tags => getTextListField(6);
 
-  ListReader<KeyValueTextTextReader>? get attributes => getStructListFieldWith(7, (r) => KeyValueTextTextReader(r));
+  ListReader<KeyValueTextTextReader>? get attributes => getStructListFieldWith(7, (r) => KeyValueTextTextReader(r, capabilities: capabilityTable));
 
-  ListReader<EmploymentReader>? get employments => getStructListFieldWith(8, (r) => EmploymentReader(r));
+  ListReader<EmploymentReader>? get employments => getStructListFieldWith(8, (r) => EmploymentReader(r, capabilities: capabilityTable));
 
-  ListReader<RelatedPersonReader>? get related => getStructListFieldWith(9, (r) => RelatedPersonReader(r));
+  ListReader<RelatedPersonReader>? get related => getStructListFieldWith(9, (r) => RelatedPersonReader(r, capabilities: capabilityTable));
 }
 
 final class PersonBuilder extends StructBuilder {
@@ -429,13 +441,15 @@ final class _PersonFactory
   @override
   PersonReader fromRawReader(RawStructReader r) => PersonReader(r);
   @override
+  PersonReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => PersonReader(r, capabilities: capabilities);
+  @override
   PersonBuilder fromRawBuilder(RawStructBuilder r) => PersonBuilder(r);
 }
 
 final personFactory = _PersonFactory();
 
 final class EmploymentReader extends StructReader {
-  EmploymentReader(super.raw);
+  EmploymentReader(super.raw, {super.capabilities});
 
   int get which => getUint16Field(0);
 
@@ -443,10 +457,10 @@ final class EmploymentReader extends StructReader {
 
   String? get title => getTextField(1);
 
-  TimestampReader? get since => getStructFieldWith(2, (r) => TimestampReader(r));
+  TimestampReader? get since => getStructFieldWith(2, (r) => TimestampReader(r, capabilities: capabilityTable));
 
 
-  TimestampReader? get endedAt => getStructFieldWith(3, (r) => TimestampReader(r));
+  TimestampReader? get endedAt => getStructFieldWith(3, (r) => TimestampReader(r, capabilities: capabilityTable));
 }
 
 final class EmploymentBuilder extends StructBuilder {
@@ -492,15 +506,17 @@ final class _EmploymentFactory
   @override
   EmploymentReader fromRawReader(RawStructReader r) => EmploymentReader(r);
   @override
+  EmploymentReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => EmploymentReader(r, capabilities: capabilities);
+  @override
   EmploymentBuilder fromRawBuilder(RawStructBuilder r) => EmploymentBuilder(r);
 }
 
 final employmentFactory = _EmploymentFactory();
 
 final class RelatedPersonReader extends StructReader {
-  RelatedPersonReader(super.raw);
+  RelatedPersonReader(super.raw, {super.capabilities});
 
-  PersonReader? get person => getStructFieldWith(0, (r) => PersonReader(r));
+  PersonReader? get person => getStructFieldWith(0, (r) => PersonReader(r, capabilities: capabilityTable));
 
   Relationship? get relationship => relationshipFromUint16(getUint16Field(0));
 }
@@ -530,13 +546,15 @@ final class _RelatedPersonFactory
   @override
   RelatedPersonReader fromRawReader(RawStructReader r) => RelatedPersonReader(r);
   @override
+  RelatedPersonReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => RelatedPersonReader(r, capabilities: capabilities);
+  @override
   RelatedPersonBuilder fromRawBuilder(RawStructBuilder r) => RelatedPersonBuilder(r);
 }
 
 final relatedPersonFactory = _RelatedPersonFactory();
 
 final class KeyValueReader extends StructReader {
-  KeyValueReader(super.raw);
+  KeyValueReader(super.raw, {super.capabilities});
 
   Uint8List? get key => getAnyPointerAsMessageBytes(0);
 
@@ -565,13 +583,15 @@ final class _KeyValueFactory
   @override
   KeyValueReader fromRawReader(RawStructReader r) => KeyValueReader(r);
   @override
+  KeyValueReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => KeyValueReader(r, capabilities: capabilities);
+  @override
   KeyValueBuilder fromRawBuilder(RawStructBuilder r) => KeyValueBuilder(r);
 }
 
 final keyValueFactory = _KeyValueFactory();
 
 final class OptionalReader extends StructReader {
-  OptionalReader(super.raw);
+  OptionalReader(super.raw, {super.capabilities});
 
   int get which => getUint16Field(0);
 
@@ -604,13 +624,15 @@ final class _OptionalFactory
   @override
   OptionalReader fromRawReader(RawStructReader r) => OptionalReader(r);
   @override
+  OptionalReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => OptionalReader(r, capabilities: capabilities);
+  @override
   OptionalBuilder fromRawBuilder(RawStructBuilder r) => OptionalBuilder(r);
 }
 
 final optionalFactory = _OptionalFactory();
 
 final class ResultReader extends StructReader {
-  ResultReader(super.raw);
+  ResultReader(super.raw, {super.capabilities});
 
   int get which => getUint16Field(0);
 
@@ -645,17 +667,19 @@ final class _ResultFactory
   @override
   ResultReader fromRawReader(RawStructReader r) => ResultReader(r);
   @override
+  ResultReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ResultReader(r, capabilities: capabilities);
+  @override
   ResultBuilder fromRawBuilder(RawStructBuilder r) => ResultBuilder(r);
 }
 
 final resultFactory = _ResultFactory();
 
 final class TreeReader extends StructReader {
-  TreeReader(super.raw);
+  TreeReader(super.raw, {super.capabilities});
 
   Uint8List? get value => getAnyPointerAsMessageBytes(0);
 
-  ListReader<TreeReader>? get children => getStructListFieldWith(1, (r) => TreeReader(r));
+  ListReader<TreeReader>? get children => getStructListFieldWith(1, (r) => TreeReader(r, capabilities: capabilityTable));
 }
 
 final class TreeBuilder extends StructBuilder {
@@ -680,13 +704,15 @@ final class _TreeFactory
   @override
   TreeReader fromRawReader(RawStructReader r) => TreeReader(r);
   @override
+  TreeReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => TreeReader(r, capabilities: capabilities);
+  @override
   TreeBuilder fromRawBuilder(RawStructBuilder r) => TreeBuilder(r);
 }
 
 final treeFactory = _TreeFactory();
 
 final class MatrixReader extends StructReader {
-  MatrixReader(super.raw);
+  MatrixReader(super.raw, {super.capabilities});
 
   ListReader<ListReader<double>?>? get rows => getNestedListField(0, float64ListFromRaw);
 }
@@ -709,13 +735,15 @@ final class _MatrixFactory
   @override
   MatrixReader fromRawReader(RawStructReader r) => MatrixReader(r);
   @override
+  MatrixReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => MatrixReader(r, capabilities: capabilities);
+  @override
   MatrixBuilder fromRawBuilder(RawStructBuilder r) => MatrixBuilder(r);
 }
 
 final matrixFactory = _MatrixFactory();
 
 final class AllListsReader extends StructReader {
-  AllListsReader(super.raw);
+  AllListsReader(super.raw, {super.capabilities});
 
   ListReader<Null>? get voids => getVoidListField(0);
 
@@ -747,7 +775,7 @@ final class AllListsReader extends StructReader {
 
   ListReader<Color?>? get colors => getEnumListField(14, colorFromUint16);
 
-  ListReader<PersonReader>? get people => getStructListFieldWith(15, (r) => PersonReader(r));
+  ListReader<PersonReader>? get people => getStructListFieldWith(15, (r) => PersonReader(r, capabilities: capabilityTable));
 
   ListReader<ListReader<ListReader<int>?>?>? get matrices => getNestedListField(16, (raw) => NestedListReader<int>(raw, int32ListFromRaw));
 }
@@ -834,17 +862,19 @@ final class _AllListsFactory
   @override
   AllListsReader fromRawReader(RawStructReader r) => AllListsReader(r);
   @override
+  AllListsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => AllListsReader(r, capabilities: capabilities);
+  @override
   AllListsBuilder fromRawBuilder(RawStructBuilder r) => AllListsBuilder(r);
 }
 
 final allListsFactory = _AllListsFactory();
 
 final class NamedUnionReader extends StructReader {
-  NamedUnionReader(super.raw);
+  NamedUnionReader(super.raw, {super.capabilities});
 
   int get selector => getUint32Field(0);
 
-  payloadReader get payload => payloadReader(raw);
+  payloadReader get payload => payloadReader(raw, capabilities: capabilityTable);
 }
 
 final class NamedUnionBuilder extends StructBuilder {
@@ -867,19 +897,21 @@ final class _NamedUnionFactory
   @override
   NamedUnionReader fromRawReader(RawStructReader r) => NamedUnionReader(r);
   @override
+  NamedUnionReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => NamedUnionReader(r, capabilities: capabilities);
+  @override
   NamedUnionBuilder fromRawBuilder(RawStructBuilder r) => NamedUnionBuilder(r);
 }
 
 final namedUnionFactory = _NamedUnionFactory();
 
 final class DynamicEnvelopeReader extends StructReader {
-  DynamicEnvelopeReader(super.raw);
+  DynamicEnvelopeReader(super.raw, {super.capabilities});
 
   String? get typeName => getTextField(0);
 
   Uint8List? get payload => getAnyPointerAsMessageBytes(1);
 
-  ListReader<KeyValueTextTextReader>? get metadata => getStructListFieldWith(2, (r) => KeyValueTextTextReader(r));
+  ListReader<KeyValueTextTextReader>? get metadata => getStructListFieldWith(2, (r) => KeyValueTextTextReader(r, capabilities: capabilityTable));
 }
 
 final class DynamicEnvelopeBuilder extends StructBuilder {
@@ -908,13 +940,15 @@ final class _DynamicEnvelopeFactory
   @override
   DynamicEnvelopeReader fromRawReader(RawStructReader r) => DynamicEnvelopeReader(r);
   @override
+  DynamicEnvelopeReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => DynamicEnvelopeReader(r, capabilities: capabilities);
+  @override
   DynamicEnvelopeBuilder fromRawBuilder(RawStructBuilder r) => DynamicEnvelopeBuilder(r);
 }
 
 final dynamicEnvelopeFactory = _DynamicEnvelopeFactory();
 
 final class ObserverOnNextParamsReader extends StructReader {
-  ObserverOnNextParamsReader(super.raw);
+  ObserverOnNextParamsReader(super.raw, {super.capabilities});
 
   int get sequence => getUint64Field(0);
 
@@ -943,13 +977,15 @@ final class _ObserverOnNextParamsFactory
   @override
   ObserverOnNextParamsReader fromRawReader(RawStructReader r) => ObserverOnNextParamsReader(r);
   @override
+  ObserverOnNextParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ObserverOnNextParamsReader(r, capabilities: capabilities);
+  @override
   ObserverOnNextParamsBuilder fromRawBuilder(RawStructBuilder r) => ObserverOnNextParamsBuilder(r);
 }
 
 final observerOnNextParamsFactory = _ObserverOnNextParamsFactory();
 
 final class ObserverOnNextResultsReader extends StructReader {
-  ObserverOnNextResultsReader(super.raw);
+  ObserverOnNextResultsReader(super.raw, {super.capabilities});
 }
 
 final class ObserverOnNextResultsBuilder extends StructBuilder {
@@ -966,13 +1002,15 @@ final class _ObserverOnNextResultsFactory
   @override
   ObserverOnNextResultsReader fromRawReader(RawStructReader r) => ObserverOnNextResultsReader(r);
   @override
+  ObserverOnNextResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ObserverOnNextResultsReader(r, capabilities: capabilities);
+  @override
   ObserverOnNextResultsBuilder fromRawBuilder(RawStructBuilder r) => ObserverOnNextResultsBuilder(r);
 }
 
 final observerOnNextResultsFactory = _ObserverOnNextResultsFactory();
 
 final class ObserverOnErrorParamsReader extends StructReader {
-  ObserverOnErrorParamsReader(super.raw);
+  ObserverOnErrorParamsReader(super.raw, {super.capabilities});
 
   int get code => getUint32Field(0);
 
@@ -1007,13 +1045,15 @@ final class _ObserverOnErrorParamsFactory
   @override
   ObserverOnErrorParamsReader fromRawReader(RawStructReader r) => ObserverOnErrorParamsReader(r);
   @override
+  ObserverOnErrorParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ObserverOnErrorParamsReader(r, capabilities: capabilities);
+  @override
   ObserverOnErrorParamsBuilder fromRawBuilder(RawStructBuilder r) => ObserverOnErrorParamsBuilder(r);
 }
 
 final observerOnErrorParamsFactory = _ObserverOnErrorParamsFactory();
 
 final class ObserverOnErrorResultsReader extends StructReader {
-  ObserverOnErrorResultsReader(super.raw);
+  ObserverOnErrorResultsReader(super.raw, {super.capabilities});
 }
 
 final class ObserverOnErrorResultsBuilder extends StructBuilder {
@@ -1030,13 +1070,15 @@ final class _ObserverOnErrorResultsFactory
   @override
   ObserverOnErrorResultsReader fromRawReader(RawStructReader r) => ObserverOnErrorResultsReader(r);
   @override
+  ObserverOnErrorResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ObserverOnErrorResultsReader(r, capabilities: capabilities);
+  @override
   ObserverOnErrorResultsBuilder fromRawBuilder(RawStructBuilder r) => ObserverOnErrorResultsBuilder(r);
 }
 
 final observerOnErrorResultsFactory = _ObserverOnErrorResultsFactory();
 
 final class ObserverOnCompleteParamsReader extends StructReader {
-  ObserverOnCompleteParamsReader(super.raw);
+  ObserverOnCompleteParamsReader(super.raw, {super.capabilities});
 }
 
 final class ObserverOnCompleteParamsBuilder extends StructBuilder {
@@ -1053,13 +1095,15 @@ final class _ObserverOnCompleteParamsFactory
   @override
   ObserverOnCompleteParamsReader fromRawReader(RawStructReader r) => ObserverOnCompleteParamsReader(r);
   @override
+  ObserverOnCompleteParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ObserverOnCompleteParamsReader(r, capabilities: capabilities);
+  @override
   ObserverOnCompleteParamsBuilder fromRawBuilder(RawStructBuilder r) => ObserverOnCompleteParamsBuilder(r);
 }
 
 final observerOnCompleteParamsFactory = _ObserverOnCompleteParamsFactory();
 
 final class ObserverOnCompleteResultsReader extends StructReader {
-  ObserverOnCompleteResultsReader(super.raw);
+  ObserverOnCompleteResultsReader(super.raw, {super.capabilities});
 }
 
 final class ObserverOnCompleteResultsBuilder extends StructBuilder {
@@ -1076,13 +1120,15 @@ final class _ObserverOnCompleteResultsFactory
   @override
   ObserverOnCompleteResultsReader fromRawReader(RawStructReader r) => ObserverOnCompleteResultsReader(r);
   @override
+  ObserverOnCompleteResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ObserverOnCompleteResultsReader(r, capabilities: capabilities);
+  @override
   ObserverOnCompleteResultsBuilder fromRawBuilder(RawStructBuilder r) => ObserverOnCompleteResultsBuilder(r);
 }
 
 final observerOnCompleteResultsFactory = _ObserverOnCompleteResultsFactory();
 
 final class SubscriptionCancelParamsReader extends StructReader {
-  SubscriptionCancelParamsReader(super.raw);
+  SubscriptionCancelParamsReader(super.raw, {super.capabilities});
 }
 
 final class SubscriptionCancelParamsBuilder extends StructBuilder {
@@ -1099,13 +1145,15 @@ final class _SubscriptionCancelParamsFactory
   @override
   SubscriptionCancelParamsReader fromRawReader(RawStructReader r) => SubscriptionCancelParamsReader(r);
   @override
+  SubscriptionCancelParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => SubscriptionCancelParamsReader(r, capabilities: capabilities);
+  @override
   SubscriptionCancelParamsBuilder fromRawBuilder(RawStructBuilder r) => SubscriptionCancelParamsBuilder(r);
 }
 
 final subscriptionCancelParamsFactory = _SubscriptionCancelParamsFactory();
 
 final class SubscriptionCancelResultsReader extends StructReader {
-  SubscriptionCancelResultsReader(super.raw);
+  SubscriptionCancelResultsReader(super.raw, {super.capabilities});
 
   bool get wasActive => getBoolField(0);
 }
@@ -1128,13 +1176,15 @@ final class _SubscriptionCancelResultsFactory
   @override
   SubscriptionCancelResultsReader fromRawReader(RawStructReader r) => SubscriptionCancelResultsReader(r);
   @override
+  SubscriptionCancelResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => SubscriptionCancelResultsReader(r, capabilities: capabilities);
+  @override
   SubscriptionCancelResultsBuilder fromRawBuilder(RawStructBuilder r) => SubscriptionCancelResultsBuilder(r);
 }
 
 final subscriptionCancelResultsFactory = _SubscriptionCancelResultsFactory();
 
 final class SubscriptionGetIdParamsReader extends StructReader {
-  SubscriptionGetIdParamsReader(super.raw);
+  SubscriptionGetIdParamsReader(super.raw, {super.capabilities});
 }
 
 final class SubscriptionGetIdParamsBuilder extends StructBuilder {
@@ -1151,13 +1201,15 @@ final class _SubscriptionGetIdParamsFactory
   @override
   SubscriptionGetIdParamsReader fromRawReader(RawStructReader r) => SubscriptionGetIdParamsReader(r);
   @override
+  SubscriptionGetIdParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => SubscriptionGetIdParamsReader(r, capabilities: capabilities);
+  @override
   SubscriptionGetIdParamsBuilder fromRawBuilder(RawStructBuilder r) => SubscriptionGetIdParamsBuilder(r);
 }
 
 final subscriptionGetIdParamsFactory = _SubscriptionGetIdParamsFactory();
 
 final class SubscriptionGetIdResultsReader extends StructReader {
-  SubscriptionGetIdResultsReader(super.raw);
+  SubscriptionGetIdResultsReader(super.raw, {super.capabilities});
 
   int get id => getUint64Field(0);
 }
@@ -1180,13 +1232,15 @@ final class _SubscriptionGetIdResultsFactory
   @override
   SubscriptionGetIdResultsReader fromRawReader(RawStructReader r) => SubscriptionGetIdResultsReader(r);
   @override
+  SubscriptionGetIdResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => SubscriptionGetIdResultsReader(r, capabilities: capabilities);
+  @override
   SubscriptionGetIdResultsBuilder fromRawBuilder(RawStructBuilder r) => SubscriptionGetIdResultsBuilder(r);
 }
 
 final subscriptionGetIdResultsFactory = _SubscriptionGetIdResultsFactory();
 
 final class ReadableReadParamsReader extends StructReader {
-  ReadableReadParamsReader(super.raw);
+  ReadableReadParamsReader(super.raw, {super.capabilities});
 }
 
 final class ReadableReadParamsBuilder extends StructBuilder {
@@ -1203,13 +1257,15 @@ final class _ReadableReadParamsFactory
   @override
   ReadableReadParamsReader fromRawReader(RawStructReader r) => ReadableReadParamsReader(r);
   @override
+  ReadableReadParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ReadableReadParamsReader(r, capabilities: capabilities);
+  @override
   ReadableReadParamsBuilder fromRawBuilder(RawStructBuilder r) => ReadableReadParamsBuilder(r);
 }
 
 final readableReadParamsFactory = _ReadableReadParamsFactory();
 
 final class ReadableReadResultsReader extends StructReader {
-  ReadableReadResultsReader(super.raw);
+  ReadableReadResultsReader(super.raw, {super.capabilities});
 
   Uint8List? get value => getAnyPointerAsMessageBytes(0);
 
@@ -1238,13 +1294,15 @@ final class _ReadableReadResultsFactory
   @override
   ReadableReadResultsReader fromRawReader(RawStructReader r) => ReadableReadResultsReader(r);
   @override
+  ReadableReadResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ReadableReadResultsReader(r, capabilities: capabilities);
+  @override
   ReadableReadResultsBuilder fromRawBuilder(RawStructBuilder r) => ReadableReadResultsBuilder(r);
 }
 
 final readableReadResultsFactory = _ReadableReadResultsFactory();
 
 final class WritableWriteParamsReader extends StructReader {
-  WritableWriteParamsReader(super.raw);
+  WritableWriteParamsReader(super.raw, {super.capabilities});
 
   Uint8List? get value => getAnyPointerAsMessageBytes(0);
 
@@ -1273,13 +1331,15 @@ final class _WritableWriteParamsFactory
   @override
   WritableWriteParamsReader fromRawReader(RawStructReader r) => WritableWriteParamsReader(r);
   @override
+  WritableWriteParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => WritableWriteParamsReader(r, capabilities: capabilities);
+  @override
   WritableWriteParamsBuilder fromRawBuilder(RawStructBuilder r) => WritableWriteParamsBuilder(r);
 }
 
 final writableWriteParamsFactory = _WritableWriteParamsFactory();
 
 final class WritableWriteResultsReader extends StructReader {
-  WritableWriteResultsReader(super.raw);
+  WritableWriteResultsReader(super.raw, {super.capabilities});
 
   int get newRevision => getUint64Field(0);
 }
@@ -1302,13 +1362,15 @@ final class _WritableWriteResultsFactory
   @override
   WritableWriteResultsReader fromRawReader(RawStructReader r) => WritableWriteResultsReader(r);
   @override
+  WritableWriteResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => WritableWriteResultsReader(r, capabilities: capabilities);
+  @override
   WritableWriteResultsBuilder fromRawBuilder(RawStructBuilder r) => WritableWriteResultsBuilder(r);
 }
 
 final writableWriteResultsFactory = _WritableWriteResultsFactory();
 
 final class ReadWriteCompareAndSwapParamsReader extends StructReader {
-  ReadWriteCompareAndSwapParamsReader(super.raw);
+  ReadWriteCompareAndSwapParamsReader(super.raw, {super.capabilities});
 
   Uint8List? get expected => getAnyPointerAsMessageBytes(0);
 
@@ -1337,13 +1399,15 @@ final class _ReadWriteCompareAndSwapParamsFactory
   @override
   ReadWriteCompareAndSwapParamsReader fromRawReader(RawStructReader r) => ReadWriteCompareAndSwapParamsReader(r);
   @override
+  ReadWriteCompareAndSwapParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ReadWriteCompareAndSwapParamsReader(r, capabilities: capabilities);
+  @override
   ReadWriteCompareAndSwapParamsBuilder fromRawBuilder(RawStructBuilder r) => ReadWriteCompareAndSwapParamsBuilder(r);
 }
 
 final readWriteCompareAndSwapParamsFactory = _ReadWriteCompareAndSwapParamsFactory();
 
 final class ReadWriteCompareAndSwapResultsReader extends StructReader {
-  ReadWriteCompareAndSwapResultsReader(super.raw);
+  ReadWriteCompareAndSwapResultsReader(super.raw, {super.capabilities});
 
   bool get swapped => getBoolField(0);
 
@@ -1378,13 +1442,15 @@ final class _ReadWriteCompareAndSwapResultsFactory
   @override
   ReadWriteCompareAndSwapResultsReader fromRawReader(RawStructReader r) => ReadWriteCompareAndSwapResultsReader(r);
   @override
+  ReadWriteCompareAndSwapResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ReadWriteCompareAndSwapResultsReader(r, capabilities: capabilities);
+  @override
   ReadWriteCompareAndSwapResultsBuilder fromRawBuilder(RawStructBuilder r) => ReadWriteCompareAndSwapResultsBuilder(r);
 }
 
 final readWriteCompareAndSwapResultsFactory = _ReadWriteCompareAndSwapResultsFactory();
 
 final class CursorResultReader extends StructReader {
-  CursorResultReader(super.raw);
+  CursorResultReader(super.raw, {super.capabilities});
 
   int get which => getUint16Field(0);
 
@@ -1417,13 +1483,15 @@ final class _CursorResultFactory
   @override
   CursorResultReader fromRawReader(RawStructReader r) => CursorResultReader(r);
   @override
+  CursorResultReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => CursorResultReader(r, capabilities: capabilities);
+  @override
   CursorResultBuilder fromRawBuilder(RawStructBuilder r) => CursorResultBuilder(r);
 }
 
 final cursorResultFactory = _CursorResultFactory();
 
 final class CursorNextParamsReader extends StructReader {
-  CursorNextParamsReader(super.raw);
+  CursorNextParamsReader(super.raw, {super.capabilities});
 }
 
 final class CursorNextParamsBuilder extends StructBuilder {
@@ -1440,15 +1508,17 @@ final class _CursorNextParamsFactory
   @override
   CursorNextParamsReader fromRawReader(RawStructReader r) => CursorNextParamsReader(r);
   @override
+  CursorNextParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => CursorNextParamsReader(r, capabilities: capabilities);
+  @override
   CursorNextParamsBuilder fromRawBuilder(RawStructBuilder r) => CursorNextParamsBuilder(r);
 }
 
 final cursorNextParamsFactory = _CursorNextParamsFactory();
 
 final class CursorNextResultsReader extends StructReader {
-  CursorNextResultsReader(super.raw);
+  CursorNextResultsReader(super.raw, {super.capabilities});
 
-  CursorResultReader? get result => getStructFieldWith(0, (r) => CursorResultReader(r));
+  CursorResultReader? get result => getStructFieldWith(0, (r) => CursorResultReader(r, capabilities: capabilityTable));
 }
 
 final class CursorNextResultsBuilder extends StructBuilder {
@@ -1472,13 +1542,15 @@ final class _CursorNextResultsFactory
   @override
   CursorNextResultsReader fromRawReader(RawStructReader r) => CursorNextResultsReader(r);
   @override
+  CursorNextResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => CursorNextResultsReader(r, capabilities: capabilities);
+  @override
   CursorNextResultsBuilder fromRawBuilder(RawStructBuilder r) => CursorNextResultsBuilder(r);
 }
 
 final cursorNextResultsFactory = _CursorNextResultsFactory();
 
 final class RepositoryGetParamsReader extends StructReader {
-  RepositoryGetParamsReader(super.raw);
+  RepositoryGetParamsReader(super.raw, {super.capabilities});
 
   Uint8List? get key => getAnyPointerAsMessageBytes(0);
 }
@@ -1501,15 +1573,17 @@ final class _RepositoryGetParamsFactory
   @override
   RepositoryGetParamsReader fromRawReader(RawStructReader r) => RepositoryGetParamsReader(r);
   @override
+  RepositoryGetParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => RepositoryGetParamsReader(r, capabilities: capabilities);
+  @override
   RepositoryGetParamsBuilder fromRawBuilder(RawStructBuilder r) => RepositoryGetParamsBuilder(r);
 }
 
 final repositoryGetParamsFactory = _RepositoryGetParamsFactory();
 
 final class RepositoryGetResultsReader extends StructReader {
-  RepositoryGetResultsReader(super.raw);
+  RepositoryGetResultsReader(super.raw, {super.capabilities});
 
-  OptionalReader? get result => getStructFieldWith(0, (r) => OptionalReader(r));
+  OptionalReader? get result => getStructFieldWith(0, (r) => OptionalReader(r, capabilities: capabilityTable));
 
   int get revision => getUint64Field(0);
 }
@@ -1539,13 +1613,15 @@ final class _RepositoryGetResultsFactory
   @override
   RepositoryGetResultsReader fromRawReader(RawStructReader r) => RepositoryGetResultsReader(r);
   @override
+  RepositoryGetResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => RepositoryGetResultsReader(r, capabilities: capabilities);
+  @override
   RepositoryGetResultsBuilder fromRawBuilder(RawStructBuilder r) => RepositoryGetResultsBuilder(r);
 }
 
 final repositoryGetResultsFactory = _RepositoryGetResultsFactory();
 
 final class RepositoryPutParamsReader extends StructReader {
-  RepositoryPutParamsReader(super.raw);
+  RepositoryPutParamsReader(super.raw, {super.capabilities});
 
   Uint8List? get key => getAnyPointerAsMessageBytes(0);
 
@@ -1580,15 +1656,17 @@ final class _RepositoryPutParamsFactory
   @override
   RepositoryPutParamsReader fromRawReader(RawStructReader r) => RepositoryPutParamsReader(r);
   @override
+  RepositoryPutParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => RepositoryPutParamsReader(r, capabilities: capabilities);
+  @override
   RepositoryPutParamsBuilder fromRawBuilder(RawStructBuilder r) => RepositoryPutParamsBuilder(r);
 }
 
 final repositoryPutParamsFactory = _RepositoryPutParamsFactory();
 
 final class RepositoryPutResultsReader extends StructReader {
-  RepositoryPutResultsReader(super.raw);
+  RepositoryPutResultsReader(super.raw, {super.capabilities});
 
-  OptionalReader? get previous => getStructFieldWith(0, (r) => OptionalReader(r));
+  OptionalReader? get previous => getStructFieldWith(0, (r) => OptionalReader(r, capabilities: capabilityTable));
 
   int get newRevision => getUint64Field(0);
 }
@@ -1618,13 +1696,15 @@ final class _RepositoryPutResultsFactory
   @override
   RepositoryPutResultsReader fromRawReader(RawStructReader r) => RepositoryPutResultsReader(r);
   @override
+  RepositoryPutResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => RepositoryPutResultsReader(r, capabilities: capabilities);
+  @override
   RepositoryPutResultsBuilder fromRawBuilder(RawStructBuilder r) => RepositoryPutResultsBuilder(r);
 }
 
 final repositoryPutResultsFactory = _RepositoryPutResultsFactory();
 
 final class RepositoryRemoveParamsReader extends StructReader {
-  RepositoryRemoveParamsReader(super.raw);
+  RepositoryRemoveParamsReader(super.raw, {super.capabilities});
 
   Uint8List? get key => getAnyPointerAsMessageBytes(0);
 
@@ -1653,15 +1733,17 @@ final class _RepositoryRemoveParamsFactory
   @override
   RepositoryRemoveParamsReader fromRawReader(RawStructReader r) => RepositoryRemoveParamsReader(r);
   @override
+  RepositoryRemoveParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => RepositoryRemoveParamsReader(r, capabilities: capabilities);
+  @override
   RepositoryRemoveParamsBuilder fromRawBuilder(RawStructBuilder r) => RepositoryRemoveParamsBuilder(r);
 }
 
 final repositoryRemoveParamsFactory = _RepositoryRemoveParamsFactory();
 
 final class RepositoryRemoveResultsReader extends StructReader {
-  RepositoryRemoveResultsReader(super.raw);
+  RepositoryRemoveResultsReader(super.raw, {super.capabilities});
 
-  OptionalReader? get removed => getStructFieldWith(0, (r) => OptionalReader(r));
+  OptionalReader? get removed => getStructFieldWith(0, (r) => OptionalReader(r, capabilities: capabilityTable));
 
   int get newRevision => getUint64Field(0);
 }
@@ -1691,13 +1773,15 @@ final class _RepositoryRemoveResultsFactory
   @override
   RepositoryRemoveResultsReader fromRawReader(RawStructReader r) => RepositoryRemoveResultsReader(r);
   @override
+  RepositoryRemoveResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => RepositoryRemoveResultsReader(r, capabilities: capabilities);
+  @override
   RepositoryRemoveResultsBuilder fromRawBuilder(RawStructBuilder r) => RepositoryRemoveResultsBuilder(r);
 }
 
 final repositoryRemoveResultsFactory = _RepositoryRemoveResultsFactory();
 
 final class RepositoryListParamsReader extends StructReader {
-  RepositoryListParamsReader(super.raw);
+  RepositoryListParamsReader(super.raw, {super.capabilities});
 }
 
 final class RepositoryListParamsBuilder extends StructBuilder {
@@ -1714,15 +1798,17 @@ final class _RepositoryListParamsFactory
   @override
   RepositoryListParamsReader fromRawReader(RawStructReader r) => RepositoryListParamsReader(r);
   @override
+  RepositoryListParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => RepositoryListParamsReader(r, capabilities: capabilities);
+  @override
   RepositoryListParamsBuilder fromRawBuilder(RawStructBuilder r) => RepositoryListParamsBuilder(r);
 }
 
 final repositoryListParamsFactory = _RepositoryListParamsFactory();
 
 final class RepositoryListResultsReader extends StructReader {
-  RepositoryListResultsReader(super.raw);
+  RepositoryListResultsReader(super.raw, {super.capabilities});
 
-  ListReader<KeyValueReader>? get entries => getStructListFieldWith(0, (r) => KeyValueReader(r));
+  ListReader<KeyValueReader>? get entries => getStructListFieldWith(0, (r) => KeyValueReader(r, capabilities: capabilityTable));
 }
 
 final class RepositoryListResultsBuilder extends StructBuilder {
@@ -1743,13 +1829,15 @@ final class _RepositoryListResultsFactory
   @override
   RepositoryListResultsReader fromRawReader(RawStructReader r) => RepositoryListResultsReader(r);
   @override
+  RepositoryListResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => RepositoryListResultsReader(r, capabilities: capabilities);
+  @override
   RepositoryListResultsBuilder fromRawBuilder(RawStructBuilder r) => RepositoryListResultsBuilder(r);
 }
 
 final repositoryListResultsFactory = _RepositoryListResultsFactory();
 
 final class RepositoryOpenCursorParamsReader extends StructReader {
-  RepositoryOpenCursorParamsReader(super.raw);
+  RepositoryOpenCursorParamsReader(super.raw, {super.capabilities});
 }
 
 final class RepositoryOpenCursorParamsBuilder extends StructBuilder {
@@ -1766,13 +1854,20 @@ final class _RepositoryOpenCursorParamsFactory
   @override
   RepositoryOpenCursorParamsReader fromRawReader(RawStructReader r) => RepositoryOpenCursorParamsReader(r);
   @override
+  RepositoryOpenCursorParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => RepositoryOpenCursorParamsReader(r, capabilities: capabilities);
+  @override
   RepositoryOpenCursorParamsBuilder fromRawBuilder(RawStructBuilder r) => RepositoryOpenCursorParamsBuilder(r);
 }
 
 final repositoryOpenCursorParamsFactory = _RepositoryOpenCursorParamsFactory();
 
 final class RepositoryOpenCursorResultsReader extends StructReader {
-  RepositoryOpenCursorResultsReader(super.raw);
+  RepositoryOpenCursorResultsReader(super.raw, {super.capabilities});
+
+  CursorClient? get cursor {
+    final cap = getCapabilityObjectField(0);
+    return cap == null ? null : CursorClient(cap as Capability);
+  }
 
   int get cursorCapIndex => getCapabilityField(0);
 }
@@ -1795,13 +1890,20 @@ final class _RepositoryOpenCursorResultsFactory
   @override
   RepositoryOpenCursorResultsReader fromRawReader(RawStructReader r) => RepositoryOpenCursorResultsReader(r);
   @override
+  RepositoryOpenCursorResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => RepositoryOpenCursorResultsReader(r, capabilities: capabilities);
+  @override
   RepositoryOpenCursorResultsBuilder fromRawBuilder(RawStructBuilder r) => RepositoryOpenCursorResultsBuilder(r);
 }
 
 final repositoryOpenCursorResultsFactory = _RepositoryOpenCursorResultsFactory();
 
 final class RepositoryWatchParamsReader extends StructReader {
-  RepositoryWatchParamsReader(super.raw);
+  RepositoryWatchParamsReader(super.raw, {super.capabilities});
+
+  ObserverClient? get observer {
+    final cap = getCapabilityObjectField(0);
+    return cap == null ? null : ObserverClient(cap as Capability);
+  }
 
   int get observerCapIndex => getCapabilityField(0);
 }
@@ -1824,13 +1926,20 @@ final class _RepositoryWatchParamsFactory
   @override
   RepositoryWatchParamsReader fromRawReader(RawStructReader r) => RepositoryWatchParamsReader(r);
   @override
+  RepositoryWatchParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => RepositoryWatchParamsReader(r, capabilities: capabilities);
+  @override
   RepositoryWatchParamsBuilder fromRawBuilder(RawStructBuilder r) => RepositoryWatchParamsBuilder(r);
 }
 
 final repositoryWatchParamsFactory = _RepositoryWatchParamsFactory();
 
 final class RepositoryWatchResultsReader extends StructReader {
-  RepositoryWatchResultsReader(super.raw);
+  RepositoryWatchResultsReader(super.raw, {super.capabilities});
+
+  SubscriptionClient? get subscription {
+    final cap = getCapabilityObjectField(0);
+    return cap == null ? null : SubscriptionClient(cap as Capability);
+  }
 
   int get subscriptionCapIndex => getCapabilityField(0);
 }
@@ -1853,13 +1962,15 @@ final class _RepositoryWatchResultsFactory
   @override
   RepositoryWatchResultsReader fromRawReader(RawStructReader r) => RepositoryWatchResultsReader(r);
   @override
+  RepositoryWatchResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => RepositoryWatchResultsReader(r, capabilities: capabilities);
+  @override
   RepositoryWatchResultsBuilder fromRawBuilder(RawStructBuilder r) => RepositoryWatchResultsBuilder(r);
 }
 
 final repositoryWatchResultsFactory = _RepositoryWatchResultsFactory();
 
 final class ByteSinkWriteParamsReader extends StructReader {
-  ByteSinkWriteParamsReader(super.raw);
+  ByteSinkWriteParamsReader(super.raw, {super.capabilities});
 
   Uint8List? get chunk => getDataField(0);
 }
@@ -1882,13 +1993,15 @@ final class _ByteSinkWriteParamsFactory
   @override
   ByteSinkWriteParamsReader fromRawReader(RawStructReader r) => ByteSinkWriteParamsReader(r);
   @override
+  ByteSinkWriteParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ByteSinkWriteParamsReader(r, capabilities: capabilities);
+  @override
   ByteSinkWriteParamsBuilder fromRawBuilder(RawStructBuilder r) => ByteSinkWriteParamsBuilder(r);
 }
 
 final byteSinkWriteParamsFactory = _ByteSinkWriteParamsFactory();
 
 final class StreamResultReader extends StructReader {
-  StreamResultReader(super.raw);
+  StreamResultReader(super.raw, {super.capabilities});
 }
 
 final class StreamResultBuilder extends StructBuilder {
@@ -1905,13 +2018,15 @@ final class _StreamResultFactory
   @override
   StreamResultReader fromRawReader(RawStructReader r) => StreamResultReader(r);
   @override
+  StreamResultReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => StreamResultReader(r, capabilities: capabilities);
+  @override
   StreamResultBuilder fromRawBuilder(RawStructBuilder r) => StreamResultBuilder(r);
 }
 
 final streamResultFactory = _StreamResultFactory();
 
 final class ByteSinkFinishParamsReader extends StructReader {
-  ByteSinkFinishParamsReader(super.raw);
+  ByteSinkFinishParamsReader(super.raw, {super.capabilities});
 }
 
 final class ByteSinkFinishParamsBuilder extends StructBuilder {
@@ -1928,13 +2043,15 @@ final class _ByteSinkFinishParamsFactory
   @override
   ByteSinkFinishParamsReader fromRawReader(RawStructReader r) => ByteSinkFinishParamsReader(r);
   @override
+  ByteSinkFinishParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ByteSinkFinishParamsReader(r, capabilities: capabilities);
+  @override
   ByteSinkFinishParamsBuilder fromRawBuilder(RawStructBuilder r) => ByteSinkFinishParamsBuilder(r);
 }
 
 final byteSinkFinishParamsFactory = _ByteSinkFinishParamsFactory();
 
 final class ByteSinkFinishResultsReader extends StructReader {
-  ByteSinkFinishResultsReader(super.raw);
+  ByteSinkFinishResultsReader(super.raw, {super.capabilities});
 
   int get byteCount => getUint64Field(0);
 
@@ -1963,13 +2080,15 @@ final class _ByteSinkFinishResultsFactory
   @override
   ByteSinkFinishResultsReader fromRawReader(RawStructReader r) => ByteSinkFinishResultsReader(r);
   @override
+  ByteSinkFinishResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ByteSinkFinishResultsReader(r, capabilities: capabilities);
+  @override
   ByteSinkFinishResultsBuilder fromRawBuilder(RawStructBuilder r) => ByteSinkFinishResultsBuilder(r);
 }
 
 final byteSinkFinishResultsFactory = _ByteSinkFinishResultsFactory();
 
 final class ByteSinkAbortParamsReader extends StructReader {
-  ByteSinkAbortParamsReader(super.raw);
+  ByteSinkAbortParamsReader(super.raw, {super.capabilities});
 
   String? get reason => getTextField(0);
 }
@@ -1992,13 +2111,15 @@ final class _ByteSinkAbortParamsFactory
   @override
   ByteSinkAbortParamsReader fromRawReader(RawStructReader r) => ByteSinkAbortParamsReader(r);
   @override
+  ByteSinkAbortParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ByteSinkAbortParamsReader(r, capabilities: capabilities);
+  @override
   ByteSinkAbortParamsBuilder fromRawBuilder(RawStructBuilder r) => ByteSinkAbortParamsBuilder(r);
 }
 
 final byteSinkAbortParamsFactory = _ByteSinkAbortParamsFactory();
 
 final class ByteSinkAbortResultsReader extends StructReader {
-  ByteSinkAbortResultsReader(super.raw);
+  ByteSinkAbortResultsReader(super.raw, {super.capabilities});
 }
 
 final class ByteSinkAbortResultsBuilder extends StructBuilder {
@@ -2015,13 +2136,20 @@ final class _ByteSinkAbortResultsFactory
   @override
   ByteSinkAbortResultsReader fromRawReader(RawStructReader r) => ByteSinkAbortResultsReader(r);
   @override
+  ByteSinkAbortResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ByteSinkAbortResultsReader(r, capabilities: capabilities);
+  @override
   ByteSinkAbortResultsBuilder fromRawBuilder(RawStructBuilder r) => ByteSinkAbortResultsBuilder(r);
 }
 
 final byteSinkAbortResultsFactory = _ByteSinkAbortResultsFactory();
 
 final class ByteSourcePumpToParamsReader extends StructReader {
-  ByteSourcePumpToParamsReader(super.raw);
+  ByteSourcePumpToParamsReader(super.raw, {super.capabilities});
+
+  ByteSinkClient? get sink {
+    final cap = getCapabilityObjectField(0);
+    return cap == null ? null : ByteSinkClient(cap as Capability);
+  }
 
   int get sinkCapIndex => getCapabilityField(0);
 
@@ -2050,13 +2178,15 @@ final class _ByteSourcePumpToParamsFactory
   @override
   ByteSourcePumpToParamsReader fromRawReader(RawStructReader r) => ByteSourcePumpToParamsReader(r);
   @override
+  ByteSourcePumpToParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ByteSourcePumpToParamsReader(r, capabilities: capabilities);
+  @override
   ByteSourcePumpToParamsBuilder fromRawBuilder(RawStructBuilder r) => ByteSourcePumpToParamsBuilder(r);
 }
 
 final byteSourcePumpToParamsFactory = _ByteSourcePumpToParamsFactory();
 
 final class ByteSourcePumpToResultsReader extends StructReader {
-  ByteSourcePumpToResultsReader(super.raw);
+  ByteSourcePumpToResultsReader(super.raw, {super.capabilities});
 
   int get byteCount => getUint64Field(0);
 }
@@ -2079,13 +2209,15 @@ final class _ByteSourcePumpToResultsFactory
   @override
   ByteSourcePumpToResultsReader fromRawReader(RawStructReader r) => ByteSourcePumpToResultsReader(r);
   @override
+  ByteSourcePumpToResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ByteSourcePumpToResultsReader(r, capabilities: capabilities);
+  @override
   ByteSourcePumpToResultsBuilder fromRawBuilder(RawStructBuilder r) => ByteSourcePumpToResultsBuilder(r);
 }
 
 final byteSourcePumpToResultsFactory = _ByteSourcePumpToResultsFactory();
 
 final class CapabilityFactoryNewCellParamsReader extends StructReader {
-  CapabilityFactoryNewCellParamsReader(super.raw);
+  CapabilityFactoryNewCellParamsReader(super.raw, {super.capabilities});
 
   Uint8List? get initialValue => getAnyPointerAsMessageBytes(0);
 }
@@ -2108,13 +2240,20 @@ final class _CapabilityFactoryNewCellParamsFactory
   @override
   CapabilityFactoryNewCellParamsReader fromRawReader(RawStructReader r) => CapabilityFactoryNewCellParamsReader(r);
   @override
+  CapabilityFactoryNewCellParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => CapabilityFactoryNewCellParamsReader(r, capabilities: capabilities);
+  @override
   CapabilityFactoryNewCellParamsBuilder fromRawBuilder(RawStructBuilder r) => CapabilityFactoryNewCellParamsBuilder(r);
 }
 
 final capabilityFactoryNewCellParamsFactory = _CapabilityFactoryNewCellParamsFactory();
 
 final class CapabilityFactoryNewCellResultsReader extends StructReader {
-  CapabilityFactoryNewCellResultsReader(super.raw);
+  CapabilityFactoryNewCellResultsReader(super.raw, {super.capabilities});
+
+  ReadWriteClient? get cell {
+    final cap = getCapabilityObjectField(0);
+    return cap == null ? null : ReadWriteClient(cap as Capability);
+  }
 
   int get cellCapIndex => getCapabilityField(0);
 }
@@ -2137,13 +2276,15 @@ final class _CapabilityFactoryNewCellResultsFactory
   @override
   CapabilityFactoryNewCellResultsReader fromRawReader(RawStructReader r) => CapabilityFactoryNewCellResultsReader(r);
   @override
+  CapabilityFactoryNewCellResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => CapabilityFactoryNewCellResultsReader(r, capabilities: capabilities);
+  @override
   CapabilityFactoryNewCellResultsBuilder fromRawBuilder(RawStructBuilder r) => CapabilityFactoryNewCellResultsBuilder(r);
 }
 
 final capabilityFactoryNewCellResultsFactory = _CapabilityFactoryNewCellResultsFactory();
 
 final class CapabilityFactoryNewEmptyCellParamsReader extends StructReader {
-  CapabilityFactoryNewEmptyCellParamsReader(super.raw);
+  CapabilityFactoryNewEmptyCellParamsReader(super.raw, {super.capabilities});
 }
 
 final class CapabilityFactoryNewEmptyCellParamsBuilder extends StructBuilder {
@@ -2160,13 +2301,20 @@ final class _CapabilityFactoryNewEmptyCellParamsFactory
   @override
   CapabilityFactoryNewEmptyCellParamsReader fromRawReader(RawStructReader r) => CapabilityFactoryNewEmptyCellParamsReader(r);
   @override
+  CapabilityFactoryNewEmptyCellParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => CapabilityFactoryNewEmptyCellParamsReader(r, capabilities: capabilities);
+  @override
   CapabilityFactoryNewEmptyCellParamsBuilder fromRawBuilder(RawStructBuilder r) => CapabilityFactoryNewEmptyCellParamsBuilder(r);
 }
 
 final capabilityFactoryNewEmptyCellParamsFactory = _CapabilityFactoryNewEmptyCellParamsFactory();
 
 final class CapabilityFactoryNewEmptyCellResultsReader extends StructReader {
-  CapabilityFactoryNewEmptyCellResultsReader(super.raw);
+  CapabilityFactoryNewEmptyCellResultsReader(super.raw, {super.capabilities});
+
+  ReadWriteClient? get cell {
+    final cap = getCapabilityObjectField(0);
+    return cap == null ? null : ReadWriteClient(cap as Capability);
+  }
 
   int get cellCapIndex => getCapabilityField(0);
 }
@@ -2189,13 +2337,15 @@ final class _CapabilityFactoryNewEmptyCellResultsFactory
   @override
   CapabilityFactoryNewEmptyCellResultsReader fromRawReader(RawStructReader r) => CapabilityFactoryNewEmptyCellResultsReader(r);
   @override
+  CapabilityFactoryNewEmptyCellResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => CapabilityFactoryNewEmptyCellResultsReader(r, capabilities: capabilities);
+  @override
   CapabilityFactoryNewEmptyCellResultsBuilder fromRawBuilder(RawStructBuilder r) => CapabilityFactoryNewEmptyCellResultsBuilder(r);
 }
 
 final capabilityFactoryNewEmptyCellResultsFactory = _CapabilityFactoryNewEmptyCellResultsFactory();
 
 final class CapabilityFactoryNewRepositoryParamsReader extends StructReader {
-  CapabilityFactoryNewRepositoryParamsReader(super.raw);
+  CapabilityFactoryNewRepositoryParamsReader(super.raw, {super.capabilities});
 }
 
 final class CapabilityFactoryNewRepositoryParamsBuilder extends StructBuilder {
@@ -2212,13 +2362,20 @@ final class _CapabilityFactoryNewRepositoryParamsFactory
   @override
   CapabilityFactoryNewRepositoryParamsReader fromRawReader(RawStructReader r) => CapabilityFactoryNewRepositoryParamsReader(r);
   @override
+  CapabilityFactoryNewRepositoryParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => CapabilityFactoryNewRepositoryParamsReader(r, capabilities: capabilities);
+  @override
   CapabilityFactoryNewRepositoryParamsBuilder fromRawBuilder(RawStructBuilder r) => CapabilityFactoryNewRepositoryParamsBuilder(r);
 }
 
 final capabilityFactoryNewRepositoryParamsFactory = _CapabilityFactoryNewRepositoryParamsFactory();
 
 final class CapabilityFactoryNewRepositoryResultsReader extends StructReader {
-  CapabilityFactoryNewRepositoryResultsReader(super.raw);
+  CapabilityFactoryNewRepositoryResultsReader(super.raw, {super.capabilities});
+
+  RepositoryClient? get repository {
+    final cap = getCapabilityObjectField(0);
+    return cap == null ? null : RepositoryClient(cap as Capability);
+  }
 
   int get repositoryCapIndex => getCapabilityField(0);
 }
@@ -2241,13 +2398,15 @@ final class _CapabilityFactoryNewRepositoryResultsFactory
   @override
   CapabilityFactoryNewRepositoryResultsReader fromRawReader(RawStructReader r) => CapabilityFactoryNewRepositoryResultsReader(r);
   @override
+  CapabilityFactoryNewRepositoryResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => CapabilityFactoryNewRepositoryResultsReader(r, capabilities: capabilities);
+  @override
   CapabilityFactoryNewRepositoryResultsBuilder fromRawBuilder(RawStructBuilder r) => CapabilityFactoryNewRepositoryResultsBuilder(r);
 }
 
 final capabilityFactoryNewRepositoryResultsFactory = _CapabilityFactoryNewRepositoryResultsFactory();
 
 final class CapabilityFactoryEchoCapabilityParamsReader extends StructReader {
-  CapabilityFactoryEchoCapabilityParamsReader(super.raw);
+  CapabilityFactoryEchoCapabilityParamsReader(super.raw, {super.capabilities});
 
   Uint8List? get capability => getAnyPointerAsMessageBytes(0);
 }
@@ -2270,13 +2429,15 @@ final class _CapabilityFactoryEchoCapabilityParamsFactory
   @override
   CapabilityFactoryEchoCapabilityParamsReader fromRawReader(RawStructReader r) => CapabilityFactoryEchoCapabilityParamsReader(r);
   @override
+  CapabilityFactoryEchoCapabilityParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => CapabilityFactoryEchoCapabilityParamsReader(r, capabilities: capabilities);
+  @override
   CapabilityFactoryEchoCapabilityParamsBuilder fromRawBuilder(RawStructBuilder r) => CapabilityFactoryEchoCapabilityParamsBuilder(r);
 }
 
 final capabilityFactoryEchoCapabilityParamsFactory = _CapabilityFactoryEchoCapabilityParamsFactory();
 
 final class CapabilityFactoryEchoCapabilityResultsReader extends StructReader {
-  CapabilityFactoryEchoCapabilityResultsReader(super.raw);
+  CapabilityFactoryEchoCapabilityResultsReader(super.raw, {super.capabilities});
 
   Uint8List? get sameCapability => getAnyPointerAsMessageBytes(0);
 }
@@ -2299,13 +2460,15 @@ final class _CapabilityFactoryEchoCapabilityResultsFactory
   @override
   CapabilityFactoryEchoCapabilityResultsReader fromRawReader(RawStructReader r) => CapabilityFactoryEchoCapabilityResultsReader(r);
   @override
+  CapabilityFactoryEchoCapabilityResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => CapabilityFactoryEchoCapabilityResultsReader(r, capabilities: capabilities);
+  @override
   CapabilityFactoryEchoCapabilityResultsBuilder fromRawBuilder(RawStructBuilder r) => CapabilityFactoryEchoCapabilityResultsBuilder(r);
 }
 
 final capabilityFactoryEchoCapabilityResultsFactory = _CapabilityFactoryEchoCapabilityResultsFactory();
 
 final class CapabilityFactoryGetUntypedParamsReader extends StructReader {
-  CapabilityFactoryGetUntypedParamsReader(super.raw);
+  CapabilityFactoryGetUntypedParamsReader(super.raw, {super.capabilities});
 
   String? get name => getTextField(0);
 }
@@ -2328,13 +2491,15 @@ final class _CapabilityFactoryGetUntypedParamsFactory
   @override
   CapabilityFactoryGetUntypedParamsReader fromRawReader(RawStructReader r) => CapabilityFactoryGetUntypedParamsReader(r);
   @override
+  CapabilityFactoryGetUntypedParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => CapabilityFactoryGetUntypedParamsReader(r, capabilities: capabilities);
+  @override
   CapabilityFactoryGetUntypedParamsBuilder fromRawBuilder(RawStructBuilder r) => CapabilityFactoryGetUntypedParamsBuilder(r);
 }
 
 final capabilityFactoryGetUntypedParamsFactory = _CapabilityFactoryGetUntypedParamsFactory();
 
 final class CapabilityFactoryGetUntypedResultsReader extends StructReader {
-  CapabilityFactoryGetUntypedResultsReader(super.raw);
+  CapabilityFactoryGetUntypedResultsReader(super.raw, {super.capabilities});
 
   Uint8List? get value => getAnyPointerAsMessageBytes(0);
 }
@@ -2357,13 +2522,15 @@ final class _CapabilityFactoryGetUntypedResultsFactory
   @override
   CapabilityFactoryGetUntypedResultsReader fromRawReader(RawStructReader r) => CapabilityFactoryGetUntypedResultsReader(r);
   @override
+  CapabilityFactoryGetUntypedResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => CapabilityFactoryGetUntypedResultsReader(r, capabilities: capabilities);
+  @override
   CapabilityFactoryGetUntypedResultsBuilder fromRawBuilder(RawStructBuilder r) => CapabilityFactoryGetUntypedResultsBuilder(r);
 }
 
 final capabilityFactoryGetUntypedResultsFactory = _CapabilityFactoryGetUntypedResultsFactory();
 
 final class ParentGetNameParamsReader extends StructReader {
-  ParentGetNameParamsReader(super.raw);
+  ParentGetNameParamsReader(super.raw, {super.capabilities});
 }
 
 final class ParentGetNameParamsBuilder extends StructBuilder {
@@ -2380,13 +2547,15 @@ final class _ParentGetNameParamsFactory
   @override
   ParentGetNameParamsReader fromRawReader(RawStructReader r) => ParentGetNameParamsReader(r);
   @override
+  ParentGetNameParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ParentGetNameParamsReader(r, capabilities: capabilities);
+  @override
   ParentGetNameParamsBuilder fromRawBuilder(RawStructBuilder r) => ParentGetNameParamsBuilder(r);
 }
 
 final parentGetNameParamsFactory = _ParentGetNameParamsFactory();
 
 final class ParentGetNameResultsReader extends StructReader {
-  ParentGetNameResultsReader(super.raw);
+  ParentGetNameResultsReader(super.raw, {super.capabilities});
 
   String? get name => getTextField(0);
 }
@@ -2409,13 +2578,15 @@ final class _ParentGetNameResultsFactory
   @override
   ParentGetNameResultsReader fromRawReader(RawStructReader r) => ParentGetNameResultsReader(r);
   @override
+  ParentGetNameResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ParentGetNameResultsReader(r, capabilities: capabilities);
+  @override
   ParentGetNameResultsBuilder fromRawBuilder(RawStructBuilder r) => ParentGetNameResultsBuilder(r);
 }
 
 final parentGetNameResultsFactory = _ParentGetNameResultsFactory();
 
 final class LeftLeftParamsReader extends StructReader {
-  LeftLeftParamsReader(super.raw);
+  LeftLeftParamsReader(super.raw, {super.capabilities});
 
   int get value => getInt32Field(0);
 }
@@ -2438,13 +2609,15 @@ final class _LeftLeftParamsFactory
   @override
   LeftLeftParamsReader fromRawReader(RawStructReader r) => LeftLeftParamsReader(r);
   @override
+  LeftLeftParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => LeftLeftParamsReader(r, capabilities: capabilities);
+  @override
   LeftLeftParamsBuilder fromRawBuilder(RawStructBuilder r) => LeftLeftParamsBuilder(r);
 }
 
 final leftLeftParamsFactory = _LeftLeftParamsFactory();
 
 final class LeftLeftResultsReader extends StructReader {
-  LeftLeftResultsReader(super.raw);
+  LeftLeftResultsReader(super.raw, {super.capabilities});
 
   int get result => getInt32Field(0);
 }
@@ -2467,13 +2640,15 @@ final class _LeftLeftResultsFactory
   @override
   LeftLeftResultsReader fromRawReader(RawStructReader r) => LeftLeftResultsReader(r);
   @override
+  LeftLeftResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => LeftLeftResultsReader(r, capabilities: capabilities);
+  @override
   LeftLeftResultsBuilder fromRawBuilder(RawStructBuilder r) => LeftLeftResultsBuilder(r);
 }
 
 final leftLeftResultsFactory = _LeftLeftResultsFactory();
 
 final class RightRightParamsReader extends StructReader {
-  RightRightParamsReader(super.raw);
+  RightRightParamsReader(super.raw, {super.capabilities});
 
   int get value => getInt32Field(0);
 }
@@ -2496,13 +2671,15 @@ final class _RightRightParamsFactory
   @override
   RightRightParamsReader fromRawReader(RawStructReader r) => RightRightParamsReader(r);
   @override
+  RightRightParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => RightRightParamsReader(r, capabilities: capabilities);
+  @override
   RightRightParamsBuilder fromRawBuilder(RawStructBuilder r) => RightRightParamsBuilder(r);
 }
 
 final rightRightParamsFactory = _RightRightParamsFactory();
 
 final class RightRightResultsReader extends StructReader {
-  RightRightResultsReader(super.raw);
+  RightRightResultsReader(super.raw, {super.capabilities});
 
   int get result => getInt32Field(0);
 }
@@ -2525,13 +2702,15 @@ final class _RightRightResultsFactory
   @override
   RightRightResultsReader fromRawReader(RawStructReader r) => RightRightResultsReader(r);
   @override
+  RightRightResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => RightRightResultsReader(r, capabilities: capabilities);
+  @override
   RightRightResultsBuilder fromRawBuilder(RawStructBuilder r) => RightRightResultsBuilder(r);
 }
 
 final rightRightResultsFactory = _RightRightResultsFactory();
 
 final class DiamondBothParamsReader extends StructReader {
-  DiamondBothParamsReader(super.raw);
+  DiamondBothParamsReader(super.raw, {super.capabilities});
 
   int get leftValue => getInt32Field(0);
 
@@ -2560,13 +2739,15 @@ final class _DiamondBothParamsFactory
   @override
   DiamondBothParamsReader fromRawReader(RawStructReader r) => DiamondBothParamsReader(r);
   @override
+  DiamondBothParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => DiamondBothParamsReader(r, capabilities: capabilities);
+  @override
   DiamondBothParamsBuilder fromRawBuilder(RawStructBuilder r) => DiamondBothParamsBuilder(r);
 }
 
 final diamondBothParamsFactory = _DiamondBothParamsFactory();
 
 final class DiamondBothResultsReader extends StructReader {
-  DiamondBothResultsReader(super.raw);
+  DiamondBothResultsReader(super.raw, {super.capabilities});
 
   int get sum => getInt64Field(0);
 }
@@ -2589,13 +2770,15 @@ final class _DiamondBothResultsFactory
   @override
   DiamondBothResultsReader fromRawReader(RawStructReader r) => DiamondBothResultsReader(r);
   @override
+  DiamondBothResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => DiamondBothResultsReader(r, capabilities: capabilities);
+  @override
   DiamondBothResultsBuilder fromRawBuilder(RawStructBuilder r) => DiamondBothResultsBuilder(r);
 }
 
 final diamondBothResultsFactory = _DiamondBothResultsFactory();
 
 final class PipelineTargetGetChildParamsReader extends StructReader {
-  PipelineTargetGetChildParamsReader(super.raw);
+  PipelineTargetGetChildParamsReader(super.raw, {super.capabilities});
 
   String? get name => getTextField(0);
 }
@@ -2618,13 +2801,20 @@ final class _PipelineTargetGetChildParamsFactory
   @override
   PipelineTargetGetChildParamsReader fromRawReader(RawStructReader r) => PipelineTargetGetChildParamsReader(r);
   @override
+  PipelineTargetGetChildParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => PipelineTargetGetChildParamsReader(r, capabilities: capabilities);
+  @override
   PipelineTargetGetChildParamsBuilder fromRawBuilder(RawStructBuilder r) => PipelineTargetGetChildParamsBuilder(r);
 }
 
 final pipelineTargetGetChildParamsFactory = _PipelineTargetGetChildParamsFactory();
 
 final class PipelineTargetGetChildResultsReader extends StructReader {
-  PipelineTargetGetChildResultsReader(super.raw);
+  PipelineTargetGetChildResultsReader(super.raw, {super.capabilities});
+
+  PipelineTargetClient? get child {
+    final cap = getCapabilityObjectField(0);
+    return cap == null ? null : PipelineTargetClient(cap as Capability);
+  }
 
   int get childCapIndex => getCapabilityField(0);
 }
@@ -2647,13 +2837,15 @@ final class _PipelineTargetGetChildResultsFactory
   @override
   PipelineTargetGetChildResultsReader fromRawReader(RawStructReader r) => PipelineTargetGetChildResultsReader(r);
   @override
+  PipelineTargetGetChildResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => PipelineTargetGetChildResultsReader(r, capabilities: capabilities);
+  @override
   PipelineTargetGetChildResultsBuilder fromRawBuilder(RawStructBuilder r) => PipelineTargetGetChildResultsBuilder(r);
 }
 
 final pipelineTargetGetChildResultsFactory = _PipelineTargetGetChildResultsFactory();
 
 final class PipelineTargetGetRepositoryParamsReader extends StructReader {
-  PipelineTargetGetRepositoryParamsReader(super.raw);
+  PipelineTargetGetRepositoryParamsReader(super.raw, {super.capabilities});
 }
 
 final class PipelineTargetGetRepositoryParamsBuilder extends StructBuilder {
@@ -2670,13 +2862,20 @@ final class _PipelineTargetGetRepositoryParamsFactory
   @override
   PipelineTargetGetRepositoryParamsReader fromRawReader(RawStructReader r) => PipelineTargetGetRepositoryParamsReader(r);
   @override
+  PipelineTargetGetRepositoryParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => PipelineTargetGetRepositoryParamsReader(r, capabilities: capabilities);
+  @override
   PipelineTargetGetRepositoryParamsBuilder fromRawBuilder(RawStructBuilder r) => PipelineTargetGetRepositoryParamsBuilder(r);
 }
 
 final pipelineTargetGetRepositoryParamsFactory = _PipelineTargetGetRepositoryParamsFactory();
 
 final class PipelineTargetGetRepositoryResultsReader extends StructReader {
-  PipelineTargetGetRepositoryResultsReader(super.raw);
+  PipelineTargetGetRepositoryResultsReader(super.raw, {super.capabilities});
+
+  RepositoryClient? get repository {
+    final cap = getCapabilityObjectField(0);
+    return cap == null ? null : RepositoryClient(cap as Capability);
+  }
 
   int get repositoryCapIndex => getCapabilityField(0);
 }
@@ -2699,13 +2898,15 @@ final class _PipelineTargetGetRepositoryResultsFactory
   @override
   PipelineTargetGetRepositoryResultsReader fromRawReader(RawStructReader r) => PipelineTargetGetRepositoryResultsReader(r);
   @override
+  PipelineTargetGetRepositoryResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => PipelineTargetGetRepositoryResultsReader(r, capabilities: capabilities);
+  @override
   PipelineTargetGetRepositoryResultsBuilder fromRawBuilder(RawStructBuilder r) => PipelineTargetGetRepositoryResultsBuilder(r);
 }
 
 final pipelineTargetGetRepositoryResultsFactory = _PipelineTargetGetRepositoryResultsFactory();
 
 final class PipelineTargetPingParamsReader extends StructReader {
-  PipelineTargetPingParamsReader(super.raw);
+  PipelineTargetPingParamsReader(super.raw, {super.capabilities});
 
   Uint8List? get payload => getDataField(0);
 }
@@ -2728,13 +2929,15 @@ final class _PipelineTargetPingParamsFactory
   @override
   PipelineTargetPingParamsReader fromRawReader(RawStructReader r) => PipelineTargetPingParamsReader(r);
   @override
+  PipelineTargetPingParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => PipelineTargetPingParamsReader(r, capabilities: capabilities);
+  @override
   PipelineTargetPingParamsBuilder fromRawBuilder(RawStructBuilder r) => PipelineTargetPingParamsBuilder(r);
 }
 
 final pipelineTargetPingParamsFactory = _PipelineTargetPingParamsFactory();
 
 final class PipelineTargetPingResultsReader extends StructReader {
-  PipelineTargetPingResultsReader(super.raw);
+  PipelineTargetPingResultsReader(super.raw, {super.capabilities});
 
   Uint8List? get payload => getDataField(0);
 }
@@ -2757,21 +2960,32 @@ final class _PipelineTargetPingResultsFactory
   @override
   PipelineTargetPingResultsReader fromRawReader(RawStructReader r) => PipelineTargetPingResultsReader(r);
   @override
+  PipelineTargetPingResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => PipelineTargetPingResultsReader(r, capabilities: capabilities);
+  @override
   PipelineTargetPingResultsBuilder fromRawBuilder(RawStructBuilder r) => PipelineTargetPingResultsBuilder(r);
 }
 
 final pipelineTargetPingResultsFactory = _PipelineTargetPingResultsFactory();
 
 final class CapabilityBundleReader extends StructReader {
-  CapabilityBundleReader(super.raw);
+  CapabilityBundleReader(super.raw, {super.capabilities});
+
+  PipelineTargetClient? get primary {
+    final cap = getCapabilityObjectField(0);
+    return cap == null ? null : PipelineTargetClient(cap as Capability);
+  }
 
   int get primaryCapIndex => getCapabilityField(0);
 
-  OptionalObserverPersonReader? get optionalObserver => getStructFieldWith(1, (r) => OptionalObserverPersonReader(r));
+  OptionalObserverPersonReader? get optionalObserver => getStructFieldWith(1, (r) => OptionalObserverPersonReader(r, capabilities: capabilityTable));
 
-  ListReader<int>? get targets => getCapabilityListField(2);
+  ListReader<PipelineTargetClient?>? get targets => getCapabilityListFieldWith<PipelineTargetClient>(2, (cap) => PipelineTargetClient(cap as Capability));
 
-  ListReader<int>? get repositories => getCapabilityListField(3);
+  ListReader<int>? get targetsCapIndices => getCapabilityListField(2);
+
+  ListReader<RepositoryClient?>? get repositories => getCapabilityListFieldWith<RepositoryClient>(3, (cap) => RepositoryClient(cap as Capability));
+
+  ListReader<int>? get repositoriesCapIndices => getCapabilityListField(3);
 }
 
 final class CapabilityBundleBuilder extends StructBuilder {
@@ -2807,33 +3021,35 @@ final class _CapabilityBundleFactory
   @override
   CapabilityBundleReader fromRawReader(RawStructReader r) => CapabilityBundleReader(r);
   @override
+  CapabilityBundleReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => CapabilityBundleReader(r, capabilities: capabilities);
+  @override
   CapabilityBundleBuilder fromRawBuilder(RawStructBuilder r) => CapabilityBundleBuilder(r);
 }
 
 final capabilityBundleFactory = _CapabilityBundleFactory();
 
 final class ComplexRequestReader extends StructReader {
-  ComplexRequestReader(super.raw);
+  ComplexRequestReader(super.raw, {super.capabilities});
 
-  IdentifierReader? get requestId => getStructFieldWith(0, (r) => IdentifierReader(r));
+  IdentifierReader? get requestId => getStructFieldWith(0, (r) => IdentifierReader(r, capabilities: capabilityTable));
 
-  TimestampReader? get timestamp => getStructFieldWith(1, (r) => TimestampReader(r));
+  TimestampReader? get timestamp => getStructFieldWith(1, (r) => TimestampReader(r, capabilities: capabilityTable));
 
-  AllScalarsReader? get scalars => getStructFieldWith(2, (r) => AllScalarsReader(r));
+  AllScalarsReader? get scalars => getStructFieldWith(2, (r) => AllScalarsReader(r, capabilities: capabilityTable));
 
-  AllListsReader? get lists => getStructFieldWith(3, (r) => AllListsReader(r));
+  AllListsReader? get lists => getStructFieldWith(3, (r) => AllListsReader(r, capabilities: capabilityTable));
 
-  PersonReader? get person => getStructFieldWith(4, (r) => PersonReader(r));
+  PersonReader? get person => getStructFieldWith(4, (r) => PersonReader(r, capabilities: capabilityTable));
 
-  TreePersonReader? get tree => getStructFieldWith(5, (r) => TreePersonReader(r));
+  TreePersonReader? get tree => getStructFieldWith(5, (r) => TreePersonReader(r, capabilities: capabilityTable));
 
-  MatrixReader? get matrix => getStructFieldWith(6, (r) => MatrixReader(r));
+  MatrixReader? get matrix => getStructFieldWith(6, (r) => MatrixReader(r, capabilities: capabilityTable));
 
-  NamedUnionReader? get choice => getStructFieldWith(7, (r) => NamedUnionReader(r));
+  NamedUnionReader? get choice => getStructFieldWith(7, (r) => NamedUnionReader(r, capabilities: capabilityTable));
 
-  DynamicEnvelopeReader? get dynamic => getStructFieldWith(8, (r) => DynamicEnvelopeReader(r));
+  DynamicEnvelopeReader? get dynamic => getStructFieldWith(8, (r) => DynamicEnvelopeReader(r, capabilities: capabilityTable));
 
-  CapabilityBundleReader? get capabilities => getStructFieldWith(9, (r) => CapabilityBundleReader(r));
+  CapabilityBundleReader? get capabilities => getStructFieldWith(9, (r) => CapabilityBundleReader(r, capabilities: capabilityTable));
 
   ListReader<bool>? get flags => getBoolListField(10);
 
@@ -2932,15 +3148,17 @@ final class _ComplexRequestFactory
   @override
   ComplexRequestReader fromRawReader(RawStructReader r) => ComplexRequestReader(r);
   @override
+  ComplexRequestReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexRequestReader(r, capabilities: capabilities);
+  @override
   ComplexRequestBuilder fromRawBuilder(RawStructBuilder r) => ComplexRequestBuilder(r);
 }
 
 final complexRequestFactory = _ComplexRequestFactory();
 
 final class ComplexResponseReader extends StructReader {
-  ComplexResponseReader(super.raw);
+  ComplexResponseReader(super.raw, {super.capabilities});
 
-  IdentifierReader? get requestId => getStructFieldWith(0, (r) => IdentifierReader(r));
+  IdentifierReader? get requestId => getStructFieldWith(0, (r) => IdentifierReader(r, capabilities: capabilityTable));
 
   bool get accepted => getBoolField(0);
 
@@ -2948,9 +3166,14 @@ final class ComplexResponseReader extends StructReader {
 
   String? get message => getTextField(1);
 
-  ComplexRequestReader? get echoed => getStructFieldWith(2, (r) => ComplexRequestReader(r));
+  ComplexRequestReader? get echoed => getStructFieldWith(2, (r) => ComplexRequestReader(r, capabilities: capabilityTable));
 
-  ResultPersonErrorInfoReader? get result => getStructFieldWith(3, (r) => ResultPersonErrorInfoReader(r));
+  ResultPersonErrorInfoReader? get result => getStructFieldWith(3, (r) => ResultPersonErrorInfoReader(r, capabilities: capabilityTable));
+
+  PipelineTargetClient? get serverCapability {
+    final cap = getCapabilityObjectField(4);
+    return cap == null ? null : PipelineTargetClient(cap as Capability);
+  }
 
   int get serverCapabilityCapIndex => getCapabilityField(4);
 
@@ -3012,13 +3235,15 @@ final class _ComplexResponseFactory
   @override
   ComplexResponseReader fromRawReader(RawStructReader r) => ComplexResponseReader(r);
   @override
+  ComplexResponseReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexResponseReader(r, capabilities: capabilities);
+  @override
   ComplexResponseBuilder fromRawBuilder(RawStructBuilder r) => ComplexResponseBuilder(r);
 }
 
 final complexResponseFactory = _ComplexResponseFactory();
 
 final class ErrorInfoReader extends StructReader {
-  ErrorInfoReader(super.raw);
+  ErrorInfoReader(super.raw, {super.capabilities});
 
   int get code => getUint32Field(0);
 
@@ -3028,9 +3253,9 @@ final class ErrorInfoReader extends StructReader {
 
   bool get retryable => getBoolField(32);
 
-  ListReader<KeyValueTextTextReader>? get details => getStructListFieldWith(2, (r) => KeyValueTextTextReader(r));
+  ListReader<KeyValueTextTextReader>? get details => getStructListFieldWith(2, (r) => KeyValueTextTextReader(r, capabilities: capabilityTable));
 
-  OptionalErrorInfoReader? get cause => getStructFieldWith(3, (r) => OptionalErrorInfoReader(r));
+  OptionalErrorInfoReader? get cause => getStructFieldWith(3, (r) => OptionalErrorInfoReader(r, capabilities: capabilityTable));
 }
 
 final class ErrorInfoBuilder extends StructBuilder {
@@ -3074,15 +3299,17 @@ final class _ErrorInfoFactory
   @override
   ErrorInfoReader fromRawReader(RawStructReader r) => ErrorInfoReader(r);
   @override
+  ErrorInfoReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ErrorInfoReader(r, capabilities: capabilities);
+  @override
   ErrorInfoBuilder fromRawBuilder(RawStructBuilder r) => ErrorInfoBuilder(r);
 }
 
 final errorInfoFactory = _ErrorInfoFactory();
 
 final class ComplexTestServiceEchoParamsReader extends StructReader {
-  ComplexTestServiceEchoParamsReader(super.raw);
+  ComplexTestServiceEchoParamsReader(super.raw, {super.capabilities});
 
-  ComplexRequestReader? get request => getStructFieldWith(0, (r) => ComplexRequestReader(r));
+  ComplexRequestReader? get request => getStructFieldWith(0, (r) => ComplexRequestReader(r, capabilities: capabilityTable));
 }
 
 final class ComplexTestServiceEchoParamsBuilder extends StructBuilder {
@@ -3106,15 +3333,17 @@ final class _ComplexTestServiceEchoParamsFactory
   @override
   ComplexTestServiceEchoParamsReader fromRawReader(RawStructReader r) => ComplexTestServiceEchoParamsReader(r);
   @override
+  ComplexTestServiceEchoParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceEchoParamsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceEchoParamsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceEchoParamsBuilder(r);
 }
 
 final complexTestServiceEchoParamsFactory = _ComplexTestServiceEchoParamsFactory();
 
 final class ComplexTestServiceEchoResultsReader extends StructReader {
-  ComplexTestServiceEchoResultsReader(super.raw);
+  ComplexTestServiceEchoResultsReader(super.raw, {super.capabilities});
 
-  ComplexResponseReader? get response => getStructFieldWith(0, (r) => ComplexResponseReader(r));
+  ComplexResponseReader? get response => getStructFieldWith(0, (r) => ComplexResponseReader(r, capabilities: capabilityTable));
 }
 
 final class ComplexTestServiceEchoResultsBuilder extends StructBuilder {
@@ -3138,15 +3367,17 @@ final class _ComplexTestServiceEchoResultsFactory
   @override
   ComplexTestServiceEchoResultsReader fromRawReader(RawStructReader r) => ComplexTestServiceEchoResultsReader(r);
   @override
+  ComplexTestServiceEchoResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceEchoResultsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceEchoResultsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceEchoResultsBuilder(r);
 }
 
 final complexTestServiceEchoResultsFactory = _ComplexTestServiceEchoResultsFactory();
 
 final class ComplexTestServiceEchoScalarsParamsReader extends StructReader {
-  ComplexTestServiceEchoScalarsParamsReader(super.raw);
+  ComplexTestServiceEchoScalarsParamsReader(super.raw, {super.capabilities});
 
-  AllScalarsReader? get value => getStructFieldWith(0, (r) => AllScalarsReader(r));
+  AllScalarsReader? get value => getStructFieldWith(0, (r) => AllScalarsReader(r, capabilities: capabilityTable));
 }
 
 final class ComplexTestServiceEchoScalarsParamsBuilder extends StructBuilder {
@@ -3170,15 +3401,17 @@ final class _ComplexTestServiceEchoScalarsParamsFactory
   @override
   ComplexTestServiceEchoScalarsParamsReader fromRawReader(RawStructReader r) => ComplexTestServiceEchoScalarsParamsReader(r);
   @override
+  ComplexTestServiceEchoScalarsParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceEchoScalarsParamsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceEchoScalarsParamsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceEchoScalarsParamsBuilder(r);
 }
 
 final complexTestServiceEchoScalarsParamsFactory = _ComplexTestServiceEchoScalarsParamsFactory();
 
 final class ComplexTestServiceEchoScalarsResultsReader extends StructReader {
-  ComplexTestServiceEchoScalarsResultsReader(super.raw);
+  ComplexTestServiceEchoScalarsResultsReader(super.raw, {super.capabilities});
 
-  AllScalarsReader? get value => getStructFieldWith(0, (r) => AllScalarsReader(r));
+  AllScalarsReader? get value => getStructFieldWith(0, (r) => AllScalarsReader(r, capabilities: capabilityTable));
 }
 
 final class ComplexTestServiceEchoScalarsResultsBuilder extends StructBuilder {
@@ -3202,15 +3435,17 @@ final class _ComplexTestServiceEchoScalarsResultsFactory
   @override
   ComplexTestServiceEchoScalarsResultsReader fromRawReader(RawStructReader r) => ComplexTestServiceEchoScalarsResultsReader(r);
   @override
+  ComplexTestServiceEchoScalarsResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceEchoScalarsResultsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceEchoScalarsResultsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceEchoScalarsResultsBuilder(r);
 }
 
 final complexTestServiceEchoScalarsResultsFactory = _ComplexTestServiceEchoScalarsResultsFactory();
 
 final class ComplexTestServiceEchoListsParamsReader extends StructReader {
-  ComplexTestServiceEchoListsParamsReader(super.raw);
+  ComplexTestServiceEchoListsParamsReader(super.raw, {super.capabilities});
 
-  AllListsReader? get value => getStructFieldWith(0, (r) => AllListsReader(r));
+  AllListsReader? get value => getStructFieldWith(0, (r) => AllListsReader(r, capabilities: capabilityTable));
 }
 
 final class ComplexTestServiceEchoListsParamsBuilder extends StructBuilder {
@@ -3234,15 +3469,17 @@ final class _ComplexTestServiceEchoListsParamsFactory
   @override
   ComplexTestServiceEchoListsParamsReader fromRawReader(RawStructReader r) => ComplexTestServiceEchoListsParamsReader(r);
   @override
+  ComplexTestServiceEchoListsParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceEchoListsParamsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceEchoListsParamsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceEchoListsParamsBuilder(r);
 }
 
 final complexTestServiceEchoListsParamsFactory = _ComplexTestServiceEchoListsParamsFactory();
 
 final class ComplexTestServiceEchoListsResultsReader extends StructReader {
-  ComplexTestServiceEchoListsResultsReader(super.raw);
+  ComplexTestServiceEchoListsResultsReader(super.raw, {super.capabilities});
 
-  AllListsReader? get value => getStructFieldWith(0, (r) => AllListsReader(r));
+  AllListsReader? get value => getStructFieldWith(0, (r) => AllListsReader(r, capabilities: capabilityTable));
 }
 
 final class ComplexTestServiceEchoListsResultsBuilder extends StructBuilder {
@@ -3266,15 +3503,17 @@ final class _ComplexTestServiceEchoListsResultsFactory
   @override
   ComplexTestServiceEchoListsResultsReader fromRawReader(RawStructReader r) => ComplexTestServiceEchoListsResultsReader(r);
   @override
+  ComplexTestServiceEchoListsResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceEchoListsResultsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceEchoListsResultsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceEchoListsResultsBuilder(r);
 }
 
 final complexTestServiceEchoListsResultsFactory = _ComplexTestServiceEchoListsResultsFactory();
 
 final class ComplexTestServiceEchoUnionParamsReader extends StructReader {
-  ComplexTestServiceEchoUnionParamsReader(super.raw);
+  ComplexTestServiceEchoUnionParamsReader(super.raw, {super.capabilities});
 
-  NamedUnionReader? get value => getStructFieldWith(0, (r) => NamedUnionReader(r));
+  NamedUnionReader? get value => getStructFieldWith(0, (r) => NamedUnionReader(r, capabilities: capabilityTable));
 }
 
 final class ComplexTestServiceEchoUnionParamsBuilder extends StructBuilder {
@@ -3298,15 +3537,17 @@ final class _ComplexTestServiceEchoUnionParamsFactory
   @override
   ComplexTestServiceEchoUnionParamsReader fromRawReader(RawStructReader r) => ComplexTestServiceEchoUnionParamsReader(r);
   @override
+  ComplexTestServiceEchoUnionParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceEchoUnionParamsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceEchoUnionParamsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceEchoUnionParamsBuilder(r);
 }
 
 final complexTestServiceEchoUnionParamsFactory = _ComplexTestServiceEchoUnionParamsFactory();
 
 final class ComplexTestServiceEchoUnionResultsReader extends StructReader {
-  ComplexTestServiceEchoUnionResultsReader(super.raw);
+  ComplexTestServiceEchoUnionResultsReader(super.raw, {super.capabilities});
 
-  NamedUnionReader? get value => getStructFieldWith(0, (r) => NamedUnionReader(r));
+  NamedUnionReader? get value => getStructFieldWith(0, (r) => NamedUnionReader(r, capabilities: capabilityTable));
 }
 
 final class ComplexTestServiceEchoUnionResultsBuilder extends StructBuilder {
@@ -3330,13 +3571,15 @@ final class _ComplexTestServiceEchoUnionResultsFactory
   @override
   ComplexTestServiceEchoUnionResultsReader fromRawReader(RawStructReader r) => ComplexTestServiceEchoUnionResultsReader(r);
   @override
+  ComplexTestServiceEchoUnionResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceEchoUnionResultsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceEchoUnionResultsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceEchoUnionResultsBuilder(r);
 }
 
 final complexTestServiceEchoUnionResultsFactory = _ComplexTestServiceEchoUnionResultsFactory();
 
 final class ComplexTestServiceEchoAnyPointerParamsReader extends StructReader {
-  ComplexTestServiceEchoAnyPointerParamsReader(super.raw);
+  ComplexTestServiceEchoAnyPointerParamsReader(super.raw, {super.capabilities});
 
   Uint8List? get value => getAnyPointerAsMessageBytes(0);
 }
@@ -3359,13 +3602,15 @@ final class _ComplexTestServiceEchoAnyPointerParamsFactory
   @override
   ComplexTestServiceEchoAnyPointerParamsReader fromRawReader(RawStructReader r) => ComplexTestServiceEchoAnyPointerParamsReader(r);
   @override
+  ComplexTestServiceEchoAnyPointerParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceEchoAnyPointerParamsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceEchoAnyPointerParamsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceEchoAnyPointerParamsBuilder(r);
 }
 
 final complexTestServiceEchoAnyPointerParamsFactory = _ComplexTestServiceEchoAnyPointerParamsFactory();
 
 final class ComplexTestServiceEchoAnyPointerResultsReader extends StructReader {
-  ComplexTestServiceEchoAnyPointerResultsReader(super.raw);
+  ComplexTestServiceEchoAnyPointerResultsReader(super.raw, {super.capabilities});
 
   Uint8List? get value => getAnyPointerAsMessageBytes(0);
 }
@@ -3388,15 +3633,17 @@ final class _ComplexTestServiceEchoAnyPointerResultsFactory
   @override
   ComplexTestServiceEchoAnyPointerResultsReader fromRawReader(RawStructReader r) => ComplexTestServiceEchoAnyPointerResultsReader(r);
   @override
+  ComplexTestServiceEchoAnyPointerResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceEchoAnyPointerResultsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceEchoAnyPointerResultsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceEchoAnyPointerResultsBuilder(r);
 }
 
 final complexTestServiceEchoAnyPointerResultsFactory = _ComplexTestServiceEchoAnyPointerResultsFactory();
 
 final class ComplexTestServiceExchangeCapabilitiesParamsReader extends StructReader {
-  ComplexTestServiceExchangeCapabilitiesParamsReader(super.raw);
+  ComplexTestServiceExchangeCapabilitiesParamsReader(super.raw, {super.capabilities});
 
-  CapabilityBundleReader? get bundle => getStructFieldWith(0, (r) => CapabilityBundleReader(r));
+  CapabilityBundleReader? get bundle => getStructFieldWith(0, (r) => CapabilityBundleReader(r, capabilities: capabilityTable));
 }
 
 final class ComplexTestServiceExchangeCapabilitiesParamsBuilder extends StructBuilder {
@@ -3420,15 +3667,17 @@ final class _ComplexTestServiceExchangeCapabilitiesParamsFactory
   @override
   ComplexTestServiceExchangeCapabilitiesParamsReader fromRawReader(RawStructReader r) => ComplexTestServiceExchangeCapabilitiesParamsReader(r);
   @override
+  ComplexTestServiceExchangeCapabilitiesParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceExchangeCapabilitiesParamsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceExchangeCapabilitiesParamsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceExchangeCapabilitiesParamsBuilder(r);
 }
 
 final complexTestServiceExchangeCapabilitiesParamsFactory = _ComplexTestServiceExchangeCapabilitiesParamsFactory();
 
 final class ComplexTestServiceExchangeCapabilitiesResultsReader extends StructReader {
-  ComplexTestServiceExchangeCapabilitiesResultsReader(super.raw);
+  ComplexTestServiceExchangeCapabilitiesResultsReader(super.raw, {super.capabilities});
 
-  CapabilityBundleReader? get bundle => getStructFieldWith(0, (r) => CapabilityBundleReader(r));
+  CapabilityBundleReader? get bundle => getStructFieldWith(0, (r) => CapabilityBundleReader(r, capabilities: capabilityTable));
 }
 
 final class ComplexTestServiceExchangeCapabilitiesResultsBuilder extends StructBuilder {
@@ -3452,17 +3701,24 @@ final class _ComplexTestServiceExchangeCapabilitiesResultsFactory
   @override
   ComplexTestServiceExchangeCapabilitiesResultsReader fromRawReader(RawStructReader r) => ComplexTestServiceExchangeCapabilitiesResultsReader(r);
   @override
+  ComplexTestServiceExchangeCapabilitiesResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceExchangeCapabilitiesResultsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceExchangeCapabilitiesResultsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceExchangeCapabilitiesResultsBuilder(r);
 }
 
 final complexTestServiceExchangeCapabilitiesResultsFactory = _ComplexTestServiceExchangeCapabilitiesResultsFactory();
 
 final class ComplexTestServiceCallObserverParamsReader extends StructReader {
-  ComplexTestServiceCallObserverParamsReader(super.raw);
+  ComplexTestServiceCallObserverParamsReader(super.raw, {super.capabilities});
+
+  ObserverClient? get observer {
+    final cap = getCapabilityObjectField(0);
+    return cap == null ? null : ObserverClient(cap as Capability);
+  }
 
   int get observerCapIndex => getCapabilityField(0);
 
-  ListReader<PersonReader>? get events => getStructListFieldWith(1, (r) => PersonReader(r));
+  ListReader<PersonReader>? get events => getStructListFieldWith(1, (r) => PersonReader(r, capabilities: capabilityTable));
 }
 
 final class ComplexTestServiceCallObserverParamsBuilder extends StructBuilder {
@@ -3487,13 +3743,15 @@ final class _ComplexTestServiceCallObserverParamsFactory
   @override
   ComplexTestServiceCallObserverParamsReader fromRawReader(RawStructReader r) => ComplexTestServiceCallObserverParamsReader(r);
   @override
+  ComplexTestServiceCallObserverParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceCallObserverParamsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceCallObserverParamsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceCallObserverParamsBuilder(r);
 }
 
 final complexTestServiceCallObserverParamsFactory = _ComplexTestServiceCallObserverParamsFactory();
 
 final class ComplexTestServiceCallObserverResultsReader extends StructReader {
-  ComplexTestServiceCallObserverResultsReader(super.raw);
+  ComplexTestServiceCallObserverResultsReader(super.raw, {super.capabilities});
 
   int get delivered => getUint32Field(0);
 }
@@ -3516,13 +3774,15 @@ final class _ComplexTestServiceCallObserverResultsFactory
   @override
   ComplexTestServiceCallObserverResultsReader fromRawReader(RawStructReader r) => ComplexTestServiceCallObserverResultsReader(r);
   @override
+  ComplexTestServiceCallObserverResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceCallObserverResultsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceCallObserverResultsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceCallObserverResultsBuilder(r);
 }
 
 final complexTestServiceCallObserverResultsFactory = _ComplexTestServiceCallObserverResultsFactory();
 
 final class ComplexTestServiceMakePipelineParamsReader extends StructReader {
-  ComplexTestServiceMakePipelineParamsReader(super.raw);
+  ComplexTestServiceMakePipelineParamsReader(super.raw, {super.capabilities});
 
   int get depth => getUint32Field(0);
 }
@@ -3545,13 +3805,20 @@ final class _ComplexTestServiceMakePipelineParamsFactory
   @override
   ComplexTestServiceMakePipelineParamsReader fromRawReader(RawStructReader r) => ComplexTestServiceMakePipelineParamsReader(r);
   @override
+  ComplexTestServiceMakePipelineParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceMakePipelineParamsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceMakePipelineParamsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceMakePipelineParamsBuilder(r);
 }
 
 final complexTestServiceMakePipelineParamsFactory = _ComplexTestServiceMakePipelineParamsFactory();
 
 final class ComplexTestServiceMakePipelineResultsReader extends StructReader {
-  ComplexTestServiceMakePipelineResultsReader(super.raw);
+  ComplexTestServiceMakePipelineResultsReader(super.raw, {super.capabilities});
+
+  PipelineTargetClient? get target {
+    final cap = getCapabilityObjectField(0);
+    return cap == null ? null : PipelineTargetClient(cap as Capability);
+  }
 
   int get targetCapIndex => getCapabilityField(0);
 }
@@ -3574,13 +3841,15 @@ final class _ComplexTestServiceMakePipelineResultsFactory
   @override
   ComplexTestServiceMakePipelineResultsReader fromRawReader(RawStructReader r) => ComplexTestServiceMakePipelineResultsReader(r);
   @override
+  ComplexTestServiceMakePipelineResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceMakePipelineResultsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceMakePipelineResultsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceMakePipelineResultsBuilder(r);
 }
 
 final complexTestServiceMakePipelineResultsFactory = _ComplexTestServiceMakePipelineResultsFactory();
 
 final class ComplexTestServiceOpenUploadParamsReader extends StructReader {
-  ComplexTestServiceOpenUploadParamsReader(super.raw);
+  ComplexTestServiceOpenUploadParamsReader(super.raw, {super.capabilities});
 
   int get expectedSize => getUint64Field(0);
 
@@ -3609,13 +3878,20 @@ final class _ComplexTestServiceOpenUploadParamsFactory
   @override
   ComplexTestServiceOpenUploadParamsReader fromRawReader(RawStructReader r) => ComplexTestServiceOpenUploadParamsReader(r);
   @override
+  ComplexTestServiceOpenUploadParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceOpenUploadParamsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceOpenUploadParamsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceOpenUploadParamsBuilder(r);
 }
 
 final complexTestServiceOpenUploadParamsFactory = _ComplexTestServiceOpenUploadParamsFactory();
 
 final class ComplexTestServiceOpenUploadResultsReader extends StructReader {
-  ComplexTestServiceOpenUploadResultsReader(super.raw);
+  ComplexTestServiceOpenUploadResultsReader(super.raw, {super.capabilities});
+
+  ByteSinkClient? get sink {
+    final cap = getCapabilityObjectField(0);
+    return cap == null ? null : ByteSinkClient(cap as Capability);
+  }
 
   int get sinkCapIndex => getCapabilityField(0);
 }
@@ -3638,15 +3914,17 @@ final class _ComplexTestServiceOpenUploadResultsFactory
   @override
   ComplexTestServiceOpenUploadResultsReader fromRawReader(RawStructReader r) => ComplexTestServiceOpenUploadResultsReader(r);
   @override
+  ComplexTestServiceOpenUploadResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceOpenUploadResultsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceOpenUploadResultsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceOpenUploadResultsBuilder(r);
 }
 
 final complexTestServiceOpenUploadResultsFactory = _ComplexTestServiceOpenUploadResultsFactory();
 
 final class ComplexTestServiceOpenDownloadParamsReader extends StructReader {
-  ComplexTestServiceOpenDownloadParamsReader(super.raw);
+  ComplexTestServiceOpenDownloadParamsReader(super.raw, {super.capabilities});
 
-  IdentifierReader? get resourceId => getStructFieldWith(0, (r) => IdentifierReader(r));
+  IdentifierReader? get resourceId => getStructFieldWith(0, (r) => IdentifierReader(r, capabilities: capabilityTable));
 }
 
 final class ComplexTestServiceOpenDownloadParamsBuilder extends StructBuilder {
@@ -3670,17 +3948,24 @@ final class _ComplexTestServiceOpenDownloadParamsFactory
   @override
   ComplexTestServiceOpenDownloadParamsReader fromRawReader(RawStructReader r) => ComplexTestServiceOpenDownloadParamsReader(r);
   @override
+  ComplexTestServiceOpenDownloadParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceOpenDownloadParamsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceOpenDownloadParamsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceOpenDownloadParamsBuilder(r);
 }
 
 final complexTestServiceOpenDownloadParamsFactory = _ComplexTestServiceOpenDownloadParamsFactory();
 
 final class ComplexTestServiceOpenDownloadResultsReader extends StructReader {
-  ComplexTestServiceOpenDownloadResultsReader(super.raw);
+  ComplexTestServiceOpenDownloadResultsReader(super.raw, {super.capabilities});
+
+  ByteSourceClient? get source {
+    final cap = getCapabilityObjectField(0);
+    return cap == null ? null : ByteSourceClient(cap as Capability);
+  }
 
   int get sourceCapIndex => getCapabilityField(0);
 
-  ListReader<KeyValueTextTextReader>? get metadata => getStructListFieldWith(1, (r) => KeyValueTextTextReader(r));
+  ListReader<KeyValueTextTextReader>? get metadata => getStructListFieldWith(1, (r) => KeyValueTextTextReader(r, capabilities: capabilityTable));
 }
 
 final class ComplexTestServiceOpenDownloadResultsBuilder extends StructBuilder {
@@ -3705,13 +3990,15 @@ final class _ComplexTestServiceOpenDownloadResultsFactory
   @override
   ComplexTestServiceOpenDownloadResultsReader fromRawReader(RawStructReader r) => ComplexTestServiceOpenDownloadResultsReader(r);
   @override
+  ComplexTestServiceOpenDownloadResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceOpenDownloadResultsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceOpenDownloadResultsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceOpenDownloadResultsBuilder(r);
 }
 
 final complexTestServiceOpenDownloadResultsFactory = _ComplexTestServiceOpenDownloadResultsFactory();
 
 final class ComplexTestServiceGetRepositoryParamsReader extends StructReader {
-  ComplexTestServiceGetRepositoryParamsReader(super.raw);
+  ComplexTestServiceGetRepositoryParamsReader(super.raw, {super.capabilities});
 }
 
 final class ComplexTestServiceGetRepositoryParamsBuilder extends StructBuilder {
@@ -3728,13 +4015,20 @@ final class _ComplexTestServiceGetRepositoryParamsFactory
   @override
   ComplexTestServiceGetRepositoryParamsReader fromRawReader(RawStructReader r) => ComplexTestServiceGetRepositoryParamsReader(r);
   @override
+  ComplexTestServiceGetRepositoryParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceGetRepositoryParamsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceGetRepositoryParamsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceGetRepositoryParamsBuilder(r);
 }
 
 final complexTestServiceGetRepositoryParamsFactory = _ComplexTestServiceGetRepositoryParamsFactory();
 
 final class ComplexTestServiceGetRepositoryResultsReader extends StructReader {
-  ComplexTestServiceGetRepositoryResultsReader(super.raw);
+  ComplexTestServiceGetRepositoryResultsReader(super.raw, {super.capabilities});
+
+  RepositoryClient? get repository {
+    final cap = getCapabilityObjectField(0);
+    return cap == null ? null : RepositoryClient(cap as Capability);
+  }
 
   int get repositoryCapIndex => getCapabilityField(0);
 }
@@ -3757,13 +4051,15 @@ final class _ComplexTestServiceGetRepositoryResultsFactory
   @override
   ComplexTestServiceGetRepositoryResultsReader fromRawReader(RawStructReader r) => ComplexTestServiceGetRepositoryResultsReader(r);
   @override
+  ComplexTestServiceGetRepositoryResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceGetRepositoryResultsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceGetRepositoryResultsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceGetRepositoryResultsBuilder(r);
 }
 
 final complexTestServiceGetRepositoryResultsFactory = _ComplexTestServiceGetRepositoryResultsFactory();
 
 final class ComplexTestServiceGetFactoryParamsReader extends StructReader {
-  ComplexTestServiceGetFactoryParamsReader(super.raw);
+  ComplexTestServiceGetFactoryParamsReader(super.raw, {super.capabilities});
 }
 
 final class ComplexTestServiceGetFactoryParamsBuilder extends StructBuilder {
@@ -3780,13 +4076,20 @@ final class _ComplexTestServiceGetFactoryParamsFactory
   @override
   ComplexTestServiceGetFactoryParamsReader fromRawReader(RawStructReader r) => ComplexTestServiceGetFactoryParamsReader(r);
   @override
+  ComplexTestServiceGetFactoryParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceGetFactoryParamsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceGetFactoryParamsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceGetFactoryParamsBuilder(r);
 }
 
 final complexTestServiceGetFactoryParamsFactory = _ComplexTestServiceGetFactoryParamsFactory();
 
 final class ComplexTestServiceGetFactoryResultsReader extends StructReader {
-  ComplexTestServiceGetFactoryResultsReader(super.raw);
+  ComplexTestServiceGetFactoryResultsReader(super.raw, {super.capabilities});
+
+  CapabilityFactoryClient? get factory {
+    final cap = getCapabilityObjectField(0);
+    return cap == null ? null : CapabilityFactoryClient(cap as Capability);
+  }
 
   int get factoryCapIndex => getCapabilityField(0);
 }
@@ -3809,13 +4112,20 @@ final class _ComplexTestServiceGetFactoryResultsFactory
   @override
   ComplexTestServiceGetFactoryResultsReader fromRawReader(RawStructReader r) => ComplexTestServiceGetFactoryResultsReader(r);
   @override
+  ComplexTestServiceGetFactoryResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceGetFactoryResultsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceGetFactoryResultsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceGetFactoryResultsBuilder(r);
 }
 
 final complexTestServiceGetFactoryResultsFactory = _ComplexTestServiceGetFactoryResultsFactory();
 
 final class ComplexTestServiceUseDiamondParamsReader extends StructReader {
-  ComplexTestServiceUseDiamondParamsReader(super.raw);
+  ComplexTestServiceUseDiamondParamsReader(super.raw, {super.capabilities});
+
+  DiamondClient? get diamond {
+    final cap = getCapabilityObjectField(0);
+    return cap == null ? null : DiamondClient(cap as Capability);
+  }
 
   int get diamondCapIndex => getCapabilityField(0);
 
@@ -3844,13 +4154,15 @@ final class _ComplexTestServiceUseDiamondParamsFactory
   @override
   ComplexTestServiceUseDiamondParamsReader fromRawReader(RawStructReader r) => ComplexTestServiceUseDiamondParamsReader(r);
   @override
+  ComplexTestServiceUseDiamondParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceUseDiamondParamsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceUseDiamondParamsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceUseDiamondParamsBuilder(r);
 }
 
 final complexTestServiceUseDiamondParamsFactory = _ComplexTestServiceUseDiamondParamsFactory();
 
 final class ComplexTestServiceUseDiamondResultsReader extends StructReader {
-  ComplexTestServiceUseDiamondResultsReader(super.raw);
+  ComplexTestServiceUseDiamondResultsReader(super.raw, {super.capabilities});
 
   int get result => getInt64Field(0);
 }
@@ -3873,13 +4185,15 @@ final class _ComplexTestServiceUseDiamondResultsFactory
   @override
   ComplexTestServiceUseDiamondResultsReader fromRawReader(RawStructReader r) => ComplexTestServiceUseDiamondResultsReader(r);
   @override
+  ComplexTestServiceUseDiamondResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceUseDiamondResultsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceUseDiamondResultsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceUseDiamondResultsBuilder(r);
 }
 
 final complexTestServiceUseDiamondResultsFactory = _ComplexTestServiceUseDiamondResultsFactory();
 
 final class ComplexTestServiceFailIntentionallyParamsReader extends StructReader {
-  ComplexTestServiceFailIntentionallyParamsReader(super.raw);
+  ComplexTestServiceFailIntentionallyParamsReader(super.raw, {super.capabilities});
 
   int get code => getUint32Field(0);
 
@@ -3908,13 +4222,15 @@ final class _ComplexTestServiceFailIntentionallyParamsFactory
   @override
   ComplexTestServiceFailIntentionallyParamsReader fromRawReader(RawStructReader r) => ComplexTestServiceFailIntentionallyParamsReader(r);
   @override
+  ComplexTestServiceFailIntentionallyParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceFailIntentionallyParamsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceFailIntentionallyParamsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceFailIntentionallyParamsBuilder(r);
 }
 
 final complexTestServiceFailIntentionallyParamsFactory = _ComplexTestServiceFailIntentionallyParamsFactory();
 
 final class ComplexTestServiceFailIntentionallyResultsReader extends StructReader {
-  ComplexTestServiceFailIntentionallyResultsReader(super.raw);
+  ComplexTestServiceFailIntentionallyResultsReader(super.raw, {super.capabilities});
 }
 
 final class ComplexTestServiceFailIntentionallyResultsBuilder extends StructBuilder {
@@ -3931,13 +4247,15 @@ final class _ComplexTestServiceFailIntentionallyResultsFactory
   @override
   ComplexTestServiceFailIntentionallyResultsReader fromRawReader(RawStructReader r) => ComplexTestServiceFailIntentionallyResultsReader(r);
   @override
+  ComplexTestServiceFailIntentionallyResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceFailIntentionallyResultsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceFailIntentionallyResultsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceFailIntentionallyResultsBuilder(r);
 }
 
 final complexTestServiceFailIntentionallyResultsFactory = _ComplexTestServiceFailIntentionallyResultsFactory();
 
 final class ComplexTestServiceShutdownParamsReader extends StructReader {
-  ComplexTestServiceShutdownParamsReader(super.raw);
+  ComplexTestServiceShutdownParamsReader(super.raw, {super.capabilities});
 }
 
 final class ComplexTestServiceShutdownParamsBuilder extends StructBuilder {
@@ -3954,13 +4272,15 @@ final class _ComplexTestServiceShutdownParamsFactory
   @override
   ComplexTestServiceShutdownParamsReader fromRawReader(RawStructReader r) => ComplexTestServiceShutdownParamsReader(r);
   @override
+  ComplexTestServiceShutdownParamsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceShutdownParamsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceShutdownParamsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceShutdownParamsBuilder(r);
 }
 
 final complexTestServiceShutdownParamsFactory = _ComplexTestServiceShutdownParamsFactory();
 
 final class ComplexTestServiceShutdownResultsReader extends StructReader {
-  ComplexTestServiceShutdownResultsReader(super.raw);
+  ComplexTestServiceShutdownResultsReader(super.raw, {super.capabilities});
 }
 
 final class ComplexTestServiceShutdownResultsBuilder extends StructBuilder {
@@ -3977,22 +4297,24 @@ final class _ComplexTestServiceShutdownResultsFactory
   @override
   ComplexTestServiceShutdownResultsReader fromRawReader(RawStructReader r) => ComplexTestServiceShutdownResultsReader(r);
   @override
+  ComplexTestServiceShutdownResultsReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ComplexTestServiceShutdownResultsReader(r, capabilities: capabilities);
+  @override
   ComplexTestServiceShutdownResultsBuilder fromRawBuilder(RawStructBuilder r) => ComplexTestServiceShutdownResultsBuilder(r);
 }
 
 final complexTestServiceShutdownResultsFactory = _ComplexTestServiceShutdownResultsFactory();
 
 final class contactReader extends StructReader {
-  contactReader(super.raw);
+  contactReader(super.raw, {super.capabilities});
 
   int get which => getUint16Field(4);
 
 
-  phoneReader get phone => phoneReader(raw);
+  phoneReader get phone => phoneReader(raw, capabilities: capabilityTable);
 
-  postalReader get postal => postalReader(raw);
+  postalReader get postal => postalReader(raw, capabilities: capabilityTable);
 
-  onlineReader get online => onlineReader(raw);
+  onlineReader get online => onlineReader(raw, capabilities: capabilityTable);
 }
 
 final class contactBuilder extends StructBuilder {
@@ -4030,13 +4352,15 @@ final class _contactFactory
   @override
   contactReader fromRawReader(RawStructReader r) => contactReader(r);
   @override
+  contactReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => contactReader(r, capabilities: capabilities);
+  @override
   contactBuilder fromRawBuilder(RawStructBuilder r) => contactBuilder(r);
 }
 
 final contactFactory = _contactFactory();
 
 final class phoneReader extends StructReader {
-  phoneReader(super.raw);
+  phoneReader(super.raw, {super.capabilities});
 
   int get countryCode => getUint16Field(6);
 
@@ -4071,15 +4395,17 @@ final class _phoneFactory
   @override
   phoneReader fromRawReader(RawStructReader r) => phoneReader(r);
   @override
+  phoneReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => phoneReader(r, capabilities: capabilities);
+  @override
   phoneBuilder fromRawBuilder(RawStructBuilder r) => phoneBuilder(r);
 }
 
 final phoneFactory = _phoneFactory();
 
 final class postalReader extends StructReader {
-  postalReader(super.raw);
+  postalReader(super.raw, {super.capabilities});
 
-  AddressReader? get address => getStructFieldWith(4, (r) => AddressReader(r));
+  AddressReader? get address => getStructFieldWith(4, (r) => AddressReader(r, capabilities: capabilityTable));
 
   String? get attention => getTextField(5);
 }
@@ -4109,13 +4435,15 @@ final class _postalFactory
   @override
   postalReader fromRawReader(RawStructReader r) => postalReader(r);
   @override
+  postalReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => postalReader(r, capabilities: capabilities);
+  @override
   postalBuilder fromRawBuilder(RawStructBuilder r) => postalBuilder(r);
 }
 
 final postalFactory = _postalFactory();
 
 final class onlineReader extends StructReader {
-  onlineReader(super.raw);
+  onlineReader(super.raw, {super.capabilities});
 
   String? get service => getTextField(4);
 
@@ -4144,13 +4472,15 @@ final class _onlineFactory
   @override
   onlineReader fromRawReader(RawStructReader r) => onlineReader(r);
   @override
+  onlineReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => onlineReader(r, capabilities: capabilities);
+  @override
   onlineBuilder fromRawBuilder(RawStructBuilder r) => onlineBuilder(r);
 }
 
 final onlineFactory = _onlineFactory();
 
 final class payloadReader extends StructReader {
-  payloadReader(super.raw);
+  payloadReader(super.raw, {super.capabilities});
 
   int get which => getUint16Field(4);
 
@@ -4161,11 +4491,11 @@ final class payloadReader extends StructReader {
 
   Uint8List? get data => getDataField(0);
 
-  PersonReader? get person => getStructFieldWith(0, (r) => PersonReader(r));
+  PersonReader? get person => getStructFieldWith(0, (r) => PersonReader(r, capabilities: capabilityTable));
 
-  coordinatesReader get coordinates => coordinatesReader(raw);
+  coordinatesReader get coordinates => coordinatesReader(raw, capabilities: capabilityTable);
 
-  rectangleReader get rectangle => rectangleReader(raw);
+  rectangleReader get rectangle => rectangleReader(raw, capabilities: capabilityTable);
 }
 
 final class payloadBuilder extends StructBuilder {
@@ -4221,13 +4551,15 @@ final class _payloadFactory
   @override
   payloadReader fromRawReader(RawStructReader r) => payloadReader(r);
   @override
+  payloadReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => payloadReader(r, capabilities: capabilities);
+  @override
   payloadBuilder fromRawBuilder(RawStructBuilder r) => payloadBuilder(r);
 }
 
 final payloadFactory = _payloadFactory();
 
 final class coordinatesReader extends StructReader {
-  coordinatesReader(super.raw);
+  coordinatesReader(super.raw, {super.capabilities});
 
   double get x => getFloat64Field(8);
 
@@ -4262,13 +4594,15 @@ final class _coordinatesFactory
   @override
   coordinatesReader fromRawReader(RawStructReader r) => coordinatesReader(r);
   @override
+  coordinatesReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => coordinatesReader(r, capabilities: capabilities);
+  @override
   coordinatesBuilder fromRawBuilder(RawStructBuilder r) => coordinatesBuilder(r);
 }
 
 final coordinatesFactory = _coordinatesFactory();
 
 final class rectangleReader extends StructReader {
-  rectangleReader(super.raw);
+  rectangleReader(super.raw, {super.capabilities});
 
   double get left => getFloat32Field(8);
 
@@ -4309,6 +4643,8 @@ final class _rectangleFactory
   @override
   rectangleReader fromRawReader(RawStructReader r) => rectangleReader(r);
   @override
+  rectangleReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => rectangleReader(r, capabilities: capabilities);
+  @override
   rectangleBuilder fromRawBuilder(RawStructBuilder r) => rectangleBuilder(r);
 }
 
@@ -4324,21 +4660,21 @@ class ObserverClient extends Capability {
     final mb = MessageBuilder();
     build(mb.initRoot(observerOnNextParamsFactory));
     final result = await _cap.dispatch(0xf67686e607b37dbb, 0, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(observerOnNextResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(observerOnNextResultsFactory, capabilities: result.caps);
   }
 
   Future<ObserverOnErrorResultsReader> onError(void Function(ObserverOnErrorParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(observerOnErrorParamsFactory));
     final result = await _cap.dispatch(0xf67686e607b37dbb, 1, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(observerOnErrorResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(observerOnErrorResultsFactory, capabilities: result.caps);
   }
 
   Future<ObserverOnCompleteResultsReader> onComplete(void Function(ObserverOnCompleteParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(observerOnCompleteParamsFactory));
     final result = await _cap.dispatch(0xf67686e607b37dbb, 2, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(observerOnCompleteResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(observerOnCompleteResultsFactory, capabilities: result.caps);
   }
 
   @override
@@ -4353,32 +4689,50 @@ class ObserverClientFactory extends CapabilityFactory<ObserverClient> {
 abstract class ObserverServer extends Capability {
 
   Future<void> onNext(ObserverOnNextParamsReader params, List<Capability> paramsCapabilities);
+  Future<void> onNextWithContext(ObserverOnNextParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      onNext(params, paramsCapabilities);
 
   Future<void> onError(ObserverOnErrorParamsReader params, List<Capability> paramsCapabilities);
+  Future<void> onErrorWithContext(ObserverOnErrorParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      onError(params, paramsCapabilities);
 
   Future<void> onComplete(ObserverOnCompleteParamsReader params, List<Capability> paramsCapabilities);
+  Future<void> onCompleteWithContext(ObserverOnCompleteParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      onComplete(params, paramsCapabilities);
 
   @override
   Future<DispatchResult> dispatch(int interfaceId, int methodId, Uint8List params, {
     List<Capability> paramsCapabilities = const [],
+  }) => dispatchWithContext(
+    interfaceId,
+    methodId,
+    params,
+    paramsCapabilities: paramsCapabilities,
+  );
+
+  @override
+  Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+    DispatchContext? context,
   }) async {
+    final dispatchContext = context ?? DispatchContext.neverCanceled;
     switch (interfaceId) {
       case 0xf67686e607b37dbb:
         switch (methodId) {
           case 0:
             final p = MessageReader.deserialize(params)
-                .getRoot(observerOnNextParamsFactory);
-            await onNext(p, paramsCapabilities);
+                .getRoot(observerOnNextParamsFactory, capabilities: paramsCapabilities);
+            await onNextWithContext(p, paramsCapabilities, dispatchContext);
             return DispatchResult.empty;
           case 1:
             final p = MessageReader.deserialize(params)
-                .getRoot(observerOnErrorParamsFactory);
-            await onError(p, paramsCapabilities);
+                .getRoot(observerOnErrorParamsFactory, capabilities: paramsCapabilities);
+            await onErrorWithContext(p, paramsCapabilities, dispatchContext);
             return DispatchResult.empty;
           case 2:
             final p = MessageReader.deserialize(params)
-                .getRoot(observerOnCompleteParamsFactory);
-            await onComplete(p, paramsCapabilities);
+                .getRoot(observerOnCompleteParamsFactory, capabilities: paramsCapabilities);
+            await onCompleteWithContext(p, paramsCapabilities, dispatchContext);
             return DispatchResult.empty;
           default:
             break;
@@ -4386,7 +4740,7 @@ abstract class ObserverServer extends Capability {
       default:
         break;
     }
-    return super.dispatch(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities);
+    return super.dispatchWithContext(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities, context: dispatchContext);
   }
 
   @override
@@ -4403,14 +4757,14 @@ class SubscriptionClient extends Capability {
     final mb = MessageBuilder();
     build(mb.initRoot(subscriptionCancelParamsFactory));
     final result = await _cap.dispatch(0xe23251fe94e836ec, 0, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(subscriptionCancelResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(subscriptionCancelResultsFactory, capabilities: result.caps);
   }
 
   Future<SubscriptionGetIdResultsReader> getId(void Function(SubscriptionGetIdParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(subscriptionGetIdParamsFactory));
     final result = await _cap.dispatch(0xe23251fe94e836ec, 1, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(subscriptionGetIdResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(subscriptionGetIdResultsFactory, capabilities: result.caps);
   }
 
   @override
@@ -4425,31 +4779,47 @@ class SubscriptionClientFactory extends CapabilityFactory<SubscriptionClient> {
 abstract class SubscriptionServer extends Capability {
 
   Future<DispatchResult> cancel(SubscriptionCancelParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> cancelWithContext(SubscriptionCancelParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      cancel(params, paramsCapabilities);
 
   Future<DispatchResult> getId(SubscriptionGetIdParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> getIdWithContext(SubscriptionGetIdParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      getId(params, paramsCapabilities);
 
   @override
   Future<DispatchResult> dispatch(int interfaceId, int methodId, Uint8List params, {
     List<Capability> paramsCapabilities = const [],
+  }) => dispatchWithContext(
+    interfaceId,
+    methodId,
+    params,
+    paramsCapabilities: paramsCapabilities,
+  );
+
+  @override
+  Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+    DispatchContext? context,
   }) async {
+    final dispatchContext = context ?? DispatchContext.neverCanceled;
     switch (interfaceId) {
       case 0xe23251fe94e836ec:
         switch (methodId) {
           case 0:
             final p = MessageReader.deserialize(params)
-                .getRoot(subscriptionCancelParamsFactory);
-            return await cancel(p, paramsCapabilities);
+                .getRoot(subscriptionCancelParamsFactory, capabilities: paramsCapabilities);
+            return await cancelWithContext(p, paramsCapabilities, dispatchContext);
           case 1:
             final p = MessageReader.deserialize(params)
-                .getRoot(subscriptionGetIdParamsFactory);
-            return await getId(p, paramsCapabilities);
+                .getRoot(subscriptionGetIdParamsFactory, capabilities: paramsCapabilities);
+            return await getIdWithContext(p, paramsCapabilities, dispatchContext);
           default:
             break;
         }
       default:
         break;
     }
-    return super.dispatch(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities);
+    return super.dispatchWithContext(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities, context: dispatchContext);
   }
 
   @override
@@ -4466,7 +4836,7 @@ class ReadableClient extends Capability {
     final mb = MessageBuilder();
     build(mb.initRoot(readableReadParamsFactory));
     final result = await _cap.dispatch(0xa69434bbd537a649, 0, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(readableReadResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(readableReadResultsFactory, capabilities: result.caps);
   }
 
   @override
@@ -4481,25 +4851,39 @@ class ReadableClientFactory extends CapabilityFactory<ReadableClient> {
 abstract class ReadableServer extends Capability {
 
   Future<DispatchResult> read(ReadableReadParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> readWithContext(ReadableReadParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      read(params, paramsCapabilities);
 
   @override
   Future<DispatchResult> dispatch(int interfaceId, int methodId, Uint8List params, {
     List<Capability> paramsCapabilities = const [],
+  }) => dispatchWithContext(
+    interfaceId,
+    methodId,
+    params,
+    paramsCapabilities: paramsCapabilities,
+  );
+
+  @override
+  Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+    DispatchContext? context,
   }) async {
+    final dispatchContext = context ?? DispatchContext.neverCanceled;
     switch (interfaceId) {
       case 0xa69434bbd537a649:
         switch (methodId) {
           case 0:
             final p = MessageReader.deserialize(params)
-                .getRoot(readableReadParamsFactory);
-            return await read(p, paramsCapabilities);
+                .getRoot(readableReadParamsFactory, capabilities: paramsCapabilities);
+            return await readWithContext(p, paramsCapabilities, dispatchContext);
           default:
             break;
         }
       default:
         break;
     }
-    return super.dispatch(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities);
+    return super.dispatchWithContext(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities, context: dispatchContext);
   }
 
   @override
@@ -4516,7 +4900,7 @@ class WritableClient extends Capability {
     final mb = MessageBuilder();
     build(mb.initRoot(writableWriteParamsFactory));
     final result = await _cap.dispatch(0xd4bab7c88d024c5e, 0, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(writableWriteResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(writableWriteResultsFactory, capabilities: result.caps);
   }
 
   @override
@@ -4531,25 +4915,39 @@ class WritableClientFactory extends CapabilityFactory<WritableClient> {
 abstract class WritableServer extends Capability {
 
   Future<DispatchResult> write(WritableWriteParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> writeWithContext(WritableWriteParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      write(params, paramsCapabilities);
 
   @override
   Future<DispatchResult> dispatch(int interfaceId, int methodId, Uint8List params, {
     List<Capability> paramsCapabilities = const [],
+  }) => dispatchWithContext(
+    interfaceId,
+    methodId,
+    params,
+    paramsCapabilities: paramsCapabilities,
+  );
+
+  @override
+  Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+    DispatchContext? context,
   }) async {
+    final dispatchContext = context ?? DispatchContext.neverCanceled;
     switch (interfaceId) {
       case 0xd4bab7c88d024c5e:
         switch (methodId) {
           case 0:
             final p = MessageReader.deserialize(params)
-                .getRoot(writableWriteParamsFactory);
-            return await write(p, paramsCapabilities);
+                .getRoot(writableWriteParamsFactory, capabilities: paramsCapabilities);
+            return await writeWithContext(p, paramsCapabilities, dispatchContext);
           default:
             break;
         }
       default:
         break;
     }
-    return super.dispatch(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities);
+    return super.dispatchWithContext(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities, context: dispatchContext);
   }
 
   @override
@@ -4566,21 +4964,21 @@ class ReadWriteClient extends Capability {
     final mb = MessageBuilder();
     build(mb.initRoot(readableReadParamsFactory));
     final result = await _cap.dispatch(0xa69434bbd537a649, 0, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(readableReadResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(readableReadResultsFactory, capabilities: result.caps);
   }
 
   Future<WritableWriteResultsReader> write(void Function(WritableWriteParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(writableWriteParamsFactory));
     final result = await _cap.dispatch(0xd4bab7c88d024c5e, 0, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(writableWriteResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(writableWriteResultsFactory, capabilities: result.caps);
   }
 
   Future<ReadWriteCompareAndSwapResultsReader> compareAndSwap(void Function(ReadWriteCompareAndSwapParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(readWriteCompareAndSwapParamsFactory));
     final result = await _cap.dispatch(0xc2108261d371f6f8, 0, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(readWriteCompareAndSwapResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(readWriteCompareAndSwapResultsFactory, capabilities: result.caps);
   }
 
   @override
@@ -4595,22 +4993,40 @@ class ReadWriteClientFactory extends CapabilityFactory<ReadWriteClient> {
 abstract class ReadWriteServer extends Capability {
 
   Future<DispatchResult> read(ReadableReadParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> readWithContext(ReadableReadParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      read(params, paramsCapabilities);
 
   Future<DispatchResult> write(WritableWriteParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> writeWithContext(WritableWriteParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      write(params, paramsCapabilities);
 
   Future<DispatchResult> compareAndSwap(ReadWriteCompareAndSwapParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> compareAndSwapWithContext(ReadWriteCompareAndSwapParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      compareAndSwap(params, paramsCapabilities);
 
   @override
   Future<DispatchResult> dispatch(int interfaceId, int methodId, Uint8List params, {
     List<Capability> paramsCapabilities = const [],
+  }) => dispatchWithContext(
+    interfaceId,
+    methodId,
+    params,
+    paramsCapabilities: paramsCapabilities,
+  );
+
+  @override
+  Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+    DispatchContext? context,
   }) async {
+    final dispatchContext = context ?? DispatchContext.neverCanceled;
     switch (interfaceId) {
       case 0xa69434bbd537a649:
         switch (methodId) {
           case 0:
             final p = MessageReader.deserialize(params)
-                .getRoot(readableReadParamsFactory);
-            return await read(p, paramsCapabilities);
+                .getRoot(readableReadParamsFactory, capabilities: paramsCapabilities);
+            return await readWithContext(p, paramsCapabilities, dispatchContext);
           default:
             break;
         }
@@ -4618,8 +5034,8 @@ abstract class ReadWriteServer extends Capability {
         switch (methodId) {
           case 0:
             final p = MessageReader.deserialize(params)
-                .getRoot(writableWriteParamsFactory);
-            return await write(p, paramsCapabilities);
+                .getRoot(writableWriteParamsFactory, capabilities: paramsCapabilities);
+            return await writeWithContext(p, paramsCapabilities, dispatchContext);
           default:
             break;
         }
@@ -4627,15 +5043,15 @@ abstract class ReadWriteServer extends Capability {
         switch (methodId) {
           case 0:
             final p = MessageReader.deserialize(params)
-                .getRoot(readWriteCompareAndSwapParamsFactory);
-            return await compareAndSwap(p, paramsCapabilities);
+                .getRoot(readWriteCompareAndSwapParamsFactory, capabilities: paramsCapabilities);
+            return await compareAndSwapWithContext(p, paramsCapabilities, dispatchContext);
           default:
             break;
         }
       default:
         break;
     }
-    return super.dispatch(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities);
+    return super.dispatchWithContext(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities, context: dispatchContext);
   }
 
   @override
@@ -4652,7 +5068,7 @@ class CursorClient extends Capability {
     final mb = MessageBuilder();
     build(mb.initRoot(cursorNextParamsFactory));
     final result = await _cap.dispatch(0x8384e36911992a84, 0, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(cursorNextResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(cursorNextResultsFactory, capabilities: result.caps);
   }
 
   @override
@@ -4667,25 +5083,39 @@ class CursorClientFactory extends CapabilityFactory<CursorClient> {
 abstract class CursorServer extends Capability {
 
   Future<DispatchResult> next(CursorNextParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> nextWithContext(CursorNextParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      next(params, paramsCapabilities);
 
   @override
   Future<DispatchResult> dispatch(int interfaceId, int methodId, Uint8List params, {
     List<Capability> paramsCapabilities = const [],
+  }) => dispatchWithContext(
+    interfaceId,
+    methodId,
+    params,
+    paramsCapabilities: paramsCapabilities,
+  );
+
+  @override
+  Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+    DispatchContext? context,
   }) async {
+    final dispatchContext = context ?? DispatchContext.neverCanceled;
     switch (interfaceId) {
       case 0x8384e36911992a84:
         switch (methodId) {
           case 0:
             final p = MessageReader.deserialize(params)
-                .getRoot(cursorNextParamsFactory);
-            return await next(p, paramsCapabilities);
+                .getRoot(cursorNextParamsFactory, capabilities: paramsCapabilities);
+            return await nextWithContext(p, paramsCapabilities, dispatchContext);
           default:
             break;
         }
       default:
         break;
     }
-    return super.dispatch(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities);
+    return super.dispatchWithContext(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities, context: dispatchContext);
   }
 
   @override
@@ -4696,7 +5126,7 @@ abstract class CursorServer extends Capability {
 final class RepositoryOpenCursorResult {
   RepositoryOpenCursorResult._(DispatchResult dispatchResult)
       :     cursor = CursorClient(requireCapabilityFromResult(dispatchResult, 0)),
-    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(repositoryOpenCursorResultsFactory);
+    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(repositoryOpenCursorResultsFactory, capabilities: dispatchResult.caps);
 
   final RepositoryOpenCursorResultsReader result;
   final CursorClient cursor;
@@ -4705,7 +5135,7 @@ final class RepositoryOpenCursorResult {
 final class RepositoryOpenCursorPipeline {
   RepositoryOpenCursorPipeline._(CapCall call)
       :     cursor = CursorClient(call.pipelineResult(0)),
-    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(repositoryOpenCursorResultsFactory));
+    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(repositoryOpenCursorResultsFactory, capabilities: r.caps));
 
   final Future<RepositoryOpenCursorResultsReader> result;
   final CursorClient cursor;
@@ -4714,7 +5144,7 @@ final class RepositoryOpenCursorPipeline {
 final class RepositoryWatchResult {
   RepositoryWatchResult._(DispatchResult dispatchResult)
       :     subscription = SubscriptionClient(requireCapabilityFromResult(dispatchResult, 0)),
-    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(repositoryWatchResultsFactory);
+    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(repositoryWatchResultsFactory, capabilities: dispatchResult.caps);
 
   final RepositoryWatchResultsReader result;
   final SubscriptionClient subscription;
@@ -4723,7 +5153,7 @@ final class RepositoryWatchResult {
 final class RepositoryWatchPipeline {
   RepositoryWatchPipeline._(CapCall call)
       :     subscription = SubscriptionClient(call.pipelineResult(0)),
-    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(repositoryWatchResultsFactory));
+    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(repositoryWatchResultsFactory, capabilities: r.caps));
 
   final Future<RepositoryWatchResultsReader> result;
   final SubscriptionClient subscription;
@@ -4738,28 +5168,28 @@ class RepositoryClient extends Capability {
     final mb = MessageBuilder();
     build(mb.initRoot(repositoryGetParamsFactory));
     final result = await _cap.dispatch(0xff065518e00ba453, 0, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(repositoryGetResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(repositoryGetResultsFactory, capabilities: result.caps);
   }
 
   Future<RepositoryPutResultsReader> put(void Function(RepositoryPutParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(repositoryPutParamsFactory));
     final result = await _cap.dispatch(0xff065518e00ba453, 1, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(repositoryPutResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(repositoryPutResultsFactory, capabilities: result.caps);
   }
 
   Future<RepositoryRemoveResultsReader> remove(void Function(RepositoryRemoveParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(repositoryRemoveParamsFactory));
     final result = await _cap.dispatch(0xff065518e00ba453, 2, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(repositoryRemoveResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(repositoryRemoveResultsFactory, capabilities: result.caps);
   }
 
   Future<RepositoryListResultsReader> list(void Function(RepositoryListParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(repositoryListParamsFactory));
     final result = await _cap.dispatch(0xff065518e00ba453, 3, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(repositoryListResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(repositoryListResultsFactory, capabilities: result.caps);
   }
 
   Future<RepositoryOpenCursorResult> openCursor(void Function(RepositoryOpenCursorParamsBuilder) build) async {
@@ -4804,55 +5234,79 @@ class RepositoryClientFactory extends CapabilityFactory<RepositoryClient> {
 abstract class RepositoryServer extends Capability {
 
   Future<DispatchResult> get(RepositoryGetParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> getWithContext(RepositoryGetParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      get(params, paramsCapabilities);
 
   Future<DispatchResult> put(RepositoryPutParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> putWithContext(RepositoryPutParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      put(params, paramsCapabilities);
 
   Future<DispatchResult> remove(RepositoryRemoveParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> removeWithContext(RepositoryRemoveParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      remove(params, paramsCapabilities);
 
   Future<DispatchResult> list(RepositoryListParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> listWithContext(RepositoryListParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      list(params, paramsCapabilities);
 
   Future<DispatchResult> openCursor(RepositoryOpenCursorParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> openCursorWithContext(RepositoryOpenCursorParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      openCursor(params, paramsCapabilities);
 
   Future<DispatchResult> watch(RepositoryWatchParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> watchWithContext(RepositoryWatchParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      watch(params, paramsCapabilities);
 
   @override
   Future<DispatchResult> dispatch(int interfaceId, int methodId, Uint8List params, {
     List<Capability> paramsCapabilities = const [],
+  }) => dispatchWithContext(
+    interfaceId,
+    methodId,
+    params,
+    paramsCapabilities: paramsCapabilities,
+  );
+
+  @override
+  Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+    DispatchContext? context,
   }) async {
+    final dispatchContext = context ?? DispatchContext.neverCanceled;
     switch (interfaceId) {
       case 0xff065518e00ba453:
         switch (methodId) {
           case 0:
             final p = MessageReader.deserialize(params)
-                .getRoot(repositoryGetParamsFactory);
-            return await get(p, paramsCapabilities);
+                .getRoot(repositoryGetParamsFactory, capabilities: paramsCapabilities);
+            return await getWithContext(p, paramsCapabilities, dispatchContext);
           case 1:
             final p = MessageReader.deserialize(params)
-                .getRoot(repositoryPutParamsFactory);
-            return await put(p, paramsCapabilities);
+                .getRoot(repositoryPutParamsFactory, capabilities: paramsCapabilities);
+            return await putWithContext(p, paramsCapabilities, dispatchContext);
           case 2:
             final p = MessageReader.deserialize(params)
-                .getRoot(repositoryRemoveParamsFactory);
-            return await remove(p, paramsCapabilities);
+                .getRoot(repositoryRemoveParamsFactory, capabilities: paramsCapabilities);
+            return await removeWithContext(p, paramsCapabilities, dispatchContext);
           case 3:
             final p = MessageReader.deserialize(params)
-                .getRoot(repositoryListParamsFactory);
-            return await list(p, paramsCapabilities);
+                .getRoot(repositoryListParamsFactory, capabilities: paramsCapabilities);
+            return await listWithContext(p, paramsCapabilities, dispatchContext);
           case 4:
             final p = MessageReader.deserialize(params)
-                .getRoot(repositoryOpenCursorParamsFactory);
-            return await openCursor(p, paramsCapabilities);
+                .getRoot(repositoryOpenCursorParamsFactory, capabilities: paramsCapabilities);
+            return await openCursorWithContext(p, paramsCapabilities, dispatchContext);
           case 5:
             final p = MessageReader.deserialize(params)
-                .getRoot(repositoryWatchParamsFactory);
-            return await watch(p, paramsCapabilities);
+                .getRoot(repositoryWatchParamsFactory, capabilities: paramsCapabilities);
+            return await watchWithContext(p, paramsCapabilities, dispatchContext);
           default:
             break;
         }
       default:
         break;
     }
-    return super.dispatch(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities);
+    return super.dispatchWithContext(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities, context: dispatchContext);
   }
 
   @override
@@ -4869,21 +5323,21 @@ class ByteSinkClient extends Capability {
     final mb = MessageBuilder();
     build(mb.initRoot(byteSinkWriteParamsFactory));
     final result = await _cap.dispatch(0xbef98c1dd8be91de, 0, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(streamResultFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(streamResultFactory, capabilities: result.caps);
   }
 
   Future<ByteSinkFinishResultsReader> finish(void Function(ByteSinkFinishParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(byteSinkFinishParamsFactory));
     final result = await _cap.dispatch(0xbef98c1dd8be91de, 1, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(byteSinkFinishResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(byteSinkFinishResultsFactory, capabilities: result.caps);
   }
 
   Future<ByteSinkAbortResultsReader> abort(void Function(ByteSinkAbortParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(byteSinkAbortParamsFactory));
     final result = await _cap.dispatch(0xbef98c1dd8be91de, 2, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(byteSinkAbortResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(byteSinkAbortResultsFactory, capabilities: result.caps);
   }
 
   @override
@@ -4898,31 +5352,49 @@ class ByteSinkClientFactory extends CapabilityFactory<ByteSinkClient> {
 abstract class ByteSinkServer extends Capability {
 
   Future<void> write(ByteSinkWriteParamsReader params, List<Capability> paramsCapabilities);
+  Future<void> writeWithContext(ByteSinkWriteParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      write(params, paramsCapabilities);
 
   Future<DispatchResult> finish(ByteSinkFinishParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> finishWithContext(ByteSinkFinishParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      finish(params, paramsCapabilities);
 
   Future<void> abort(ByteSinkAbortParamsReader params, List<Capability> paramsCapabilities);
+  Future<void> abortWithContext(ByteSinkAbortParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      abort(params, paramsCapabilities);
 
   @override
   Future<DispatchResult> dispatch(int interfaceId, int methodId, Uint8List params, {
     List<Capability> paramsCapabilities = const [],
+  }) => dispatchWithContext(
+    interfaceId,
+    methodId,
+    params,
+    paramsCapabilities: paramsCapabilities,
+  );
+
+  @override
+  Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+    DispatchContext? context,
   }) async {
+    final dispatchContext = context ?? DispatchContext.neverCanceled;
     switch (interfaceId) {
       case 0xbef98c1dd8be91de:
         switch (methodId) {
           case 0:
             final p = MessageReader.deserialize(params)
-                .getRoot(byteSinkWriteParamsFactory);
-            await write(p, paramsCapabilities);
+                .getRoot(byteSinkWriteParamsFactory, capabilities: paramsCapabilities);
+            await writeWithContext(p, paramsCapabilities, dispatchContext);
             return DispatchResult.empty;
           case 1:
             final p = MessageReader.deserialize(params)
-                .getRoot(byteSinkFinishParamsFactory);
-            return await finish(p, paramsCapabilities);
+                .getRoot(byteSinkFinishParamsFactory, capabilities: paramsCapabilities);
+            return await finishWithContext(p, paramsCapabilities, dispatchContext);
           case 2:
             final p = MessageReader.deserialize(params)
-                .getRoot(byteSinkAbortParamsFactory);
-            await abort(p, paramsCapabilities);
+                .getRoot(byteSinkAbortParamsFactory, capabilities: paramsCapabilities);
+            await abortWithContext(p, paramsCapabilities, dispatchContext);
             return DispatchResult.empty;
           default:
             break;
@@ -4930,7 +5402,7 @@ abstract class ByteSinkServer extends Capability {
       default:
         break;
     }
-    return super.dispatch(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities);
+    return super.dispatchWithContext(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities, context: dispatchContext);
   }
 
   @override
@@ -4949,7 +5421,7 @@ class ByteSourceClient extends Capability {
     b.setSink(0);
     build(b);
     final result = await _cap.dispatch(0x8a2b2ec8ae50b170, 0, mb.serialize(), paramsCapabilities: [sink]);
-    return MessageReader.deserialize(result.bytes).getRoot(byteSourcePumpToResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(byteSourcePumpToResultsFactory, capabilities: result.caps);
   }
 
   @override
@@ -4964,25 +5436,39 @@ class ByteSourceClientFactory extends CapabilityFactory<ByteSourceClient> {
 abstract class ByteSourceServer extends Capability {
 
   Future<DispatchResult> pumpTo(ByteSourcePumpToParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> pumpToWithContext(ByteSourcePumpToParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      pumpTo(params, paramsCapabilities);
 
   @override
   Future<DispatchResult> dispatch(int interfaceId, int methodId, Uint8List params, {
     List<Capability> paramsCapabilities = const [],
+  }) => dispatchWithContext(
+    interfaceId,
+    methodId,
+    params,
+    paramsCapabilities: paramsCapabilities,
+  );
+
+  @override
+  Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+    DispatchContext? context,
   }) async {
+    final dispatchContext = context ?? DispatchContext.neverCanceled;
     switch (interfaceId) {
       case 0x8a2b2ec8ae50b170:
         switch (methodId) {
           case 0:
             final p = MessageReader.deserialize(params)
-                .getRoot(byteSourcePumpToParamsFactory);
-            return await pumpTo(p, paramsCapabilities);
+                .getRoot(byteSourcePumpToParamsFactory, capabilities: paramsCapabilities);
+            return await pumpToWithContext(p, paramsCapabilities, dispatchContext);
           default:
             break;
         }
       default:
         break;
     }
-    return super.dispatch(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities);
+    return super.dispatchWithContext(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities, context: dispatchContext);
   }
 
   @override
@@ -4993,7 +5479,7 @@ abstract class ByteSourceServer extends Capability {
 final class CapabilityFactoryNewCellResult {
   CapabilityFactoryNewCellResult._(DispatchResult dispatchResult)
       :     cell = ReadWriteClient(requireCapabilityFromResult(dispatchResult, 0)),
-    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(capabilityFactoryNewCellResultsFactory);
+    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(capabilityFactoryNewCellResultsFactory, capabilities: dispatchResult.caps);
 
   final CapabilityFactoryNewCellResultsReader result;
   final ReadWriteClient cell;
@@ -5002,7 +5488,7 @@ final class CapabilityFactoryNewCellResult {
 final class CapabilityFactoryNewCellPipeline {
   CapabilityFactoryNewCellPipeline._(CapCall call)
       :     cell = ReadWriteClient(call.pipelineResult(0)),
-    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(capabilityFactoryNewCellResultsFactory));
+    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(capabilityFactoryNewCellResultsFactory, capabilities: r.caps));
 
   final Future<CapabilityFactoryNewCellResultsReader> result;
   final ReadWriteClient cell;
@@ -5011,7 +5497,7 @@ final class CapabilityFactoryNewCellPipeline {
 final class CapabilityFactoryNewEmptyCellResult {
   CapabilityFactoryNewEmptyCellResult._(DispatchResult dispatchResult)
       :     cell = ReadWriteClient(requireCapabilityFromResult(dispatchResult, 0)),
-    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(capabilityFactoryNewEmptyCellResultsFactory);
+    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(capabilityFactoryNewEmptyCellResultsFactory, capabilities: dispatchResult.caps);
 
   final CapabilityFactoryNewEmptyCellResultsReader result;
   final ReadWriteClient cell;
@@ -5020,7 +5506,7 @@ final class CapabilityFactoryNewEmptyCellResult {
 final class CapabilityFactoryNewEmptyCellPipeline {
   CapabilityFactoryNewEmptyCellPipeline._(CapCall call)
       :     cell = ReadWriteClient(call.pipelineResult(0)),
-    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(capabilityFactoryNewEmptyCellResultsFactory));
+    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(capabilityFactoryNewEmptyCellResultsFactory, capabilities: r.caps));
 
   final Future<CapabilityFactoryNewEmptyCellResultsReader> result;
   final ReadWriteClient cell;
@@ -5029,7 +5515,7 @@ final class CapabilityFactoryNewEmptyCellPipeline {
 final class CapabilityFactoryNewRepositoryResult {
   CapabilityFactoryNewRepositoryResult._(DispatchResult dispatchResult)
       :     repository = RepositoryClient(requireCapabilityFromResult(dispatchResult, 0)),
-    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(capabilityFactoryNewRepositoryResultsFactory);
+    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(capabilityFactoryNewRepositoryResultsFactory, capabilities: dispatchResult.caps);
 
   final CapabilityFactoryNewRepositoryResultsReader result;
   final RepositoryClient repository;
@@ -5038,7 +5524,7 @@ final class CapabilityFactoryNewRepositoryResult {
 final class CapabilityFactoryNewRepositoryPipeline {
   CapabilityFactoryNewRepositoryPipeline._(CapCall call)
       :     repository = RepositoryClient(call.pipelineResult(0)),
-    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(capabilityFactoryNewRepositoryResultsFactory));
+    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(capabilityFactoryNewRepositoryResultsFactory, capabilities: r.caps));
 
   final Future<CapabilityFactoryNewRepositoryResultsReader> result;
   final RepositoryClient repository;
@@ -5092,14 +5578,14 @@ class CapabilityFactoryClient extends Capability {
     final mb = MessageBuilder();
     build(mb.initRoot(capabilityFactoryEchoCapabilityParamsFactory));
     final result = await _cap.dispatch(0xccad478715fb03b0, 3, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(capabilityFactoryEchoCapabilityResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(capabilityFactoryEchoCapabilityResultsFactory, capabilities: result.caps);
   }
 
   Future<CapabilityFactoryGetUntypedResultsReader> getUntyped(void Function(CapabilityFactoryGetUntypedParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(capabilityFactoryGetUntypedParamsFactory));
     final result = await _cap.dispatch(0xccad478715fb03b0, 4, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(capabilityFactoryGetUntypedResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(capabilityFactoryGetUntypedResultsFactory, capabilities: result.caps);
   }
 
   @override
@@ -5114,49 +5600,71 @@ class CapabilityFactoryClientFactory extends CapabilityFactory<CapabilityFactory
 abstract class CapabilityFactoryServer extends Capability {
 
   Future<DispatchResult> newCell(CapabilityFactoryNewCellParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> newCellWithContext(CapabilityFactoryNewCellParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      newCell(params, paramsCapabilities);
 
   Future<DispatchResult> newEmptyCell(CapabilityFactoryNewEmptyCellParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> newEmptyCellWithContext(CapabilityFactoryNewEmptyCellParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      newEmptyCell(params, paramsCapabilities);
 
   Future<DispatchResult> newRepository(CapabilityFactoryNewRepositoryParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> newRepositoryWithContext(CapabilityFactoryNewRepositoryParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      newRepository(params, paramsCapabilities);
 
   Future<DispatchResult> echoCapability(CapabilityFactoryEchoCapabilityParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> echoCapabilityWithContext(CapabilityFactoryEchoCapabilityParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      echoCapability(params, paramsCapabilities);
 
   Future<DispatchResult> getUntyped(CapabilityFactoryGetUntypedParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> getUntypedWithContext(CapabilityFactoryGetUntypedParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      getUntyped(params, paramsCapabilities);
 
   @override
   Future<DispatchResult> dispatch(int interfaceId, int methodId, Uint8List params, {
     List<Capability> paramsCapabilities = const [],
+  }) => dispatchWithContext(
+    interfaceId,
+    methodId,
+    params,
+    paramsCapabilities: paramsCapabilities,
+  );
+
+  @override
+  Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+    DispatchContext? context,
   }) async {
+    final dispatchContext = context ?? DispatchContext.neverCanceled;
     switch (interfaceId) {
       case 0xccad478715fb03b0:
         switch (methodId) {
           case 0:
             final p = MessageReader.deserialize(params)
-                .getRoot(capabilityFactoryNewCellParamsFactory);
-            return await newCell(p, paramsCapabilities);
+                .getRoot(capabilityFactoryNewCellParamsFactory, capabilities: paramsCapabilities);
+            return await newCellWithContext(p, paramsCapabilities, dispatchContext);
           case 1:
             final p = MessageReader.deserialize(params)
-                .getRoot(capabilityFactoryNewEmptyCellParamsFactory);
-            return await newEmptyCell(p, paramsCapabilities);
+                .getRoot(capabilityFactoryNewEmptyCellParamsFactory, capabilities: paramsCapabilities);
+            return await newEmptyCellWithContext(p, paramsCapabilities, dispatchContext);
           case 2:
             final p = MessageReader.deserialize(params)
-                .getRoot(capabilityFactoryNewRepositoryParamsFactory);
-            return await newRepository(p, paramsCapabilities);
+                .getRoot(capabilityFactoryNewRepositoryParamsFactory, capabilities: paramsCapabilities);
+            return await newRepositoryWithContext(p, paramsCapabilities, dispatchContext);
           case 3:
             final p = MessageReader.deserialize(params)
-                .getRoot(capabilityFactoryEchoCapabilityParamsFactory);
-            return await echoCapability(p, paramsCapabilities);
+                .getRoot(capabilityFactoryEchoCapabilityParamsFactory, capabilities: paramsCapabilities);
+            return await echoCapabilityWithContext(p, paramsCapabilities, dispatchContext);
           case 4:
             final p = MessageReader.deserialize(params)
-                .getRoot(capabilityFactoryGetUntypedParamsFactory);
-            return await getUntyped(p, paramsCapabilities);
+                .getRoot(capabilityFactoryGetUntypedParamsFactory, capabilities: paramsCapabilities);
+            return await getUntypedWithContext(p, paramsCapabilities, dispatchContext);
           default:
             break;
         }
       default:
         break;
     }
-    return super.dispatch(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities);
+    return super.dispatchWithContext(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities, context: dispatchContext);
   }
 
   @override
@@ -5173,7 +5681,7 @@ class ParentClient extends Capability {
     final mb = MessageBuilder();
     build(mb.initRoot(parentGetNameParamsFactory));
     final result = await _cap.dispatch(0x882e0e49903e08ff, 0, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(parentGetNameResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(parentGetNameResultsFactory, capabilities: result.caps);
   }
 
   @override
@@ -5188,25 +5696,39 @@ class ParentClientFactory extends CapabilityFactory<ParentClient> {
 abstract class ParentServer extends Capability {
 
   Future<DispatchResult> getName(ParentGetNameParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> getNameWithContext(ParentGetNameParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      getName(params, paramsCapabilities);
 
   @override
   Future<DispatchResult> dispatch(int interfaceId, int methodId, Uint8List params, {
     List<Capability> paramsCapabilities = const [],
+  }) => dispatchWithContext(
+    interfaceId,
+    methodId,
+    params,
+    paramsCapabilities: paramsCapabilities,
+  );
+
+  @override
+  Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+    DispatchContext? context,
   }) async {
+    final dispatchContext = context ?? DispatchContext.neverCanceled;
     switch (interfaceId) {
       case 0x882e0e49903e08ff:
         switch (methodId) {
           case 0:
             final p = MessageReader.deserialize(params)
-                .getRoot(parentGetNameParamsFactory);
-            return await getName(p, paramsCapabilities);
+                .getRoot(parentGetNameParamsFactory, capabilities: paramsCapabilities);
+            return await getNameWithContext(p, paramsCapabilities, dispatchContext);
           default:
             break;
         }
       default:
         break;
     }
-    return super.dispatch(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities);
+    return super.dispatchWithContext(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities, context: dispatchContext);
   }
 
   @override
@@ -5223,14 +5745,14 @@ class LeftClient extends Capability {
     final mb = MessageBuilder();
     build(mb.initRoot(parentGetNameParamsFactory));
     final result = await _cap.dispatch(0x882e0e49903e08ff, 0, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(parentGetNameResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(parentGetNameResultsFactory, capabilities: result.caps);
   }
 
   Future<LeftLeftResultsReader> left(void Function(LeftLeftParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(leftLeftParamsFactory));
     final result = await _cap.dispatch(0xdc9405e2c5728627, 0, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(leftLeftResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(leftLeftResultsFactory, capabilities: result.caps);
   }
 
   @override
@@ -5245,20 +5767,36 @@ class LeftClientFactory extends CapabilityFactory<LeftClient> {
 abstract class LeftServer extends Capability {
 
   Future<DispatchResult> getName(ParentGetNameParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> getNameWithContext(ParentGetNameParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      getName(params, paramsCapabilities);
 
   Future<DispatchResult> left(LeftLeftParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> leftWithContext(LeftLeftParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      left(params, paramsCapabilities);
 
   @override
   Future<DispatchResult> dispatch(int interfaceId, int methodId, Uint8List params, {
     List<Capability> paramsCapabilities = const [],
+  }) => dispatchWithContext(
+    interfaceId,
+    methodId,
+    params,
+    paramsCapabilities: paramsCapabilities,
+  );
+
+  @override
+  Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+    DispatchContext? context,
   }) async {
+    final dispatchContext = context ?? DispatchContext.neverCanceled;
     switch (interfaceId) {
       case 0x882e0e49903e08ff:
         switch (methodId) {
           case 0:
             final p = MessageReader.deserialize(params)
-                .getRoot(parentGetNameParamsFactory);
-            return await getName(p, paramsCapabilities);
+                .getRoot(parentGetNameParamsFactory, capabilities: paramsCapabilities);
+            return await getNameWithContext(p, paramsCapabilities, dispatchContext);
           default:
             break;
         }
@@ -5266,15 +5804,15 @@ abstract class LeftServer extends Capability {
         switch (methodId) {
           case 0:
             final p = MessageReader.deserialize(params)
-                .getRoot(leftLeftParamsFactory);
-            return await left(p, paramsCapabilities);
+                .getRoot(leftLeftParamsFactory, capabilities: paramsCapabilities);
+            return await leftWithContext(p, paramsCapabilities, dispatchContext);
           default:
             break;
         }
       default:
         break;
     }
-    return super.dispatch(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities);
+    return super.dispatchWithContext(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities, context: dispatchContext);
   }
 
   @override
@@ -5291,14 +5829,14 @@ class RightClient extends Capability {
     final mb = MessageBuilder();
     build(mb.initRoot(parentGetNameParamsFactory));
     final result = await _cap.dispatch(0x882e0e49903e08ff, 0, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(parentGetNameResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(parentGetNameResultsFactory, capabilities: result.caps);
   }
 
   Future<RightRightResultsReader> right(void Function(RightRightParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(rightRightParamsFactory));
     final result = await _cap.dispatch(0xc43c47560508dc7d, 0, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(rightRightResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(rightRightResultsFactory, capabilities: result.caps);
   }
 
   @override
@@ -5313,20 +5851,36 @@ class RightClientFactory extends CapabilityFactory<RightClient> {
 abstract class RightServer extends Capability {
 
   Future<DispatchResult> getName(ParentGetNameParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> getNameWithContext(ParentGetNameParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      getName(params, paramsCapabilities);
 
   Future<DispatchResult> right(RightRightParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> rightWithContext(RightRightParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      right(params, paramsCapabilities);
 
   @override
   Future<DispatchResult> dispatch(int interfaceId, int methodId, Uint8List params, {
     List<Capability> paramsCapabilities = const [],
+  }) => dispatchWithContext(
+    interfaceId,
+    methodId,
+    params,
+    paramsCapabilities: paramsCapabilities,
+  );
+
+  @override
+  Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+    DispatchContext? context,
   }) async {
+    final dispatchContext = context ?? DispatchContext.neverCanceled;
     switch (interfaceId) {
       case 0x882e0e49903e08ff:
         switch (methodId) {
           case 0:
             final p = MessageReader.deserialize(params)
-                .getRoot(parentGetNameParamsFactory);
-            return await getName(p, paramsCapabilities);
+                .getRoot(parentGetNameParamsFactory, capabilities: paramsCapabilities);
+            return await getNameWithContext(p, paramsCapabilities, dispatchContext);
           default:
             break;
         }
@@ -5334,15 +5888,15 @@ abstract class RightServer extends Capability {
         switch (methodId) {
           case 0:
             final p = MessageReader.deserialize(params)
-                .getRoot(rightRightParamsFactory);
-            return await right(p, paramsCapabilities);
+                .getRoot(rightRightParamsFactory, capabilities: paramsCapabilities);
+            return await rightWithContext(p, paramsCapabilities, dispatchContext);
           default:
             break;
         }
       default:
         break;
     }
-    return super.dispatch(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities);
+    return super.dispatchWithContext(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities, context: dispatchContext);
   }
 
   @override
@@ -5359,28 +5913,28 @@ class DiamondClient extends Capability {
     final mb = MessageBuilder();
     build(mb.initRoot(parentGetNameParamsFactory));
     final result = await _cap.dispatch(0x882e0e49903e08ff, 0, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(parentGetNameResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(parentGetNameResultsFactory, capabilities: result.caps);
   }
 
   Future<LeftLeftResultsReader> left(void Function(LeftLeftParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(leftLeftParamsFactory));
     final result = await _cap.dispatch(0xdc9405e2c5728627, 0, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(leftLeftResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(leftLeftResultsFactory, capabilities: result.caps);
   }
 
   Future<RightRightResultsReader> right(void Function(RightRightParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(rightRightParamsFactory));
     final result = await _cap.dispatch(0xc43c47560508dc7d, 0, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(rightRightResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(rightRightResultsFactory, capabilities: result.caps);
   }
 
   Future<DiamondBothResultsReader> both(void Function(DiamondBothParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(diamondBothParamsFactory));
     final result = await _cap.dispatch(0xdbf219de6a215361, 0, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(diamondBothResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(diamondBothResultsFactory, capabilities: result.caps);
   }
 
   @override
@@ -5395,24 +5949,44 @@ class DiamondClientFactory extends CapabilityFactory<DiamondClient> {
 abstract class DiamondServer extends Capability {
 
   Future<DispatchResult> getName(ParentGetNameParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> getNameWithContext(ParentGetNameParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      getName(params, paramsCapabilities);
 
   Future<DispatchResult> left(LeftLeftParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> leftWithContext(LeftLeftParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      left(params, paramsCapabilities);
 
   Future<DispatchResult> right(RightRightParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> rightWithContext(RightRightParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      right(params, paramsCapabilities);
 
   Future<DispatchResult> both(DiamondBothParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> bothWithContext(DiamondBothParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      both(params, paramsCapabilities);
 
   @override
   Future<DispatchResult> dispatch(int interfaceId, int methodId, Uint8List params, {
     List<Capability> paramsCapabilities = const [],
+  }) => dispatchWithContext(
+    interfaceId,
+    methodId,
+    params,
+    paramsCapabilities: paramsCapabilities,
+  );
+
+  @override
+  Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+    DispatchContext? context,
   }) async {
+    final dispatchContext = context ?? DispatchContext.neverCanceled;
     switch (interfaceId) {
       case 0x882e0e49903e08ff:
         switch (methodId) {
           case 0:
             final p = MessageReader.deserialize(params)
-                .getRoot(parentGetNameParamsFactory);
-            return await getName(p, paramsCapabilities);
+                .getRoot(parentGetNameParamsFactory, capabilities: paramsCapabilities);
+            return await getNameWithContext(p, paramsCapabilities, dispatchContext);
           default:
             break;
         }
@@ -5420,8 +5994,8 @@ abstract class DiamondServer extends Capability {
         switch (methodId) {
           case 0:
             final p = MessageReader.deserialize(params)
-                .getRoot(leftLeftParamsFactory);
-            return await left(p, paramsCapabilities);
+                .getRoot(leftLeftParamsFactory, capabilities: paramsCapabilities);
+            return await leftWithContext(p, paramsCapabilities, dispatchContext);
           default:
             break;
         }
@@ -5429,8 +6003,8 @@ abstract class DiamondServer extends Capability {
         switch (methodId) {
           case 0:
             final p = MessageReader.deserialize(params)
-                .getRoot(rightRightParamsFactory);
-            return await right(p, paramsCapabilities);
+                .getRoot(rightRightParamsFactory, capabilities: paramsCapabilities);
+            return await rightWithContext(p, paramsCapabilities, dispatchContext);
           default:
             break;
         }
@@ -5438,15 +6012,15 @@ abstract class DiamondServer extends Capability {
         switch (methodId) {
           case 0:
             final p = MessageReader.deserialize(params)
-                .getRoot(diamondBothParamsFactory);
-            return await both(p, paramsCapabilities);
+                .getRoot(diamondBothParamsFactory, capabilities: paramsCapabilities);
+            return await bothWithContext(p, paramsCapabilities, dispatchContext);
           default:
             break;
         }
       default:
         break;
     }
-    return super.dispatch(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities);
+    return super.dispatchWithContext(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities, context: dispatchContext);
   }
 
   @override
@@ -5457,7 +6031,7 @@ abstract class DiamondServer extends Capability {
 final class PipelineTargetGetChildResult {
   PipelineTargetGetChildResult._(DispatchResult dispatchResult)
       :     child = PipelineTargetClient(requireCapabilityFromResult(dispatchResult, 0)),
-    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(pipelineTargetGetChildResultsFactory);
+    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(pipelineTargetGetChildResultsFactory, capabilities: dispatchResult.caps);
 
   final PipelineTargetGetChildResultsReader result;
   final PipelineTargetClient child;
@@ -5466,7 +6040,7 @@ final class PipelineTargetGetChildResult {
 final class PipelineTargetGetChildPipeline {
   PipelineTargetGetChildPipeline._(CapCall call)
       :     child = PipelineTargetClient(call.pipelineResult(0)),
-    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(pipelineTargetGetChildResultsFactory));
+    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(pipelineTargetGetChildResultsFactory, capabilities: r.caps));
 
   final Future<PipelineTargetGetChildResultsReader> result;
   final PipelineTargetClient child;
@@ -5475,7 +6049,7 @@ final class PipelineTargetGetChildPipeline {
 final class PipelineTargetGetRepositoryResult {
   PipelineTargetGetRepositoryResult._(DispatchResult dispatchResult)
       :     repository = RepositoryClient(requireCapabilityFromResult(dispatchResult, 0)),
-    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(pipelineTargetGetRepositoryResultsFactory);
+    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(pipelineTargetGetRepositoryResultsFactory, capabilities: dispatchResult.caps);
 
   final PipelineTargetGetRepositoryResultsReader result;
   final RepositoryClient repository;
@@ -5484,7 +6058,7 @@ final class PipelineTargetGetRepositoryResult {
 final class PipelineTargetGetRepositoryPipeline {
   PipelineTargetGetRepositoryPipeline._(CapCall call)
       :     repository = RepositoryClient(call.pipelineResult(0)),
-    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(pipelineTargetGetRepositoryResultsFactory));
+    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(pipelineTargetGetRepositoryResultsFactory, capabilities: r.caps));
 
   final Future<PipelineTargetGetRepositoryResultsReader> result;
   final RepositoryClient repository;
@@ -5525,7 +6099,7 @@ class PipelineTargetClient extends Capability {
     final mb = MessageBuilder();
     build(mb.initRoot(pipelineTargetPingParamsFactory));
     final result = await _cap.dispatch(0xe211443879f3b6bb, 2, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(pipelineTargetPingResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(pipelineTargetPingResultsFactory, capabilities: result.caps);
   }
 
   @override
@@ -5540,37 +6114,55 @@ class PipelineTargetClientFactory extends CapabilityFactory<PipelineTargetClient
 abstract class PipelineTargetServer extends Capability {
 
   Future<DispatchResult> getChild(PipelineTargetGetChildParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> getChildWithContext(PipelineTargetGetChildParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      getChild(params, paramsCapabilities);
 
   Future<DispatchResult> getRepository(PipelineTargetGetRepositoryParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> getRepositoryWithContext(PipelineTargetGetRepositoryParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      getRepository(params, paramsCapabilities);
 
   Future<DispatchResult> ping(PipelineTargetPingParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> pingWithContext(PipelineTargetPingParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      ping(params, paramsCapabilities);
 
   @override
   Future<DispatchResult> dispatch(int interfaceId, int methodId, Uint8List params, {
     List<Capability> paramsCapabilities = const [],
+  }) => dispatchWithContext(
+    interfaceId,
+    methodId,
+    params,
+    paramsCapabilities: paramsCapabilities,
+  );
+
+  @override
+  Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+    DispatchContext? context,
   }) async {
+    final dispatchContext = context ?? DispatchContext.neverCanceled;
     switch (interfaceId) {
       case 0xe211443879f3b6bb:
         switch (methodId) {
           case 0:
             final p = MessageReader.deserialize(params)
-                .getRoot(pipelineTargetGetChildParamsFactory);
-            return await getChild(p, paramsCapabilities);
+                .getRoot(pipelineTargetGetChildParamsFactory, capabilities: paramsCapabilities);
+            return await getChildWithContext(p, paramsCapabilities, dispatchContext);
           case 1:
             final p = MessageReader.deserialize(params)
-                .getRoot(pipelineTargetGetRepositoryParamsFactory);
-            return await getRepository(p, paramsCapabilities);
+                .getRoot(pipelineTargetGetRepositoryParamsFactory, capabilities: paramsCapabilities);
+            return await getRepositoryWithContext(p, paramsCapabilities, dispatchContext);
           case 2:
             final p = MessageReader.deserialize(params)
-                .getRoot(pipelineTargetPingParamsFactory);
-            return await ping(p, paramsCapabilities);
+                .getRoot(pipelineTargetPingParamsFactory, capabilities: paramsCapabilities);
+            return await pingWithContext(p, paramsCapabilities, dispatchContext);
           default:
             break;
         }
       default:
         break;
     }
-    return super.dispatch(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities);
+    return super.dispatchWithContext(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities, context: dispatchContext);
   }
 
   @override
@@ -5581,7 +6173,7 @@ abstract class PipelineTargetServer extends Capability {
 final class ComplexTestServiceMakePipelineResult {
   ComplexTestServiceMakePipelineResult._(DispatchResult dispatchResult)
       :     target = PipelineTargetClient(requireCapabilityFromResult(dispatchResult, 0)),
-    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(complexTestServiceMakePipelineResultsFactory);
+    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(complexTestServiceMakePipelineResultsFactory, capabilities: dispatchResult.caps);
 
   final ComplexTestServiceMakePipelineResultsReader result;
   final PipelineTargetClient target;
@@ -5590,7 +6182,7 @@ final class ComplexTestServiceMakePipelineResult {
 final class ComplexTestServiceMakePipelinePipeline {
   ComplexTestServiceMakePipelinePipeline._(CapCall call)
       :     target = PipelineTargetClient(call.pipelineResult(0)),
-    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(complexTestServiceMakePipelineResultsFactory));
+    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(complexTestServiceMakePipelineResultsFactory, capabilities: r.caps));
 
   final Future<ComplexTestServiceMakePipelineResultsReader> result;
   final PipelineTargetClient target;
@@ -5599,7 +6191,7 @@ final class ComplexTestServiceMakePipelinePipeline {
 final class ComplexTestServiceOpenUploadResult {
   ComplexTestServiceOpenUploadResult._(DispatchResult dispatchResult)
       :     sink = ByteSinkClient(requireCapabilityFromResult(dispatchResult, 0)),
-    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(complexTestServiceOpenUploadResultsFactory);
+    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(complexTestServiceOpenUploadResultsFactory, capabilities: dispatchResult.caps);
 
   final ComplexTestServiceOpenUploadResultsReader result;
   final ByteSinkClient sink;
@@ -5608,7 +6200,7 @@ final class ComplexTestServiceOpenUploadResult {
 final class ComplexTestServiceOpenUploadPipeline {
   ComplexTestServiceOpenUploadPipeline._(CapCall call)
       :     sink = ByteSinkClient(call.pipelineResult(0)),
-    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(complexTestServiceOpenUploadResultsFactory));
+    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(complexTestServiceOpenUploadResultsFactory, capabilities: r.caps));
 
   final Future<ComplexTestServiceOpenUploadResultsReader> result;
   final ByteSinkClient sink;
@@ -5617,7 +6209,7 @@ final class ComplexTestServiceOpenUploadPipeline {
 final class ComplexTestServiceOpenDownloadResult {
   ComplexTestServiceOpenDownloadResult._(DispatchResult dispatchResult)
       :     source = ByteSourceClient(requireCapabilityFromResult(dispatchResult, 0)),
-    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(complexTestServiceOpenDownloadResultsFactory);
+    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(complexTestServiceOpenDownloadResultsFactory, capabilities: dispatchResult.caps);
 
   final ComplexTestServiceOpenDownloadResultsReader result;
   final ByteSourceClient source;
@@ -5626,7 +6218,7 @@ final class ComplexTestServiceOpenDownloadResult {
 final class ComplexTestServiceOpenDownloadPipeline {
   ComplexTestServiceOpenDownloadPipeline._(CapCall call)
       :     source = ByteSourceClient(call.pipelineResult(0)),
-    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(complexTestServiceOpenDownloadResultsFactory));
+    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(complexTestServiceOpenDownloadResultsFactory, capabilities: r.caps));
 
   final Future<ComplexTestServiceOpenDownloadResultsReader> result;
   final ByteSourceClient source;
@@ -5635,7 +6227,7 @@ final class ComplexTestServiceOpenDownloadPipeline {
 final class ComplexTestServiceGetRepositoryResult {
   ComplexTestServiceGetRepositoryResult._(DispatchResult dispatchResult)
       :     repository = RepositoryClient(requireCapabilityFromResult(dispatchResult, 0)),
-    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(complexTestServiceGetRepositoryResultsFactory);
+    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(complexTestServiceGetRepositoryResultsFactory, capabilities: dispatchResult.caps);
 
   final ComplexTestServiceGetRepositoryResultsReader result;
   final RepositoryClient repository;
@@ -5644,7 +6236,7 @@ final class ComplexTestServiceGetRepositoryResult {
 final class ComplexTestServiceGetRepositoryPipeline {
   ComplexTestServiceGetRepositoryPipeline._(CapCall call)
       :     repository = RepositoryClient(call.pipelineResult(0)),
-    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(complexTestServiceGetRepositoryResultsFactory));
+    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(complexTestServiceGetRepositoryResultsFactory, capabilities: r.caps));
 
   final Future<ComplexTestServiceGetRepositoryResultsReader> result;
   final RepositoryClient repository;
@@ -5653,7 +6245,7 @@ final class ComplexTestServiceGetRepositoryPipeline {
 final class ComplexTestServiceGetFactoryResult {
   ComplexTestServiceGetFactoryResult._(DispatchResult dispatchResult)
       :     factory = CapabilityFactoryClient(requireCapabilityFromResult(dispatchResult, 0)),
-    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(complexTestServiceGetFactoryResultsFactory);
+    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(complexTestServiceGetFactoryResultsFactory, capabilities: dispatchResult.caps);
 
   final ComplexTestServiceGetFactoryResultsReader result;
   final CapabilityFactoryClient factory;
@@ -5662,7 +6254,7 @@ final class ComplexTestServiceGetFactoryResult {
 final class ComplexTestServiceGetFactoryPipeline {
   ComplexTestServiceGetFactoryPipeline._(CapCall call)
       :     factory = CapabilityFactoryClient(call.pipelineResult(0)),
-    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(complexTestServiceGetFactoryResultsFactory));
+    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(complexTestServiceGetFactoryResultsFactory, capabilities: r.caps));
 
   final Future<ComplexTestServiceGetFactoryResultsReader> result;
   final CapabilityFactoryClient factory;
@@ -5677,42 +6269,42 @@ class ComplexTestServiceClient extends Capability {
     final mb = MessageBuilder();
     build(mb.initRoot(complexTestServiceEchoParamsFactory));
     final result = await _cap.dispatch(0xd7fb0472c16375ee, 0, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceEchoResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceEchoResultsFactory, capabilities: result.caps);
   }
 
   Future<ComplexTestServiceEchoScalarsResultsReader> echoScalars(void Function(ComplexTestServiceEchoScalarsParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(complexTestServiceEchoScalarsParamsFactory));
     final result = await _cap.dispatch(0xd7fb0472c16375ee, 1, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceEchoScalarsResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceEchoScalarsResultsFactory, capabilities: result.caps);
   }
 
   Future<ComplexTestServiceEchoListsResultsReader> echoLists(void Function(ComplexTestServiceEchoListsParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(complexTestServiceEchoListsParamsFactory));
     final result = await _cap.dispatch(0xd7fb0472c16375ee, 2, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceEchoListsResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceEchoListsResultsFactory, capabilities: result.caps);
   }
 
   Future<ComplexTestServiceEchoUnionResultsReader> echoUnion(void Function(ComplexTestServiceEchoUnionParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(complexTestServiceEchoUnionParamsFactory));
     final result = await _cap.dispatch(0xd7fb0472c16375ee, 3, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceEchoUnionResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceEchoUnionResultsFactory, capabilities: result.caps);
   }
 
   Future<ComplexTestServiceEchoAnyPointerResultsReader> echoAnyPointer(void Function(ComplexTestServiceEchoAnyPointerParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(complexTestServiceEchoAnyPointerParamsFactory));
     final result = await _cap.dispatch(0xd7fb0472c16375ee, 4, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceEchoAnyPointerResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceEchoAnyPointerResultsFactory, capabilities: result.caps);
   }
 
   Future<ComplexTestServiceExchangeCapabilitiesResultsReader> exchangeCapabilities(void Function(ComplexTestServiceExchangeCapabilitiesParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(complexTestServiceExchangeCapabilitiesParamsFactory));
     final result = await _cap.dispatch(0xd7fb0472c16375ee, 5, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceExchangeCapabilitiesResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceExchangeCapabilitiesResultsFactory, capabilities: result.caps);
   }
 
   Future<ComplexTestServiceCallObserverResultsReader> callObserver(void Function(ComplexTestServiceCallObserverParamsBuilder) build, {required Capability observer}) async {
@@ -5721,7 +6313,7 @@ class ComplexTestServiceClient extends Capability {
     b.setObserver(0);
     build(b);
     final result = await _cap.dispatch(0xd7fb0472c16375ee, 6, mb.serialize(), paramsCapabilities: [observer]);
-    return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceCallObserverResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceCallObserverResultsFactory, capabilities: result.caps);
   }
 
   Future<ComplexTestServiceMakePipelineResult> makePipeline(void Function(ComplexTestServiceMakePipelineParamsBuilder) build) async {
@@ -5795,21 +6387,21 @@ class ComplexTestServiceClient extends Capability {
     b.setDiamond(0);
     build(b);
     final result = await _cap.dispatch(0xd7fb0472c16375ee, 12, mb.serialize(), paramsCapabilities: [diamond]);
-    return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceUseDiamondResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceUseDiamondResultsFactory, capabilities: result.caps);
   }
 
   Future<ComplexTestServiceFailIntentionallyResultsReader> failIntentionally(void Function(ComplexTestServiceFailIntentionallyParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(complexTestServiceFailIntentionallyParamsFactory));
     final result = await _cap.dispatch(0xd7fb0472c16375ee, 13, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceFailIntentionallyResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceFailIntentionallyResultsFactory, capabilities: result.caps);
   }
 
   Future<ComplexTestServiceShutdownResultsReader> shutdown(void Function(ComplexTestServiceShutdownParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(complexTestServiceShutdownParamsFactory));
     final result = await _cap.dispatch(0xd7fb0472c16375ee, 14, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceShutdownResultsFactory);
+    return MessageReader.deserialize(result.bytes).getRoot(complexTestServiceShutdownResultsFactory, capabilities: result.caps);
   }
 
   @override
@@ -5824,103 +6416,145 @@ class ComplexTestServiceClientFactory extends CapabilityFactory<ComplexTestServi
 abstract class ComplexTestServiceServer extends Capability {
 
   Future<DispatchResult> echo(ComplexTestServiceEchoParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> echoWithContext(ComplexTestServiceEchoParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      echo(params, paramsCapabilities);
 
   Future<DispatchResult> echoScalars(ComplexTestServiceEchoScalarsParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> echoScalarsWithContext(ComplexTestServiceEchoScalarsParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      echoScalars(params, paramsCapabilities);
 
   Future<DispatchResult> echoLists(ComplexTestServiceEchoListsParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> echoListsWithContext(ComplexTestServiceEchoListsParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      echoLists(params, paramsCapabilities);
 
   Future<DispatchResult> echoUnion(ComplexTestServiceEchoUnionParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> echoUnionWithContext(ComplexTestServiceEchoUnionParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      echoUnion(params, paramsCapabilities);
 
   Future<DispatchResult> echoAnyPointer(ComplexTestServiceEchoAnyPointerParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> echoAnyPointerWithContext(ComplexTestServiceEchoAnyPointerParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      echoAnyPointer(params, paramsCapabilities);
 
   Future<DispatchResult> exchangeCapabilities(ComplexTestServiceExchangeCapabilitiesParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> exchangeCapabilitiesWithContext(ComplexTestServiceExchangeCapabilitiesParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      exchangeCapabilities(params, paramsCapabilities);
 
   Future<DispatchResult> callObserver(ComplexTestServiceCallObserverParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> callObserverWithContext(ComplexTestServiceCallObserverParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      callObserver(params, paramsCapabilities);
 
   Future<DispatchResult> makePipeline(ComplexTestServiceMakePipelineParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> makePipelineWithContext(ComplexTestServiceMakePipelineParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      makePipeline(params, paramsCapabilities);
 
   Future<DispatchResult> openUpload(ComplexTestServiceOpenUploadParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> openUploadWithContext(ComplexTestServiceOpenUploadParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      openUpload(params, paramsCapabilities);
 
   Future<DispatchResult> openDownload(ComplexTestServiceOpenDownloadParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> openDownloadWithContext(ComplexTestServiceOpenDownloadParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      openDownload(params, paramsCapabilities);
 
   Future<DispatchResult> getRepository(ComplexTestServiceGetRepositoryParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> getRepositoryWithContext(ComplexTestServiceGetRepositoryParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      getRepository(params, paramsCapabilities);
 
   Future<DispatchResult> getFactory(ComplexTestServiceGetFactoryParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> getFactoryWithContext(ComplexTestServiceGetFactoryParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      getFactory(params, paramsCapabilities);
 
   Future<DispatchResult> useDiamond(ComplexTestServiceUseDiamondParamsReader params, List<Capability> paramsCapabilities);
+  Future<DispatchResult> useDiamondWithContext(ComplexTestServiceUseDiamondParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      useDiamond(params, paramsCapabilities);
 
   Future<void> failIntentionally(ComplexTestServiceFailIntentionallyParamsReader params, List<Capability> paramsCapabilities);
+  Future<void> failIntentionallyWithContext(ComplexTestServiceFailIntentionallyParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      failIntentionally(params, paramsCapabilities);
 
   Future<void> shutdown(ComplexTestServiceShutdownParamsReader params, List<Capability> paramsCapabilities);
+  Future<void> shutdownWithContext(ComplexTestServiceShutdownParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+      shutdown(params, paramsCapabilities);
 
   @override
   Future<DispatchResult> dispatch(int interfaceId, int methodId, Uint8List params, {
     List<Capability> paramsCapabilities = const [],
+  }) => dispatchWithContext(
+    interfaceId,
+    methodId,
+    params,
+    paramsCapabilities: paramsCapabilities,
+  );
+
+  @override
+  Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+    DispatchContext? context,
   }) async {
+    final dispatchContext = context ?? DispatchContext.neverCanceled;
     switch (interfaceId) {
       case 0xd7fb0472c16375ee:
         switch (methodId) {
           case 0:
             final p = MessageReader.deserialize(params)
-                .getRoot(complexTestServiceEchoParamsFactory);
-            return await echo(p, paramsCapabilities);
+                .getRoot(complexTestServiceEchoParamsFactory, capabilities: paramsCapabilities);
+            return await echoWithContext(p, paramsCapabilities, dispatchContext);
           case 1:
             final p = MessageReader.deserialize(params)
-                .getRoot(complexTestServiceEchoScalarsParamsFactory);
-            return await echoScalars(p, paramsCapabilities);
+                .getRoot(complexTestServiceEchoScalarsParamsFactory, capabilities: paramsCapabilities);
+            return await echoScalarsWithContext(p, paramsCapabilities, dispatchContext);
           case 2:
             final p = MessageReader.deserialize(params)
-                .getRoot(complexTestServiceEchoListsParamsFactory);
-            return await echoLists(p, paramsCapabilities);
+                .getRoot(complexTestServiceEchoListsParamsFactory, capabilities: paramsCapabilities);
+            return await echoListsWithContext(p, paramsCapabilities, dispatchContext);
           case 3:
             final p = MessageReader.deserialize(params)
-                .getRoot(complexTestServiceEchoUnionParamsFactory);
-            return await echoUnion(p, paramsCapabilities);
+                .getRoot(complexTestServiceEchoUnionParamsFactory, capabilities: paramsCapabilities);
+            return await echoUnionWithContext(p, paramsCapabilities, dispatchContext);
           case 4:
             final p = MessageReader.deserialize(params)
-                .getRoot(complexTestServiceEchoAnyPointerParamsFactory);
-            return await echoAnyPointer(p, paramsCapabilities);
+                .getRoot(complexTestServiceEchoAnyPointerParamsFactory, capabilities: paramsCapabilities);
+            return await echoAnyPointerWithContext(p, paramsCapabilities, dispatchContext);
           case 5:
             final p = MessageReader.deserialize(params)
-                .getRoot(complexTestServiceExchangeCapabilitiesParamsFactory);
-            return await exchangeCapabilities(p, paramsCapabilities);
+                .getRoot(complexTestServiceExchangeCapabilitiesParamsFactory, capabilities: paramsCapabilities);
+            return await exchangeCapabilitiesWithContext(p, paramsCapabilities, dispatchContext);
           case 6:
             final p = MessageReader.deserialize(params)
-                .getRoot(complexTestServiceCallObserverParamsFactory);
-            return await callObserver(p, paramsCapabilities);
+                .getRoot(complexTestServiceCallObserverParamsFactory, capabilities: paramsCapabilities);
+            return await callObserverWithContext(p, paramsCapabilities, dispatchContext);
           case 7:
             final p = MessageReader.deserialize(params)
-                .getRoot(complexTestServiceMakePipelineParamsFactory);
-            return await makePipeline(p, paramsCapabilities);
+                .getRoot(complexTestServiceMakePipelineParamsFactory, capabilities: paramsCapabilities);
+            return await makePipelineWithContext(p, paramsCapabilities, dispatchContext);
           case 8:
             final p = MessageReader.deserialize(params)
-                .getRoot(complexTestServiceOpenUploadParamsFactory);
-            return await openUpload(p, paramsCapabilities);
+                .getRoot(complexTestServiceOpenUploadParamsFactory, capabilities: paramsCapabilities);
+            return await openUploadWithContext(p, paramsCapabilities, dispatchContext);
           case 9:
             final p = MessageReader.deserialize(params)
-                .getRoot(complexTestServiceOpenDownloadParamsFactory);
-            return await openDownload(p, paramsCapabilities);
+                .getRoot(complexTestServiceOpenDownloadParamsFactory, capabilities: paramsCapabilities);
+            return await openDownloadWithContext(p, paramsCapabilities, dispatchContext);
           case 10:
             final p = MessageReader.deserialize(params)
-                .getRoot(complexTestServiceGetRepositoryParamsFactory);
-            return await getRepository(p, paramsCapabilities);
+                .getRoot(complexTestServiceGetRepositoryParamsFactory, capabilities: paramsCapabilities);
+            return await getRepositoryWithContext(p, paramsCapabilities, dispatchContext);
           case 11:
             final p = MessageReader.deserialize(params)
-                .getRoot(complexTestServiceGetFactoryParamsFactory);
-            return await getFactory(p, paramsCapabilities);
+                .getRoot(complexTestServiceGetFactoryParamsFactory, capabilities: paramsCapabilities);
+            return await getFactoryWithContext(p, paramsCapabilities, dispatchContext);
           case 12:
             final p = MessageReader.deserialize(params)
-                .getRoot(complexTestServiceUseDiamondParamsFactory);
-            return await useDiamond(p, paramsCapabilities);
+                .getRoot(complexTestServiceUseDiamondParamsFactory, capabilities: paramsCapabilities);
+            return await useDiamondWithContext(p, paramsCapabilities, dispatchContext);
           case 13:
             final p = MessageReader.deserialize(params)
-                .getRoot(complexTestServiceFailIntentionallyParamsFactory);
-            await failIntentionally(p, paramsCapabilities);
+                .getRoot(complexTestServiceFailIntentionallyParamsFactory, capabilities: paramsCapabilities);
+            await failIntentionallyWithContext(p, paramsCapabilities, dispatchContext);
             return DispatchResult.empty;
           case 14:
             final p = MessageReader.deserialize(params)
-                .getRoot(complexTestServiceShutdownParamsFactory);
-            await shutdown(p, paramsCapabilities);
+                .getRoot(complexTestServiceShutdownParamsFactory, capabilities: paramsCapabilities);
+            await shutdownWithContext(p, paramsCapabilities, dispatchContext);
             return DispatchResult.empty;
           default:
             break;
@@ -5928,7 +6562,7 @@ abstract class ComplexTestServiceServer extends Capability {
       default:
         break;
     }
-    return super.dispatch(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities);
+    return super.dispatchWithContext(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities, context: dispatchContext);
   }
 
   @override
@@ -5936,7 +6570,7 @@ abstract class ComplexTestServiceServer extends Capability {
 }
 
 final class KeyValueTextTextReader extends StructReader {
-  KeyValueTextTextReader(super.raw);
+  KeyValueTextTextReader(super.raw, {super.capabilities});
 
   String? get key => getTextField(0);
 
@@ -5944,38 +6578,43 @@ final class KeyValueTextTextReader extends StructReader {
 }
 
 final class OptionalObserverPersonReader extends StructReader {
-  OptionalObserverPersonReader(super.raw);
+  OptionalObserverPersonReader(super.raw, {super.capabilities});
 
   int get which => getUint16Field(0);
 
+
+  ObserverClient? get some {
+    final cap = getCapabilityObjectField(0);
+    return cap == null ? null : ObserverClient(cap as Capability);
+  }
 
   int get someCapIndex => getCapabilityField(0);
 }
 
 final class TreePersonReader extends StructReader {
-  TreePersonReader(super.raw);
+  TreePersonReader(super.raw, {super.capabilities});
 
-  PersonReader? get value => getStructFieldWith(0, (r) => PersonReader(r));
+  PersonReader? get value => getStructFieldWith(0, (r) => PersonReader(r, capabilities: capabilityTable));
 
-  ListReader<TreePersonReader>? get children => getStructListFieldWith(1, (r) => TreePersonReader(r));
+  ListReader<TreePersonReader>? get children => getStructListFieldWith(1, (r) => TreePersonReader(r, capabilities: capabilityTable));
 }
 
 final class ResultPersonErrorInfoReader extends StructReader {
-  ResultPersonErrorInfoReader(super.raw);
+  ResultPersonErrorInfoReader(super.raw, {super.capabilities});
 
   int get which => getUint16Field(0);
 
-  PersonReader? get ok => getStructFieldWith(0, (r) => PersonReader(r));
+  PersonReader? get ok => getStructFieldWith(0, (r) => PersonReader(r, capabilities: capabilityTable));
 
-  ErrorInfoReader? get err => getStructFieldWith(0, (r) => ErrorInfoReader(r));
+  ErrorInfoReader? get err => getStructFieldWith(0, (r) => ErrorInfoReader(r, capabilities: capabilityTable));
 }
 
 final class OptionalErrorInfoReader extends StructReader {
-  OptionalErrorInfoReader(super.raw);
+  OptionalErrorInfoReader(super.raw, {super.capabilities});
 
   int get which => getUint16Field(0);
 
 
-  ErrorInfoReader? get some => getStructFieldWith(0, (r) => ErrorInfoReader(r));
+  ErrorInfoReader? get some => getStructFieldWith(0, (r) => ErrorInfoReader(r, capabilities: capabilityTable));
 }
 

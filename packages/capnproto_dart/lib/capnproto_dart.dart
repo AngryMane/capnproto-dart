@@ -28,6 +28,7 @@ export 'src/layout/list_reader.dart'
         enumListFromRaw,
         structListFromRaw,
         CapabilityListReader,
+        TypedCapabilityListReader,
         capabilityListFromRaw;
 export 'src/layout/list_builder.dart'
     show
@@ -61,7 +62,8 @@ export 'src/stream/message_stream.dart';
 // ---------------------------------------------------------------------------
 
 export 'src/arena/arena_reader.dart' show RawStructReader, RawListReader;
-export 'src/wire/pointer.dart' show WirePointer, CapabilityPointer, ListElementSize;
+export 'src/wire/pointer.dart'
+    show WirePointer, CapabilityPointer, ListElementSize;
 export 'src/arena/arena_builder.dart' show RawStructBuilder;
 export 'src/layout/struct_factory.dart';
 export 'src/layout/struct_reader.dart';

@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../arena/arena_reader.dart';
+import '../exception/decode_exception.dart';
 import '../wire/pointer.dart' show CapabilityPointer, WirePointer;
 import '../wire/wire_helpers.dart';
 
@@ -71,7 +72,10 @@ class PrimitiveIntListReader extends ListReader<int> {
   @override
   int operator [](int index) {
     RangeError.checkValidIndex(index, this);
-    return _read(_raw.segment.data, _raw.dataByteOffset + index * _elementBytes);
+    return _read(
+      _raw.segment.data,
+      _raw.dataByteOffset + index * _elementBytes,
+    );
   }
 }
 
@@ -89,7 +93,10 @@ class PrimitiveDoubleListReader extends ListReader<double> {
   @override
   double operator [](int index) {
     RangeError.checkValidIndex(index, this);
-    return _read(_raw.segment.data, _raw.dataByteOffset + index * _elementBytes);
+    return _read(
+      _raw.segment.data,
+      _raw.dataByteOffset + index * _elementBytes,
+    );
   }
 }
 
@@ -143,19 +150,20 @@ class StructListReader<R> extends ListReader<R> {
   @override
   R operator [](int index) {
     RangeError.checkValidIndex(index, this);
-    final stride =
-        (_raw.structDataWords + _raw.structPtrWords) * bytesPerWord;
+    final stride = (_raw.structDataWords + _raw.structPtrWords) * bytesPerWord;
     final elementWordOffset =
         (_raw.dataByteOffset + index * stride) ~/ bytesPerWord;
-    return _fromRaw(RawStructReader(
-      segment: _raw.segment,
-      arena: _raw.arena,
-      dataWordOffset: elementWordOffset,
-      dataWords: _raw.structDataWords,
-      ptrWordOffset: elementWordOffset + _raw.structDataWords,
-      ptrWords: _raw.structPtrWords,
-      nestingLimit: _raw.nestingLimit,
-    ));
+    return _fromRaw(
+      RawStructReader(
+        segment: _raw.segment,
+        arena: _raw.arena,
+        dataWordOffset: elementWordOffset,
+        dataWords: _raw.structDataWords,
+        ptrWordOffset: elementWordOffset + _raw.structDataWords,
+        ptrWords: _raw.structPtrWords,
+        nestingLimit: _raw.nestingLimit,
+      ),
+    );
   }
 }
 
@@ -216,8 +224,11 @@ class NestedListReader<T> extends ListReader<ListReader<T>?> {
   ListReader<T>? operator [](int index) {
     RangeError.checkValidIndex(index, this);
     final ptrWordOffset = _raw.dataByteOffset ~/ bytesPerWord + index;
-    final inner =
-        _raw.arena.resolveListAt(_raw.segment, ptrWordOffset, _raw.nestingLimit);
+    final inner = _raw.arena.resolveListAt(
+      _raw.segment,
+      ptrWordOffset,
+      _raw.nestingLimit,
+    );
     return inner == null ? null : _fromRaw(inner);
   }
 }
@@ -252,11 +263,14 @@ ListReader<double> float64ListFromRaw(RawListReader raw) =>
 ListReader<String?> textListFromRaw(RawListReader raw) => TextListReader(raw);
 ListReader<Uint8List?> dataListFromRaw(RawListReader raw) =>
     DataListReader(raw);
-ListReader<E?> enumListFromRaw<E>(RawListReader raw, E? Function(int) fromInt) =>
-    EnumListReader<E>(raw, fromInt);
+ListReader<E?> enumListFromRaw<E>(
+  RawListReader raw,
+  E? Function(int) fromInt,
+) => EnumListReader<E>(raw, fromInt);
 ListReader<R> structListFromRaw<R>(
-        RawListReader raw, R Function(RawStructReader) fromRaw) =>
-    StructListReader<R>(raw, fromRaw);
+  RawListReader raw,
+  R Function(RawStructReader) fromRaw,
+) => StructListReader<R>(raw, fromRaw);
 
 /// List of capability references stored as cap-table indices.
 ///
@@ -279,6 +293,41 @@ class CapabilityListReader extends ListReader<int> {
     final ptrWordOffset = _raw.dataByteOffset ~/ bytesPerWord + index;
     final ptr = WirePointer.decode(_raw.segment.data, ptrWordOffset);
     return ptr is CapabilityPointer ? ptr.capabilityIndex : -1;
+  }
+}
+
+/// Typed view over a `List(Interface)` using an RPC capability table.
+class TypedCapabilityListReader<T> extends ListReader<T?> {
+  final RawListReader _raw;
+  final List<Object?> _capabilities;
+  final T Function(Object capability) _fromCapability;
+
+  TypedCapabilityListReader(
+    this._raw,
+    this._capabilities,
+    this._fromCapability,
+  );
+
+  @override
+  int get length => _raw.elementCount;
+
+  @override
+  T? operator [](int index) {
+    RangeError.checkValidIndex(index, this);
+    final ptrWordOffset = _raw.dataByteOffset ~/ bytesPerWord + index;
+    final ptr = WirePointer.decode(_raw.segment.data, ptrWordOffset);
+    if (ptr is! CapabilityPointer) return null;
+    final capIndex = ptr.capabilityIndex;
+    if (capIndex >= _capabilities.length) {
+      throw DecodeException(
+        'capability table index $capIndex is out of range for ${_capabilities.length} capabilities',
+      );
+    }
+    final cap = _capabilities[capIndex];
+    if (cap == null) {
+      throw DecodeException('capability table index $capIndex is null');
+    }
+    return _fromCapability(cap);
   }
 }
 

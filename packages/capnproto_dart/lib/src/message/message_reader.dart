@@ -15,19 +15,18 @@ class MessageReader {
   static MessageReader deserialize(
     Uint8List bytes, [
     MessageReaderOptions options = const MessageReaderOptions(),
-  ]) =>
-      MessageReader._(ArenaReader.fromBytes(bytes, options));
+  ]) => MessageReader._(ArenaReader.fromBytes(bytes, options));
 
   static MessageReader deserializePacked(
     Uint8List bytes, [
     MessageReaderOptions options = const MessageReaderOptions(),
-  ]) =>
-      MessageReader._(ArenaReader.fromBytes(unpackBytes(bytes), options));
+  ]) => MessageReader._(ArenaReader.fromBytes(unpackBytes(bytes), options));
 
   R getRoot<R extends StructReader, B extends StructBuilder>(
-    StructFactory<R, B> factory,
-  ) =>
-      factory.fromRawReader(_arena.getRootRaw());
+    StructFactory<R, B> factory, {
+    List<Object?> capabilities = const [],
+  }) =>
+      factory.fromRawReaderWithCapabilities(_arena.getRootRaw(), capabilities);
 
   /// Returns the raw struct reader for the root object.
   ///

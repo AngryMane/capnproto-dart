@@ -17,6 +17,16 @@ abstract class StructFactory<R extends StructReader, B extends StructBuilder> {
   /// Wraps [raw] in a typed reader.
   R fromRawReader(RawStructReader raw);
 
+  /// Wraps [raw] in a typed reader with an RPC capability table.
+  ///
+  /// Generated code overrides this so nested interface fields can be resolved
+  /// as typed capabilities. Plain serialization callers can keep using
+  /// [fromRawReader].
+  R fromRawReaderWithCapabilities(
+    RawStructReader raw,
+    List<Object?> capabilities,
+  ) => fromRawReader(raw);
+
   /// Wraps [raw] in a typed builder.
   B fromRawBuilder(RawStructBuilder raw);
 }

@@ -948,8 +948,7 @@ Future<void> _s14_capsInStructs(ComplexTestServiceClient svc) async {
   // The PipelineTarget is callable
   final pingR = await target14.ping((b) => b.payload = Uint8List.fromList([1]));
   checkEq('cap-in-results callable', pingR.payload?[0], 1);
-
-  await target14.dispose();
+  final target14b = svc.makePipelinePipeline((b) => b.depth = 1).target;
 
   // List(Interface) field: build a CapabilityBundle with two cap indices and
   // round-trip it through serialize/deserialize to verify the generated accessor.
@@ -958,12 +957,19 @@ Future<void> _s14_capsInStructs(ComplexTestServiceClient svc) async {
   final tgts14 = bundle14.initTargets(2);
   tgts14[0] = 0;
   tgts14[1] = 1;
-  final reader14 = CapabilityBundleReader(
-      MessageReader.deserialize(mb14.serialize()).getRootRaw());
+  final reader14 = MessageReader.deserialize(mb14.serialize()).getRoot(
+    capabilityBundleFactory,
+    capabilities: [target14, target14b],
+  );
   final list14 = reader14.targets;
   checkEq('List(Interface) length', list14?.length, 2);
-  checkEq('List(Interface) index 0', list14?[0], 0);
-  checkEq('List(Interface) index 1', list14?[1], 1);
+  checkEq('List(Interface) cap index 0', reader14.targetsCapIndices?[0], 0);
+  checkEq('List(Interface) cap index 1', reader14.targetsCapIndices?[1], 1);
+  check('List(Interface) typed target 0', list14?[0] != null);
+  check('List(Interface) typed target 1', list14?[1] != null);
+
+  await target14.dispose();
+  await target14b.dispose();
 
   skip('Capability in Optional - requires AnyPointer support');
   skip('null capability - not yet distinguished from missing');

@@ -298,7 +298,7 @@ void _writeClientMethod(
     sb.writeln('    return $resultName._(result);');
   } else {
     sb.writeln(
-      '    return MessageReader.deserialize(result.bytes).getRoot(${_lcfirst(resultsName)}Factory);',
+      '    return MessageReader.deserialize(result.bytes).getRoot(${_lcfirst(resultsName)}Factory, capabilities: result.caps);',
     );
   }
   sb.writeln('  }');
@@ -447,7 +447,9 @@ void _writeServerStub(
 
         sb.writeln('          case ${m.method.ordinal}:');
         sb.writeln('            final p = MessageReader.deserialize(params)');
-        sb.writeln('                .getRoot(${_lcfirst(paramsName)}Factory);');
+        sb.writeln(
+          '                .getRoot(${_lcfirst(paramsName)}Factory, capabilities: paramsCapabilities);',
+        );
         if (isVoid) {
           sb.writeln(
             '            await ${methodName}WithContext(p, paramsCapabilities, dispatchContext);',
@@ -531,7 +533,7 @@ void _writeResultsPipeline(
       })
       .join(',\n');
   final readerInit =
-      '    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(${_lcfirst(resultsName)}Factory)';
+      '    result = MessageReader.deserialize(dispatchResult.bytes).getRoot(${_lcfirst(resultsName)}Factory, capabilities: dispatchResult.caps)';
   sb.writeln('      : $resultFieldInits,\n$readerInit;');
   sb.writeln();
   sb.writeln('  final ${resultsName}Reader result;');
@@ -555,7 +557,7 @@ void _writeResultsPipeline(
       })
       .join(',\n');
   final resultInit =
-      '    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(${_lcfirst(resultsName)}Factory))';
+      '    result = call.result.then((r) => MessageReader.deserialize(r.bytes).getRoot(${_lcfirst(resultsName)}Factory, capabilities: r.caps))';
   sb.writeln('      : $fieldInits,\n$resultInit;');
   sb.writeln();
   sb.writeln('  final Future<${resultsName}Reader> result;');
@@ -609,7 +611,7 @@ void _writeStruct(
 
   // ---- Reader ----
   sb.writeln('final class ${name}Reader extends StructReader {');
-  sb.writeln('  ${name}Reader(super.raw);');
+  sb.writeln('  ${name}Reader(super.raw, {super.capabilities});');
 
   if (body.discriminantCount > 0) {
     final discByteOffset = body.discriminantOffset * 2;
@@ -655,6 +657,10 @@ void _writeStruct(
   );
   sb.writeln('  @override');
   sb.writeln(
+    '  ${name}Reader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => ${name}Reader(r, capabilities: capabilities);',
+  );
+  sb.writeln('  @override');
+  sb.writeln(
     '  ${name}Builder fromRawBuilder(RawStructBuilder r) => ${name}Builder(r);',
   );
   sb.writeln('}');
@@ -675,7 +681,9 @@ void _writeReaderField(
     final groupNode = nodeMap[gf.typeId];
     if (groupNode == null) return;
     final gname = _dartClassName(groupNode.displayName);
-    sb.writeln('  ${gname}Reader get $fname => ${gname}Reader(raw);');
+    sb.writeln(
+      '  ${gname}Reader get $fname => ${gname}Reader(raw, capabilities: capabilityTable);',
+    );
     return;
   }
 
@@ -686,9 +694,17 @@ void _writeReaderField(
   // Void fields carry no data; reading them is meaningless, so skip.
   if (type is VoidType) return;
 
-  // Capability pointer fields expose the cap-table index so callers can
-  // look up the capability from DispatchResult.caps.
   if (type is InterfaceRefType) {
+    final capIfaceName = _dartClassName(
+      nodeMap[type.typeId]?.displayName ?? 'Unknown',
+    );
+    sb.writeln('  ${capIfaceName}Client? get $fname {');
+    sb.writeln('    final cap = getCapabilityObjectField($offset);');
+    sb.writeln(
+      '    return cap == null ? null : ${capIfaceName}Client(cap as Capability);',
+    );
+    sb.writeln('  }');
+    sb.writeln();
     sb.writeln('  int get ${fname}CapIndex => getCapabilityField($offset);');
     return;
   }
@@ -700,6 +716,12 @@ void _writeReaderField(
     sf.defaultValue,
   );
   sb.writeln('  $dartType get $fname => $getter;');
+  if (type is ListType && type.elementType is InterfaceRefType) {
+    sb.writeln();
+    sb.writeln(
+      '  ListReader<int>? get ${fname}CapIndices => getCapabilityListField($offset);',
+    );
+  }
 }
 
 void _writeBuilderField(
@@ -901,7 +923,7 @@ String _defaultSuffix(Object? v) {
     final specName = _specializedName(type.typeId, type.typeArgs, nodeMap);
     return (
       '${specName}Reader?',
-      'getStructFieldWith($offset, (r) => ${specName}Reader(r))',
+      'getStructFieldWith($offset, (r) => ${specName}Reader(r, capabilities: capabilityTable))',
     );
   }
   return switch (type) {
@@ -966,7 +988,7 @@ String _defaultSuffix(Object? v) {
   final name = _dartClassName(node?.displayName ?? 'UnknownStruct');
   return (
     '${name}Reader?',
-    'getStructFieldWith($ptrIndex, (r) => ${name}Reader(r))',
+    'getStructFieldWith($ptrIndex, (r) => ${name}Reader(r, capabilities: capabilityTable))',
   );
 }
 
@@ -980,7 +1002,7 @@ String _defaultSuffix(Object? v) {
     final specName = _specializedName(elem.typeId, elem.typeArgs, nodeMap);
     return (
       'ListReader<${specName}Reader>?',
-      'getStructListFieldWith($ptrIndex, (r) => ${specName}Reader(r))',
+      'getStructListFieldWith($ptrIndex, (r) => ${specName}Reader(r, capabilities: capabilityTable))',
     );
   }
   return switch (elem) {
@@ -1008,9 +1030,10 @@ String _defaultSuffix(Object? v) {
       ptrIndex,
       nodeMap,
     ),
-    InterfaceRefType() => (
-      'ListReader<int>?',
-      'getCapabilityListField($ptrIndex)',
+    InterfaceRefType(:final typeId) => _capabilityListReaderGetter(
+      typeId,
+      ptrIndex,
+      nodeMap,
     ),
     ListType(:final elementType) => _nestedListReaderGetter(
       elementType,
@@ -1070,7 +1093,10 @@ String _defaultSuffix(Object? v) {
     DataType() => ('Uint8List?', 'dataListFromRaw'),
     StructRefType(:final typeId) => _structListFromRawExpr(typeId, nodeMap),
     EnumRefType(:final typeId) => _enumListFromRawExpr(typeId, nodeMap),
-    InterfaceRefType() => ('int', 'capabilityListFromRaw'),
+    InterfaceRefType(:final typeId) => _capabilityListFromRawExpr(
+      typeId,
+      nodeMap,
+    ),
     ListType(:final elementType) => _nestedNestedListFromRawExpr(
       elementType,
       nodeMap,
@@ -1087,7 +1113,19 @@ String _defaultSuffix(Object? v) {
   final name = _dartClassName(node?.displayName ?? 'UnknownStruct');
   return (
     '${name}Reader',
-    '(raw) => structListFromRaw(raw, (r) => ${name}Reader(r))',
+    '(raw) => structListFromRaw(raw, (r) => ${name}Reader(r, capabilities: capabilityTable))',
+  );
+}
+
+(String, String) _capabilityListFromRawExpr(
+  int typeId,
+  Map<int, SchemaNode> nodeMap,
+) {
+  final node = nodeMap[typeId];
+  final name = _dartClassName(node?.displayName ?? 'UnknownInterface');
+  return (
+    '${name}Client?',
+    '(raw) => TypedCapabilityListReader<${name}Client>(raw, capabilityTable, (cap) => ${name}Client(cap as Capability))',
   );
 }
 
@@ -1123,7 +1161,20 @@ String _defaultSuffix(Object? v) {
   final name = _dartClassName(node?.displayName ?? 'UnknownStruct');
   return (
     'ListReader<${name}Reader>?',
-    'getStructListFieldWith($ptrIndex, (r) => ${name}Reader(r))',
+    'getStructListFieldWith($ptrIndex, (r) => ${name}Reader(r, capabilities: capabilityTable))',
+  );
+}
+
+(String, String) _capabilityListReaderGetter(
+  int typeId,
+  int ptrIndex,
+  Map<int, SchemaNode> nodeMap,
+) {
+  final node = nodeMap[typeId];
+  final name = _dartClassName(node?.displayName ?? 'UnknownInterface');
+  return (
+    'ListReader<${name}Client?>?',
+    'getCapabilityListFieldWith<${name}Client>($ptrIndex, (cap) => ${name}Client(cap as Capability))',
   );
 }
 
@@ -1647,7 +1698,7 @@ void _writeSpecializedStruct(
     ..sort((a, b) => a.codeOrder.compareTo(b.codeOrder));
 
   sb.writeln('final class ${specName}Reader extends StructReader {');
-  sb.writeln('  ${specName}Reader(super.raw);');
+  sb.writeln('  ${specName}Reader(super.raw, {super.capabilities});');
 
   if (body.discriminantCount > 0) {
     final discByteOffset = body.discriminantOffset * 2;
