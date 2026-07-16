@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:capnproto_dart/capnproto_dart.dart';
 
 import '../rpc/rpc_exception.dart';
+
+final Future<void> _neverCanceledFuture = Completer<void>().future;
 
 /// The result of a [Capability.dispatch] call.
 ///
@@ -18,6 +21,48 @@ class DispatchResult {
   static final empty = DispatchResult(
     bytes: Uint8List.fromList([0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
   );
+}
+
+/// Cooperative cancellation state for an incoming dispatch.
+///
+/// Server implementations can check [isCanceled], await [canceled], or call
+/// [throwIfCanceled] at await points to stop work after the caller sends
+/// `Finish` or the connection closes.
+class DispatchContext {
+  static final DispatchContext neverCanceled = DispatchContext._never();
+
+  final Completer<void>? _canceledCompleter;
+
+  DispatchContext._() : _canceledCompleter = Completer<void>();
+  DispatchContext._never() : _canceledCompleter = null;
+
+  /// Whether the caller has abandoned this dispatch.
+  bool get isCanceled => _canceledCompleter?.isCompleted ?? false;
+
+  /// Completes when the caller abandons this dispatch.
+  Future<void> get canceled =>
+      _canceledCompleter?.future ?? _neverCanceledFuture;
+
+  /// Throws [RpcException] if this dispatch has been canceled.
+  void throwIfCanceled() {
+    if (isCanceled) {
+      throw const RpcException('dispatch canceled');
+    }
+  }
+
+  void _cancel() {
+    final completer = _canceledCompleter;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete();
+    }
+  }
+}
+
+/// Owns cancellation for a single incoming dispatch.
+class DispatchCancellationController {
+  final DispatchContext context = DispatchContext._();
+
+  void cancel() => context._cancel();
 }
 
 /// Base class for all Cap'n Proto capabilities (remote object references).
@@ -52,6 +97,24 @@ abstract class Capability {
     ),
   );
 
+  /// Dispatches an incoming method call with cooperative cancellation state.
+  ///
+  /// Existing implementations may continue to override [dispatch]. Server
+  /// implementations that want cancellation support can override this method
+  /// and watch [context].
+  Future<DispatchResult> dispatchWithContext(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+    DispatchContext? context,
+  }) => dispatch(
+    interfaceId,
+    methodId,
+    params,
+    paramsCapabilities: paramsCapabilities,
+  );
+
   /// Starts a dispatch call and returns a [CapCall] that allows creating
   /// pipelined sub-capabilities before the round-trip completes.
   ///
@@ -65,7 +128,7 @@ abstract class Capability {
     Uint8List params, {
     List<Capability> paramsCapabilities = const [],
   }) => _DeferredCapCall(
-    dispatch(
+    dispatchWithContext(
       interfaceId,
       methodId,
       params,
@@ -180,6 +243,24 @@ class DeferredCapability extends Capability {
       methodId,
       params,
       paramsCapabilities: paramsCapabilities,
+    );
+  }
+
+  @override
+  Future<DispatchResult> dispatchWithContext(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+    DispatchContext? context,
+  }) async {
+    final cap = await _future;
+    return cap.dispatchWithContext(
+      interfaceId,
+      methodId,
+      params,
+      paramsCapabilities: paramsCapabilities,
+      context: context,
     );
   }
 

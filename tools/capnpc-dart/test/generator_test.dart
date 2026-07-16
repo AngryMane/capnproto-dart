@@ -965,11 +965,28 @@ void main() {
     test('server dispatch still calls the prefixed abstract method', () {
       expect(
         bothServerSection(),
-        contains('await leftProcess(p, paramsCapabilities)'),
+        contains(
+          'await leftProcessWithContext(p, paramsCapabilities, dispatchContext)',
+        ),
       );
       expect(
         bothServerSection(),
-        contains('await rightProcess(p, paramsCapabilities)'),
+        contains(
+          'await rightProcessWithContext(p, paramsCapabilities, dispatchContext)',
+        ),
+      );
+    });
+
+    test('server exposes context-aware hook without requiring override', () {
+      expect(
+        bothServerSection(),
+        contains(
+          'Future<DispatchResult> leftProcessWithContext(LeftProcessParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>',
+        ),
+      );
+      expect(
+        bothServerSection(),
+        contains('leftProcess(params, paramsCapabilities);'),
       );
     });
 

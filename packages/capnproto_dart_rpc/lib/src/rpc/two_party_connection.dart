@@ -8,6 +8,7 @@ import '../capability/capability.dart'
         CapCall,
         Capability,
         DeferredCapability,
+        DispatchCancellationController,
         DispatchResult,
         NullCapability,
         capabilityFromResult,
@@ -79,6 +80,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   // Incoming questions that were finished by the peer before local dispatch
   // completed. Their dispatch result must be dropped instead of returned.
   final Set<int> _finishedAnswers = {};
+  final Map<int, DispatchCancellationController> _dispatchCancellations = {};
 
   // Set to a non-null error once the connection is closed.
   Object? _closedError;
@@ -481,11 +483,15 @@ class TwoPartyRpcConnection implements RpcConnection {
       }
     }
 
-    final dispatchFuture = cap.dispatch(
+    final cancellation = DispatchCancellationController();
+    _dispatchCancellations[qid] = cancellation;
+
+    final dispatchFuture = cap.dispatchWithContext(
       msg.interfaceId,
       msg.methodId,
       params,
       paramsCapabilities: paramsCapabilities,
+      context: cancellation.context,
     );
 
     // Track the resolved-answer future so pipelined calls can queue behind it.
@@ -500,6 +506,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     dispatchFuture
         .then((result) {
           _pendingCaps.remove(qid);
+          _dispatchCancellations.remove(qid);
           if (_finishedAnswers.remove(qid)) {
             _answerCaps.remove(qid);
             _answers.remove(qid);
@@ -531,6 +538,7 @@ class TwoPartyRpcConnection implements RpcConnection {
         })
         .catchError((Object err) {
           _pendingCaps.remove(qid);
+          _dispatchCancellations.remove(qid);
           _answerCaps.remove(qid);
           if (_finishedAnswers.remove(qid)) {
             _answers.remove(qid);
@@ -553,6 +561,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     if (resultExportIds == null) {
       if (_pendingCaps.containsKey(qid)) {
         _finishedAnswers.add(qid);
+        _dispatchCancellations.remove(qid)?.cancel();
       }
       return;
     }
@@ -671,6 +680,11 @@ class TwoPartyRpcConnection implements RpcConnection {
       _bootstrapCompleter!.future.ignore();
       _bootstrapCompleter!.completeError(err);
     }
+
+    for (final cancellation in _dispatchCancellations.values) {
+      cancellation.cancel();
+    }
+    _dispatchCancellations.clear();
 
     // Dispose all exported capabilities.
     for (final entry in _exports.values) {

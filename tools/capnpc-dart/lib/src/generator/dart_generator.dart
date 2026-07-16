@@ -384,10 +384,18 @@ void _writeServerStub(
       sb.writeln(
         '  Future<void> $methodName(${paramsName}Reader params, List<Capability> paramsCapabilities);',
       );
+      sb.writeln(
+        '  Future<void> ${methodName}WithContext(${paramsName}Reader params, List<Capability> paramsCapabilities, DispatchContext context) =>',
+      );
+      sb.writeln('      $methodName(params, paramsCapabilities);');
     } else {
       sb.writeln(
         '  Future<DispatchResult> $methodName(${paramsName}Reader params, List<Capability> paramsCapabilities);',
       );
+      sb.writeln(
+        '  Future<DispatchResult> ${methodName}WithContext(${paramsName}Reader params, List<Capability> paramsCapabilities, DispatchContext context) =>',
+      );
+      sb.writeln('      $methodName(params, paramsCapabilities);');
     }
   }
 
@@ -397,7 +405,23 @@ void _writeServerStub(
     '  Future<DispatchResult> dispatch(int interfaceId, int methodId, Uint8List params, {',
   );
   sb.writeln('    List<Capability> paramsCapabilities = const [],');
+  sb.writeln('  }) => dispatchWithContext(');
+  sb.writeln('    interfaceId,');
+  sb.writeln('    methodId,');
+  sb.writeln('    params,');
+  sb.writeln('    paramsCapabilities: paramsCapabilities,');
+  sb.writeln('  );');
+  sb.writeln();
+  sb.writeln('  @override');
+  sb.writeln(
+    '  Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, Uint8List params, {',
+  );
+  sb.writeln('    List<Capability> paramsCapabilities = const [],');
+  sb.writeln('    DispatchContext? context,');
   sb.writeln('  }) async {');
+  sb.writeln(
+    '    final dispatchContext = context ?? DispatchContext.neverCanceled;',
+  );
 
   if (allMethods.isNotEmpty) {
     // Group by defining interface ID.
@@ -425,11 +449,13 @@ void _writeServerStub(
         sb.writeln('            final p = MessageReader.deserialize(params)');
         sb.writeln('                .getRoot(${_lcfirst(paramsName)}Factory);');
         if (isVoid) {
-          sb.writeln('            await $methodName(p, paramsCapabilities);');
+          sb.writeln(
+            '            await ${methodName}WithContext(p, paramsCapabilities, dispatchContext);',
+          );
           sb.writeln('            return DispatchResult.empty;');
         } else {
           sb.writeln(
-            '            return await $methodName(p, paramsCapabilities);',
+            '            return await ${methodName}WithContext(p, paramsCapabilities, dispatchContext);',
           );
         }
       }
@@ -442,7 +468,7 @@ void _writeServerStub(
     sb.writeln('    }');
   }
   sb.writeln(
-    '    return super.dispatch(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities);',
+    '    return super.dispatchWithContext(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities, context: dispatchContext);',
   );
   sb.writeln('  }');
   sb.writeln();

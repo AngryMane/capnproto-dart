@@ -14,6 +14,7 @@ export 'src/capability/capability.dart'
         CapCall,
         Capability,
         DeferredCapability,
+        DispatchContext,
         DispatchResult,
         NullCapability,
         PipelinedCapability,

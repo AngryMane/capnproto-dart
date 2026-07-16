@@ -298,7 +298,9 @@ class CapReceivingServer extends Capability {
 
 class SlowEchoServer extends Capability {
   final Completer<void> started = Completer<void>();
+  final Completer<void> canceled = Completer<void>();
   final Completer<void> complete = Completer<void>();
+  DispatchContext? lastContext;
 
   @override
   Future<DispatchResult> dispatch(
@@ -310,6 +312,27 @@ class SlowEchoServer extends Capability {
     if (!started.isCompleted) started.complete();
     await complete.future;
     return DispatchResult(bytes: _buildEchoParams('done'));
+  }
+
+  @override
+  Future<DispatchResult> dispatchWithContext(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+    DispatchContext? context,
+  }) {
+    final dispatchContext = context ?? DispatchContext.neverCanceled;
+    lastContext = dispatchContext;
+    dispatchContext.canceled.then((_) {
+      if (!canceled.isCompleted) canceled.complete();
+    }).ignore();
+    return dispatch(
+      interfaceId,
+      methodId,
+      params,
+      paramsCapabilities: paramsCapabilities,
+    );
   }
 
   @override
@@ -906,7 +929,8 @@ void main() {
         await server.started.future;
 
         clientToServer.add(buildFinishMessage(1));
-        await Future<void>.delayed(const Duration(milliseconds: 10));
+        await server.canceled.future.timeout(const Duration(milliseconds: 100));
+        expect(server.lastContext?.isCanceled, isTrue);
         server.complete.complete();
         await Future<void>.delayed(const Duration(milliseconds: 20));
 
@@ -919,6 +943,37 @@ void main() {
         await serverConn.done;
       },
     );
+
+    test('connection close cancels an in-progress dispatch context', () async {
+      final clientToServer = StreamController<Uint8List>();
+      final serverToClient = StreamController<Uint8List>();
+      serverToClient.stream.listen((_) {});
+
+      final server = SlowEchoServer();
+      final serverConn = TwoPartyRpcConnection.server(
+        incoming: clientToServer.stream,
+        outgoing: serverToClient.sink,
+        bootstrap: server,
+      );
+
+      clientToServer.add(
+        buildCallMessage(
+          questionId: 1,
+          targetImportId: 0,
+          interfaceId: _echoInterfaceId,
+          methodId: _echoMethodId,
+          paramsBytes: _buildEchoParams('slow'),
+        ),
+      );
+      await server.started.future;
+
+      await clientToServer.close();
+      await server.canceled.future.timeout(const Duration(milliseconds: 100));
+      expect(server.lastContext?.isCanceled, isTrue);
+      server.complete.complete();
+
+      await serverConn.done;
+    });
   });
 
   group('rpc_proto — message encoding/decoding', () {
