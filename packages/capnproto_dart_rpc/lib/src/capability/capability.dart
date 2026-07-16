@@ -115,7 +115,7 @@ Capability requireCapabilityFromResult(DispatchResult result, int ptrIndex) {
   }
   try {
     final root = MessageReader.deserialize(result.bytes).getRootRaw();
-    if (ptrIndex >= root.ptrWords) {
+    if (ptrIndex < 0 || ptrIndex >= root.ptrWords) {
       throw RpcException('pointer slot $ptrIndex is out of range');
     }
     final ptr = WirePointer.decode(

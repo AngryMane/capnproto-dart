@@ -750,6 +750,34 @@ void main() {
       await serverConn.close();
     });
 
+    test('negative result pointer index is rejected explicitly', () async {
+      final server = DuplicateCapsServer();
+      final (client, serverConn) = _makePipe(server);
+      final bootstrapCap = client.bootstrap(EchoClientFactory());
+      await bootstrapCap.echo('warmup');
+
+      final result = await bootstrapCap.cap.dispatch(
+        _echoInterfaceId,
+        _duplicateCapsMethodId,
+        _buildEchoParams(''),
+      );
+
+      expect(
+        () => requireCapabilityFromResult(result, -1),
+        throwsA(
+          allOf(
+            isA<RpcException>(),
+            predicate<Object>(
+              (e) => e.toString().contains('pointer slot -1 is out of range'),
+            ),
+          ),
+        ),
+      );
+
+      await client.close();
+      await serverConn.close();
+    });
+
     test(
       'failed call send preparation cleans pending question state',
       () async {
