@@ -183,6 +183,7 @@ void _writeInterface(
   sb.writeln();
   sb.writeln('  final Capability _cap;');
   sb.writeln('  ${name}Client(this._cap);');
+  sb.writeln('  Capability get capability => _cap;');
 
   for (final m in allMethods) {
     _writeClientMethod(sb, name, m.ifaceNode, m.method, nodeMap, m.dartName);

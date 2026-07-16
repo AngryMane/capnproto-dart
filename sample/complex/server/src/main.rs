@@ -577,6 +577,60 @@ impl complex_test_service::Server for ComplexTestServiceImpl {
         }
         Promise::ok(())
     }
+
+    fn probe_pipeline_target(
+        &mut self,
+        params: complex_test_service::ProbePipelineTargetParams,
+        mut results: complex_test_service::ProbePipelineTargetResults,
+    ) -> Promise<(), capnp::Error> {
+        let p = pry!(params.get());
+        let target: pipeline_target::Client = pry!(p.get_target());
+        let payload = pry!(p.get_payload()).to_vec();
+        println!("[server] probePipelineTarget({} bytes)", payload.len());
+
+        Promise::from_future(async move {
+            let mut req = target.ping_request();
+            req.get().set_payload(&payload);
+            let resp = req.send().promise.await?;
+            let echoed = resp.get()?.get_payload()?;
+            results.get().set_payload(echoed);
+            Ok(())
+        })
+    }
+
+    fn make_promised_pipeline(
+        &mut self,
+        params: complex_test_service::MakePromisedPipelineParams,
+        mut results: complex_test_service::MakePromisedPipelineResults,
+    ) -> Promise<(), capnp::Error> {
+        let delay_ms = pry!(params.get()).get_delay_ms();
+        println!("[server] makePromisedPipeline(delayMs={})", delay_ms);
+        let target: pipeline_target::Client = capnp_rpc::new_future_client(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms as u64)).await;
+            Ok(capnp_rpc::new_client(PipelineTargetImpl {
+                name: format!("promised(delay={})", delay_ms),
+            }))
+        });
+        results.get().set_target(target);
+        Promise::ok(())
+    }
+
+    fn echo_pipeline_target_later(
+        &mut self,
+        params: complex_test_service::EchoPipelineTargetLaterParams,
+        mut results: complex_test_service::EchoPipelineTargetLaterResults,
+    ) -> Promise<(), capnp::Error> {
+        let p = pry!(params.get());
+        let target: pipeline_target::Client = pry!(p.get_target());
+        let delay_ms = p.get_delay_ms();
+        println!("[server] echoPipelineTargetLater(delayMs={})", delay_ms);
+        let promised: pipeline_target::Client = capnp_rpc::new_future_client(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms as u64)).await;
+            Ok(target)
+        });
+        results.get().set_target(promised);
+        Promise::ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------

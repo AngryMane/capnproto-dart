@@ -59,6 +59,35 @@ class _DiamondImpl extends DiamondServer {
   }
 }
 
+class _PipelineTargetImpl extends PipelineTargetServer {
+  int pingCount = 0;
+  Uint8List? lastPayload;
+
+  @override
+  Future<DispatchResult> getChild(PipelineTargetGetChildParamsReader params,
+      List<Capability> paramsCapabilities) async {
+    final mb = MessageBuilder();
+    mb.initRoot(pipelineTargetGetChildResultsFactory).setCapabilityField(0, 0);
+    return DispatchResult(bytes: mb.serialize(), caps: [this]);
+  }
+
+  @override
+  Future<DispatchResult> getRepository(
+          PipelineTargetGetRepositoryParamsReader params,
+          List<Capability> paramsCapabilities) =>
+      Future.error(RpcException('repository not provided by probe target'));
+
+  @override
+  Future<DispatchResult> ping(PipelineTargetPingParamsReader params,
+      List<Capability> paramsCapabilities) async {
+    pingCount++;
+    lastPayload = params.payload;
+    final mb = MessageBuilder();
+    mb.initRoot(pipelineTargetPingResultsFactory).payload = params.payload;
+    return DispatchResult(bytes: mb.serialize());
+  }
+}
+
 // ─── Test framework ───────────────────────────────────────────────────────────
 
 int _pass = 0, _fail = 0, _skip = 0;
@@ -145,6 +174,7 @@ Future<void> _run() async {
   _s26_schemaEvolution();
   await _s27_concurrency(svc);
   await _s28_resourceManagement(svc, conn);
+  await _s29_rpcLevel1Compatibility(svc);
 
   // Shutdown
   try {
@@ -1533,4 +1563,58 @@ Future<void> _s28_resourceManagement(
 
   // Connection close is handled by the caller (_run) calling svc.shutdown().
   pass('connection close handled in main cleanup');
+}
+
+// ─── 29. RPC Level 1 Compatibility ────────────────────────────────────────────
+
+Future<void> _s29_rpcLevel1Compatibility(ComplexTestServiceClient svc) async {
+  section(29, 'RPC Level 1 Compatibility');
+
+  // receiverAnswer: pass an unresolved pipelined result capability back to the
+  // Rust server as a parameter. Rust resolves it from its answer table and
+  // calls ping() on it.
+  try {
+    final pending = svc.makePipelinePipeline((b) => b.depth = 1);
+    final r = await svc
+        .probePipelineTarget(
+          (b) => b.payload = Uint8List.fromList([29, 1]),
+          target: pending.target.capability,
+        )
+        .timeout(const Duration(seconds: 2));
+    checkEq('receiverAnswer parameter callable by Rust', r.payload?[0], 29);
+    await pending.result;
+  } catch (e) {
+    fail('receiverAnswer parameter callable by Rust', e.toString());
+  }
+
+  // senderPromise + Resolve: Rust returns a promised PipelineTarget. Dart calls
+  // the promise before it resolves; the call must complete after Resolve.
+  try {
+    final promised = await svc
+        .makePromisedPipeline((b) => b.delayMs = 50)
+        .timeout(const Duration(seconds: 2));
+    final r = await promised.target
+        .ping((b) => b.payload = Uint8List.fromList([29, 2]))
+        .timeout(const Duration(seconds: 2));
+    checkEq('senderPromise Resolve to Rust cap', r.payload?[1], 2);
+  } catch (e) {
+    fail('senderPromise Resolve to Rust cap', e.toString());
+  }
+
+  // senderPromise resolving back to a Dart-local capability requires the
+  // loopback Disembargo path to preserve E-order. If this support is missing,
+  // the returned target call will fail or time out.
+  try {
+    final local = _PipelineTargetImpl();
+    final echoed = await svc
+        .echoPipelineTargetLater((b) => b.delayMs = 50, target: local)
+        .timeout(const Duration(seconds: 2));
+    final r = await echoed.target
+        .ping((b) => b.payload = Uint8List.fromList([29, 3]))
+        .timeout(const Duration(seconds: 2));
+    checkEq('Disembargo loopback to Dart-local cap', r.payload?[1], 3);
+    checkEq('Dart-local target received one ping', local.pingCount, 1);
+  } catch (e) {
+    fail('Disembargo loopback to Dart-local cap', e.toString());
+  }
 }

@@ -368,6 +368,18 @@ Future<void> _waitForReleaseCount(
   throw TestFailure('expected $expectedCount Release messages');
 }
 
+Future<RpcMessage> _waitForMessageType(
+  List<Uint8List> captured,
+  RpcMessageType type,
+) async {
+  for (var i = 0; i < 20; i++) {
+    final messages = captured.map(parseRpcMessage).where((m) => m.type == type);
+    if (messages.isNotEmpty) return messages.last;
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+  throw TestFailure('no $type message captured');
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -514,6 +526,82 @@ void main() {
 
         await client.close();
         await serverConn.close();
+      },
+    );
+
+    test(
+      'pipelined capability parameter is encoded as receiverAnswer',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        final captured = <Uint8List>[];
+        final completeParent = Completer<void>();
+
+        final interceptSink =
+            StreamController<Uint8List>()
+              ..stream.listen((b) {
+                captured.add(b);
+                clientToServer.add(b);
+              });
+
+        TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: ChildPipelineServer(completer: completeParent),
+        );
+        final client = TwoPartyRpcConnection.client(
+          incoming: serverToClient.stream,
+          outgoing: interceptSink.sink,
+        );
+
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        await bootstrapCap.echo('warmup');
+
+        captured.clear();
+        final parent = bootstrapCap.cap.beginDispatch(
+          _echoInterfaceId,
+          _pipelineMethodId,
+          _buildEchoParams(''),
+        );
+        final pipelinedCap = parent.pipelineResult(0);
+        final paramCall = bootstrapCap.cap.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          _buildEchoParams('param'),
+          paramsCapabilities: [pipelinedCap],
+        );
+
+        final (parentCall, callWithCap) = await () async {
+          for (var i = 0; i < 20; i++) {
+            final calls =
+                captured
+                    .map(parseRpcMessage)
+                    .where((m) => m.type == RpcMessageType.call)
+                    .toList();
+            final parentCalls =
+                calls.where((m) => m.methodId == _pipelineMethodId).toList();
+            final capCalls =
+                calls.where((m) => m.capTableDescriptors.isNotEmpty).toList();
+            if (parentCalls.isNotEmpty && capCalls.isNotEmpty) {
+              return (parentCalls.single, capCalls.single);
+            }
+            await Future<void>.delayed(const Duration(milliseconds: 10));
+          }
+          throw TestFailure('no Call with capTable captured');
+        }();
+
+        expect(callWithCap.capTableDescriptors.single.disc, 4);
+        expect(
+          callWithCap.capTableDescriptors.single.questionId,
+          parentCall.questionId,
+        );
+        expect(callWithCap.capTableDescriptors.single.ptrIndex, 0);
+
+        completeParent.complete();
+        await parent.result;
+        await paramCall;
+        await client.close();
+        await interceptSink.close();
       },
     );
 
@@ -1046,6 +1134,48 @@ void main() {
       expect(msg.answerId, 1);
       expect(msg.isReturnResults, isTrue);
       expect(msg.capTableExportIds, [42]);
+      expect(msg.capTableEntries, const [(1, 42)]);
+    });
+
+    test('resolve cap round-trip', () {
+      final bytes = buildResolveCapMessage(
+        promiseId: 11,
+        capDisc: 2,
+        capId: 42,
+      );
+      final msg = parseRpcMessage(bytes);
+      expect(msg.type, RpcMessageType.resolve);
+      expect(msg.promiseId, 11);
+      expect(msg.isResolveCap, isTrue);
+      expect(msg.resolveCap, const (2, 42));
+    });
+
+    test('resolve exception round-trip', () {
+      final bytes = buildResolveExceptionMessage(
+        promiseId: 11,
+        reason: 'promise failed',
+      );
+      final msg = parseRpcMessage(bytes);
+      expect(msg.type, RpcMessageType.resolve);
+      expect(msg.promiseId, 11);
+      expect(msg.isResolveException, isTrue);
+      expect(msg.exceptionReason, 'promise failed');
+    });
+
+    test('disembargo senderLoopback round-trip', () {
+      final bytes = buildDisembargoMessage(
+        targetPromisedAnswerQid: 7,
+        targetPtrIndex: 1,
+        contextDisc: 0,
+        contextId: 123,
+      );
+      final msg = parseRpcMessage(bytes);
+      expect(msg.type, RpcMessageType.disembargo);
+      expect(msg.disembargoContextDisc, 0);
+      expect(msg.disembargoContextId, 123);
+      expect(msg.disembargoTargetIsPromisedAnswer, isTrue);
+      expect(msg.disembargoTargetPromisedAnswerQid, 7);
+      expect(msg.disembargoTargetPtrIndex, 1);
     });
 
     test('finish round-trip', () {
@@ -1108,6 +1238,26 @@ void main() {
       final msg = parseRpcMessage(bytes);
       expect(msg.paramsCapTable[0].$1, equals(1));
       expect(msg.paramsCapTable[0].$2, equals(7));
+    });
+
+    test('buildCallMessage with receiverAnswer entry encodes disc=4', () {
+      final mb = MessageBuilder();
+      mb.initRoot(_TextParamFactory());
+      final params = mb.serialize();
+
+      final bytes = buildCallMessage(
+        questionId: 1,
+        targetImportId: 0,
+        interfaceId: 0xABCD,
+        methodId: 0,
+        paramsBytes: params,
+        capTableDescriptors: const [RpcCapDescriptor.receiverAnswer(9, 2)],
+      );
+      final msg = parseRpcMessage(bytes);
+      expect(msg.capTableDescriptors, hasLength(1));
+      expect(msg.capTableDescriptors[0].disc, equals(4));
+      expect(msg.capTableDescriptors[0].questionId, equals(9));
+      expect(msg.capTableDescriptors[0].ptrIndex, equals(2));
     });
   });
 
@@ -1260,6 +1410,181 @@ void main() {
         );
 
         await serverInput.close();
+      },
+    );
+  });
+
+  group('TwoPartyRpcConnection — RPC Level 1 Resolve / Disembargo', () {
+    test(
+      'incoming Resolve(cap) is handled and releases unused descriptor',
+      () async {
+        final input = StreamController<Uint8List>();
+        final output = StreamController<Uint8List>();
+        final received = <RpcMessage>[];
+        output.stream.listen((bytes) => received.add(parseRpcMessage(bytes)));
+
+        final conn = TwoPartyRpcConnection.server(
+          incoming: input.stream,
+          outgoing: output.sink,
+          bootstrap: EchoServer(),
+        );
+
+        input.add(buildResolveCapMessage(promiseId: 9, capDisc: 1, capId: 42));
+        await Future<void>.delayed(Duration.zero);
+
+        expect(
+          received.where((m) => m.type == RpcMessageType.unimplemented),
+          isEmpty,
+        );
+        final releases =
+            received.where((m) => m.type == RpcMessageType.release).toList();
+        expect(releases, hasLength(1));
+        expect(releases.single.releaseId, 42);
+        expect(releases.single.referenceCount, 1);
+
+        await input.close();
+        await conn.done;
+      },
+    );
+
+    test(
+      'incoming Resolve(exception) is handled without Unimplemented',
+      () async {
+        final input = StreamController<Uint8List>();
+        final output = StreamController<Uint8List>();
+        final received = <RpcMessage>[];
+        output.stream.listen((bytes) => received.add(parseRpcMessage(bytes)));
+
+        final conn = TwoPartyRpcConnection.server(
+          incoming: input.stream,
+          outgoing: output.sink,
+          bootstrap: EchoServer(),
+        );
+
+        input.add(
+          buildResolveExceptionMessage(promiseId: 9, reason: 'promise failed'),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        expect(
+          received.where((m) => m.type == RpcMessageType.unimplemented),
+          isEmpty,
+        );
+
+        await input.close();
+        await conn.done;
+      },
+    );
+
+    test(
+      'incoming Disembargo(senderLoopback) is echoed as receiverLoopback',
+      () async {
+        final input = StreamController<Uint8List>();
+        final output = StreamController<Uint8List>();
+        final received = <RpcMessage>[];
+        output.stream.listen((bytes) => received.add(parseRpcMessage(bytes)));
+
+        final conn = TwoPartyRpcConnection.server(
+          incoming: input.stream,
+          outgoing: output.sink,
+          bootstrap: EchoServer(),
+        );
+
+        input.add(
+          buildDisembargoMessage(
+            targetImportId: 0,
+            contextDisc: 0,
+            contextId: 123,
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        final disembargo =
+            received.where((m) => m.type == RpcMessageType.disembargo).toList();
+        expect(disembargo, hasLength(1));
+        expect(disembargo.single.disembargoContextDisc, 1);
+        expect(disembargo.single.disembargoContextId, 123);
+        expect(disembargo.single.disembargoTargetImportId, 0);
+
+        await input.close();
+        await conn.done;
+      },
+    );
+
+    test(
+      'promise resolving to local capability waits for receiverLoopback',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        final captured = <Uint8List>[];
+
+        final interceptSink =
+            StreamController<Uint8List>()
+              ..stream.listen((b) {
+                captured.add(b);
+                clientToServer.add(b);
+              });
+
+        clientToServer.stream.listen((_) {});
+        final client = TwoPartyRpcConnection.client(
+          incoming: serverToClient.stream,
+          outgoing: interceptSink.sink,
+        );
+        final stub = client.bootstrap(EchoClientFactory());
+
+        // Resolve bootstrap to a senderPromise import.
+        serverToClient.add(
+          buildReturnResultsWithCapDescriptorsMessage(
+            answerId: 0,
+            resultsBytes: _buildEchoParams(''),
+            descriptors: const [RpcCapDescriptor.senderPromise(10)],
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        captured.clear();
+        final local = EchoServer();
+        final firstCall = stub.cap.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          _buildEchoParams('before'),
+          paramsCapabilities: [local],
+        );
+        firstCall.ignore();
+
+        final call = await _waitForMessageType(captured, RpcMessageType.call);
+        expect(call.targetImportId, 10);
+        expect(call.paramsCapTable, hasLength(1));
+        expect(call.paramsCapTable.single.$1, 1); // local cap exported
+
+        captured.clear();
+        serverToClient.add(
+          buildResolveCapMessage(promiseId: 10, capDisc: 3, capId: 1),
+        );
+        final disembargo = await _waitForMessageType(
+          captured,
+          RpcMessageType.disembargo,
+        );
+        expect(disembargo.disembargoContextDisc, 0);
+        expect(disembargo.disembargoTargetImportId, 10);
+
+        final afterCall = stub.echo('after');
+        var afterCompleted = false;
+        afterCall.then((_) => afterCompleted = true).ignore();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(afterCompleted, isFalse);
+
+        serverToClient.add(
+          buildDisembargoMessage(
+            targetImportId: 10,
+            contextDisc: 1,
+            contextId: disembargo.disembargoContextId,
+          ),
+        );
+        expect(await afterCall, 'echo: after');
+
+        await client.close();
+        await interceptSink.close();
       },
     );
   });

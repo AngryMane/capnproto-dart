@@ -20,8 +20,10 @@ const int _msgAbort = 1;
 const int _msgCall = 2;
 const int _msgReturn = 3;
 const int _msgFinish = 4;
+const int _msgResolve = 5;
 const int _msgRelease = 6;
 const int _msgBootstrap = 8;
+const int _msgDisembargo = 13;
 
 // ---------------------------------------------------------------------------
 // Struct layout constants (byte offsets from data section start)
@@ -95,6 +97,16 @@ const int _returnDisc = 6;
 const int _retResults = 0;
 const int _retException = 1;
 
+// Resolve (dw=1, pw=1)
+//   bytes 0-3: promiseId (UInt32, @0)
+//   bytes 4-5: union discriminant (UInt16, @1-@2 union disc)
+//              0=cap, 1=exception
+//   ptr 0: CapDescriptor or Exception
+const int _resolvePromiseId = 0;
+const int _resolveDisc = 4;
+const int _resolveCap = 0;
+const int _resolveException = 1;
+
 // Exception (dw=1, pw=2)
 //   bytes 0-1: type (UInt16, 0=failed)
 //   byte 2 bit 0: obsoleteIsCallersFault
@@ -114,6 +126,13 @@ const int _finishRelease = 32; // bit index = byte 4 * 8 = 32
 const int _releaseId = 0;
 const int _releaseRefCnt = 4;
 
+// Disembargo (dw=1, pw=1)
+//   bytes 0-3: context union data (EmbargoId / QuestionId)
+//   bytes 4-5: context union discriminant
+//   ptr 0: target (MessageTarget)
+const int _disembargoContextData = 0;
+const int _disembargoContextDisc = 4;
+
 // CapDescriptor (dw=1, pw=1)
 //   All-union struct → discriminant first, then union data:
 //   bytes 0-1: union discriminant (UInt16)
@@ -122,7 +141,11 @@ const int _releaseRefCnt = 4;
 //              4=receiverAnswer, 5=thirdPartyHosted
 const int _capDescDisc = 0;
 const int _capDescData = 4;
+const int _capDescNone = 0;
 const int _capDescSenderHosted = 1;
+const int _capDescSenderPromise = 2;
+const int _capDescReceiverHosted = 3;
+const int _capDescReceiverAnswer = 4;
 
 // ---------------------------------------------------------------------------
 // StructReader / StructBuilder subclasses (internal, rpc_proto only)
@@ -135,8 +158,11 @@ class _MsgReader extends StructReader {
       getStructFieldWith(0, _BootstrapReader.new);
   _CallReader? get asCall => getStructFieldWith(0, _CallReader.new);
   _ReturnReader? get asReturn => getStructFieldWith(0, _ReturnReader.new);
+  _ResolveReader? get asResolve => getStructFieldWith(0, _ResolveReader.new);
   _FinishReader? get asFinish => getStructFieldWith(0, _FinishReader.new);
   _ReleaseReader? get asRelease => getStructFieldWith(0, _ReleaseReader.new);
+  _DisembargoReader? get asDisembargo =>
+      getStructFieldWith(0, _DisembargoReader.new);
   _ExceptionReader? get asAbort => getStructFieldWith(0, _ExceptionReader.new);
 }
 
@@ -150,10 +176,14 @@ class _MsgBuilder extends StructBuilder {
   _CallBuilder initCall() => initStructFieldWith(0, _CallBuilder.new, 3, 3);
   _ReturnBuilder initReturn() =>
       initStructFieldWith(0, _ReturnBuilder.new, 2, 1);
+  _ResolveBuilder initResolve() =>
+      initStructFieldWith(0, _ResolveBuilder.new, 1, 1);
   _FinishBuilder initFinish() =>
       initStructFieldWith(0, _FinishBuilder.new, 1, 0);
   _ReleaseBuilder initRelease() =>
       initStructFieldWith(0, _ReleaseBuilder.new, 1, 0);
+  _DisembargoBuilder initDisembargo() =>
+      initStructFieldWith(0, _DisembargoBuilder.new, 1, 1);
   _ExceptionBuilder initAbort() =>
       initStructFieldWith(0, _ExceptionBuilder.new, 1, 2);
   // Embed the original message bytes as the 'unimplemented' payload (AnyPointer).
@@ -280,7 +310,10 @@ class _PayloadBuilder extends StructBuilder {
 class _CapDescReader extends StructReader {
   _CapDescReader(super.raw);
   int get disc => getUint16Field(_capDescDisc);
-  int get senderHostedId => getUint32Field(_capDescData);
+  int get id => getUint32Field(_capDescData);
+  int get senderHostedId => id;
+  _PromisedAnswerReader? get receiverAnswer =>
+      getStructFieldWith(0, _PromisedAnswerReader.new);
 }
 
 class _CapDescBuilder extends StructBuilder {
@@ -292,9 +325,22 @@ class _CapDescBuilder extends StructBuilder {
     setUint16Field(_capDescDisc, _capDescSenderHosted);
   }
 
+  void setSenderPromise(int exportId) {
+    setUint32Field(_capDescData, exportId);
+    setUint16Field(_capDescDisc, _capDescSenderPromise);
+  }
+
   void setReceiverHosted(int importId) {
     setUint32Field(_capDescData, importId);
-    setUint16Field(_capDescDisc, 3); // receiverHosted
+    setUint16Field(_capDescDisc, _capDescReceiverHosted);
+  }
+
+  void setReceiverAnswer(int questionId, int ptrIndex) {
+    setUint16Field(_capDescDisc, _capDescReceiverAnswer);
+    final pa = initStructFieldWith(0, _PromisedAnswerBuilder.new, 1, 1);
+    pa.setQuestionId(questionId);
+    final transform = pa.initTransform(1);
+    transform[0].setGetPointerField(ptrIndex);
   }
 }
 
@@ -316,6 +362,28 @@ class _ReturnBuilder extends StructBuilder {
   void setDiscException() => setUint16Field(_returnDisc, _retException);
   _PayloadBuilder initResults() =>
       initStructFieldWith(0, _PayloadBuilder.new, 0, 2);
+  _ExceptionBuilder initException() =>
+      initStructFieldWith(0, _ExceptionBuilder.new, 1, 2);
+}
+
+class _ResolveReader extends StructReader {
+  _ResolveReader(super.raw);
+  int get promiseId => getUint32Field(_resolvePromiseId);
+  int get disc => getUint16Field(_resolveDisc);
+  _CapDescReader? get cap => getStructFieldWith(0, _CapDescReader.new);
+  _ExceptionReader? get exception =>
+      getStructFieldWith(0, _ExceptionReader.new);
+}
+
+class _ResolveBuilder extends StructBuilder {
+  _ResolveBuilder(super.raw);
+  @override
+  StructReader asReader() => throw UnsupportedError('internal');
+  void setPromiseId(int v) => setUint32Field(_resolvePromiseId, v);
+  void setDiscCap() => setUint16Field(_resolveDisc, _resolveCap);
+  void setDiscException() => setUint16Field(_resolveDisc, _resolveException);
+  _CapDescBuilder initCap() =>
+      initStructFieldWith(0, _CapDescBuilder.new, 1, 1);
   _ExceptionBuilder initException() =>
       initStructFieldWith(0, _ExceptionBuilder.new, 1, 2);
 }
@@ -348,6 +416,27 @@ class _ReleaseBuilder extends StructBuilder {
   StructReader asReader() => throw UnsupportedError('internal');
   void setId(int v) => setUint32Field(_releaseId, v);
   void setReferenceCount(int v) => setUint32Field(_releaseRefCnt, v);
+}
+
+class _DisembargoReader extends StructReader {
+  _DisembargoReader(super.raw);
+  int get contextDisc => getUint16Field(_disembargoContextDisc);
+  int get contextId => getUint32Field(_disembargoContextData);
+  _MessageTargetReader? get target =>
+      getStructFieldWith(0, _MessageTargetReader.new);
+}
+
+class _DisembargoBuilder extends StructBuilder {
+  _DisembargoBuilder(super.raw);
+  @override
+  StructReader asReader() => throw UnsupportedError('internal');
+  void setContext(int disc, int id) {
+    setUint32Field(_disembargoContextData, id);
+    setUint16Field(_disembargoContextDisc, disc);
+  }
+
+  _MessageTargetBuilder initTarget() =>
+      initStructFieldWith(0, _MessageTargetBuilder.new, 1, 1);
 }
 
 class _ExceptionReader extends StructReader {
@@ -390,11 +479,52 @@ enum RpcMessageType {
   bootstrap,
   call,
   return_,
+  resolve,
   finish,
   release,
+  disembargo,
   abort,
   unimplemented, // disc=0: peer could not handle a message we sent
   other,
+}
+
+/// A decoded CapDescriptor from an RPC Payload capTable.
+///
+/// For hosted descriptors [id] carries the ExportId / ImportId. For
+/// [RpcCapDescriptor.receiverAnswer], [questionId] and [ptrIndex] identify the
+/// promised answer pipeline path.
+final class RpcCapDescriptor {
+  final int disc;
+  final int id;
+  final int questionId;
+  final int ptrIndex;
+
+  const RpcCapDescriptor._({
+    required this.disc,
+    this.id = 0,
+    this.questionId = 0,
+    this.ptrIndex = 0,
+  });
+
+  const RpcCapDescriptor.none() : this._(disc: _capDescNone);
+
+  const RpcCapDescriptor.senderHosted(int exportId)
+    : this._(disc: _capDescSenderHosted, id: exportId);
+
+  const RpcCapDescriptor.senderPromise(int exportId)
+    : this._(disc: _capDescSenderPromise, id: exportId);
+
+  const RpcCapDescriptor.receiverHosted(int importId)
+    : this._(disc: _capDescReceiverHosted, id: importId);
+
+  const RpcCapDescriptor.receiverAnswer(int questionId, int ptrIndex)
+    : this._(
+        disc: _capDescReceiverAnswer,
+        questionId: questionId,
+        ptrIndex: ptrIndex,
+      );
+
+  (int, int) get legacyEntry => (disc, id);
 }
 
 /// Decoded RPC message.
@@ -425,6 +555,25 @@ final class RpcMessage {
   final String? exceptionReason;
   // senderHosted export IDs from the return payload's capTable, in order.
   final List<int> capTableExportIds;
+  // Raw (disc, id) descriptors from the return payload's capTable, in order.
+  // disc: 0=none, 1=senderHosted, 2=senderPromise, 3=receiverHosted.
+  final List<(int, int)> capTableEntries;
+  final List<RpcCapDescriptor> capTableDescriptors;
+
+  // resolve
+  final int promiseId;
+  final bool isResolveCap;
+  final bool isResolveException;
+  final (int, int)? resolveCap;
+  final RpcCapDescriptor? resolveCapDescriptor;
+
+  // disembargo
+  final int disembargoContextDisc;
+  final int disembargoContextId;
+  final int disembargoTargetImportId;
+  final bool disembargoTargetIsPromisedAnswer;
+  final int disembargoTargetPromisedAnswerQid;
+  final int disembargoTargetPtrIndex;
 
   // finish
   final bool releaseResultCaps;
@@ -450,6 +599,19 @@ final class RpcMessage {
     this.resultsBytes,
     this.exceptionReason,
     this.capTableExportIds = const [],
+    this.capTableEntries = const [],
+    this.capTableDescriptors = const [],
+    this.promiseId = 0,
+    this.isResolveCap = false,
+    this.isResolveException = false,
+    this.resolveCap,
+    this.resolveCapDescriptor,
+    this.disembargoContextDisc = 0,
+    this.disembargoContextId = 0,
+    this.disembargoTargetImportId = 0,
+    this.disembargoTargetIsPromisedAnswer = false,
+    this.disembargoTargetPromisedAnswerQid = 0,
+    this.disembargoTargetPtrIndex = 0,
     this.releaseResultCaps = true,
     this.releaseId = 0,
     this.referenceCount = 0,
@@ -488,6 +650,7 @@ Uint8List buildCallMessage({
   required int methodId,
   required Uint8List paramsBytes,
   List<(int, int)> capTableEntries = const [],
+  List<RpcCapDescriptor>? capTableDescriptors,
 }) {
   final mb = MessageBuilder();
   final msg = mb.initRoot(_msgFactory);
@@ -507,15 +670,15 @@ Uint8List buildCallMessage({
   }
   final params = call.initParams();
   params.setContentBytes(paramsBytes);
-  if (capTableEntries.isNotEmpty) {
-    final capTable = params.initCapTable(capTableEntries.length);
-    for (int i = 0; i < capTableEntries.length; i++) {
-      final (disc, id) = capTableEntries[i];
-      if (disc == 3) {
-        capTable[i].setReceiverHosted(id);
-      } else {
-        capTable[i].setSenderHosted(id);
-      }
+  final descriptors =
+      capTableDescriptors ??
+      capTableEntries
+          .map((entry) => _legacyEntryToCapDescriptor(entry.$1, entry.$2))
+          .toList(growable: false);
+  if (descriptors.isNotEmpty) {
+    final capTable = params.initCapTable(descriptors.length);
+    for (int i = 0; i < descriptors.length; i++) {
+      _writeCapDescriptor(capTable[i], descriptors[i]);
     }
   }
   return mb.serialize();
@@ -543,6 +706,21 @@ Uint8List buildReturnResultsWithCapsMessage({
   required Uint8List resultsBytes,
   required List<int> exportIds,
 }) {
+  return buildReturnResultsWithCapDescriptorsMessage(
+    answerId: answerId,
+    resultsBytes: resultsBytes,
+    descriptors: exportIds
+        .map(RpcCapDescriptor.senderHosted)
+        .toList(growable: false),
+  );
+}
+
+/// Serializes a Return-results message with raw capTable descriptors.
+Uint8List buildReturnResultsWithCapDescriptorsMessage({
+  required int answerId,
+  required Uint8List resultsBytes,
+  required List<RpcCapDescriptor> descriptors,
+}) {
   final mb = MessageBuilder();
   final msg = mb.initRoot(_msgFactory);
   msg.setDisc(_msgReturn);
@@ -551,9 +729,72 @@ Uint8List buildReturnResultsWithCapsMessage({
   ret.setDiscResults();
   final payload = ret.initResults();
   payload.setContentBytes(resultsBytes);
-  final capTable = payload.initCapTable(exportIds.length);
-  for (int i = 0; i < exportIds.length; i++) {
-    capTable[i].setSenderHosted(exportIds[i]);
+  final capTable = payload.initCapTable(descriptors.length);
+  for (int i = 0; i < descriptors.length; i++) {
+    _writeCapDescriptor(capTable[i], descriptors[i]);
+  }
+  return mb.serialize();
+}
+
+/// Serializes a Resolve message resolving [promiseId] to [capDisc]/[capId].
+Uint8List buildResolveCapMessage({
+  required int promiseId,
+  required int capDisc,
+  required int capId,
+}) {
+  final mb = MessageBuilder();
+  final msg = mb.initRoot(_msgFactory);
+  msg.setDisc(_msgResolve);
+  final resolve = msg.initResolve();
+  resolve.setPromiseId(promiseId);
+  resolve.setDiscCap();
+  _writeCapDescriptor(
+    resolve.initCap(),
+    _legacyEntryToCapDescriptor(capDisc, capId),
+  );
+  return mb.serialize();
+}
+
+/// Serializes a Resolve message resolving [promiseId] to an exception.
+Uint8List buildResolveExceptionMessage({
+  required int promiseId,
+  required String reason,
+}) {
+  final mb = MessageBuilder();
+  final msg = mb.initRoot(_msgFactory);
+  msg.setDisc(_msgResolve);
+  final resolve = msg.initResolve();
+  resolve.setPromiseId(promiseId);
+  resolve.setDiscException();
+  final exc = resolve.initException();
+  exc.setType(0);
+  exc.setReason(reason);
+  return mb.serialize();
+}
+
+/// Serializes a Disembargo message.
+///
+/// [contextDisc] is one of the rpc.capnp context union discriminants:
+/// senderLoopback=0, receiverLoopback=1, accept=2, provide=3.
+Uint8List buildDisembargoMessage({
+  int targetImportId = 0,
+  int? targetPromisedAnswerQid,
+  int targetPtrIndex = 0,
+  required int contextDisc,
+  required int contextId,
+}) {
+  final mb = MessageBuilder();
+  final msg = mb.initRoot(_msgFactory);
+  msg.setDisc(_msgDisembargo);
+  final disembargo = msg.initDisembargo();
+  disembargo.setContext(contextDisc, contextId);
+  if (targetPromisedAnswerQid != null) {
+    disembargo.initTarget().setPromisedAnswer(
+      targetPromisedAnswerQid,
+      targetPtrIndex,
+    );
+  } else {
+    disembargo.initTarget().setImportedCap(targetImportId);
   }
   return mb.serialize();
 }
@@ -640,6 +881,54 @@ Uint8List buildAbortMessage(String reason) {
   return mb.serialize();
 }
 
+void _writeCapDescriptor(_CapDescBuilder builder, RpcCapDescriptor descriptor) {
+  switch (descriptor.disc) {
+    case _capDescSenderPromise:
+      builder.setSenderPromise(descriptor.id);
+    case _capDescReceiverHosted:
+      builder.setReceiverHosted(descriptor.id);
+    case _capDescReceiverAnswer:
+      builder.setReceiverAnswer(descriptor.questionId, descriptor.ptrIndex);
+    case _capDescSenderHosted:
+      builder.setSenderHosted(descriptor.id);
+    default:
+      // The current builder only needs to construct usable Level 1
+      // descriptors. Unknown descriptors are encoded as none to avoid
+      // accidentally manufacturing references with the wrong semantics.
+      builder.setUint16Field(_capDescDisc, _capDescNone);
+  }
+}
+
+RpcCapDescriptor _legacyEntryToCapDescriptor(int disc, int id) {
+  switch (disc) {
+    case _capDescSenderHosted:
+      return RpcCapDescriptor.senderHosted(id);
+    case _capDescSenderPromise:
+      return RpcCapDescriptor.senderPromise(id);
+    case _capDescReceiverHosted:
+      return RpcCapDescriptor.receiverHosted(id);
+    default:
+      return const RpcCapDescriptor.none();
+  }
+}
+
+RpcCapDescriptor _readCapDescriptor(_CapDescReader entry) {
+  if (entry.disc == _capDescReceiverAnswer) {
+    final promisedAnswer = entry.receiverAnswer;
+    int ptrIndex = 0;
+    final transform = promisedAnswer?.transform;
+    if (transform != null && transform.isNotEmpty) {
+      final op = transform[0];
+      if (op.disc == 1) ptrIndex = op.ptrIndex;
+    }
+    return RpcCapDescriptor.receiverAnswer(
+      promisedAnswer?.questionId ?? 0,
+      ptrIndex,
+    );
+  }
+  return _legacyEntryToCapDescriptor(entry.disc, entry.id);
+}
+
 // ---------------------------------------------------------------------------
 // Public decode
 // ---------------------------------------------------------------------------
@@ -665,10 +954,13 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
       final params = call?.params;
       final callCapTable = params?.capTable;
       final capTablePairs = <(int, int)>[];
+      final capTableDescriptors = <RpcCapDescriptor>[];
       if (callCapTable != null) {
         for (int i = 0; i < callCapTable.length; i++) {
           final entry = callCapTable[i];
-          capTablePairs.add((entry.disc, entry.senderHostedId));
+          final descriptor = _readCapDescriptor(entry);
+          capTablePairs.add(descriptor.legacyEntry);
+          capTableDescriptors.add(descriptor);
         }
       }
       final isPA = (target?.disc ?? 0) == _targetPromisedAnswer;
@@ -693,6 +985,7 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
         targetPtrIndex: paPtrIndex,
         paramsBytes: params?.contentBytes,
         paramsCapTable: capTablePairs,
+        capTableDescriptors: capTableDescriptors,
       );
 
     case _msgReturn:
@@ -700,14 +993,19 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
       final retDisc = ret?.disc ?? 0;
       if (retDisc == _retResults) {
         final payload = ret?.results;
-        // Collect all senderHosted export IDs from the capTable, in order.
         final capTable = payload?.capTable;
         final exportIds = <int>[];
+        final capTablePairs = <(int, int)>[];
+        final capTableDescriptors = <RpcCapDescriptor>[];
         if (capTable != null) {
           for (int i = 0; i < capTable.length; i++) {
             final entry = capTable[i];
-            if (entry.disc == _capDescSenderHosted) {
-              exportIds.add(entry.senderHostedId);
+            final descriptor = _readCapDescriptor(entry);
+            capTablePairs.add(descriptor.legacyEntry);
+            capTableDescriptors.add(descriptor);
+            if (descriptor.disc == _capDescSenderHosted ||
+                descriptor.disc == _capDescSenderPromise) {
+              exportIds.add(descriptor.id);
             }
           }
         }
@@ -717,6 +1015,8 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
           isReturnResults: true,
           resultsBytes: payload?.contentBytes,
           capTableExportIds: exportIds,
+          capTableEntries: capTablePairs,
+          capTableDescriptors: capTableDescriptors,
         );
       } else if (retDisc == _retException) {
         final exc = ret?.exception;
@@ -733,6 +1033,28 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
         );
       }
 
+    case _msgResolve:
+      final resolve = msg.asResolve;
+      final resolveDisc = resolve?.disc ?? _resolveCap;
+      if (resolveDisc == _resolveException) {
+        return RpcMessage._(
+          type: RpcMessageType.resolve,
+          promiseId: resolve?.promiseId ?? 0,
+          isResolveException: true,
+          exceptionReason:
+              resolve?.exception?.reason ?? 'promise resolved to exception',
+        );
+      }
+      final cap = resolve?.cap;
+      final descriptor = cap == null ? null : _readCapDescriptor(cap);
+      return RpcMessage._(
+        type: RpcMessageType.resolve,
+        promiseId: resolve?.promiseId ?? 0,
+        isResolveCap: true,
+        resolveCap: descriptor?.legacyEntry,
+        resolveCapDescriptor: descriptor,
+      );
+
     case _msgFinish:
       final finish = msg.asFinish;
       return RpcMessage._(
@@ -747,6 +1069,30 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
         type: RpcMessageType.release,
         releaseId: rel?.id ?? 0,
         referenceCount: rel?.referenceCount ?? 0,
+      );
+
+    case _msgDisembargo:
+      final disembargo = msg.asDisembargo;
+      final target = disembargo?.target;
+      final isPA = (target?.disc ?? 0) == _targetPromisedAnswer;
+      int paQid = 0, paPtrIndex = 0;
+      if (isPA) {
+        final pa = target?.promisedAnswer;
+        paQid = pa?.questionId ?? 0;
+        final transform = pa?.transform;
+        if (transform != null && transform.isNotEmpty) {
+          final op = transform[0];
+          if (op.disc == 1) paPtrIndex = op.ptrIndex;
+        }
+      }
+      return RpcMessage._(
+        type: RpcMessageType.disembargo,
+        disembargoContextDisc: disembargo?.contextDisc ?? 0,
+        disembargoContextId: disembargo?.contextId ?? 0,
+        disembargoTargetImportId: isPA ? 0 : (target?.importedCap ?? 0),
+        disembargoTargetIsPromisedAnswer: isPA,
+        disembargoTargetPromisedAnswerQid: paQid,
+        disembargoTargetPtrIndex: paPtrIndex,
       );
 
     case _msgAbort:

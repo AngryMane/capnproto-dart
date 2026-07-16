@@ -460,4 +460,24 @@ interface ComplexTestService $testTag("rpc-root") {
   ) -> ();
 
   shutdown @14 () -> ();
+
+  probePipelineTarget @15 (
+    target :PipelineTarget,
+    payload :Data
+  ) -> (
+    payload :Data
+  );
+
+  makePromisedPipeline @16 (
+    delayMs :UInt32
+  ) -> (
+    target :PipelineTarget
+  );
+
+  echoPipelineTargetLater @17 (
+    target :PipelineTarget,
+    delayMs :UInt32
+  ) -> (
+    target :PipelineTarget
+  );
 }
