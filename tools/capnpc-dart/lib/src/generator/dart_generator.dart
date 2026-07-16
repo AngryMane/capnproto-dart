@@ -129,13 +129,40 @@ void _writeInterface(
   final name = _dartClassName(node.displayName);
 
   // Collect all methods including inherited ones (depth-first from ancestors).
-  final allMethods =
-      <({SchemaNode ifaceNode, SchemaMethod method})>[];
-  _collectAllMethods(node, body, nodeMap, allMethods, {});
+  final rawMethods = <({SchemaNode ifaceNode, SchemaMethod method})>[];
+  _collectAllMethods(node, body, nodeMap, rawMethods, {});
+
+  // Detect name conflicts: a method name is conflicted when it appears in 2+
+  // *different* interface nodes.  Same-interface names are impossible (Cap'n
+  // Proto schemas forbid duplicate method names per interface).
+  final nameToIfaceIds = <String, Set<int>>{};
+  for (final m in rawMethods) {
+    (nameToIfaceIds[_camel(m.method.name)] ??= {}).add(m.ifaceNode.id);
+  }
+  final conflictedNames = {
+    for (final e in nameToIfaceIds.entries)
+      if (e.value.length > 1) e.key,
+  };
+
+  // Resolve the Dart-level method name (prefixed when there is a conflict).
+  String resolveDartName(SchemaNode ifaceNode, SchemaMethod method) {
+    final camel = _camel(method.name);
+    if (!conflictedNames.contains(camel)) return camel;
+    final shortIface = _dartClassName(ifaceNode.displayName);
+    return '${_lcfirst(shortIface)}${_ucfirst(camel)}';
+  }
+
+  final allMethods = rawMethods
+      .map((m) => (
+            ifaceNode: m.ifaceNode,
+            method: m.method,
+            dartName: resolveDartName(m.ifaceNode, m.method),
+          ))
+      .toList();
 
   // ---- Pipeline classes (one per method whose result has interface fields) ----
   for (final m in allMethods) {
-    _writeResultsPipeline(sb, name, m.method, nodeMap);
+    _writeResultsPipeline(sb, name, m.method, nodeMap, m.dartName);
   }
 
   // ---- Client stub ----
@@ -146,7 +173,7 @@ void _writeInterface(
   sb.writeln('  ${name}Client(this._cap);');
 
   for (final m in allMethods) {
-    _writeClientMethod(sb, name, m.ifaceNode, m.method, nodeMap);
+    _writeClientMethod(sb, name, m.ifaceNode, m.method, nodeMap, m.dartName);
   }
 
   sb.writeln();
@@ -199,8 +226,9 @@ void _writeClientMethod(
   SchemaNode ifaceNode,
   SchemaMethod method,
   Map<int, SchemaNode> nodeMap,
+  String dartName,
 ) {
-  final methodName = _camel(method.name);
+  final methodName = dartName;
   final paramsNode = nodeMap[method.paramStructTypeId];
   final resultsNode = nodeMap[method.resultStructTypeId];
   final paramsName = _dartClassName(paramsNode?.displayName ?? 'Unknown');
@@ -298,7 +326,7 @@ bool _isVoidResultStruct(SchemaNode? resultsNode) {
 void _writeServerStub(
   StringBuffer sb,
   SchemaNode node,
-  List<({SchemaNode ifaceNode, SchemaMethod method})> allMethods,
+  List<({SchemaNode ifaceNode, SchemaMethod method, String dartName})> allMethods,
   Map<int, SchemaNode> nodeMap,
 ) {
   final name = _dartClassName(node.displayName);
@@ -309,7 +337,7 @@ void _writeServerStub(
     final method = m.method;
     final paramsNode = nodeMap[method.paramStructTypeId];
     final resultsNode = nodeMap[method.resultStructTypeId];
-    final methodName = _camel(method.name);
+    final methodName = m.dartName;
     final paramsName = _dartClassName(paramsNode?.displayName ?? 'Unknown');
     final isVoid = _isVoidResultStruct(resultsNode);
 
@@ -333,7 +361,7 @@ void _writeServerStub(
   if (allMethods.isNotEmpty) {
     // Group by defining interface ID.
     final byIface =
-        <int, List<({SchemaNode ifaceNode, SchemaMethod method})>>{};
+        <int, List<({SchemaNode ifaceNode, SchemaMethod method, String dartName})>>{};
     for (final m in allMethods) {
       (byIface[m.ifaceNode.id] ??= []).add(m);
     }
@@ -345,7 +373,7 @@ void _writeServerStub(
       for (final m in entry.value) {
         final paramsNode = nodeMap[m.method.paramStructTypeId];
         final resultsNode = nodeMap[m.method.resultStructTypeId];
-        final methodName = _camel(m.method.name);
+        final methodName = m.dartName;
         final paramsName =
             _dartClassName(paramsNode?.displayName ?? 'Unknown');
         final isVoid = _isVoidResultStruct(resultsNode);
@@ -406,12 +434,13 @@ void _writeResultsPipeline(
   String ifaceName,
   SchemaMethod method,
   Map<int, SchemaNode> nodeMap,
+  String dartName,
 ) {
   final resultsNode = nodeMap[method.resultStructTypeId];
   final capResults = _collectCapResults(resultsNode);
   if (capResults.isEmpty) return;
 
-  final methodName = _camel(method.name);
+  final methodName = dartName;
   final resultsName = _dartClassName(resultsNode?.displayName ?? 'Unknown');
   final pipelineName = '${ifaceName}${_ucfirst(methodName)}Pipeline';
 

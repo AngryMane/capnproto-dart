@@ -660,6 +660,134 @@ void main() {
     });
   });
 
+  group('generateDartFile — inherited method name collisions (GEN-008)', () {
+    // Left and Right each define process(); Both extends both.
+    const leftId = 0xaa01;
+    const rightId = 0xbb02;
+    const bothId = 0xcc03;
+    const leftParamsId = 40;
+    const leftResultsId = 41;
+    const rightParamsId = 42;
+    const rightResultsId = 43;
+    const bothParamsId = 44;
+    const bothResultsId = 45;
+
+    late String src;
+
+    setUp(() {
+      final leftParams = structNode(leftParamsId, 'LeftProcessParams', 1, 0, [
+        dataField('x', 0, 0, const Int32Type()),
+      ]);
+      final leftResults =
+          structNode(leftResultsId, 'LeftProcessResults', 1, 0, [
+        dataField('r', 0, 0, const Int32Type()),
+      ]);
+      final rightParams =
+          structNode(rightParamsId, 'RightProcessParams', 0, 1, [
+        ptrField('x', 0, 0, const TextType()),
+      ]);
+      final rightResults =
+          structNode(rightResultsId, 'RightProcessResults', 0, 1, [
+        ptrField('r', 0, 0, const TextType()),
+      ]);
+      final bothParams = structNode(bothParamsId, 'BothFooParams', 0, 0, []);
+      final bothResults = structNode(bothResultsId, 'BothFooResults', 0, 0, []);
+      final leftIface = interfaceNode(leftId, 'Left', [
+        SchemaMethod(
+          name: 'process',
+          ordinal: 0,
+          paramStructTypeId: leftParamsId,
+          resultStructTypeId: leftResultsId,
+        ),
+      ]);
+      final rightIface = interfaceNode(rightId, 'Right', [
+        SchemaMethod(
+          name: 'process',
+          ordinal: 0,
+          paramStructTypeId: rightParamsId,
+          resultStructTypeId: rightResultsId,
+        ),
+      ]);
+      // Both extends Left and Right, and adds its own non-conflicting method.
+      final bothIface = SchemaNode(
+        id: bothId,
+        displayName: 'test.capnp:Both',
+        displayNamePrefixLength: 'test.capnp:'.length,
+        scopeId: 1,
+        nestedNodes: const [],
+        body: InterfaceBody(
+          methods: [
+            SchemaMethod(
+              name: 'foo',
+              ordinal: 0,
+              paramStructTypeId: bothParamsId,
+              resultStructTypeId: bothResultsId,
+            ),
+          ],
+          superclassIds: [leftId, rightId],
+        ),
+      );
+      final file = fileNode(1, [
+        SchemaNestedNode(name: 'Left', id: leftId),
+        SchemaNestedNode(name: 'Right', id: rightId),
+        SchemaNestedNode(name: 'Both', id: bothId),
+      ]);
+      src = generateDartFile(file, [
+        file,
+        leftParams,
+        leftResults,
+        rightParams,
+        rightResults,
+        bothParams,
+        bothResults,
+        leftIface,
+        rightIface,
+        bothIface,
+      ]);
+    });
+
+    // Helper: extract the content of the BothClient or BothServer class block.
+    String bothClientSection() {
+      final start = src.indexOf('class BothClient');
+      final end = src.indexOf('\nclass BothClientFactory', start);
+      return src.substring(start, end);
+    }
+
+    String bothServerSection() {
+      final start = src.indexOf('abstract class BothServer');
+      return src.substring(start);
+    }
+
+    test('conflicting method gets interface-name prefix in BothClient', () {
+      final section = bothClientSection();
+      // The prefixed names must appear in BothClient.
+      expect(section, contains('leftProcess('));
+      expect(section, contains('rightProcess('));
+      // The bare 'process' method must NOT appear in BothClient itself.
+      expect(section, isNot(contains('Future<LeftProcessResultsReader> process(')));
+      expect(section, isNot(contains('Future<RightProcessResultsReader> process(')));
+    });
+
+    test('non-conflicting own method keeps its original name in BothClient', () {
+      expect(bothClientSection(), contains('foo('));
+    });
+
+    test('conflicting method gets prefix in BothServer abstract declaration', () {
+      expect(bothServerSection(), contains('leftProcess('));
+      expect(bothServerSection(), contains('rightProcess('));
+    });
+
+    test('server dispatch still calls the prefixed abstract method', () {
+      expect(bothServerSection(), contains('await leftProcess(p, paramsCapabilities)'));
+      expect(bothServerSection(), contains('await rightProcess(p, paramsCapabilities)'));
+    });
+
+    test('non-conflicting method in BothServer uses original name', () {
+      // foo has empty results struct → isVoid=true → Future<void> foo(...)
+      expect(bothServerSection(), contains('foo('));
+    });
+  });
+
   group('generateDartFile — unsupported list element types (GEN-004)', () {
     late SchemaNode enumNode10;
     late SchemaNode strNode20;
