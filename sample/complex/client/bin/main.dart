@@ -2193,10 +2193,14 @@ Future<void> _s28_resourceManagement(
   pass('connection close handled in main cleanup');
 }
 
-// ─── 29. RPC Level 1 Compatibility ────────────────────────────────────────────
+// ─── 29. RPC Level 1 Compatibility (two-party subset) ────────────────────────
+//
+// These tests exercise two-party Resolve/Disembargo flows that the Dart runtime
+// handles when the Rust peer sends them. Sending Resolve/Disembargo from the
+// Dart vat and full three-party handoff are NOT implemented.
 
 Future<void> _s29_rpcLevel1Compatibility(ComplexTestServiceClient svc) async {
-  section(29, 'RPC Level 1 Compatibility');
+  section(29, 'RPC Level 1 Compatibility (two-party subset)');
 
   // receiverAnswer: pass an unresolved pipelined result capability back to the
   // Rust server as a parameter. Rust resolves it from its answer table and

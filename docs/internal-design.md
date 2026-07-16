@@ -181,7 +181,7 @@ Each RPC connection maintains four tables that track the lifecycle of capabiliti
 - **ExportTable**: local capabilities sent to the remote peer (ref-counted)
 - **ImportTable**: remote capabilities received from the peer (ref-counted)
 
-This model follows the Cap'n Proto Level 1 RPC specification directly.
+This model follows the Cap'n Proto Level 1 RPC specification (two-party subset; Resolve/Disembargo sending is not implemented).
 
 #### Promise Pipelining via Dart Futures
 When a client sends a `Call` whose return value is a `Capability`,

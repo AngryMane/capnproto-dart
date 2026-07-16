@@ -165,8 +165,12 @@ class MessageStream {
 
 ### RPC (`capnproto_dart_rpc`)
 
-Implements **Cap'n Proto RPC Level 1**: object-capability references and promise pipelining.
-Level 2 and above (persistent capabilities, three-party handoff) are out of scope for the initial implementation.
+Implements a **Cap'n Proto RPC Level 1 subset**: object-capability references and promise pipelining
+in two-party connections. The following Level 1 features are **not** implemented:
+- `Resolve` and `Disembargo` messages sent by the Dart vat (only received/processed when sent by a peer)
+- Three-party handoff (required for full Level 1 compliance)
+
+Level 2 and above (persistent capabilities) are out of scope.
 
 #### Core RPC types
 
