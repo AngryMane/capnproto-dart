@@ -27,7 +27,26 @@ export 'src/layout/list_reader.dart'
         dataListFromRaw,
         enumListFromRaw,
         structListFromRaw;
-export 'src/layout/list_builder.dart' show ListBuilder;
+export 'src/layout/list_builder.dart'
+    show
+        ListBuilder,
+        NestedListBuilder,
+        voidListBuilderFromRaw,
+        boolListBuilderFromRaw,
+        int8ListBuilderFromRaw,
+        int16ListBuilderFromRaw,
+        int32ListBuilderFromRaw,
+        int64ListBuilderFromRaw,
+        uint8ListBuilderFromRaw,
+        uint16ListBuilderFromRaw,
+        uint32ListBuilderFromRaw,
+        uint64ListBuilderFromRaw,
+        float32ListBuilderFromRaw,
+        float64ListBuilderFromRaw,
+        textListBuilderFromRaw,
+        dataListBuilderFromRaw,
+        enumListBuilderFromRaw,
+        structListBuilderFromRaw;
 export 'src/message/message_reader_options.dart';
 export 'src/message/message_reader.dart';
 export 'src/message/message_builder.dart';
@@ -38,7 +57,7 @@ export 'src/stream/message_stream.dart';
 // ---------------------------------------------------------------------------
 
 export 'src/arena/arena_reader.dart' show RawStructReader, RawListReader;
-export 'src/wire/pointer.dart' show WirePointer, CapabilityPointer;
+export 'src/wire/pointer.dart' show WirePointer, CapabilityPointer, ListElementSize;
 export 'src/arena/arena_builder.dart' show RawStructBuilder;
 export 'src/layout/struct_factory.dart';
 export 'src/layout/struct_reader.dart';

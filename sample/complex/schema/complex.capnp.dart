@@ -697,8 +697,8 @@ final class MatrixBuilder extends StructBuilder {
   @override
   MatrixReader asReader() => MatrixReader(rawToReader());
 
-  dynamic initRows(int length) {
-    return /* unsupported */;
+  NestedListBuilder<ListBuilder<double>> initRows(int length) {
+    return initNestedListField(0, length, float64ListBuilderFromRaw, ListElementSize.eightBytes);
   }
 }
 
@@ -822,8 +822,8 @@ final class AllListsBuilder extends StructBuilder {
     return initStructListFieldWith(15, length, (r) => PersonBuilder(r), 1, 10);
   }
 
-  dynamic initMatrices(int length) {
-    return /* unsupported */;
+  NestedListBuilder<NestedListBuilder<ListBuilder<int>>> initMatrices(int length) {
+    return initBiNestedListField(16, length, int32ListBuilderFromRaw, ListElementSize.fourBytes);
   }
 }
 

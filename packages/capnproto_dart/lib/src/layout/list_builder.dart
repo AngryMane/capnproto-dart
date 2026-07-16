@@ -240,3 +240,102 @@ class StructListBuilder<B> extends ListBuilder<B> {
         'use builder[i] to get a struct element builder and modify it in place');
   }
 }
+
+// ---------------------------------------------------------------------------
+// NestedListBuilder — builder for List(List(T)) and List(List(List(T)))
+// ---------------------------------------------------------------------------
+
+/// Builder for nested list fields (`List(List(T))`).
+///
+/// Returned by [StructBuilder.initNestedListField]. Call [initAt] to allocate
+/// the inner list at each outer slot.
+///
+/// For three-level nesting (`List(List(List(T)))`), [initAt] returns another
+/// [NestedListBuilder]; see [StructBuilder.initBiNestedListField].
+class NestedListBuilder<T> {
+  final int length;
+  final T Function(int index, int innerCount) _initAt;
+
+  NestedListBuilder({required this.length, required T Function(int, int) initAt})
+      : _initAt = initAt;
+
+  /// Allocates [innerCount]-element inner list at outer slot [index] and
+  /// returns a builder for it.
+  T initAt(int index, int innerCount) {
+    RangeError.checkValidIndex(index, this, 'index', length);
+    return _initAt(index, innerCount);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Builder factory functions — mirror of the reader-side xxxListFromRaw set.
+// Used by generated code and StructBuilder.initNestedListField.
+// ---------------------------------------------------------------------------
+
+/// Creates a [VoidListBuilder] from a [RawListBuilder].
+ListBuilder<Null> voidListBuilderFromRaw(RawListBuilder raw) =>
+    VoidListBuilder(raw);
+
+/// Creates a [BoolListBuilder] from a [RawListBuilder].
+ListBuilder<bool> boolListBuilderFromRaw(RawListBuilder raw) =>
+    BoolListBuilder(raw);
+
+/// Creates an `Int8` [PrimitiveIntListBuilder] from a [RawListBuilder].
+ListBuilder<int> int8ListBuilderFromRaw(RawListBuilder raw) =>
+    PrimitiveIntListBuilder(raw, readInt8, writeInt8, 1);
+
+/// Creates an `Int16` [PrimitiveIntListBuilder] from a [RawListBuilder].
+ListBuilder<int> int16ListBuilderFromRaw(RawListBuilder raw) =>
+    PrimitiveIntListBuilder(raw, readInt16, writeInt16, 2);
+
+/// Creates an `Int32` [PrimitiveIntListBuilder] from a [RawListBuilder].
+ListBuilder<int> int32ListBuilderFromRaw(RawListBuilder raw) =>
+    PrimitiveIntListBuilder(raw, readInt32, writeInt32, 4);
+
+/// Creates an `Int64` [PrimitiveIntListBuilder] from a [RawListBuilder].
+ListBuilder<int> int64ListBuilderFromRaw(RawListBuilder raw) =>
+    PrimitiveIntListBuilder(raw, readInt64, writeInt64, 8);
+
+/// Creates a `UInt8` [PrimitiveIntListBuilder] from a [RawListBuilder].
+ListBuilder<int> uint8ListBuilderFromRaw(RawListBuilder raw) =>
+    PrimitiveIntListBuilder(raw, readUint8, writeUint8, 1);
+
+/// Creates a `UInt16` [PrimitiveIntListBuilder] from a [RawListBuilder].
+ListBuilder<int> uint16ListBuilderFromRaw(RawListBuilder raw) =>
+    PrimitiveIntListBuilder(raw, readUint16, writeUint16, 2);
+
+/// Creates a `UInt32` [PrimitiveIntListBuilder] from a [RawListBuilder].
+ListBuilder<int> uint32ListBuilderFromRaw(RawListBuilder raw) =>
+    PrimitiveIntListBuilder(raw, readUint32, writeUint32, 4);
+
+/// Creates a `UInt64` [PrimitiveIntListBuilder] from a [RawListBuilder].
+ListBuilder<int> uint64ListBuilderFromRaw(RawListBuilder raw) =>
+    PrimitiveIntListBuilder(raw, readUint64, writeUint64, 8);
+
+/// Creates a `Float32` [PrimitiveDoubleListBuilder] from a [RawListBuilder].
+ListBuilder<double> float32ListBuilderFromRaw(RawListBuilder raw) =>
+    PrimitiveDoubleListBuilder(raw, readFloat32, writeFloat32, 4);
+
+/// Creates a `Float64` [PrimitiveDoubleListBuilder] from a [RawListBuilder].
+ListBuilder<double> float64ListBuilderFromRaw(RawListBuilder raw) =>
+    PrimitiveDoubleListBuilder(raw, readFloat64, writeFloat64, 8);
+
+/// Creates a [TextListBuilder] from a [RawListBuilder].
+ListBuilder<String?> textListBuilderFromRaw(RawListBuilder raw) =>
+    TextListBuilder(raw);
+
+/// Creates a [DataListBuilder] from a [RawListBuilder].
+ListBuilder<Uint8List?> dataListBuilderFromRaw(RawListBuilder raw) =>
+    DataListBuilder(raw);
+
+/// Creates an [EnumListBuilder] from a [RawListBuilder] and a `toInt` function.
+ListBuilder<E> enumListBuilderFromRaw<E>(
+        RawListBuilder raw, int Function(E) toInt) =>
+    EnumListBuilder<E>(raw, toInt);
+
+/// Creates a [StructListBuilder] from a [RawListBuilder] and a `fromRaw`
+/// factory function.
+ListBuilder<B> structListBuilderFromRaw<B>(
+        RawListBuilder raw, B Function(RawStructBuilder) fromRaw) =>
+    StructListBuilder<B>(raw, fromRaw);
+

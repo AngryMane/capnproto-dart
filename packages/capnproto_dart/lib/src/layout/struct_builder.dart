@@ -272,6 +272,77 @@ abstract class StructBuilder {
         fromRaw,
       );
 
+  /// Allocates a `List(List(T))` field and returns a builder for the outer list.
+  ///
+  /// Call [NestedListBuilder.initAt] for each outer slot to allocate the inner
+  /// list at that position.
+  NestedListBuilder<ListBuilder<T>> initNestedListField<T>(
+    int ptrIndex,
+    int outerCount,
+    ListBuilder<T> Function(RawListBuilder) fromRaw,
+    ListElementSize innerElementSize, {
+    int innerStructDataWords = 0,
+    int innerStructPtrWords = 0,
+  }) {
+    final outerRaw =
+        _allocateListField(ptrIndex, ListElementSize.pointer, outerCount);
+    return NestedListBuilder<ListBuilder<T>>(
+      length: outerRaw.elementCount,
+      initAt: (i, innerCount) {
+        final pw = outerRaw.dataByteOffset ~/ bytesPerWord + i;
+        final innerRaw = outerRaw.arena.allocateList(
+          ptrSeg: outerRaw.segment,
+          ptrWordOffset: pw,
+          elementSize: innerElementSize,
+          elementCount: innerCount,
+          structDataWords: innerStructDataWords,
+          structPtrWords: innerStructPtrWords,
+        );
+        return fromRaw(innerRaw);
+      },
+    );
+  }
+
+  /// Allocates a `List(List(List(T)))` field and returns a builder for the outer list.
+  NestedListBuilder<NestedListBuilder<ListBuilder<T>>> initBiNestedListField<T>(
+    int ptrIndex,
+    int outerCount,
+    ListBuilder<T> Function(RawListBuilder) fromRaw,
+    ListElementSize innerElementSize, {
+    int innerStructDataWords = 0,
+    int innerStructPtrWords = 0,
+  }) {
+    final outerRaw =
+        _allocateListField(ptrIndex, ListElementSize.pointer, outerCount);
+    return NestedListBuilder<NestedListBuilder<ListBuilder<T>>>(
+      length: outerRaw.elementCount,
+      initAt: (i, midCount) {
+        final pw0 = outerRaw.dataByteOffset ~/ bytesPerWord + i;
+        final midRaw = outerRaw.arena.allocateList(
+          ptrSeg: outerRaw.segment,
+          ptrWordOffset: pw0,
+          elementSize: ListElementSize.pointer,
+          elementCount: midCount,
+        );
+        return NestedListBuilder<ListBuilder<T>>(
+          length: midRaw.elementCount,
+          initAt: (j, innerCount) {
+            final pw1 = midRaw.dataByteOffset ~/ bytesPerWord + j;
+            final innerRaw = midRaw.arena.allocateList(
+              ptrSeg: midRaw.segment,
+              ptrWordOffset: pw1,
+              elementSize: innerElementSize,
+              elementCount: innerCount,
+              structDataWords: innerStructDataWords,
+              structPtrWords: innerStructPtrWords,
+            );
+            return fromRaw(innerRaw);
+          },
+        );
+      },
+    );
+  }
+
   /// Returns a read-only **live view** over this builder's current contents.
   ///
   /// The returned [RawStructReader] shares the same underlying buffer as the

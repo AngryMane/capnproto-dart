@@ -9,6 +9,7 @@ import 'package:capnproto_dart/src/layout/struct_factory.dart';
 import 'package:capnproto_dart/src/layout/struct_reader.dart';
 import 'package:capnproto_dart/src/message/message_builder.dart';
 import 'package:capnproto_dart/src/message/message_reader.dart';
+import 'package:capnproto_dart/src/wire/pointer.dart' show ListElementSize;
 import 'package:test/test.dart';
 
 // ---------------------------------------------------------------------------
@@ -90,6 +91,63 @@ class _ContainerFactory extends StructFactory<ContainerReader, ContainerBuilder>
 }
 
 final containerFactory = _ContainerFactory();
+
+// ---------------------------------------------------------------------------
+// Hand-written structs for nested list tests.
+//
+// struct NestedContainer {
+//   rows      @0 :List(List(Float64));    # 2-level nesting
+//   matrices  @1 :List(List(List(Int32))); # 3-level nesting
+// }
+// Layout: dataWords=0, ptrWords=2
+// ---------------------------------------------------------------------------
+
+class NestedContainerReader extends StructReader {
+  NestedContainerReader(super.raw);
+
+  ListReader<ListReader<double>?>? get rows =>
+      getNestedListField(0, float64ListFromRaw);
+
+  ListReader<ListReader<ListReader<int>?>?>? get matrices =>
+      getNestedListField(1, (raw) => NestedListReader<int>(raw, int32ListFromRaw));
+}
+
+class NestedContainerBuilder extends StructBuilder {
+  NestedContainerBuilder(super.raw);
+
+  NestedListBuilder<ListBuilder<double>> initRows(int n) =>
+      initNestedListField(0, n, float64ListBuilderFromRaw, ListElementSize.eightBytes);
+
+  NestedListBuilder<NestedListBuilder<ListBuilder<int>>> initMatrices(int n) =>
+      initBiNestedListField(1, n, int32ListBuilderFromRaw, ListElementSize.fourBytes);
+
+  @override
+  NestedContainerReader asReader() => throw UnimplementedError();
+}
+
+class _NestedContainerFactory
+    extends StructFactory<NestedContainerReader, NestedContainerBuilder> {
+  @override int get dataWords => 0;
+  @override int get ptrWords => 2;
+  @override
+  NestedContainerReader fromRawReader(RawStructReader r) =>
+      NestedContainerReader(r);
+  @override
+  NestedContainerBuilder fromRawBuilder(RawStructBuilder r) =>
+      NestedContainerBuilder(r);
+}
+
+final nestedContainerFactory = _NestedContainerFactory();
+
+T _rtNested<T>(
+  void Function(NestedContainerBuilder) build,
+  T Function(NestedContainerReader) read,
+) {
+  final msg = MessageBuilder();
+  build(msg.initRoot(nestedContainerFactory));
+  final bytes = msg.serialize();
+  return read(MessageReader.deserialize(bytes).getRoot(nestedContainerFactory));
+}
 
 // ---------------------------------------------------------------------------
 // Helper: build → serialize → deserialize → inspect.
@@ -316,6 +374,76 @@ void main() {
       expect(result.$1, equals([7, 14]));
       expect(result.$2, equals('hi'));
       expect(result.$3, isTrue);
+    });
+  });
+
+  group('NestedListBuilder (List(List(T)))', () {
+    test('round-trip List(List(Float64)) with 2 rows of varying length', () {
+      final result = _rtNested((b) {
+        final rows = b.initRows(2);
+        final row0 = rows.initAt(0, 3);
+        row0[0] = 1.0;
+        row0[1] = 2.0;
+        row0[2] = 3.0;
+        final row1 = rows.initAt(1, 2);
+        row1[0] = 4.0;
+        row1[1] = 5.0;
+      }, (r) {
+        final rows = r.rows!;
+        return [
+          rows[0]!.toList(),
+          rows[1]!.toList(),
+        ];
+      });
+      expect(result[0], equals([1.0, 2.0, 3.0]));
+      expect(result[1], equals([4.0, 5.0]));
+    });
+
+    test('empty outer list round-trips', () {
+      final result = _rtNested(
+        (b) => b.initRows(0),
+        (r) => r.rows!.length,
+      );
+      expect(result, equals(0));
+    });
+
+    test('outer slot with empty inner list round-trips', () {
+      final result = _rtNested((b) {
+        final rows = b.initRows(1);
+        rows.initAt(0, 0);
+      }, (r) => r.rows![0]!.length);
+      expect(result, equals(0));
+    });
+
+    test('initAt throws RangeError for out-of-bounds index', () {
+      final msg = MessageBuilder();
+      final rows = msg.initRoot(nestedContainerFactory).initRows(2);
+      expect(() => rows.initAt(2, 1), throwsRangeError);
+      expect(() => rows.initAt(-1, 1), throwsRangeError);
+    });
+  });
+
+  group('NestedListBuilder (List(List(List(Int32))))', () {
+    test('round-trip 2×2×3 tensor', () {
+      final result = _rtNested((b) {
+        final mats = b.initMatrices(2);
+        final mat0 = mats.initAt(0, 2);
+        mat0.initAt(0, 3)..[0] = 1..[1] = 2..[2] = 3;
+        mat0.initAt(1, 3)..[0] = 4..[1] = 5..[2] = 6;
+        final mat1 = mats.initAt(1, 2);
+        mat1.initAt(0, 3)..[0] = 7..[1] = 8..[2] = 9;
+        mat1.initAt(1, 3)..[0] = 10..[1] = 11..[2] = 12;
+      }, (r) {
+        final mats = r.matrices!;
+        return [
+          for (var i = 0; i < 2; i++)
+            [for (var j = 0; j < 2; j++) mats[i]![j]!.toList()],
+        ];
+      });
+      expect(result, equals([
+        [[1, 2, 3], [4, 5, 6]],
+        [[7, 8, 9], [10, 11, 12]],
+      ]));
     });
   });
 }

@@ -993,8 +993,93 @@ String _defaultSuffix(Object? v) {
       ('initVoidListField($ptrIndex, length)', 'ListBuilder<Null>'),
     EnumRefType(:final typeId) =>
       _enumListInitCall(typeId, ptrIndex, nodeMap),
+    ListType(:final elementType) =>
+      _nestedListInitCall(elementType, ptrIndex, nodeMap),
     _ => ('/* unsupported */', 'dynamic'),
   };
+}
+
+(String, String) _nestedListInitCall(
+    SchemaType innerElem, int ptrIndex, Map<int, SchemaNode> nodeMap) {
+  if (innerElem is ListType) {
+    final (fromRaw, elemSize, extraArgs, dartT) =
+        _innerListBuilderExpr(innerElem.elementType, nodeMap);
+    return (
+      'initBiNestedListField($ptrIndex, length, $fromRaw, $elemSize$extraArgs)',
+      'NestedListBuilder<NestedListBuilder<ListBuilder<$dartT>>>'
+    );
+  }
+  final (fromRaw, elemSize, extraArgs, dartT) =
+      _innerListBuilderExpr(innerElem, nodeMap);
+  return (
+    'initNestedListField($ptrIndex, length, $fromRaw, $elemSize$extraArgs)',
+    'NestedListBuilder<ListBuilder<$dartT>>'
+  );
+}
+
+/// Returns `(fromRawExpr, ListElementSize, extraNamedArgs, dartType)` for
+/// the innermost list element type, used when generating nested list inits.
+(String, String, String, String) _innerListBuilderExpr(
+    SchemaType elem, Map<int, SchemaNode> nodeMap) {
+  return switch (elem) {
+    VoidType() => ('voidListBuilderFromRaw', 'ListElementSize.void_', '', 'Null'),
+    BoolType() => ('boolListBuilderFromRaw', 'ListElementSize.bit', '', 'bool'),
+    Int8Type() => ('int8ListBuilderFromRaw', 'ListElementSize.byte', '', 'int'),
+    Int16Type() =>
+      ('int16ListBuilderFromRaw', 'ListElementSize.twoBytes', '', 'int'),
+    Int32Type() =>
+      ('int32ListBuilderFromRaw', 'ListElementSize.fourBytes', '', 'int'),
+    Int64Type() =>
+      ('int64ListBuilderFromRaw', 'ListElementSize.eightBytes', '', 'int'),
+    UInt8Type() =>
+      ('uint8ListBuilderFromRaw', 'ListElementSize.byte', '', 'int'),
+    UInt16Type() =>
+      ('uint16ListBuilderFromRaw', 'ListElementSize.twoBytes', '', 'int'),
+    UInt32Type() =>
+      ('uint32ListBuilderFromRaw', 'ListElementSize.fourBytes', '', 'int'),
+    UInt64Type() =>
+      ('uint64ListBuilderFromRaw', 'ListElementSize.eightBytes', '', 'int'),
+    Float32Type() =>
+      ('float32ListBuilderFromRaw', 'ListElementSize.fourBytes', '', 'double'),
+    Float64Type() =>
+      ('float64ListBuilderFromRaw', 'ListElementSize.eightBytes', '', 'double'),
+    TextType() =>
+      ('textListBuilderFromRaw', 'ListElementSize.pointer', '', 'String?'),
+    DataType() =>
+      ('dataListBuilderFromRaw', 'ListElementSize.pointer', '', 'Uint8List?'),
+    EnumRefType(:final typeId) =>
+      _enumInnerListBuilderExpr(typeId, nodeMap),
+    StructRefType(:final typeId) =>
+      _structInnerListBuilderExpr(typeId, nodeMap),
+    _ => ('(raw) => throw UnimplementedError()', 'ListElementSize.void_', '', 'dynamic'),
+  };
+}
+
+(String, String, String, String) _enumInnerListBuilderExpr(
+    int typeId, Map<int, SchemaNode> nodeMap) {
+  final node = nodeMap[typeId];
+  final name = _dartClassName(node?.displayName ?? 'UnknownEnum');
+  return (
+    '(raw) => enumListBuilderFromRaw(raw, ${_lcfirst(name)}ToUint16)',
+    'ListElementSize.twoBytes',
+    '',
+    '$name?',
+  );
+}
+
+(String, String, String, String) _structInnerListBuilderExpr(
+    int typeId, Map<int, SchemaNode> nodeMap) {
+  final node = nodeMap[typeId];
+  final name = _dartClassName(node?.displayName ?? 'UnknownStruct');
+  final body = node?.body;
+  final dw = body is StructBody ? body.dataWordCount : 0;
+  final pw = body is StructBody ? body.pointerCount : 0;
+  return (
+    '(raw) => structListBuilderFromRaw(raw, (r) => ${name}Builder(r))',
+    'ListElementSize.composite',
+    ', innerStructDataWords: $dw, innerStructPtrWords: $pw',
+    '${name}Builder',
+  );
 }
 
 (String, String) _enumListInitCall(
