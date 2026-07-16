@@ -315,6 +315,32 @@ class ChildPipelineServer extends Capability {
   Future<void> dispose() async {}
 }
 
+class PromisedReturnServer extends Capability {
+  final Completer<Capability> completer = Completer<Capability>();
+  late final DeferredCapability promised = DeferredCapability(completer.future);
+
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) async {
+    if (methodId == _pipelineMethodId) {
+      final mb = MessageBuilder();
+      mb.initRoot(_TextParamFactory()).setCapabilityField(0, 0);
+      return DispatchResult(bytes: mb.serialize(), caps: [promised]);
+    }
+    if (methodId == _echoMethodId) {
+      return DispatchResult(bytes: _buildEchoParams('ok'));
+    }
+    throw RpcException('unknown method: $methodId');
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
 class DuplicateCapsServer extends Capability {
   final Capability child = EchoServer();
 
@@ -1905,6 +1931,154 @@ void main() {
   });
 
   group('TwoPartyRpcConnection — RPC Level 1 Resolve / Disembargo', () {
+    test(
+      'server returns DeferredCapability as senderPromise and sends Resolve',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        final serverCaptured = <Uint8List>[];
+        final server = PromisedReturnServer();
+
+        final serverIntercept =
+            StreamController<Uint8List>()
+              ..stream.listen((bytes) {
+                serverCaptured.add(bytes);
+                serverToClient.add(bytes);
+              });
+
+        final serverConn = TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverIntercept.sink,
+          bootstrap: server,
+        );
+        final client = TwoPartyRpcConnection.client(
+          incoming: serverToClient.stream,
+          outgoing: clientToServer.sink,
+        );
+
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        await bootstrapCap.echo('warmup');
+
+        serverCaptured.clear();
+        final parent = bootstrapCap.cap.beginDispatch(
+          _echoInterfaceId,
+          _pipelineMethodId,
+          _buildEchoParams(''),
+        );
+        final pipelinedCap = parent.pipelineResult(0);
+        final pipelinedCall = pipelinedCap.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          _buildEchoParams('before-resolve'),
+        );
+
+        final ret = await _waitForMessageType(
+          serverCaptured,
+          RpcMessageType.return_,
+        );
+        expect(ret.isReturnResults, isTrue);
+        expect(ret.capTableDescriptors, hasLength(1));
+        expect(ret.capTableDescriptors.single.disc, 2);
+        final promiseId = ret.capTableDescriptors.single.id;
+
+        var pipelinedCompleted = false;
+        pipelinedCall.then((_) => pipelinedCompleted = true).ignore();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(pipelinedCompleted, isFalse);
+
+        server.completer.complete(EchoServer());
+        final pipelinedResult = await pipelinedCall.timeout(
+          const Duration(seconds: 2),
+        );
+        expect(
+          _parseEchoResult(pipelinedResult.bytes),
+          equals('echo: before-resolve'),
+        );
+
+        final resolve = await _waitForMessageType(
+          serverCaptured,
+          RpcMessageType.resolve,
+        );
+        expect(resolve.promiseId, promiseId);
+        expect(resolve.isResolveCap, isTrue);
+        expect(resolve.resolveCapDescriptor?.disc, 1);
+
+        await parent.result;
+        await client.close();
+        await serverConn.close();
+        await serverIntercept.close();
+      },
+    );
+
+    test('server sends Resolve(exception) when senderPromise fails', () async {
+      final clientToServer = StreamController<Uint8List>();
+      final serverToClient = StreamController<Uint8List>();
+      final serverCaptured = <Uint8List>[];
+      final server = PromisedReturnServer();
+
+      final serverIntercept =
+          StreamController<Uint8List>()
+            ..stream.listen((bytes) {
+              serverCaptured.add(bytes);
+              serverToClient.add(bytes);
+            });
+
+      final serverConn = TwoPartyRpcConnection.server(
+        incoming: clientToServer.stream,
+        outgoing: serverIntercept.sink,
+        bootstrap: server,
+      );
+      final client = TwoPartyRpcConnection.client(
+        incoming: serverToClient.stream,
+        outgoing: clientToServer.sink,
+      );
+
+      final bootstrapCap = client.bootstrap(EchoClientFactory());
+      await bootstrapCap.echo('warmup');
+
+      serverCaptured.clear();
+      final parent = bootstrapCap.cap.beginDispatch(
+        _echoInterfaceId,
+        _pipelineMethodId,
+        _buildEchoParams(''),
+      );
+      final pipelinedCap = parent.pipelineResult(0);
+      await parent.result;
+
+      final ret = await _waitForMessageType(
+        serverCaptured,
+        RpcMessageType.return_,
+      );
+      final promiseId = ret.capTableDescriptors.single.id;
+
+      server.completer.completeError(const RpcException('promise failed'));
+      final resolve = await _waitForMessageType(
+        serverCaptured,
+        RpcMessageType.resolve,
+      );
+      expect(resolve.promiseId, promiseId);
+      expect(resolve.isResolveException, isTrue);
+      expect(resolve.exceptionReason, contains('promise failed'));
+
+      await expectLater(
+        pipelinedCap.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          _buildEchoParams('after-failure'),
+        ),
+        throwsA(
+          allOf(
+            isA<RpcException>(),
+            predicate<Object>((e) => e.toString().contains('promise failed')),
+          ),
+        ),
+      );
+
+      await client.close();
+      await serverConn.close();
+      await serverIntercept.close();
+    });
+
     test(
       'incoming Resolve(cap) is handled and releases unused descriptor',
       () async {

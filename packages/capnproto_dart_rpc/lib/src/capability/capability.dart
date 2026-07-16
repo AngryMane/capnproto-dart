@@ -232,6 +232,10 @@ class DeferredCapability extends Capability {
     future.ignore();
   }
 
+  /// The underlying promise used by the RPC layer when exporting this as a
+  /// wire-level senderPromise.
+  Future<Capability> get resolution => _future;
+
   Future<Capability> _resolveForCall() async {
     if (_disposed) {
       throw const RpcException('capability is disposed');

@@ -88,6 +88,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   final Map<int, DispatchCancellationController> _dispatchCancellations = {};
   final Map<int, Completer<void>> _embargoes = {};
   int _nextEmbargoId = 0;
+  final Set<int> _senderPromiseResolves = {};
 
   // Set to a non-null error once the connection is closed.
   Object? _closedError;
@@ -527,7 +528,7 @@ class TwoPartyRpcConnection implements RpcConnection {
           }
           _answerCaps[qid] = _ResolvedAnswer(result.bytes, result.caps);
 
-          final resultExportIds = <int>[];
+          final resultDescriptors = <RpcCapDescriptor>[];
           if (result.caps.isEmpty) {
             _sendRaw(
               buildReturnResultsMessage(
@@ -537,17 +538,20 @@ class TwoPartyRpcConnection implements RpcConnection {
             );
           } else {
             for (final c in result.caps) {
-              resultExportIds.add(_getOrCreateExportId(c));
+              resultDescriptors.add(_returnCapDescriptor(c));
             }
             _sendRaw(
-              buildReturnResultsWithCapsMessage(
+              buildReturnResultsWithCapDescriptorsMessage(
                 answerId: qid,
                 resultsBytes: result.bytes,
-                exportIds: resultExportIds,
+                descriptors: resultDescriptors,
               ),
             );
           }
-          _answers[qid] = resultExportIds;
+          _answers[qid] = [
+            for (final d in resultDescriptors)
+              if (d.disc == 1 || d.disc == 2) d.id,
+          ];
         })
         .catchError((Object err) {
           _pendingCaps.remove(qid);
@@ -634,6 +638,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     if (entry.remoteRefCount <= 0) {
       _exports.remove(msg.releaseId);
       _exportIds.remove(entry.capability);
+      _senderPromiseResolves.remove(msg.releaseId);
       entry.capability.dispose().ignore();
     }
   }
@@ -724,6 +729,92 @@ class TwoPartyRpcConnection implements RpcConnection {
     return eid;
   }
 
+  RpcCapDescriptor _returnCapDescriptor(Capability cap) {
+    if (cap is DeferredCapability) {
+      final promiseId = _getOrCreateExportId(cap);
+      _scheduleSenderPromiseResolve(promiseId, cap);
+      return RpcCapDescriptor.senderPromise(promiseId);
+    }
+    return RpcCapDescriptor.senderHosted(_getOrCreateExportId(cap));
+  }
+
+  void _scheduleSenderPromiseResolve(
+    int promiseId,
+    DeferredCapability promise,
+  ) {
+    if (!_senderPromiseResolves.add(promiseId)) return;
+
+    promise.resolution
+        .then(
+          (resolved) async {
+            _senderPromiseResolves.remove(promiseId);
+            if (!_isStillExportedPromise(promiseId, promise)) return;
+
+            final RpcCapDescriptor descriptor;
+            try {
+              descriptor = await _resolveDescriptorForCapability(resolved);
+            } catch (error) {
+              if (!_isStillExportedPromise(promiseId, promise)) return;
+              _sendRaw(
+                buildResolveExceptionMessage(
+                  promiseId: promiseId,
+                  reason:
+                      error is RpcException ? error.message : error.toString(),
+                ),
+              );
+              return;
+            }
+            if (!_isStillExportedPromise(promiseId, promise)) {
+              if (descriptor.disc == 1 || descriptor.disc == 2) {
+                _releaseExport(descriptor.id);
+              }
+              return;
+            }
+
+            _sendRaw(
+              buildResolveCapMessage(
+                promiseId: promiseId,
+                capDisc: descriptor.disc,
+                capId: descriptor.id,
+              ),
+            );
+          },
+          onError: (Object error) {
+            _senderPromiseResolves.remove(promiseId);
+            if (!_isStillExportedPromise(promiseId, promise)) return;
+            _sendRaw(
+              buildResolveExceptionMessage(
+                promiseId: promiseId,
+                reason:
+                    error is RpcException ? error.message : error.toString(),
+              ),
+            );
+          },
+        )
+        .ignore();
+  }
+
+  bool _isStillExportedPromise(int promiseId, DeferredCapability promise) {
+    final entry = _exports[promiseId];
+    return entry != null && identical(entry.capability, promise);
+  }
+
+  Future<RpcCapDescriptor> _resolveDescriptorForCapability(
+    Capability cap,
+  ) async {
+    if (cap is _ImportedCapability && cap._conn == this) {
+      final id = await cap._importIdFuture;
+      _throwIfImportBroken(id);
+      return RpcCapDescriptor.receiverHosted(id);
+    }
+    if (cap is DeferredCapability) {
+      final nestedPromiseId = _getOrCreateExportId(cap);
+      _scheduleSenderPromiseResolve(nestedPromiseId, cap);
+      return RpcCapDescriptor.senderPromise(nestedPromiseId);
+    }
+    return RpcCapDescriptor.senderHosted(_getOrCreateExportId(cap));
+  }
+
   /// Decrements the remote ref count for [eid] and disposes the capability
   /// if no remote references remain.
   void _releaseExport(int eid) {
@@ -733,6 +824,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     if (entry.remoteRefCount <= 0) {
       _exports.remove(eid);
       _exportIds.remove(entry.capability);
+      _senderPromiseResolves.remove(eid);
       entry.capability.dispose().ignore();
     }
   }
@@ -836,6 +928,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     _answerCaps.clear();
     _pendingCaps.clear();
     _finishedAnswers.clear();
+    _senderPromiseResolves.clear();
     _importRefCounts.clear();
     _imports.clear();
     _brokenImports.clear();
