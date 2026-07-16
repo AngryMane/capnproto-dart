@@ -13,7 +13,7 @@ final class GreetSessionGreetParamsBuilder extends StructBuilder {
   GreetSessionGreetParamsBuilder(super.raw);
 
   @override
-  GreetSessionGreetParamsReader asReader() => throw UnimplementedError();
+  GreetSessionGreetParamsReader asReader() => GreetSessionGreetParamsReader(rawToReader());
 }
 
 final class _GreetSessionGreetParamsFactory
@@ -38,7 +38,7 @@ final class GreetSessionGreetResultsBuilder extends StructBuilder {
   GreetSessionGreetResultsBuilder(super.raw);
 
   @override
-  GreetSessionGreetResultsReader asReader() => throw UnimplementedError();
+  GreetSessionGreetResultsReader asReader() => GreetSessionGreetResultsReader(rawToReader());
 
   set reply(String? v) {
     setTextField(0, v);
@@ -67,7 +67,7 @@ final class GreeterGreetParamsBuilder extends StructBuilder {
   GreeterGreetParamsBuilder(super.raw);
 
   @override
-  GreeterGreetParamsReader asReader() => throw UnimplementedError();
+  GreeterGreetParamsReader asReader() => GreeterGreetParamsReader(rawToReader());
 
   set name(String? v) {
     setTextField(0, v);
@@ -96,7 +96,7 @@ final class GreeterGreetResultsBuilder extends StructBuilder {
   GreeterGreetResultsBuilder(super.raw);
 
   @override
-  GreeterGreetResultsReader asReader() => throw UnimplementedError();
+  GreeterGreetResultsReader asReader() => GreeterGreetResultsReader(rawToReader());
 
   set reply(String? v) {
     setTextField(0, v);
@@ -125,7 +125,7 @@ final class GreeterNewSessionParamsBuilder extends StructBuilder {
   GreeterNewSessionParamsBuilder(super.raw);
 
   @override
-  GreeterNewSessionParamsReader asReader() => throw UnimplementedError();
+  GreeterNewSessionParamsReader asReader() => GreeterNewSessionParamsReader(rawToReader());
 
   set name(String? v) {
     setTextField(0, v);
@@ -147,15 +147,18 @@ final greeterNewSessionParamsFactory = _GreeterNewSessionParamsFactory();
 final class GreeterNewSessionResultsReader extends StructReader {
   GreeterNewSessionResultsReader(super.raw);
 
-  dynamic get session => null /* unsupported type */;
+  int get sessionCapIndex => getCapabilityField(0);
 }
 
 final class GreeterNewSessionResultsBuilder extends StructBuilder {
   GreeterNewSessionResultsBuilder(super.raw);
 
   @override
-  GreeterNewSessionResultsReader asReader() => throw UnimplementedError();
+  GreeterNewSessionResultsReader asReader() => GreeterNewSessionResultsReader(rawToReader());
 
+  void setSession(int capTableIndex) {
+    setCapabilityField(0, capTableIndex);
+  }
 }
 
 final class _GreeterNewSessionResultsFactory
@@ -179,7 +182,7 @@ class GreetSessionClient extends Capability {
   Future<GreetSessionGreetResultsReader> greet(void Function(GreetSessionGreetParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(greetSessionGreetParamsFactory));
-    final result = await _cap.dispatch(_interfaceId, 0, mb.serialize());
+    final result = await _cap.dispatch(0xb5f4a6c78d3e1029, 0, mb.serialize());
     return MessageReader.deserialize(result.bytes).getRoot(greetSessionGreetResultsFactory);
   }
 
@@ -192,6 +195,34 @@ class GreetSessionClientFactory extends CapabilityFactory<GreetSessionClient> {
   GreetSessionClient fromCapability(Capability cap) => GreetSessionClient(cap);
 }
 
+abstract class GreetSessionServer extends Capability {
+
+  Future<DispatchResult> greet(GreetSessionGreetParamsReader params, List<Capability> paramsCapabilities);
+
+  @override
+  Future<DispatchResult> dispatch(int interfaceId, int methodId, Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) async {
+    switch (interfaceId) {
+      case 0xb5f4a6c78d3e1029:
+        switch (methodId) {
+          case 0:
+            final p = MessageReader.deserialize(params)
+                .getRoot(greetSessionGreetParamsFactory);
+            return await greet(p, paramsCapabilities);
+          default:
+            break;
+        }
+      default:
+        break;
+    }
+    return super.dispatch(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities);
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
 class GreeterClient extends Capability {
   static const int _interfaceId = 0xd41d8cd98f00b204;
 
@@ -201,15 +232,15 @@ class GreeterClient extends Capability {
   Future<GreeterGreetResultsReader> greet(void Function(GreeterGreetParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(greeterGreetParamsFactory));
-    final result = await _cap.dispatch(_interfaceId, 0, mb.serialize());
+    final result = await _cap.dispatch(0xd41d8cd98f00b204, 0, mb.serialize());
     return MessageReader.deserialize(result.bytes).getRoot(greeterGreetResultsFactory);
   }
 
-  Future<GreetSessionClient> newSession(void Function(GreeterNewSessionParamsBuilder) build) async {
+  GreetSessionClient newSession(void Function(GreeterNewSessionParamsBuilder) build) {
     final mb = MessageBuilder();
     build(mb.initRoot(greeterNewSessionParamsFactory));
-    final result = await _cap.dispatch(_interfaceId, 1, mb.serialize());
-    return GreetSessionClient(result.caps[0]);
+    final call = _cap.beginDispatch(0xd41d8cd98f00b204, 1, mb.serialize());
+    return GreetSessionClient(call.pipelineResult(0));
   }
 
   @override
@@ -219,5 +250,39 @@ class GreeterClient extends Capability {
 class GreeterClientFactory extends CapabilityFactory<GreeterClient> {
   @override
   GreeterClient fromCapability(Capability cap) => GreeterClient(cap);
+}
+
+abstract class GreeterServer extends Capability {
+
+  Future<DispatchResult> greet(GreeterGreetParamsReader params, List<Capability> paramsCapabilities);
+
+  Future<DispatchResult> newSession(GreeterNewSessionParamsReader params, List<Capability> paramsCapabilities);
+
+  @override
+  Future<DispatchResult> dispatch(int interfaceId, int methodId, Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) async {
+    switch (interfaceId) {
+      case 0xd41d8cd98f00b204:
+        switch (methodId) {
+          case 0:
+            final p = MessageReader.deserialize(params)
+                .getRoot(greeterGreetParamsFactory);
+            return await greet(p, paramsCapabilities);
+          case 1:
+            final p = MessageReader.deserialize(params)
+                .getRoot(greeterNewSessionParamsFactory);
+            return await newSession(p, paramsCapabilities);
+          default:
+            break;
+        }
+      default:
+        break;
+    }
+    return super.dispatch(interfaceId, methodId, params, paramsCapabilities: paramsCapabilities);
+  }
+
+  @override
+  Future<void> dispose() async {}
 }
 

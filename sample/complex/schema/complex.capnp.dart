@@ -97,33 +97,33 @@ final class AllScalarsReader extends StructReader {
 
   void get nothing => {};
 
-  bool get boolean => getBoolField(0);
+  bool get boolean => getBoolField(0, defaultValue: true);
 
-  int get int8Value => getInt8Field(1);
+  int get int8Value => getInt8Field(1, defaultValue: -8);
 
-  int get int16Value => getInt16Field(2);
+  int get int16Value => getInt16Field(2, defaultValue: -1600);
 
-  int get int32Value => getInt32Field(4);
+  int get int32Value => getInt32Field(4, defaultValue: -320000);
 
-  int get int64Value => getInt64Field(8);
+  int get int64Value => getInt64Field(8, defaultValue: -6400000000);
 
-  int get uint8Value => getUint8Field(16);
+  int get uint8Value => getUint8Field(16, defaultValue: 8);
 
-  int get uint16Value => getUint16Field(18);
+  int get uint16Value => getUint16Field(18, defaultValue: 1600);
 
-  int get uint32Value => getUint32Field(20);
+  int get uint32Value => getUint32Field(20, defaultValue: 320000);
 
-  int get uint64Value => getUint64Field(24);
+  int get uint64Value => getUint64Field(24, defaultValue: 6400000000);
 
-  double get float32Value => getFloat32Field(32);
+  double get float32Value => getFloat32Field(32, defaultValue: 1.25);
 
-  double get float64Value => getFloat64Field(40);
+  double get float64Value => getFloat64Field(40, defaultValue: -2.5);
 
   String? get textValue => getTextField(0);
 
   Uint8List? get dataValue => getDataField(1);
 
-  Color? get color => colorFromUint16(getUint16Field(36));
+  Color? get color => colorFromUint16(getUint16Field(36, defaultValue: 1));
 }
 
 final class AllScalarsBuilder extends StructBuilder {
@@ -137,47 +137,47 @@ final class AllScalarsBuilder extends StructBuilder {
   }
 
   set boolean(bool v) {
-    setBoolField(0, v);
+    setBoolField(0, v, defaultValue: true);
   }
 
   set int8Value(int v) {
-    setInt8Field(1, v);
+    setInt8Field(1, v, defaultValue: -8);
   }
 
   set int16Value(int v) {
-    setInt16Field(2, v);
+    setInt16Field(2, v, defaultValue: -1600);
   }
 
   set int32Value(int v) {
-    setInt32Field(4, v);
+    setInt32Field(4, v, defaultValue: -320000);
   }
 
   set int64Value(int v) {
-    setInt64Field(8, v);
+    setInt64Field(8, v, defaultValue: -6400000000);
   }
 
   set uint8Value(int v) {
-    setUint8Field(16, v);
+    setUint8Field(16, v, defaultValue: 8);
   }
 
   set uint16Value(int v) {
-    setUint16Field(18, v);
+    setUint16Field(18, v, defaultValue: 1600);
   }
 
   set uint32Value(int v) {
-    setUint32Field(20, v);
+    setUint32Field(20, v, defaultValue: 320000);
   }
 
   set uint64Value(int v) {
-    setUint64Field(24, v);
+    setUint64Field(24, v, defaultValue: 6400000000);
   }
 
   set float32Value(double v) {
-    setFloat32Field(32, v);
+    setFloat32Field(32, v, defaultValue: 1.25);
   }
 
   set float64Value(double v) {
-    setFloat64Field(40, v);
+    setFloat64Field(40, v, defaultValue: -2.5);
   }
 
   set textValue(String? v) {
@@ -189,7 +189,7 @@ final class AllScalarsBuilder extends StructBuilder {
   }
 
   set color(Color v) {
-    setUint16Field(36, colorToUint16(v));
+    setUint16Field(36, colorToUint16(v), defaultValue: 1);
   }
 }
 
@@ -243,6 +243,8 @@ final timestampFactory = _TimestampFactory();
 final class IdentifierReader extends StructReader {
   IdentifierReader(super.raw);
 
+  int get which => getUint16Field(8);
+
   int get numeric => getUint64Field(0);
 
   String? get textual => getTextField(0);
@@ -257,6 +259,8 @@ final class IdentifierBuilder extends StructBuilder {
 
   @override
   IdentifierReader asReader() => IdentifierReader(rawToReader());
+
+  void _setWhich(int v) => setUint16Field(8, v);
 
   set numeric(int v) {
     setUint16Field(8, 0);
@@ -355,7 +359,7 @@ final class PersonReader extends StructReader {
 
   Status? get status => statusFromUint16(getUint16Field(0));
 
-  Color? get favoriteColor => colorFromUint16(getUint16Field(2));
+  Color? get favoriteColor => colorFromUint16(getUint16Field(2, defaultValue: 3));
 
   TimestampReader? get createdAt => getStructFieldWith(3, (r) => TimestampReader(r));
 
@@ -363,7 +367,7 @@ final class PersonReader extends StructReader {
 
   ListReader<String?>? get tags => getTextListField(6);
 
-  ListReader<KeyValueReader>? get attributes => getStructListFieldWith(7, (r) => KeyValueReader(r));
+  ListReader<KeyValueTextTextReader>? get attributes => getStructListFieldWith(7, (r) => KeyValueTextTextReader(r));
 
   ListReader<EmploymentReader>? get employments => getStructListFieldWith(8, (r) => EmploymentReader(r));
 
@@ -396,7 +400,7 @@ final class PersonBuilder extends StructBuilder {
   }
 
   set favoriteColor(Color v) {
-    setUint16Field(2, colorToUint16(v));
+    setUint16Field(2, colorToUint16(v), defaultValue: 3);
   }
 
   TimestampBuilder initCreatedAt() {
@@ -440,6 +444,8 @@ final personFactory = _PersonFactory();
 final class EmploymentReader extends StructReader {
   EmploymentReader(super.raw);
 
+  int get which => getUint16Field(0);
+
   String? get employer => getTextField(0);
 
   String? get title => getTextField(1);
@@ -456,6 +462,8 @@ final class EmploymentBuilder extends StructBuilder {
 
   @override
   EmploymentReader asReader() => EmploymentReader(rawToReader());
+
+  void _setWhich(int v) => setUint16Field(0, v);
 
   set employer(String? v) {
     setTextField(0, v);
@@ -574,6 +582,8 @@ final keyValueFactory = _KeyValueFactory();
 final class OptionalReader extends StructReader {
   OptionalReader(super.raw);
 
+  int get which => getUint16Field(0);
+
   void get none => {};
 
   Uint8List? get some => getAnyPointerAsMessageBytes(0);
@@ -584,6 +594,8 @@ final class OptionalBuilder extends StructBuilder {
 
   @override
   OptionalReader asReader() => OptionalReader(rawToReader());
+
+  void _setWhich(int v) => setUint16Field(0, v);
 
   set none(dynamic v) {
     setUint16Field(0, 0);
@@ -611,6 +623,8 @@ final optionalFactory = _OptionalFactory();
 final class ResultReader extends StructReader {
   ResultReader(super.raw);
 
+  int get which => getUint16Field(0);
+
   Uint8List? get ok => getAnyPointerAsMessageBytes(0);
 
   Uint8List? get err => getAnyPointerAsMessageBytes(0);
@@ -621,6 +635,8 @@ final class ResultBuilder extends StructBuilder {
 
   @override
   ResultReader asReader() => ResultReader(rawToReader());
+
+  void _setWhich(int v) => setUint16Field(0, v);
 
   set ok(Uint8List? v) {
     setUint16Field(0, 0);
@@ -874,7 +890,7 @@ final class DynamicEnvelopeReader extends StructReader {
 
   Uint8List? get payload => getAnyPointerAsMessageBytes(1);
 
-  ListReader<KeyValueReader>? get metadata => getStructListFieldWith(2, (r) => KeyValueReader(r));
+  ListReader<KeyValueTextTextReader>? get metadata => getStructListFieldWith(2, (r) => KeyValueTextTextReader(r));
 }
 
 final class DynamicEnvelopeBuilder extends StructBuilder {
@@ -1381,6 +1397,8 @@ final readWriteCompareAndSwapResultsFactory = _ReadWriteCompareAndSwapResultsFac
 final class CursorResultReader extends StructReader {
   CursorResultReader(super.raw);
 
+  int get which => getUint16Field(0);
+
   void get done => {};
 
   Uint8List? get value => getAnyPointerAsMessageBytes(0);
@@ -1391,6 +1409,8 @@ final class CursorResultBuilder extends StructBuilder {
 
   @override
   CursorResultReader asReader() => CursorResultReader(rawToReader());
+
+  void _setWhich(int v) => setUint16Field(0, v);
 
   set done(dynamic v) {
     setUint16Field(0, 0);
@@ -2018,7 +2038,7 @@ final class ByteSourcePumpToParamsReader extends StructReader {
 
   int get sinkCapIndex => getCapabilityField(0);
 
-  int get chunkSize => getUint32Field(0);
+  int get chunkSize => getUint32Field(0, defaultValue: 65536);
 }
 
 final class ByteSourcePumpToParamsBuilder extends StructBuilder {
@@ -2032,7 +2052,7 @@ final class ByteSourcePumpToParamsBuilder extends StructBuilder {
   }
 
   set chunkSize(int v) {
-    setUint32Field(0, v);
+    setUint32Field(0, v, defaultValue: 65536);
   }
 }
 
@@ -2760,7 +2780,7 @@ final class CapabilityBundleReader extends StructReader {
 
   int get primaryCapIndex => getCapabilityField(0);
 
-  OptionalReader? get optionalObserver => getStructFieldWith(1, (r) => OptionalReader(r));
+  OptionalObserverPersonReader? get optionalObserver => getStructFieldWith(1, (r) => OptionalObserverPersonReader(r));
 
   ListReader<dynamic>? get targets => null /* unsupported list element */;
 
@@ -2818,7 +2838,7 @@ final class ComplexRequestReader extends StructReader {
 
   PersonReader? get person => getStructFieldWith(4, (r) => PersonReader(r));
 
-  TreeReader? get tree => getStructFieldWith(5, (r) => TreeReader(r));
+  TreePersonReader? get tree => getStructFieldWith(5, (r) => TreePersonReader(r));
 
   MatrixReader? get matrix => getStructFieldWith(6, (r) => MatrixReader(r));
 
@@ -2943,7 +2963,7 @@ final class ComplexResponseReader extends StructReader {
 
   ComplexRequestReader? get echoed => getStructFieldWith(2, (r) => ComplexRequestReader(r));
 
-  ResultReader? get result => getStructFieldWith(3, (r) => ResultReader(r));
+  ResultPersonErrorInfoReader? get result => getStructFieldWith(3, (r) => ResultPersonErrorInfoReader(r));
 
   int get serverCapabilityCapIndex => getCapabilityField(4);
 
@@ -3021,9 +3041,9 @@ final class ErrorInfoReader extends StructReader {
 
   bool get retryable => getBoolField(32);
 
-  ListReader<KeyValueReader>? get details => getStructListFieldWith(2, (r) => KeyValueReader(r));
+  ListReader<KeyValueTextTextReader>? get details => getStructListFieldWith(2, (r) => KeyValueTextTextReader(r));
 
-  OptionalReader? get cause => getStructFieldWith(3, (r) => OptionalReader(r));
+  OptionalErrorInfoReader? get cause => getStructFieldWith(3, (r) => OptionalErrorInfoReader(r));
 }
 
 final class ErrorInfoBuilder extends StructBuilder {
@@ -3673,7 +3693,7 @@ final class ComplexTestServiceOpenDownloadResultsReader extends StructReader {
 
   int get sourceCapIndex => getCapabilityField(0);
 
-  ListReader<KeyValueReader>? get metadata => getStructListFieldWith(1, (r) => KeyValueReader(r));
+  ListReader<KeyValueTextTextReader>? get metadata => getStructListFieldWith(1, (r) => KeyValueTextTextReader(r));
 }
 
 final class ComplexTestServiceOpenDownloadResultsBuilder extends StructBuilder {
@@ -4033,8 +4053,6 @@ final contactFactory = _contactFactory();
 final class phoneReader extends StructReader {
   phoneReader(super.raw);
 
-  int get which => getUint16Field(0);
-
   int get countryCode => getUint16Field(6);
 
   String? get subscriberNumber => getTextField(4);
@@ -4047,8 +4065,6 @@ final class phoneBuilder extends StructBuilder {
 
   @override
   phoneReader asReader() => phoneReader(rawToReader());
-
-  void _setWhich(int v) => setUint16Field(0, v);
 
   set countryCode(int v) {
     setUint16Field(6, v);
@@ -4078,8 +4094,6 @@ final phoneFactory = _phoneFactory();
 final class postalReader extends StructReader {
   postalReader(super.raw);
 
-  int get which => getUint16Field(0);
-
   AddressReader? get address => getStructFieldWith(4, (r) => AddressReader(r));
 
   String? get attention => getTextField(5);
@@ -4090,8 +4104,6 @@ final class postalBuilder extends StructBuilder {
 
   @override
   postalReader asReader() => postalReader(rawToReader());
-
-  void _setWhich(int v) => setUint16Field(0, v);
 
   AddressBuilder initAddress() {
     return initStructFieldWith(4,
@@ -4120,8 +4132,6 @@ final postalFactory = _postalFactory();
 final class onlineReader extends StructReader {
   onlineReader(super.raw);
 
-  int get which => getUint16Field(0);
-
   String? get service => getTextField(4);
 
   String? get account => getTextField(5);
@@ -4132,8 +4142,6 @@ final class onlineBuilder extends StructBuilder {
 
   @override
   onlineReader asReader() => onlineReader(rawToReader());
-
-  void _setWhich(int v) => setUint16Field(0, v);
 
   set service(String? v) {
     setTextField(4, v);
@@ -4238,8 +4246,6 @@ final payloadFactory = _payloadFactory();
 final class coordinatesReader extends StructReader {
   coordinatesReader(super.raw);
 
-  int get which => getUint16Field(0);
-
   double get x => getFloat64Field(8);
 
   double get y => getFloat64Field(16);
@@ -4252,8 +4258,6 @@ final class coordinatesBuilder extends StructBuilder {
 
   @override
   coordinatesReader asReader() => coordinatesReader(rawToReader());
-
-  void _setWhich(int v) => setUint16Field(0, v);
 
   set x(double v) {
     setFloat64Field(8, v);
@@ -4283,8 +4287,6 @@ final coordinatesFactory = _coordinatesFactory();
 final class rectangleReader extends StructReader {
   rectangleReader(super.raw);
 
-  int get which => getUint16Field(0);
-
   double get left => getFloat32Field(8);
 
   double get top => getFloat32Field(12);
@@ -4299,8 +4301,6 @@ final class rectangleBuilder extends StructBuilder {
 
   @override
   rectangleReader asReader() => rectangleReader(rawToReader());
-
-  void _setWhich(int v) => setUint16Field(0, v);
 
   set left(double v) {
     setFloat32Field(8, v);
@@ -4746,8 +4746,8 @@ class RepositoryClient extends Capability {
   CursorClient openCursor(void Function(RepositoryOpenCursorParamsBuilder) build) {
     final mb = MessageBuilder();
     build(mb.initRoot(repositoryOpenCursorParamsFactory));
-    final f = _cap.dispatch(0xff065518e00ba453, 4, mb.serialize());
-    return CursorClient(PipelinedCapability(f.then((r) => r.caps[0])));
+    final call = _cap.beginDispatch(0xff065518e00ba453, 4, mb.serialize());
+    return CursorClient(call.pipelineResult(0));
   }
 
   SubscriptionClient watch(void Function(RepositoryWatchParamsBuilder) build, {required Capability observer}) {
@@ -4755,8 +4755,8 @@ class RepositoryClient extends Capability {
     final b = mb.initRoot(repositoryWatchParamsFactory);
     b.setObserver(0);
     build(b);
-    final f = _cap.dispatch(0xff065518e00ba453, 5, mb.serialize(), paramsCapabilities: [observer]);
-    return SubscriptionClient(PipelinedCapability(f.then((r) => r.caps[0])));
+    final call = _cap.beginDispatch(0xff065518e00ba453, 5, mb.serialize(), paramsCapabilities: [observer]);
+    return SubscriptionClient(call.pipelineResult(0));
   }
 
   @override
@@ -4965,22 +4965,22 @@ class CapabilityFactoryClient extends Capability {
   ReadWriteClient newCell(void Function(CapabilityFactoryNewCellParamsBuilder) build) {
     final mb = MessageBuilder();
     build(mb.initRoot(capabilityFactoryNewCellParamsFactory));
-    final f = _cap.dispatch(0xccad478715fb03b0, 0, mb.serialize());
-    return ReadWriteClient(PipelinedCapability(f.then((r) => r.caps[0])));
+    final call = _cap.beginDispatch(0xccad478715fb03b0, 0, mb.serialize());
+    return ReadWriteClient(call.pipelineResult(0));
   }
 
   ReadWriteClient newEmptyCell(void Function(CapabilityFactoryNewEmptyCellParamsBuilder) build) {
     final mb = MessageBuilder();
     build(mb.initRoot(capabilityFactoryNewEmptyCellParamsFactory));
-    final f = _cap.dispatch(0xccad478715fb03b0, 1, mb.serialize());
-    return ReadWriteClient(PipelinedCapability(f.then((r) => r.caps[0])));
+    final call = _cap.beginDispatch(0xccad478715fb03b0, 1, mb.serialize());
+    return ReadWriteClient(call.pipelineResult(0));
   }
 
   RepositoryClient newRepository(void Function(CapabilityFactoryNewRepositoryParamsBuilder) build) {
     final mb = MessageBuilder();
     build(mb.initRoot(capabilityFactoryNewRepositoryParamsFactory));
-    final f = _cap.dispatch(0xccad478715fb03b0, 2, mb.serialize());
-    return RepositoryClient(PipelinedCapability(f.then((r) => r.caps[0])));
+    final call = _cap.beginDispatch(0xccad478715fb03b0, 2, mb.serialize());
+    return RepositoryClient(call.pipelineResult(0));
   }
 
   Future<CapabilityFactoryEchoCapabilityResultsReader> echoCapability(void Function(CapabilityFactoryEchoCapabilityParamsBuilder) build) async {
@@ -5357,15 +5357,15 @@ class PipelineTargetClient extends Capability {
   PipelineTargetClient getChild(void Function(PipelineTargetGetChildParamsBuilder) build) {
     final mb = MessageBuilder();
     build(mb.initRoot(pipelineTargetGetChildParamsFactory));
-    final f = _cap.dispatch(0xe211443879f3b6bb, 0, mb.serialize());
-    return PipelineTargetClient(PipelinedCapability(f.then((r) => r.caps[0])));
+    final call = _cap.beginDispatch(0xe211443879f3b6bb, 0, mb.serialize());
+    return PipelineTargetClient(call.pipelineResult(0));
   }
 
   RepositoryClient getRepository(void Function(PipelineTargetGetRepositoryParamsBuilder) build) {
     final mb = MessageBuilder();
     build(mb.initRoot(pipelineTargetGetRepositoryParamsFactory));
-    final f = _cap.dispatch(0xe211443879f3b6bb, 1, mb.serialize());
-    return RepositoryClient(PipelinedCapability(f.then((r) => r.caps[0])));
+    final call = _cap.beginDispatch(0xe211443879f3b6bb, 1, mb.serialize());
+    return RepositoryClient(call.pipelineResult(0));
   }
 
   Future<PipelineTargetPingResultsReader> ping(void Function(PipelineTargetPingParamsBuilder) build) async {
@@ -5484,15 +5484,15 @@ class ComplexTestServiceClient extends Capability {
   PipelineTargetClient makePipeline(void Function(ComplexTestServiceMakePipelineParamsBuilder) build) {
     final mb = MessageBuilder();
     build(mb.initRoot(complexTestServiceMakePipelineParamsFactory));
-    final f = _cap.dispatch(0xd7fb0472c16375ee, 7, mb.serialize());
-    return PipelineTargetClient(PipelinedCapability(f.then((r) => r.caps[0])));
+    final call = _cap.beginDispatch(0xd7fb0472c16375ee, 7, mb.serialize());
+    return PipelineTargetClient(call.pipelineResult(0));
   }
 
   ByteSinkClient openUpload(void Function(ComplexTestServiceOpenUploadParamsBuilder) build) {
     final mb = MessageBuilder();
     build(mb.initRoot(complexTestServiceOpenUploadParamsFactory));
-    final f = _cap.dispatch(0xd7fb0472c16375ee, 8, mb.serialize());
-    return ByteSinkClient(PipelinedCapability(f.then((r) => r.caps[0])));
+    final call = _cap.beginDispatch(0xd7fb0472c16375ee, 8, mb.serialize());
+    return ByteSinkClient(call.pipelineResult(0));
   }
 
   Future<ComplexTestServiceOpenDownloadResultsReader> openDownload(void Function(ComplexTestServiceOpenDownloadParamsBuilder) build) async {
@@ -5505,15 +5505,15 @@ class ComplexTestServiceClient extends Capability {
   RepositoryClient getRepository(void Function(ComplexTestServiceGetRepositoryParamsBuilder) build) {
     final mb = MessageBuilder();
     build(mb.initRoot(complexTestServiceGetRepositoryParamsFactory));
-    final f = _cap.dispatch(0xd7fb0472c16375ee, 10, mb.serialize());
-    return RepositoryClient(PipelinedCapability(f.then((r) => r.caps[0])));
+    final call = _cap.beginDispatch(0xd7fb0472c16375ee, 10, mb.serialize());
+    return RepositoryClient(call.pipelineResult(0));
   }
 
   CapabilityFactoryClient getFactory(void Function(ComplexTestServiceGetFactoryParamsBuilder) build) {
     final mb = MessageBuilder();
     build(mb.initRoot(complexTestServiceGetFactoryParamsFactory));
-    final f = _cap.dispatch(0xd7fb0472c16375ee, 11, mb.serialize());
-    return CapabilityFactoryClient(PipelinedCapability(f.then((r) => r.caps[0])));
+    final call = _cap.beginDispatch(0xd7fb0472c16375ee, 11, mb.serialize());
+    return CapabilityFactoryClient(call.pipelineResult(0));
   }
 
   Future<ComplexTestServiceUseDiamondResultsReader> useDiamond(void Function(ComplexTestServiceUseDiamondParamsBuilder) build, {required Capability diamond}) async {
@@ -5660,5 +5660,51 @@ abstract class ComplexTestServiceServer extends Capability {
 
   @override
   Future<void> dispose() async {}
+}
+
+final class KeyValueTextTextReader extends StructReader {
+  KeyValueTextTextReader(super.raw);
+
+  String? get key => getTextField(0);
+
+  String? get value => getTextField(1);
+}
+
+final class OptionalObserverPersonReader extends StructReader {
+  OptionalObserverPersonReader(super.raw);
+
+  int get which => getUint16Field(0);
+
+  void get none => {};
+
+  int get someCapIndex => getCapabilityField(0);
+}
+
+final class TreePersonReader extends StructReader {
+  TreePersonReader(super.raw);
+
+  PersonReader? get value => getStructFieldWith(0, (r) => PersonReader(r));
+
+  ListReader<TreePersonReader>? get children => getStructListFieldWith(1, (r) => TreePersonReader(r));
+}
+
+final class ResultPersonErrorInfoReader extends StructReader {
+  ResultPersonErrorInfoReader(super.raw);
+
+  int get which => getUint16Field(0);
+
+  PersonReader? get ok => getStructFieldWith(0, (r) => PersonReader(r));
+
+  ErrorInfoReader? get err => getStructFieldWith(0, (r) => ErrorInfoReader(r));
+}
+
+final class OptionalErrorInfoReader extends StructReader {
+  OptionalErrorInfoReader(super.raw);
+
+  int get which => getUint16Field(0);
+
+  void get none => {};
+
+  ErrorInfoReader? get some => getStructFieldWith(0, (r) => ErrorInfoReader(r));
 }
 

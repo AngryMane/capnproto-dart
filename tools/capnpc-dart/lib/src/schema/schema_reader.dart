@@ -32,11 +32,10 @@ import 'schema_model.dart';
 //   bytes 16-23 : scopeId (UInt64, @3)
 //   bytes 24-25 : struct.pointerCount (UInt16, @8)
 //   bytes 26-27 : struct.preferredListEncoding (UInt16, @9)
-//   bytes 28-29 : struct.discriminantCount (UInt16, @11)
-//   bytes 30-31 : (unused padding)
+//   byte  28 b0 : struct.isGroup (Bool, @10)  — bit 224
+//   bytes 30-31 : struct.discriminantCount (UInt16, @11)
 //   bytes 32-35 : struct.discriminantOffset (UInt32, @12)
-//   byte  30 b0 : struct.isGroup (Bool, @10) — bit 240
-//   byte  30 b1 : isGeneric (Bool, @33)       — bit 241
+//   byte  36 b0 : isGeneric (Bool, @33)       — bit 288
 // Pointer section:
 //   ptr 0 : displayName (Text, @1)
 //   ptr 1 : nestedNodes (List(NestedNode), @4)
@@ -49,8 +48,8 @@ import 'schema_model.dart';
 const _nodeUnionDiscriminant = 12; // byte offset
 const _nodeStructDwc = 14;
 const _nodeStructPtrCount = 24;
-const _nodeStructIsGroupBit = 240; // bit index (byte 30, bit 0)
-const _nodeStructDiscriminantCount = 28;
+const _nodeStructIsGroupBit = 224; // bit index (byte 28, bit 0)
+const _nodeStructDiscriminantCount = 30;
 const _nodeStructDiscriminantOffset = 32;
 const _nodeStructFieldsPtr = 3;
 const _nodeEnumEnumerantsPtr = 3;
@@ -115,7 +114,7 @@ class _NestedNodeReader extends StructReader {
 //   bytes  8- 9 : slot/group discriminant (0=slot, 1=group)
 //   bytes 10-11 : ordinal discriminant (0=implicit, 1=explicit)
 //   bytes 12-13 : ordinal.explicit (UInt16, @9)
-//   byte  14 b0 : slot.hadExplicitDefault (Bool, @10) — bit 112
+//   byte  16 b0 : slot.hadExplicitDefault (Bool, @10) — bit 128
 //   bytes 16-23 : group.typeId (UInt64, @7)
 // Pointer section:
 //   ptr 0 : name (Text, @0)
@@ -133,7 +132,7 @@ class _FieldReader extends StructReader {
 
   // slot fields
   int get slotOffset => getUint32Field(4);
-  bool get slotHadExplicitDefault => getBoolField(112); // byte 14, bit 0
+  bool get slotHadExplicitDefault => getBoolField(128); // byte 16, bit 0
 
   _TypeReader? get slotType => getStructFieldWith(2, (r) => _TypeReader(r));
   _ValueReader? get slotDefaultValue => getStructFieldWith(3, (r) => _ValueReader(r));
@@ -156,12 +155,12 @@ class _FieldReader extends StructReader {
 //                 0=Void 1=Bool 2=Int8 3=Int16 4=Int32 5=Int64
 //                 6=UInt8 7=UInt16 8=UInt32 9=UInt64 10=Float32 11=Float64
 //                 12=Text 13=Data 14=List 15=Enum 16=Struct 17=Interface
-//                 18=AnyPointer (anyKind @18)
-//   bytes  2- 3 : anyPointer inner union disc (when main=18)
+//                 18=AnyPointer
+//   bytes  8- 9 : anyPointer inner union disc (when main=18, u16 index 4)
 //                 0=unconstrained, 1=parameter, 2=implicitMethodParameter
-//   bytes  4- 5 : unconstrained inner-inner disc (main=18, inner=0) OR
-//                 parameterIndex (main=18, inner=1 or 2)
-//   bytes  8-15 : typeId (enum/struct/interface) / scopeId (anyPointer.parameter)
+//   bytes 10-11 : parameterIndex (main=18, inner=1 or 2, u16 index 5)
+//   bytes  8-15 : typeId (enum/struct/interface, u64 index 1)
+//   bytes 16-23 : scopeId (anyPointer.parameter, u64 index 2)
 // Pointer section:
 //   ptr 0 : list.elementType (Type) / struct|enum|interface brand (Brand) / ...
 
@@ -171,11 +170,11 @@ class _TypeReader extends StructReader {
   int get _disc => getUint16Field(0);
   int get typeId => getUint64Field(8);
 
-  // anyPointer sub-discriminant: 0=unconstrained, 1=parameter, 2=implicitMethodParameter
-  int get _anyPtrDisc => getUint16Field(2);
+  // anyPointer sub-discriminant at u16 index 4 = bytes 8-9
+  int get _anyPtrDisc => getUint16Field(8);
   bool get isTypeParameter => _disc == 18 && _anyPtrDisc == 1;
-  int get typeParameterIndex => getUint16Field(4);  // bytes 4-5
-  int get typeParameterScopeId => getUint64Field(8); // bytes 8-15 (same slot as typeId)
+  int get typeParameterIndex => getUint16Field(10); // u16 index 5 = bytes 10-11
+  int get typeParameterScopeId => getUint64Field(16); // u64 index 2 = bytes 16-23
 
   // ptr 0: listElementType (list variant) OR brand (struct/enum/interface variant)
   _TypeReader? get listElementType => getStructFieldWith(0, (r) => _TypeReader(r));
