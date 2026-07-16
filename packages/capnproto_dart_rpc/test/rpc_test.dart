@@ -16,7 +16,7 @@ import 'package:test/test.dart';
 const int _echoInterfaceId = 0x0001;
 const int _echoMethodId = 0;
 const int _pipelineMethodId = 1; // returns a capability in caps[0]
-const int _mixedMethodId = 2;    // result has non-cap at slot 0, cap at slot 1
+const int _mixedMethodId = 2; // result has non-cap at slot 0, cap at slot 1
 
 // Simple factory to build param message { message :Text } (ptr 0)
 Uint8List _buildEchoParams(String message) {
@@ -35,23 +35,27 @@ String? _parseEchoResult(Uint8List bytes) {
 // A minimal StructFactory for a struct with 0 dataWords and 1 ptrWord (Text).
 final class _TextParamFactory
     extends StructFactory<_TextParamReader, _TextParamBuilder> {
-  @override int get dataWords => 0;
-  @override int get ptrWords => 1;
-  @override _TextParamReader fromRawReader(RawStructReader r) =>
-      _TextParamReader(r);
-  @override _TextParamBuilder fromRawBuilder(RawStructBuilder r) =>
-      _TextParamBuilder(r);
+  @override
+  int get dataWords => 0;
+  @override
+  int get ptrWords => 1;
+  @override
+  _TextParamReader fromRawReader(RawStructReader r) => _TextParamReader(r);
+  @override
+  _TextParamBuilder fromRawBuilder(RawStructBuilder r) => _TextParamBuilder(r);
 }
 
 // A struct factory with 0 dataWords and 2 ptrWords (for mixed-result tests).
 final class _TwoPtrFactory
     extends StructFactory<_TextParamReader, _TextParamBuilder> {
-  @override int get dataWords => 0;
-  @override int get ptrWords => 2;
-  @override _TextParamReader fromRawReader(RawStructReader r) =>
-      _TextParamReader(r);
-  @override _TextParamBuilder fromRawBuilder(RawStructBuilder r) =>
-      _TextParamBuilder(r);
+  @override
+  int get dataWords => 0;
+  @override
+  int get ptrWords => 2;
+  @override
+  _TextParamReader fromRawReader(RawStructReader r) => _TextParamReader(r);
+  @override
+  _TextParamBuilder fromRawBuilder(RawStructBuilder r) => _TextParamBuilder(r);
 }
 
 class _TextParamReader extends StructReader {
@@ -60,7 +64,8 @@ class _TextParamReader extends StructReader {
 
 class _TextParamBuilder extends StructBuilder {
   _TextParamBuilder(super.raw);
-  @override StructReader asReader() => throw UnimplementedError();
+  @override
+  StructReader asReader() => throw UnimplementedError();
 }
 
 // ---------------------------------------------------------------------------
@@ -70,9 +75,11 @@ class _TextParamBuilder extends StructBuilder {
 class EchoServer extends Capability {
   @override
   Future<DispatchResult> dispatch(
-      int interfaceId, int methodId, Uint8List params, {
-      List<Capability> paramsCapabilities = const [],
-      }) async {
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) async {
     if (interfaceId != _echoInterfaceId) {
       throw RpcException('wrong interface: $interfaceId');
     }
@@ -100,15 +107,20 @@ class EchoClient extends Capability {
 
   Future<String> echo(String message) async {
     final result = await cap.dispatch(
-        _echoInterfaceId, _echoMethodId, _buildEchoParams(message));
+      _echoInterfaceId,
+      _echoMethodId,
+      _buildEchoParams(message),
+    );
     return _parseEchoResult(result.bytes) ?? '';
   }
 
   @override
-  Future<DispatchResult> dispatch(int iid, int mid, Uint8List params, {
-      List<Capability> paramsCapabilities = const [],
-      }) =>
-      Future.error(UnsupportedError('client stub'));
+  Future<DispatchResult> dispatch(
+    int iid,
+    int mid,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) => Future.error(UnsupportedError('client stub'));
 
   @override
   Future<void> dispose() => cap.dispose();
@@ -125,7 +137,8 @@ class EchoClientFactory extends CapabilityFactory<EchoClient> {
 
 /// Creates a bidirectional in-memory pipe: returns (client conn, server conn).
 (TwoPartyRpcConnection, TwoPartyRpcConnection) _makePipe(
-    Capability serverBootstrap) {
+  Capability serverBootstrap,
+) {
   final clientToServer = StreamController<Uint8List>();
   final serverToClient = StreamController<Uint8List>();
 
@@ -155,8 +168,7 @@ class PipelineServer extends Capability {
   }) async {
     if (methodId == _echoMethodId) {
       final mr = MessageReader.deserialize(params);
-      final message =
-          mr.getRoot(_TextParamFactory()).getTextField(0) ?? '';
+      final message = mr.getRoot(_TextParamFactory()).getTextField(0) ?? '';
       return DispatchResult(bytes: _buildEchoParams('echo: $message'));
     }
     if (methodId == _pipelineMethodId) {
@@ -204,6 +216,36 @@ class MixedResultServer extends Capability {
   Future<void> dispose() async {}
 }
 
+class ChildPipelineServer extends Capability {
+  final Completer<void>? completer;
+  final Capability child = EchoServer();
+
+  ChildPipelineServer({this.completer});
+
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) async {
+    if (methodId == _pipelineMethodId) {
+      final c = completer;
+      if (c != null) await c.future;
+      final mb = MessageBuilder();
+      mb.initRoot(_TextParamFactory()).setCapabilityField(0, 0);
+      return DispatchResult(bytes: mb.serialize(), caps: [child]);
+    }
+    if (methodId == _echoMethodId) {
+      return DispatchResult(bytes: _buildEchoParams('ok'));
+    }
+    throw RpcException('unknown method: $methodId');
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
 // ---------------------------------------------------------------------------
 // CapReceivingServer — captures paramsCapabilities for inspection
 // ---------------------------------------------------------------------------
@@ -224,6 +266,18 @@ class CapReceivingServer extends Capability {
 
   @override
   Future<void> dispose() async {}
+}
+
+Future<void> _waitForRelease(List<Uint8List> captured) async {
+  for (var i = 0; i < 20; i++) {
+    if (captured
+        .map(parseRpcMessage)
+        .any((m) => m.type == RpcMessageType.release)) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+  throw TestFailure('no Release message captured');
 }
 
 // ---------------------------------------------------------------------------
@@ -278,11 +332,12 @@ void main() {
       final serverToClient = StreamController<Uint8List>();
       final captured = <Uint8List>[];
 
-      final interceptSink = StreamController<Uint8List>()
-        ..stream.listen((b) {
-          captured.add(b);
-          clientToServer.add(b);
-        });
+      final interceptSink =
+          StreamController<Uint8List>()
+            ..stream.listen((b) {
+              captured.add(b);
+              clientToServer.add(b);
+            });
 
       final server = PipelineServer();
       TwoPartyRpcConnection.server(
@@ -303,13 +358,17 @@ void main() {
       // to complete.
       captured.clear();
       final call = bootstrapCap.cap.beginDispatch(
-        _echoInterfaceId, _pipelineMethodId, _buildEchoParams(''),
+        _echoInterfaceId,
+        _pipelineMethodId,
+        _buildEchoParams(''),
       );
       final pipelinedCap = call.pipelineResult(0);
 
       // Dispatch a second call on the pipelined cap before the first returns.
       final secondCall = pipelinedCap.dispatch(
-        _echoInterfaceId, _echoMethodId, _buildEchoParams('hi'),
+        _echoInterfaceId,
+        _echoMethodId,
+        _buildEchoParams('hi'),
       );
 
       // Await both to complete the exchange.
@@ -317,17 +376,21 @@ void main() {
       await secondCall;
 
       // Verify both Call messages were sent as a batch (before any Return).
-      final calls = captured
-          .map(parseRpcMessage)
-          .where((m) => m.type == RpcMessageType.call)
-          .toList();
+      final calls =
+          captured
+              .map(parseRpcMessage)
+              .where((m) => m.type == RpcMessageType.call)
+              .toList();
       expect(calls.length, greaterThanOrEqualTo(2));
 
       // The second call must target promisedAnswer, not importedCap.
       final pipelinedCall = calls.firstWhere(
         (m) => m.targetIsPromisedAnswer,
-        orElse: () => throw TestFailure(
-            'no promisedAnswer-targeted call found in captured messages'),
+        orElse:
+            () =>
+                throw TestFailure(
+                  'no promisedAnswer-targeted call found in captured messages',
+                ),
       );
       expect(pipelinedCall.targetPromisedAnswerQid, calls.first.questionId);
       expect(pipelinedCall.targetPtrIndex, 0);
@@ -335,43 +398,168 @@ void main() {
       await client.close();
     });
 
-    test('pipelined call on ptr slot 1 (cap after non-cap slot) resolves correctly', () async {
-      // This is the RPC-001 regression test.
-      // The result struct has slot 0 = null (not a cap) and slot 1 = capability.
-      // ptrIndex=1 must resolve to caps[0], not caps[1] (which would be OOB).
-      final server = MixedResultServer();
-      final (client, serverConn) = _makePipe(server);
-      final bootstrapCap = client.bootstrap(EchoClientFactory());
-      await bootstrapCap.echo('warmup');
+    test(
+      'pipelined call on ptr slot 1 (cap after non-cap slot) resolves correctly',
+      () async {
+        // This is the RPC-001 regression test.
+        // The result struct has slot 0 = null (not a cap) and slot 1 = capability.
+        // ptrIndex=1 must resolve to caps[0], not caps[1] (which would be OOB).
+        final server = MixedResultServer();
+        final (client, serverConn) = _makePipe(server);
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        await bootstrapCap.echo('warmup');
 
-      final call = bootstrapCap.cap.beginDispatch(
-        _echoInterfaceId, _mixedMethodId, _buildEchoParams(''),
-      );
-      // Pipeline onto ptr slot 1 (not slot 0), where the capability lives.
-      final pipelinedCap = call.pipelineResult(1);
+        final call = bootstrapCap.cap.beginDispatch(
+          _echoInterfaceId,
+          _mixedMethodId,
+          _buildEchoParams(''),
+        );
+        // Pipeline onto ptr slot 1 (not slot 0), where the capability lives.
+        final pipelinedCap = call.pipelineResult(1);
 
-      final secondResult = await pipelinedCap.dispatch(
-        _echoInterfaceId, _echoMethodId, _buildEchoParams('piped'),
-      );
-      expect(_parseEchoResult(secondResult.bytes), equals('echo: piped'));
+        final secondResult = await pipelinedCap.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          _buildEchoParams('piped'),
+        );
+        expect(_parseEchoResult(secondResult.bytes), equals('echo: piped'));
 
-      await client.close();
-      await serverConn.close();
-    });
+        await client.close();
+        await serverConn.close();
+      },
+    );
 
-    test('Capability.beginDispatch on non-RPC cap falls back to DeferredCapability', () async {
-      final server = EchoServer();
-      final call = server.beginDispatch(
-        _echoInterfaceId, _echoMethodId, _buildEchoParams('test'),
-      );
-      // pipelineResult on a non-RPC cap returns a DeferredCapability.
-      final piped = call.pipelineResult(0);
-      expect(piped, isA<DeferredCapability>());
-      // The result future still completes correctly.
-      final result = await call.result;
-      final text = _parseEchoResult(result.bytes);
-      expect(text, 'echo: test');
-    });
+    test(
+      'Capability.beginDispatch on non-RPC cap falls back to DeferredCapability',
+      () async {
+        final server = EchoServer();
+        final call = server.beginDispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          _buildEchoParams('test'),
+        );
+        // pipelineResult on a non-RPC cap returns a DeferredCapability.
+        final piped = call.pipelineResult(0);
+        expect(piped, isA<DeferredCapability>());
+        // The result future still completes correctly.
+        final result = await call.result;
+        final text = _parseEchoResult(result.bytes);
+        expect(text, 'echo: test');
+      },
+    );
+
+    test(
+      'disposing resolved pipelined capability releases imported cap',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        final captured = <Uint8List>[];
+
+        final interceptSink =
+            StreamController<Uint8List>()
+              ..stream.listen((b) {
+                captured.add(b);
+                clientToServer.add(b);
+              });
+
+        TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: ChildPipelineServer(),
+        );
+        final client = TwoPartyRpcConnection.client(
+          incoming: serverToClient.stream,
+          outgoing: interceptSink.sink,
+        );
+
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        await bootstrapCap.echo('warmup');
+
+        captured.clear();
+        final call = bootstrapCap.cap.beginDispatch(
+          _echoInterfaceId,
+          _pipelineMethodId,
+          _buildEchoParams(''),
+        );
+        final pipelinedCap = call.pipelineResult(0);
+        await call.result;
+
+        await pipelinedCap.dispose();
+        await _waitForRelease(captured);
+
+        final releases =
+            captured
+                .map(parseRpcMessage)
+                .where((m) => m.type == RpcMessageType.release)
+                .toList();
+        expect(releases, hasLength(1));
+        expect(releases.single.referenceCount, equals(1));
+
+        await client.close();
+        await interceptSink.close();
+      },
+    );
+
+    test(
+      'disposing pending pipelined capability releases after parent resolves',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        final captured = <Uint8List>[];
+        final completeParent = Completer<void>();
+
+        final interceptSink =
+            StreamController<Uint8List>()
+              ..stream.listen((b) {
+                captured.add(b);
+                clientToServer.add(b);
+              });
+
+        TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: ChildPipelineServer(completer: completeParent),
+        );
+        final client = TwoPartyRpcConnection.client(
+          incoming: serverToClient.stream,
+          outgoing: interceptSink.sink,
+        );
+
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        await bootstrapCap.echo('warmup');
+
+        captured.clear();
+        final call = bootstrapCap.cap.beginDispatch(
+          _echoInterfaceId,
+          _pipelineMethodId,
+          _buildEchoParams(''),
+        );
+        final pipelinedCap = call.pipelineResult(0);
+
+        await pipelinedCap.dispose();
+        expect(
+          captured
+              .map(parseRpcMessage)
+              .where((m) => m.type == RpcMessageType.release),
+          isEmpty,
+        );
+
+        completeParent.complete();
+        await call.result;
+        await _waitForRelease(captured);
+
+        final releases =
+            captured
+                .map(parseRpcMessage)
+                .where((m) => m.type == RpcMessageType.release)
+                .toList();
+        expect(releases, hasLength(1));
+        expect(releases.single.referenceCount, equals(1));
+
+        await client.close();
+        await interceptSink.close();
+      },
+    );
   });
 
   group('rpc_proto — message encoding/decoding', () {
@@ -413,7 +601,9 @@ void main() {
       final results = mb.serialize();
 
       final bytes = buildReturnResultsMessage(
-          answerId: 99, resultsBytes: results);
+        answerId: 99,
+        resultsBytes: results,
+      );
       final msg = parseRpcMessage(bytes);
       expect(msg.type, RpcMessageType.return_);
       expect(msg.answerId, 99);
@@ -425,7 +615,9 @@ void main() {
 
     test('return exception round-trip', () {
       final bytes = buildReturnExceptionMessage(
-          answerId: 5, reason: 'something broke');
+        answerId: 5,
+        reason: 'something broke',
+      );
       final msg = parseRpcMessage(bytes);
       expect(msg.type, RpcMessageType.return_);
       expect(msg.answerId, 5);
@@ -434,8 +626,7 @@ void main() {
     });
 
     test('bootstrap return round-trip (capTable)', () {
-      final bytes =
-          buildBootstrapReturnMessage(answerId: 1, exportId: 42);
+      final bytes = buildBootstrapReturnMessage(answerId: 1, exportId: 42);
       final msg = parseRpcMessage(bytes);
       expect(msg.type, RpcMessageType.return_);
       expect(msg.answerId, 1);
@@ -523,119 +714,140 @@ void main() {
       final releaseBytes = buildReleaseMessage(1, 1);
       final mangled = Uint8List.fromList(releaseBytes);
       mangled[16] = 99; // disc lo byte
-      mangled[17] = 0;  // disc hi byte
+      mangled[17] = 0; // disc hi byte
       expect(parseRpcMessage(mangled).type, equals(RpcMessageType.other));
     });
   });
 
-  group('TwoPartyRpcConnection — RPC-003 receiverHosted (imported cap returned to same peer)', () {
-    test('capability received from server and sent back arrives as server-side object', () async {
-      final server = CapReceivingServer();
-      final (client, serverConn) = _makePipe(server);
+  group(
+    'TwoPartyRpcConnection — RPC-003 receiverHosted (imported cap returned to same peer)',
+    () {
+      test(
+        'capability received from server and sent back arrives as server-side object',
+        () async {
+          final server = CapReceivingServer();
+          final (client, serverConn) = _makePipe(server);
 
-      // Bootstrap: returns the server object itself.
-      final bootstrapCap = client.bootstrap(EchoClientFactory());
+          // Bootstrap: returns the server object itself.
+          final bootstrapCap = client.bootstrap(EchoClientFactory());
 
-      // Warm up so the bootstrap exchange completes.
-      await bootstrapCap.echo('warmup');
+          // Warm up so the bootstrap exchange completes.
+          await bootstrapCap.echo('warmup');
 
-      // Call the server, passing the bootstrap capability back as a param.
-      // With RPC-003 fixed, this should be sent as receiverHosted so the server
-      // receives its own capability object — not a proxy.
-      await bootstrapCap.cap.dispatch(
-        _echoInterfaceId,
-        _echoMethodId,
-        _buildEchoParams('test'),
-        paramsCapabilities: [bootstrapCap.cap],
+          // Call the server, passing the bootstrap capability back as a param.
+          // With RPC-003 fixed, this should be sent as receiverHosted so the server
+          // receives its own capability object — not a proxy.
+          await bootstrapCap.cap.dispatch(
+            _echoInterfaceId,
+            _echoMethodId,
+            _buildEchoParams('test'),
+            paramsCapabilities: [bootstrapCap.cap],
+          );
+
+          // The server should have received its own capability (identity check).
+          expect(server.lastParams, hasLength(1));
+          expect(server.lastParams[0], same(server));
+
+          await client.close();
+          await serverConn.close();
+        },
       );
 
-      // The server should have received its own capability (identity check).
-      expect(server.lastParams, hasLength(1));
-      expect(server.lastParams[0], same(server));
+      test(
+        'capTable wire encoding uses disc=3 (receiverHosted) for imported cap',
+        () async {
+          // Intercept the bytes going from client to server.
+          final clientToServer = StreamController<Uint8List>();
+          final serverToClient = StreamController<Uint8List>();
+          final captured = <Uint8List>[];
 
-      await client.close();
-      await serverConn.close();
-    });
+          final interceptSink =
+              StreamController<Uint8List>()
+                ..stream.listen((b) {
+                  captured.add(b);
+                  clientToServer.add(b);
+                });
 
-    test('capTable wire encoding uses disc=3 (receiverHosted) for imported cap', () async {
-      // Intercept the bytes going from client to server.
-      final clientToServer = StreamController<Uint8List>();
-      final serverToClient = StreamController<Uint8List>();
-      final captured = <Uint8List>[];
+          final client = TwoPartyRpcConnection.client(
+            incoming: serverToClient.stream,
+            outgoing: interceptSink.sink,
+          );
+          TwoPartyRpcConnection.server(
+            incoming: clientToServer.stream,
+            outgoing: serverToClient.sink,
+            bootstrap: EchoServer(),
+          );
 
-      final interceptSink = StreamController<Uint8List>()
-        ..stream.listen((b) {
-          captured.add(b);
-          clientToServer.add(b);
-        });
+          final stub = client.bootstrap(EchoClientFactory());
+          await stub.echo('warmup'); // ensure bootstrap is resolved
 
-      final client = TwoPartyRpcConnection.client(
-        incoming: serverToClient.stream,
-        outgoing: interceptSink.sink,
+          // Call with the bootstrap cap itself as a capability param.
+          await stub.cap.dispatch(
+            _echoInterfaceId,
+            _echoMethodId,
+            _buildEchoParams(''),
+            paramsCapabilities: [stub.cap],
+          );
+
+          // Find the Call message that has a non-empty capTable.
+          final callWithCap =
+              captured
+                  .map(parseRpcMessage)
+                  .where(
+                    (m) =>
+                        m.type == RpcMessageType.call &&
+                        m.paramsCapTable.isNotEmpty,
+                  )
+                  .toList();
+
+          expect(callWithCap, hasLength(1));
+          // disc=3 means receiverHosted — the peer's own export, no proxy.
+          expect(callWithCap.first.paramsCapTable.first.$1, equals(3));
+
+          await client.close();
+          await interceptSink.close();
+        },
       );
-      TwoPartyRpcConnection.server(
-        incoming: clientToServer.stream,
-        outgoing: serverToClient.sink,
-        bootstrap: EchoServer(),
-      );
-
-      final stub = client.bootstrap(EchoClientFactory());
-      await stub.echo('warmup'); // ensure bootstrap is resolved
-
-      // Call with the bootstrap cap itself as a capability param.
-      await stub.cap.dispatch(
-        _echoInterfaceId,
-        _echoMethodId,
-        _buildEchoParams(''),
-        paramsCapabilities: [stub.cap],
-      );
-
-      // Find the Call message that has a non-empty capTable.
-      final callWithCap = captured
-          .map(parseRpcMessage)
-          .where((m) => m.type == RpcMessageType.call && m.paramsCapTable.isNotEmpty)
-          .toList();
-
-      expect(callWithCap, hasLength(1));
-      // disc=3 means receiverHosted — the peer's own export, no proxy.
-      expect(callWithCap.first.paramsCapTable.first.$1, equals(3));
-
-      await client.close();
-      await interceptSink.close();
-    });
-  });
+    },
+  );
 
   group('TwoPartyRpcConnection — RPC-007 Unimplemented for unknown messages', () {
-    test('server sends Unimplemented when it receives a message with unknown disc', () async {
-      final serverInput = StreamController<Uint8List>();
-      final serverOutput = StreamController<Uint8List>();
-      final serverReceived = <RpcMessage>[];
+    test(
+      'server sends Unimplemented when it receives a message with unknown disc',
+      () async {
+        final serverInput = StreamController<Uint8List>();
+        final serverOutput = StreamController<Uint8List>();
+        final serverReceived = <RpcMessage>[];
 
-      serverOutput.stream.listen((bytes) => serverReceived.add(parseRpcMessage(bytes)));
+        serverOutput.stream.listen(
+          (bytes) => serverReceived.add(parseRpcMessage(bytes)),
+        );
 
-      TwoPartyRpcConnection.server(
-        incoming: serverInput.stream,
-        outgoing: serverOutput.sink,
-        bootstrap: EchoServer(),
-      );
+        TwoPartyRpcConnection.server(
+          incoming: serverInput.stream,
+          outgoing: serverOutput.sink,
+          bootstrap: EchoServer(),
+        );
 
-      // Build a message with an unknown disc (99) by mangling a Release message.
-      final releaseBytes = buildReleaseMessage(1, 1);
-      final mangled = Uint8List.fromList(releaseBytes);
-      mangled[16] = 99; // overwrite disc lo byte
-      mangled[17] = 0;
+        // Build a message with an unknown disc (99) by mangling a Release message.
+        final releaseBytes = buildReleaseMessage(1, 1);
+        final mangled = Uint8List.fromList(releaseBytes);
+        mangled[16] = 99; // overwrite disc lo byte
+        mangled[17] = 0;
 
-      serverInput.add(mangled);
-      await Future<void>.delayed(Duration.zero); // let the event loop run
+        serverInput.add(mangled);
+        await Future<void>.delayed(Duration.zero); // let the event loop run
 
-      expect(
-        serverReceived.any((m) => m.type == RpcMessageType.unimplemented),
-        isTrue,
-        reason: 'server should reply with Unimplemented for unknown message disc',
-      );
+        expect(
+          serverReceived.any((m) => m.type == RpcMessageType.unimplemented),
+          isTrue,
+          reason:
+              'server should reply with Unimplemented for unknown message disc',
+        );
 
-      await serverInput.close();
-    });
+        await serverInput.close();
+      },
+    );
   });
 
   group('TwoPartyRpcConnection — in-memory', () {
@@ -674,7 +886,10 @@ void main() {
       // Warm up so bootstrap completes, then dispatch with wrong methodId.
       await stub.echo('warmup');
       final wrongCall = stub.cap.dispatch(
-          _echoInterfaceId, 99, _buildEchoParams('x'));
+        _echoInterfaceId,
+        99,
+        _buildEchoParams('x'),
+      );
       await expectLater(wrongCall, throwsA(isA<RpcException>()));
       await client.close();
       await server.close();
