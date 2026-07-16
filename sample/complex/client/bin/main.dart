@@ -2092,12 +2092,19 @@ Future<void> _s28_resourceManagement(
   await target28a.dispose();
   pass('capability disposed without error');
 
-  // 28b: Calling disposed capability may throw or cause connection issues.
-  // Sending an RPC call to a cap the server has already released causes the
-  // server to return "Message target is not a current export ID", which in
-  // capnp-rpc can close the connection (Abort). We skip this test to preserve
-  // the connection for subsequent sections.
-  skip('calling disposed cap - may abort connection (protocol limitation)');
+  // 28b: Calling a disposed capability fails locally and keeps the connection
+  // alive.
+  try {
+    await target28a.ping((b) => b.payload = Uint8List.fromList([2]));
+    fail('calling disposed cap should fail locally');
+  } catch (e) {
+    check('calling disposed cap fails locally',
+        e.toString().contains('capability is disposed'));
+  }
+  final afterDisposedCall =
+      await svc.echoScalars((b) => b.initValue().int32Value = 2802);
+  checkEq('svc alive after disposed cap call',
+      afterDisposedCall.value?.int32Value, 2802);
 
   // 28c: Repository lifecycle: open, use, dispose
   final repoResult28c = await svc.getRepository((_) {});

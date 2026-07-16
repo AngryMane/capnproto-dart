@@ -950,6 +950,9 @@ class _ImportedCapability extends Capability {
       throw const RpcException('capability is disposed');
     }
     final state = await _state;
+    if (_disposed) {
+      throw const RpcException('capability is disposed');
+    }
     final replacement = state.replacement;
     if (replacement != null) {
       return replacement.dispatch(
@@ -1013,6 +1016,9 @@ class _ImportedCapability extends Capability {
     final qidCompleter = Completer<int>();
     final result = stateFuture
         .then((state) {
+          if (_disposed) {
+            throw const RpcException('capability is disposed');
+          }
           final replacement = state.replacement;
           if (replacement != null) {
             return replacement

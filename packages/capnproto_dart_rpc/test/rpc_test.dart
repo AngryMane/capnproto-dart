@@ -140,6 +140,32 @@ class ThrowingDisposeCapability extends Capability {
   }
 }
 
+class CountingCapability extends EchoServer {
+  int disposeCount = 0;
+  int dispatchCount = 0;
+
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) async {
+    dispatchCount++;
+    return super.dispatch(
+      interfaceId,
+      methodId,
+      params,
+      paramsCapabilities: paramsCapabilities,
+    );
+  }
+
+  @override
+  Future<void> dispose() async {
+    disposeCount++;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Echo client stub
 // ---------------------------------------------------------------------------
@@ -712,6 +738,44 @@ void main() {
       },
     );
 
+    test('DeferredCapability is locally failed after dispose', () async {
+      final completer = Completer<Capability>();
+      final deferred = DeferredCapability(completer.future);
+      final local = CountingCapability();
+
+      final disposeFuture = deferred.dispose();
+      completer.complete(local);
+      await disposeFuture;
+      await deferred.dispose();
+
+      expect(local.disposeCount, equals(1));
+
+      await expectLater(
+        deferred.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          _buildEchoParams('after-dispose'),
+        ),
+        throwsA(
+          allOf(
+            isA<RpcException>(),
+            predicate<Object>(
+              (e) => e.toString().contains('capability is disposed'),
+            ),
+          ),
+        ),
+      );
+      expect(local.dispatchCount, equals(0));
+
+      final call = deferred.beginDispatch(
+        _echoInterfaceId,
+        _echoMethodId,
+        _buildEchoParams('after-dispose'),
+      );
+      await expectLater(call.result, throwsA(isA<RpcException>()));
+      expect(local.dispatchCount, equals(0));
+    });
+
     test(
       'disposing resolved pipelined capability releases imported cap',
       () async {
@@ -758,6 +822,74 @@ void main() {
                 .toList();
         expect(releases, hasLength(1));
         expect(releases.single.referenceCount, equals(1));
+
+        await client.close();
+        await interceptSink.close();
+      },
+    );
+
+    test(
+      'disposed imported capability fails locally without sending Call',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        final captured = <Uint8List>[];
+
+        final interceptSink =
+            StreamController<Uint8List>()
+              ..stream.listen((b) {
+                captured.add(b);
+                clientToServer.add(b);
+              });
+
+        TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: PipelineServer(),
+        );
+        final client = TwoPartyRpcConnection.client(
+          incoming: serverToClient.stream,
+          outgoing: interceptSink.sink,
+        );
+
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        await bootstrapCap.echo('warmup');
+
+        final call = bootstrapCap.cap.beginDispatch(
+          _echoInterfaceId,
+          _pipelineMethodId,
+          _buildEchoParams(''),
+        );
+        final pipelinedCap = call.pipelineResult(0);
+        await call.result;
+
+        captured.clear();
+        await pipelinedCap.dispose();
+        await _waitForRelease(captured);
+
+        captured.clear();
+        await expectLater(
+          pipelinedCap.dispatch(
+            _echoInterfaceId,
+            _echoMethodId,
+            _buildEchoParams('after-dispose'),
+          ),
+          throwsA(
+            allOf(
+              isA<RpcException>(),
+              predicate<Object>(
+                (e) => e.toString().contains('capability is disposed'),
+              ),
+            ),
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(
+          captured
+              .map(parseRpcMessage)
+              .where((m) => m.type == RpcMessageType.call),
+          isEmpty,
+        );
 
         await client.close();
         await interceptSink.close();

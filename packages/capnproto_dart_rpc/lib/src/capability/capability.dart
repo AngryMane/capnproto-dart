@@ -225,9 +225,23 @@ abstract interface class CapCall {
 /// send wire-level promisedAnswer messages.
 class DeferredCapability extends Capability {
   final Future<Capability> _future;
+  bool _disposed = false;
+  Future<void>? _disposeFuture;
 
   DeferredCapability(Future<Capability> future) : _future = future {
     future.ignore();
+  }
+
+  Future<Capability> _resolveForCall() async {
+    if (_disposed) {
+      throw const RpcException('capability is disposed');
+    }
+    final cap = await _future;
+    if (_disposed) {
+      await cap.dispose();
+      throw const RpcException('capability is disposed');
+    }
+    return cap;
   }
 
   @override
@@ -237,7 +251,7 @@ class DeferredCapability extends Capability {
     Uint8List params, {
     List<Capability> paramsCapabilities = const [],
   }) async {
-    final cap = await _future;
+    final cap = await _resolveForCall();
     return cap.dispatch(
       interfaceId,
       methodId,
@@ -254,7 +268,7 @@ class DeferredCapability extends Capability {
     List<Capability> paramsCapabilities = const [],
     DispatchContext? context,
   }) async {
-    final cap = await _future;
+    final cap = await _resolveForCall();
     return cap.dispatchWithContext(
       interfaceId,
       methodId,
@@ -265,9 +279,41 @@ class DeferredCapability extends Capability {
   }
 
   @override
+  CapCall beginDispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) {
+    if (_disposed) {
+      return _DeferredCapCall(
+        Future<DispatchResult>.error(
+          const RpcException('capability is disposed'),
+        ),
+      );
+    }
+    return _DeferredCapCall(
+      _resolveForCall().then(
+        (cap) => cap.dispatch(
+          interfaceId,
+          methodId,
+          params,
+          paramsCapabilities: paramsCapabilities,
+        ),
+      ),
+    );
+  }
+
+  @override
   Future<void> dispose() async {
-    final cap = await _future.catchError((_) => NullCapability() as Capability);
-    await cap.dispose();
+    if (_disposed) return _disposeFuture ?? Future.value();
+    _disposed = true;
+    return _disposeFuture ??= () async {
+      final cap = await _future.catchError(
+        (_) => NullCapability() as Capability,
+      );
+      await cap.dispose();
+    }();
   }
 }
 
