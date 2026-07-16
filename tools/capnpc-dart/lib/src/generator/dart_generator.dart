@@ -800,8 +800,78 @@ String _defaultSuffix(Object? v) {
       ('ListReader<Uint8List?>?', 'getDataListField($ptrIndex)'),
     StructRefType(:final typeId) =>
       _structListReaderGetter(typeId, ptrIndex, nodeMap),
+    VoidType() => ('ListReader<Null>?', 'getVoidListField($ptrIndex)'),
+    EnumRefType(:final typeId) =>
+      _enumListReaderGetter(typeId, ptrIndex, nodeMap),
+    ListType(:final elementType) =>
+      _nestedListReaderGetter(elementType, ptrIndex, nodeMap),
     _ => ('ListReader<dynamic>?', 'null /* unsupported list element */'),
   };
+}
+
+(String, String) _enumListReaderGetter(
+    int typeId, int ptrIndex, Map<int, SchemaNode> nodeMap) {
+  final node = nodeMap[typeId];
+  final name = _dartClassName(node?.displayName ?? 'UnknownEnum');
+  return ('ListReader<$name?>?',
+      'getEnumListField($ptrIndex, ${_lcfirst(name)}FromUint16)');
+}
+
+(String, String) _nestedListReaderGetter(
+    SchemaType elem, int ptrIndex, Map<int, SchemaNode> nodeMap) {
+  final (innerType, lambdaExpr) = _listFromRawExpr(elem, nodeMap);
+  // innerType is the Dart element type that the lambda produces (e.g. 'double').
+  // getNestedListField returns ListReader<ListReader<T>?>?, so wrap accordingly.
+  return ('ListReader<ListReader<$innerType>?>?',
+      'getNestedListField($ptrIndex, $lambdaExpr)');
+}
+
+/// Returns (Dart element type, lambda expression `(raw) => <ListReader>`).
+(String, String) _listFromRawExpr(
+    SchemaType elem, Map<int, SchemaNode> nodeMap) {
+  return switch (elem) {
+    VoidType() => ('Null?', 'voidListFromRaw'),
+    BoolType() => ('bool', 'boolListFromRaw'),
+    Int8Type() => ('int', 'int8ListFromRaw'),
+    Int16Type() => ('int', 'int16ListFromRaw'),
+    Int32Type() => ('int', 'int32ListFromRaw'),
+    Int64Type() => ('int', 'int64ListFromRaw'),
+    UInt8Type() => ('int', 'uint8ListFromRaw'),
+    UInt16Type() => ('int', 'uint16ListFromRaw'),
+    UInt32Type() => ('int', 'uint32ListFromRaw'),
+    UInt64Type() => ('int', 'uint64ListFromRaw'),
+    Float32Type() => ('double', 'float32ListFromRaw'),
+    Float64Type() => ('double', 'float64ListFromRaw'),
+    TextType() => ('String?', 'textListFromRaw'),
+    DataType() => ('Uint8List?', 'dataListFromRaw'),
+    StructRefType(:final typeId) => _structListFromRawExpr(typeId, nodeMap),
+    EnumRefType(:final typeId) => _enumListFromRawExpr(typeId, nodeMap),
+    ListType(:final elementType) => _nestedNestedListFromRawExpr(elementType, nodeMap),
+    _ => ('dynamic', '(raw) => null /* unsupported nested list element */'),
+  };
+}
+
+(String, String) _structListFromRawExpr(
+    int typeId, Map<int, SchemaNode> nodeMap) {
+  final node = nodeMap[typeId];
+  final name = _dartClassName(node?.displayName ?? 'UnknownStruct');
+  return ('${name}Reader',
+      '(raw) => structListFromRaw(raw, (r) => ${name}Reader(r))');
+}
+
+(String, String) _enumListFromRawExpr(
+    int typeId, Map<int, SchemaNode> nodeMap) {
+  final node = nodeMap[typeId];
+  final name = _dartClassName(node?.displayName ?? 'UnknownEnum');
+  return ('$name?',
+      '(raw) => enumListFromRaw(raw, ${_lcfirst(name)}FromUint16)');
+}
+
+(String, String) _nestedNestedListFromRawExpr(
+    SchemaType elem, Map<int, SchemaNode> nodeMap) {
+  final (innerType, innerLambda) = _listFromRawExpr(elem, nodeMap);
+  return ('ListReader<$innerType>?',
+      '(raw) => NestedListReader<$innerType>(raw, $innerLambda)');
 }
 
 (String, String) _structListReaderGetter(
@@ -874,8 +944,20 @@ String _defaultSuffix(Object? v) {
       ('initDataListField($ptrIndex, length)', 'ListBuilder<Uint8List?>'),
     StructRefType(:final typeId) =>
       _structListInitCall(typeId, ptrIndex, nodeMap),
+    VoidType() =>
+      ('initVoidListField($ptrIndex, length)', 'ListBuilder<Null>'),
+    EnumRefType(:final typeId) =>
+      _enumListInitCall(typeId, ptrIndex, nodeMap),
     _ => ('/* unsupported */', 'dynamic'),
   };
+}
+
+(String, String) _enumListInitCall(
+    int typeId, int ptrIndex, Map<int, SchemaNode> nodeMap) {
+  final node = nodeMap[typeId];
+  final name = _dartClassName(node?.displayName ?? 'UnknownEnum');
+  return ('initEnumListField($ptrIndex, length, ${_lcfirst(name)}ToUint16)',
+      'ListBuilder<$name>');
 }
 
 (String, String) _structListInitCall(

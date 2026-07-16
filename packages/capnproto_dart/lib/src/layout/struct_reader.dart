@@ -249,4 +249,28 @@ abstract class StructReader {
     final raw = _resolveListField(ptrIndex);
     return raw == null ? null : StructListReader<R>(raw, fromRaw);
   }
+
+  /// Reads a `List(Void)` from the pointer at [ptrIndex].
+  /// Returns null if the pointer is null.
+  ListReader<Null>? getVoidListField(int ptrIndex) {
+    final raw = _resolveListField(ptrIndex);
+    return raw == null ? null : VoidListReader(raw);
+  }
+
+  /// Reads a list of enum values (stored as uint16) from [ptrIndex].
+  /// [fromInt] maps the raw integer to [E?] (null = unknown discriminant).
+  ListReader<E?>? getEnumListField<E>(int ptrIndex, E? Function(int) fromInt) {
+    final raw = _resolveListField(ptrIndex);
+    return raw == null ? null : EnumListReader<E>(raw, fromInt);
+  }
+
+  /// Reads a `List(List(T))` from [ptrIndex].
+  /// [fromRaw] converts each inner [RawListReader] to [ListReader<T>].
+  ListReader<ListReader<T>?>? getNestedListField<T>(
+    int ptrIndex,
+    ListReader<T>? Function(RawListReader) fromRaw,
+  ) {
+    final raw = _resolveListField(ptrIndex);
+    return raw == null ? null : NestedListReader<T>(raw, fromRaw);
+  }
 }

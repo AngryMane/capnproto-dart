@@ -187,6 +187,15 @@ abstract class StructBuilder {
         structPtrWords: structPtrWords,
       );
 
+  ListBuilder<Null> initVoidListField(int ptrIndex, int count) =>
+      VoidListBuilder(_allocateListField(ptrIndex, ListElementSize.void_, count));
+
+  ListBuilder<E> initEnumListField<E>(
+          int ptrIndex, int count, int Function(E) toUint16) =>
+      EnumListBuilder<E>(
+          _allocateListField(ptrIndex, ListElementSize.twoBytes, count),
+          toUint16);
+
   ListBuilder<bool> initBoolListField(int ptrIndex, int count) =>
       BoolListBuilder(_allocateListField(ptrIndex, ListElementSize.bit, count));
 

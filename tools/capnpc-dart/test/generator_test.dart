@@ -660,6 +660,86 @@ void main() {
     });
   });
 
+  group('generateDartFile — unsupported list element types (GEN-004)', () {
+    late SchemaNode enumNode10;
+    late SchemaNode strNode20;
+    late SchemaNode file;
+
+    setUp(() {
+      enumNode10 = enumNode(10, 'Color', [
+        const SchemaEnumerant(name: 'red', codeOrder: 0),
+        const SchemaEnumerant(name: 'blue', codeOrder: 1),
+      ]);
+      strNode20 = structNode(20, 'Item', 0, 0, []);
+      file = fileNode(1, [
+        SchemaNestedNode(name: 'Color', id: 10),
+        SchemaNestedNode(name: 'Item', id: 20),
+        SchemaNestedNode(name: 'AllLists', id: 30),
+      ]);
+    });
+
+    test('List(Void) generates getVoidListField reader', () {
+      final s = structNode(30, 'AllLists', 0, 1, [
+        ptrField('voids', 0, 0, const ListType(VoidType())),
+      ]);
+      final src = generateDartFile(file, [file, enumNode10, strNode20, s]);
+      expect(src, contains('ListReader<Null>?'));
+      expect(src, contains('getVoidListField(0)'));
+    });
+
+    test('List(Void) init generates initVoidListField', () {
+      final s = structNode(30, 'AllLists', 0, 1, [
+        ptrField('voids', 0, 0, const ListType(VoidType())),
+      ]);
+      final src = generateDartFile(file, [file, enumNode10, strNode20, s]);
+      expect(src, contains('ListBuilder<Null>'));
+      expect(src, contains('initVoidListField(0, length)'));
+    });
+
+    test('List(Enum) generates getEnumListField reader', () {
+      final s = structNode(30, 'AllLists', 0, 1, [
+        ptrField('colors', 0, 0, const ListType(EnumRefType(10))),
+      ]);
+      final src = generateDartFile(file, [file, enumNode10, strNode20, s]);
+      expect(src, contains('ListReader<Color?>?'));
+      expect(src, contains('getEnumListField(0, colorFromUint16)'));
+    });
+
+    test('List(Enum) init generates initEnumListField', () {
+      final s = structNode(30, 'AllLists', 0, 1, [
+        ptrField('colors', 0, 0, const ListType(EnumRefType(10))),
+      ]);
+      final src = generateDartFile(file, [file, enumNode10, strNode20, s]);
+      expect(src, contains('ListBuilder<Color>'));
+      expect(src, contains('initEnumListField(0, length, colorToUint16)'));
+    });
+
+    test('List(List(Float64)) generates getNestedListField reader', () {
+      final s = structNode(30, 'AllLists', 0, 1, [
+        ptrField('rows', 0, 0,
+            const ListType(ListType(Float64Type()))),
+      ]);
+      final src = generateDartFile(file, [file, enumNode10, strNode20, s]);
+      expect(src, contains('ListReader<ListReader<double>?>?'));
+      expect(src, contains('getNestedListField(0, float64ListFromRaw)'));
+    });
+
+    test('List(List(List(Int32))) generates double-nested reader', () {
+      final s = structNode(30, 'AllLists', 0, 1, [
+        ptrField(
+            'matrices',
+            0,
+            0,
+            const ListType(ListType(ListType(Int32Type())))),
+      ]);
+      final src = generateDartFile(file, [file, enumNode10, strNode20, s]);
+      expect(src, contains('ListReader<ListReader<ListReader<int>?>?>?'));
+      expect(src, contains('getNestedListField('));
+      expect(src, contains('NestedListReader<int>'));
+      expect(src, contains('int32ListFromRaw'));
+    });
+  });
+
   group('generateDartFiles — codegen entrypoint', () {
     test('maps .capnp filename to .capnp.dart', () {
       final sNode = structNode(20, 'Msg', 1, 0, [

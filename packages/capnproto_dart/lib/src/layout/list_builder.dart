@@ -154,6 +154,56 @@ class DataListBuilder extends ListBuilder<Uint8List?> {
   }
 }
 
+/// Builder for `List(Void)` fields.
+///
+/// Void list elements carry no data; only the length is meaningful.
+class VoidListBuilder extends ListBuilder<Null> {
+  final RawListBuilder _raw;
+
+  VoidListBuilder(this._raw);
+
+  @override
+  int get length => _raw.elementCount;
+
+  @override
+  Null operator [](int index) {
+    RangeError.checkValidIndex(index, this, 'index', _raw.elementCount);
+    return null;
+  }
+
+  @override
+  void operator []=(int index, Null value) {
+    RangeError.checkValidIndex(index, this, 'index', _raw.elementCount);
+    // Void elements have no data.
+  }
+}
+
+/// Builder for lists of enum values stored as 16-bit unsigned integers.
+///
+/// The `[]` operator throws; serialize and deserialize to read back written
+/// values (consistent with [TextListBuilder] and [DataListBuilder]).
+class EnumListBuilder<E> extends ListBuilder<E> {
+  final RawListBuilder _raw;
+  final int Function(E) _toInt;
+
+  EnumListBuilder(this._raw, this._toInt);
+
+  @override
+  int get length => _raw.elementCount;
+
+  @override
+  E operator [](int index) =>
+      throw UnsupportedError(
+          'reading from EnumListBuilder is not supported; '
+          'serialize and deserialize to read back');
+
+  @override
+  void operator []=(int index, E value) {
+    RangeError.checkValidIndex(index, this, 'index', _raw.elementCount);
+    writeUint16(_raw.segment.data, _raw.dataByteOffset + index * 2, _toInt(value));
+  }
+}
+
 /// Builder for composite struct lists.
 ///
 /// Call `builder[i]` to get the mutable builder for element `i` and modify
