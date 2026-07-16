@@ -393,6 +393,55 @@ void main() {
         ),
       );
     });
+
+    test('interface list builder exposes raw init and typed setter', () {
+      const sessionId = 41;
+      final sessionNode = interfaceNode(sessionId, 'Session', []);
+      final sNode = structNode(20, 'S', 0, 1, [
+        ptrField('sessions', 0, 0, ListType(InterfaceRefType(sessionId))),
+      ]);
+      final file = fileNode(1, [
+        SchemaNestedNode(name: 'S', id: 20),
+        SchemaNestedNode(name: 'Session', id: sessionId),
+      ]);
+      final src = generateDartFile(file, [file, sNode, sessionNode]);
+
+      // Raw init method is still present
+      expect(src, contains('ListBuilder<int> initSessions(int length)'));
+      // Typed setter for List(Interface) builder
+      expect(
+        src,
+        contains(
+          'void setSessionsTyped(List<SessionClient> caps, List<Object?> capTable)',
+        ),
+      );
+      expect(src, contains('capTable.add(caps[i].capability)'));
+      expect(src, contains('builder[i] = capTable.length - 1'));
+    });
+
+    test('interface field builder exposes raw setter and typed setter', () {
+      const sessionId = 41;
+      final sessionNode = interfaceNode(sessionId, 'Session', []);
+      final sNode = structNode(20, 'S', 0, 1, [
+        ptrField('session', 0, 0, InterfaceRefType(sessionId)),
+      ]);
+      final file = fileNode(1, [
+        SchemaNestedNode(name: 'S', id: 20),
+        SchemaNestedNode(name: 'Session', id: sessionId),
+      ]);
+      final src = generateDartFile(file, [file, sNode, sessionNode]);
+
+      // Raw setter (existing)
+      expect(src, contains('void setSession(int capTableIndex)'));
+      // Typed setter (new)
+      expect(
+        src,
+        contains(
+          'void setSessionTyped(SessionClient cap, List<Object?> capTable)',
+        ),
+      );
+      expect(src, contains('capTable.add(cap.capability)'));
+    });
   });
 
   group('generateDartFile — union', () {
@@ -1253,6 +1302,54 @@ void main() {
       expect(src, contains('getNestedListField('));
       expect(src, contains('NestedListReader<int>'));
       expect(src, contains('int32ListFromRaw'));
+    });
+
+    test('List(List(Interface)) reader generates typed nested capability list', () {
+      const sessionId = 41;
+      final sessionNode = interfaceNode(sessionId, 'Session', []);
+      final s = structNode(30, 'AllLists', 0, 1, [
+        ptrField(
+          'sessionGroups',
+          0,
+          0,
+          ListType(ListType(InterfaceRefType(sessionId))),
+        ),
+      ]);
+      final f = fileNode(1, [
+        SchemaNestedNode(name: 'Session', id: sessionId),
+        SchemaNestedNode(name: 'AllLists', id: 30),
+      ]);
+      final src = generateDartFile(f, [f, sessionNode, s]);
+
+      // Outer list contains inner capability list readers
+      expect(
+        src,
+        contains('ListReader<ListReader<SessionClient?>?>?'),
+      );
+      expect(src, contains('TypedCapabilityListReader<SessionClient>'));
+    });
+
+    test('List(List(Interface)) builder generates nested capability list init', () {
+      const sessionId = 41;
+      final sessionNode = interfaceNode(sessionId, 'Session', []);
+      final s = structNode(30, 'AllLists', 0, 1, [
+        ptrField(
+          'sessionGroups',
+          0,
+          0,
+          ListType(ListType(InterfaceRefType(sessionId))),
+        ),
+      ]);
+      final f = fileNode(1, [
+        SchemaNestedNode(name: 'Session', id: sessionId),
+        SchemaNestedNode(name: 'AllLists', id: 30),
+      ]);
+      final src = generateDartFile(f, [f, sessionNode, s]);
+
+      // Builder returns NestedListBuilder<ListBuilder<int>> for List(List(Interface))
+      expect(src, contains('NestedListBuilder<ListBuilder<int>>'));
+      expect(src, contains('initNestedListField('));
+      expect(src, contains('capabilityListBuilderFromRaw'));
     });
   });
 

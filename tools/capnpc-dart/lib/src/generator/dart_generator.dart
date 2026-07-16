@@ -1161,10 +1161,21 @@ void _writeBuilderPointerField(
     );
     sb.writeln('  }');
   } else if (type is InterfaceRefType) {
+    final capIfaceName = _dartClassName(
+      nodeMap[type.typeId]?.displayName ?? 'Unknown',
+    );
     final ucfname = _ucfirst(fname);
     sb.writeln('  void set$ucfname(int capTableIndex) {');
     if (hasDisc) sb.write(setDisc);
     sb.writeln('    setCapabilityField($offset, capTableIndex);');
+    sb.writeln('  }');
+    sb.writeln();
+    sb.writeln(
+      '  void set${ucfname}Typed(${capIfaceName}Client cap, List<Object?> capTable) {',
+    );
+    if (hasDisc) sb.write(setDisc);
+    sb.writeln('    capTable.add(cap.capability);');
+    sb.writeln('    setCapabilityField($offset, capTable.length - 1);');
     sb.writeln('  }');
   }
 }
@@ -1186,6 +1197,23 @@ void _writeListBuilderField(
   if (hasDisc) sb.write(setDisc);
   sb.writeln('    return $initCall;');
   sb.writeln('  }');
+
+  if (elem is InterfaceRefType) {
+    final ifaceName = _dartClassName(
+      nodeMap[elem.typeId]?.displayName ?? 'Unknown',
+    );
+    sb.writeln();
+    sb.writeln(
+      '  void set${ucfname}Typed(List<${ifaceName}Client> caps, List<Object?> capTable) {',
+    );
+    if (hasDisc) sb.write(setDisc);
+    sb.writeln('    final builder = initCapabilityListField($offset, caps.length);');
+    sb.writeln('    for (int i = 0; i < caps.length; i++) {');
+    sb.writeln('      capTable.add(caps[i].capability);');
+    sb.writeln('      builder[i] = capTable.length - 1;');
+    sb.writeln('    }');
+    sb.writeln('  }');
+  }
 }
 
 // ---------------------------------------------------------------------------
