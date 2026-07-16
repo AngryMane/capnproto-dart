@@ -76,6 +76,9 @@ class TwoPartyRpcConnection implements RpcConnection {
   // _handlePipelinedCall can parse the pointer slot to get the correct cap table index.
   final Map<int, _ResolvedAnswer> _answerCaps = {};
   final Map<int, Future<_ResolvedAnswer>> _pendingCaps = {};
+  // Incoming questions that were finished by the peer before local dispatch
+  // completed. Their dispatch result must be dropped instead of returned.
+  final Set<int> _finishedAnswers = {};
 
   // Set to a non-null error once the connection is closed.
   Object? _closedError;
@@ -497,6 +500,11 @@ class TwoPartyRpcConnection implements RpcConnection {
     dispatchFuture
         .then((result) {
           _pendingCaps.remove(qid);
+          if (_finishedAnswers.remove(qid)) {
+            _answerCaps.remove(qid);
+            _answers.remove(qid);
+            return;
+          }
           _answerCaps[qid] = _ResolvedAnswer(result.bytes, result.caps);
 
           final resultExportIds = <int>[];
@@ -524,6 +532,10 @@ class TwoPartyRpcConnection implements RpcConnection {
         .catchError((Object err) {
           _pendingCaps.remove(qid);
           _answerCaps.remove(qid);
+          if (_finishedAnswers.remove(qid)) {
+            _answers.remove(qid);
+            return;
+          }
           _answers[qid] = const [];
           _sendRaw(
             buildReturnExceptionMessage(
@@ -538,7 +550,14 @@ class TwoPartyRpcConnection implements RpcConnection {
     final qid = msg.questionId;
     _answerCaps.remove(qid);
     final resultExportIds = _answers.remove(qid);
-    if (resultExportIds == null || !msg.releaseResultCaps) return;
+    if (resultExportIds == null) {
+      if (_pendingCaps.containsKey(qid)) {
+        _finishedAnswers.add(qid);
+      }
+      return;
+    }
+    _finishedAnswers.remove(qid);
+    if (!msg.releaseResultCaps) return;
     for (final eid in resultExportIds) {
       _releaseExport(eid);
     }
@@ -561,6 +580,14 @@ class TwoPartyRpcConnection implements RpcConnection {
         if (_bootstrapCompleter != null && !_bootstrapCompleter!.isCompleted) {
           _bootstrapCompleter!.completeError(
             RpcException(msg.exceptionReason ?? 'bootstrap failed'),
+          );
+        }
+      } else {
+        if (_bootstrapCompleter != null && !_bootstrapCompleter!.isCompleted) {
+          _bootstrapCompleter!.completeError(
+            const RpcException(
+              'bootstrap Return had no capability in cap table',
+            ),
           );
         }
       }
@@ -654,6 +681,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     _answers.clear();
     _answerCaps.clear();
     _pendingCaps.clear();
+    _finishedAnswers.clear();
 
     try {
       await _outgoing.close();

@@ -296,6 +296,26 @@ class CapReceivingServer extends Capability {
   Future<void> dispose() async {}
 }
 
+class SlowEchoServer extends Capability {
+  final Completer<void> started = Completer<void>();
+  final Completer<void> complete = Completer<void>();
+
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) async {
+    if (!started.isCompleted) started.complete();
+    await complete.future;
+    return DispatchResult(bytes: _buildEchoParams('done'));
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
 Future<void> _waitForRelease(List<Uint8List> captured) async {
   for (var i = 0; i < 20; i++) {
     if (captured
@@ -813,6 +833,90 @@ void main() {
         expect(client.debugPendingQuestionSentCount, equals(0));
 
         await client.close();
+      },
+    );
+  });
+
+  group('TwoPartyRpcConnection — RPC-005/RPC-006 lifecycle', () {
+    test(
+      'bootstrap Return without a capability fails the bootstrap cap',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        clientToServer.stream.listen((_) {});
+
+        final client = TwoPartyRpcConnection.client(
+          incoming: serverToClient.stream,
+          outgoing: clientToServer.sink,
+        );
+        final stub = client.bootstrap(EchoClientFactory());
+
+        serverToClient.add(
+          buildReturnResultsMessage(
+            answerId: 0,
+            resultsBytes: _buildEchoParams('no-cap'),
+          ),
+        );
+
+        await expectLater(
+          stub.echo('hello').timeout(const Duration(milliseconds: 100)),
+          throwsA(
+            allOf(
+              isA<RpcException>(),
+              predicate<Object>(
+                (e) => e.toString().contains(
+                  'bootstrap Return had no capability in cap table',
+                ),
+              ),
+            ),
+          ),
+        );
+
+        await serverToClient.close();
+        await client.close();
+      },
+    );
+
+    test(
+      'Finish before Return suppresses the completed dispatch result',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        final captured = <RpcMessage>[];
+        serverToClient.stream.listen(
+          (bytes) => captured.add(parseRpcMessage(bytes)),
+        );
+
+        final server = SlowEchoServer();
+        final serverConn = TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: server,
+        );
+
+        clientToServer.add(
+          buildCallMessage(
+            questionId: 1,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _echoMethodId,
+            paramsBytes: _buildEchoParams('slow'),
+          ),
+        );
+        await server.started.future;
+
+        clientToServer.add(buildFinishMessage(1));
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        server.complete.complete();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(
+          captured.where((m) => m.type == RpcMessageType.return_),
+          isEmpty,
+        );
+
+        await clientToServer.close();
+        await serverConn.done;
       },
     );
   });
