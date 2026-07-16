@@ -13,17 +13,22 @@ import '../wire/pointer.dart';
 import '../wire/wire_helpers.dart';
 import 'message_reader_options.dart';
 
-/// If [messageBytes] contains more than one Cap'n Proto segment, deep-copies
-/// the root struct into a new single-segment message and returns those bytes.
-/// If already single-segment (or empty), returns [messageBytes] unchanged.
+/// Deep-copies [messageBytes] into a new single-segment message.
 ///
-/// This is needed before embedding a message as an AnyPointer, because
-/// [ArenaBuilder.writeAnyPointerFromMessage] only accepts single-segment input.
-Uint8List ensureSingleSegment(Uint8List messageBytes) {
+/// This is a bytes-only copy: capability pointers are zeroed because their
+/// indices are meaningful only together with the original message's capability
+/// table, which is not represented in raw serialized bytes.
+Uint8List ensureSingleSegment(
+  Uint8List messageBytes, {
+  bool preserveCapabilityPointers = false,
+}) {
   if (messageBytes.lengthInBytes < 4) return messageBytes;
   final hdr = ByteData.sublistView(messageBytes, 0, messageBytes.lengthInBytes);
   final numSegmentsMinusOne = readUint32(hdr, 0);
-  if (numSegmentsMinusOne == 0) return messageBytes; // already single-segment
+
+  if (preserveCapabilityPointers && numSegmentsMinusOne == 0) {
+    return messageBytes;
+  }
 
   // Calculate total source data words to size the destination arena.
   int totalSourceWords = 0;
@@ -31,14 +36,24 @@ Uint8List ensureSingleSegment(Uint8List messageBytes) {
     totalSourceWords += readUint32(hdr, 4 + i * 4);
   }
 
-  // Multi-segment: deep-copy root struct into a pre-sized single-segment arena.
-  final srcArena =
-      ArenaReader.fromBytes(messageBytes, const MessageReaderOptions());
-  final rootRaw = srcArena.getRootRaw();
+  // Deep-copy the root pointer into a pre-sized single-segment arena.
+  final srcArena = ArenaReader.fromBytes(
+    messageBytes,
+    const MessageReaderOptions(),
+  );
   // Add 64 words of overhead for the root pointer slot and alignment.
   final dst = ArenaBuilder(totalSourceWords + 64);
   final (ptrSeg, rootPtrOffset) = dst.allocate(1);
-  _copyStruct(rootRaw, srcArena, dst, ptrSeg, rootPtrOffset);
+  _copyPointer(
+    srcArena,
+    srcArena.getSegment(0),
+    0,
+    srcArena.nestingLimit,
+    dst,
+    ptrSeg,
+    rootPtrOffset,
+    preserveCapabilityPointers: preserveCapabilityPointers,
+  );
   return dst.serialize();
 }
 
@@ -46,7 +61,11 @@ Uint8List ensureSingleSegment(Uint8List messageBytes) {
 /// referenced struct into a new standalone message, and returns the serialized
 /// bytes.  Returns null if the pointer is null or a CapabilityPointer
 /// (capabilities cannot be deep-copied).
-Uint8List? copyAnyPointerToNewMessage(RawStructReader host, int ptrIndex) {
+Uint8List? copyAnyPointerToNewMessage(
+  RawStructReader host,
+  int ptrIndex, {
+  bool preserveCapabilityPointers = false,
+}) {
   if (ptrIndex >= host.ptrWords) return null;
   final ptrWordOffset = host.ptrWordOffset + ptrIndex;
 
@@ -54,13 +73,23 @@ Uint8List? copyAnyPointerToNewMessage(RawStructReader host, int ptrIndex) {
   final peeked = WirePointer.decode(host.segment.data, ptrWordOffset);
   if (peeked is NullPointer || peeked is CapabilityPointer) return null;
 
-  final src = host.arena
-      .resolveOptionalStructAt(host.segment, ptrWordOffset, host.nestingLimit);
+  final src = host.arena.resolveOptionalStructAt(
+    host.segment,
+    ptrWordOffset,
+    host.nestingLimit,
+  );
   if (src == null) return null;
 
   final dst = ArenaBuilder();
   final (ptrSeg, rootPtrOffset) = dst.allocate(1);
-  _copyStruct(src, host.arena, dst, ptrSeg, rootPtrOffset);
+  _copyStruct(
+    src,
+    host.arena,
+    dst,
+    ptrSeg,
+    rootPtrOffset,
+    preserveCapabilityPointers: preserveCapabilityPointers,
+  );
   return dst.serialize();
 }
 
@@ -73,8 +102,9 @@ void _copyStruct(
   ArenaReader srcArena,
   ArenaBuilder dstArena,
   SegmentBuilder dstPtrSeg,
-  int dstPtrWordOffset,
-) {
+  int dstPtrWordOffset, {
+  bool preserveCapabilityPointers = false,
+}) {
   final dst = dstArena.allocateStruct(
     ptrSeg: dstPtrSeg,
     ptrWordOffset: dstPtrWordOffset,
@@ -87,8 +117,9 @@ void _copyStruct(
     final byteCount = src.dataWords * bytesPerWord;
     final srcBase = src.dataWordOffset * bytesPerWord;
     final dstBase = dst.dataWordOffset * bytesPerWord;
-    final srcBuf =
-        src.segment.data.buffer.asUint8List(src.segment.data.offsetInBytes);
+    final srcBuf = src.segment.data.buffer.asUint8List(
+      src.segment.data.offsetInBytes,
+    );
     final dstBuf = dst.segment.data.buffer.asUint8List();
     dstBuf.setRange(dstBase, dstBase + byteCount, srcBuf, srcBase);
   }
@@ -103,6 +134,7 @@ void _copyStruct(
       dstArena,
       dst.segment,
       dst.ptrWordOffset + i,
+      preserveCapabilityPointers: preserveCapabilityPointers,
     );
   }
 }
@@ -114,8 +146,9 @@ void _copyPointer(
   int nestingLimit,
   ArenaBuilder dstArena,
   SegmentBuilder dstSeg,
-  int dstPtrWordOffset,
-) {
+  int dstPtrWordOffset, {
+  bool preserveCapabilityPointers = false,
+}) {
   final ptr = WirePointer.decode(srcSeg.data, srcPtrWordOffset);
   switch (ptr) {
     case NullPointer():
@@ -124,14 +157,23 @@ void _copyPointer(
     case FarPointer():
       final targetSeg = srcArena.getSegment(ptr.segmentId);
       if (!ptr.isDoubleFar) {
-        _copyPointer(srcArena, targetSeg, ptr.landingPadOffset, nestingLimit,
-            dstArena, dstSeg, dstPtrWordOffset);
+        _copyPointer(
+          srcArena,
+          targetSeg,
+          ptr.landingPadOffset,
+          nestingLimit,
+          dstArena,
+          dstSeg,
+          dstPtrWordOffset,
+          preserveCapabilityPointers: preserveCapabilityPointers,
+        );
       } else {
         // Double-far landing pad: [far_ptr, struct_tag]
-        final inner =
-            WirePointer.decode(targetSeg.data, ptr.landingPadOffset);
-        final tag =
-            WirePointer.decode(targetSeg.data, ptr.landingPadOffset + 1);
+        final inner = WirePointer.decode(targetSeg.data, ptr.landingPadOffset);
+        final tag = WirePointer.decode(
+          targetSeg.data,
+          ptr.landingPadOffset + 1,
+        );
         if (inner is FarPointer && !inner.isDoubleFar && tag is StructPointer) {
           final dataSeg = srcArena.getSegment(inner.segmentId);
           final structSrc = RawStructReader(
@@ -143,28 +185,67 @@ void _copyPointer(
             ptrWords: tag.ptrWords,
             nestingLimit: nestingLimit - 1,
           );
-          _copyStruct(structSrc, srcArena, dstArena, dstSeg, dstPtrWordOffset);
+          _copyStruct(
+            structSrc,
+            srcArena,
+            dstArena,
+            dstSeg,
+            dstPtrWordOffset,
+            preserveCapabilityPointers: preserveCapabilityPointers,
+          );
         }
       }
 
     case StructPointer():
-      final structSrc =
-          srcArena.resolveStructAt(srcSeg, srcPtrWordOffset, nestingLimit);
-      _copyStruct(structSrc, srcArena, dstArena, dstSeg, dstPtrWordOffset);
+      final structSrc = srcArena.resolveStructAt(
+        srcSeg,
+        srcPtrWordOffset,
+        nestingLimit,
+      );
+      _copyStruct(
+        structSrc,
+        srcArena,
+        dstArena,
+        dstSeg,
+        dstPtrWordOffset,
+        preserveCapabilityPointers: preserveCapabilityPointers,
+      );
 
     case ListPointer():
-      _copyList(srcArena, srcSeg, srcPtrWordOffset, nestingLimit, dstArena,
-          dstSeg, dstPtrWordOffset);
+      _copyList(
+        srcArena,
+        srcSeg,
+        srcPtrWordOffset,
+        nestingLimit,
+        dstArena,
+        dstSeg,
+        dstPtrWordOffset,
+        preserveCapabilityPointers: preserveCapabilityPointers,
+      );
 
     case CapabilityPointer():
-      // Copy the pointer word verbatim so consumers can extract
-      // the capabilityIndex for cap-table lookups.
-      final byteOffset = srcPtrWordOffset * bytesPerWord;
-      final dstByteOffset = dstPtrWordOffset * bytesPerWord;
-      writeUint32(dstSeg.data, dstByteOffset,
-          readUint32(srcSeg.data, byteOffset));
-      writeUint32(dstSeg.data, dstByteOffset + 4,
-          readUint32(srcSeg.data, byteOffset + 4));
+      if (preserveCapabilityPointers) {
+        final byteOffset = srcPtrWordOffset * bytesPerWord;
+        final dstByteOffset = dstPtrWordOffset * bytesPerWord;
+        writeUint32(
+          dstSeg.data,
+          dstByteOffset,
+          readUint32(srcSeg.data, byteOffset),
+        );
+        writeUint32(
+          dstSeg.data,
+          dstByteOffset + 4,
+          readUint32(srcSeg.data, byteOffset + 4),
+        );
+        break;
+      }
+      // Zero out capability pointers during deep copy: a capabilityIndex is
+      // only meaningful within its own message's cap table. Without also
+      // copying the cap table the index would be a dangling reference.
+      // Callers that need capability-aware transfer (e.g. RPC dispatch) use
+      // MessageReader.deserialize() directly rather than going through this
+      // deep-copy path.
+      break; // destination slot remains zeroed
   }
 }
 
@@ -175,10 +256,10 @@ void _copyList(
   int nestingLimit,
   ArenaBuilder dstArena,
   SegmentBuilder dstSeg,
-  int dstPtrWordOffset,
-) {
-  final raw =
-      srcArena.resolveListAt(srcSeg, srcPtrWordOffset, nestingLimit);
+  int dstPtrWordOffset, {
+  bool preserveCapabilityPointers = false,
+}) {
+  final raw = srcArena.resolveListAt(srcSeg, srcPtrWordOffset, nestingLimit);
   if (raw == null) return;
 
   switch (raw.elementSize) {
@@ -186,8 +267,9 @@ void _copyList(
       // Text or Data: copy elementCount bytes verbatim (includes null
       // terminator for Text, which is counted in elementCount).
       final bytes = Uint8List(raw.elementCount);
-      final srcBuf =
-          raw.segment.data.buffer.asUint8List(raw.segment.data.offsetInBytes);
+      final srcBuf = raw.segment.data.buffer.asUint8List(
+        raw.segment.data.offsetInBytes,
+      );
       bytes.setRange(0, raw.elementCount, srcBuf, raw.dataByteOffset);
       dstArena.writeDataField(dstSeg, dstPtrWordOffset, bytes);
 
@@ -211,8 +293,9 @@ void _copyList(
           final byteCount = raw.structDataWords * bytesPerWord;
           final srcBase = srcElemWordOff * bytesPerWord;
           final dstBase = dstElemWordOff * bytesPerWord;
-          final srcBuf = raw.segment.data.buffer
-              .asUint8List(raw.segment.data.offsetInBytes);
+          final srcBuf = raw.segment.data.buffer.asUint8List(
+            raw.segment.data.offsetInBytes,
+          );
           final dstBuf = dstList.segment.data.buffer.asUint8List();
           dstBuf.setRange(dstBase, dstBase + byteCount, srcBuf, srcBase);
         }
@@ -226,6 +309,7 @@ void _copyList(
             dstArena,
             dstList.segment,
             dstElemWordOff + raw.structDataWords + p,
+            preserveCapabilityPointers: preserveCapabilityPointers,
           );
         }
       }
@@ -240,8 +324,16 @@ void _copyList(
       for (var i = 0; i < raw.elementCount; i++) {
         final srcSlot = raw.dataByteOffset ~/ bytesPerWord + i;
         final dstSlot = dstList.dataByteOffset ~/ bytesPerWord + i;
-        _copyPointer(srcArena, raw.segment, srcSlot, nestingLimit - 1,
-            dstArena, dstList.segment, dstSlot);
+        _copyPointer(
+          srcArena,
+          raw.segment,
+          srcSlot,
+          nestingLimit - 1,
+          dstArena,
+          dstList.segment,
+          dstSlot,
+          preserveCapabilityPointers: preserveCapabilityPointers,
+        );
       }
 
     default:
@@ -255,10 +347,15 @@ void _copyList(
         elementCount: raw.elementCount,
       );
       final byteCount = wordCount * bytesPerWord;
-      final srcBuf =
-          raw.segment.data.buffer.asUint8List(raw.segment.data.offsetInBytes);
+      final srcBuf = raw.segment.data.buffer.asUint8List(
+        raw.segment.data.offsetInBytes,
+      );
       final dstBuf = dstList.segment.data.buffer.asUint8List();
-      dstBuf.setRange(dstList.dataByteOffset,
-          dstList.dataByteOffset + byteCount, srcBuf, raw.dataByteOffset);
+      dstBuf.setRange(
+        dstList.dataByteOffset,
+        dstList.dataByteOffset + byteCount,
+        srcBuf,
+        raw.dataByteOffset,
+      );
   }
 }

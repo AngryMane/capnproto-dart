@@ -54,59 +54,97 @@ abstract class StructBuilder {
   }
 
   void setUint8Field(int byteOffset, int value, {int defaultValue = 0}) {
-    writeUint8(_raw.segment.data,
-        _raw.dataWordOffset * bytesPerWord + byteOffset, value ^ defaultValue);
+    writeUint8(
+      _raw.segment.data,
+      _raw.dataWordOffset * bytesPerWord + byteOffset,
+      value ^ defaultValue,
+    );
   }
 
   void setUint16Field(int byteOffset, int value, {int defaultValue = 0}) {
-    writeUint16(_raw.segment.data,
-        _raw.dataWordOffset * bytesPerWord + byteOffset, value ^ defaultValue);
+    writeUint16(
+      _raw.segment.data,
+      _raw.dataWordOffset * bytesPerWord + byteOffset,
+      value ^ defaultValue,
+    );
   }
 
   void setUint32Field(int byteOffset, int value, {int defaultValue = 0}) {
-    writeUint32(_raw.segment.data,
-        _raw.dataWordOffset * bytesPerWord + byteOffset, value ^ defaultValue);
+    writeUint32(
+      _raw.segment.data,
+      _raw.dataWordOffset * bytesPerWord + byteOffset,
+      value ^ defaultValue,
+    );
   }
 
   void setUint64Field(int byteOffset, int value, {int defaultValue = 0}) {
-    writeUint64(_raw.segment.data,
-        _raw.dataWordOffset * bytesPerWord + byteOffset, value ^ defaultValue);
+    writeUint64(
+      _raw.segment.data,
+      _raw.dataWordOffset * bytesPerWord + byteOffset,
+      value ^ defaultValue,
+    );
   }
 
   void setInt8Field(int byteOffset, int value, {int defaultValue = 0}) {
-    writeInt8(_raw.segment.data,
-        _raw.dataWordOffset * bytesPerWord + byteOffset, value ^ defaultValue);
+    writeInt8(
+      _raw.segment.data,
+      _raw.dataWordOffset * bytesPerWord + byteOffset,
+      value ^ defaultValue,
+    );
   }
 
   void setInt16Field(int byteOffset, int value, {int defaultValue = 0}) {
-    writeInt16(_raw.segment.data,
-        _raw.dataWordOffset * bytesPerWord + byteOffset, value ^ defaultValue);
+    writeInt16(
+      _raw.segment.data,
+      _raw.dataWordOffset * bytesPerWord + byteOffset,
+      value ^ defaultValue,
+    );
   }
 
   void setInt32Field(int byteOffset, int value, {int defaultValue = 0}) {
-    writeInt32(_raw.segment.data,
-        _raw.dataWordOffset * bytesPerWord + byteOffset, value ^ defaultValue);
+    writeInt32(
+      _raw.segment.data,
+      _raw.dataWordOffset * bytesPerWord + byteOffset,
+      value ^ defaultValue,
+    );
   }
 
   void setInt64Field(int byteOffset, int value, {int defaultValue = 0}) {
-    writeInt64(_raw.segment.data,
-        _raw.dataWordOffset * bytesPerWord + byteOffset, value ^ defaultValue);
+    writeInt64(
+      _raw.segment.data,
+      _raw.dataWordOffset * bytesPerWord + byteOffset,
+      value ^ defaultValue,
+    );
   }
 
-  void setFloat32Field(int byteOffset, double value,
-      {double defaultValue = 0.0}) {
-    final bits = reinterpretFloat32AsUint32(value) ^
+  void setFloat32Field(
+    int byteOffset,
+    double value, {
+    double defaultValue = 0.0,
+  }) {
+    final bits =
+        reinterpretFloat32AsUint32(value) ^
         reinterpretFloat32AsUint32(defaultValue);
-    writeUint32(_raw.segment.data,
-        _raw.dataWordOffset * bytesPerWord + byteOffset, bits);
+    writeUint32(
+      _raw.segment.data,
+      _raw.dataWordOffset * bytesPerWord + byteOffset,
+      bits,
+    );
   }
 
-  void setFloat64Field(int byteOffset, double value,
-      {double defaultValue = 0.0}) {
-    final bits = reinterpretFloat64AsUint64(value) ^
+  void setFloat64Field(
+    int byteOffset,
+    double value, {
+    double defaultValue = 0.0,
+  }) {
+    final bits =
+        reinterpretFloat64AsUint64(value) ^
         reinterpretFloat64AsUint64(defaultValue);
-    writeUint64(_raw.segment.data,
-        _raw.dataWordOffset * bytesPerWord + byteOffset, bits);
+    writeUint64(
+      _raw.segment.data,
+      _raw.dataWordOffset * bytesPerWord + byteOffset,
+      bits,
+    );
   }
 
   // ---- Pointer section helpers ----
@@ -122,31 +160,49 @@ abstract class StructBuilder {
   /// Passing null leaves the slot zeroed (null pointer).
   void setTextField(int ptrIndex, String? value) {
     _raw.arena.writeTextField(
-        _raw.segment, _raw.ptrWordOffset + ptrIndex, value);
+      _raw.segment,
+      _raw.ptrWordOffset + ptrIndex,
+      value,
+    );
   }
 
   /// Writes a Data (raw bytes) pointer at [ptrIndex].
   /// Passing null leaves the slot zeroed (null pointer).
   void setDataField(int ptrIndex, Uint8List? value) {
     _raw.arena.writeDataField(
-        _raw.segment, _raw.ptrWordOffset + ptrIndex, value);
+      _raw.segment,
+      _raw.ptrWordOffset + ptrIndex,
+      value,
+    );
   }
 
   /// Embeds [messageBytes] (a serialized Cap'n Proto message) as the
-  /// AnyPointer at [ptrIndex].  Multi-segment messages are deep-copied into a
-  /// single segment first.
-  void setAnyPointerFromMessage(int ptrIndex, Uint8List messageBytes) {
+  /// AnyPointer at [ptrIndex].
+  ///
+  /// Capability pointers are zeroed by default because raw message bytes do not
+  /// include a capability table. RPC payloads that carry a matching cap table
+  /// can set [preserveCapabilityPointers].
+  void setAnyPointerFromMessage(
+    int ptrIndex,
+    Uint8List messageBytes, {
+    bool preserveCapabilityPointers = false,
+  }) {
     _raw.arena.writeAnyPointerFromMessage(
-        _raw.segment,
-        _raw.ptrWordOffset + ptrIndex,
-        ensureSingleSegment(messageBytes));
+      _raw.segment,
+      _raw.ptrWordOffset + ptrIndex,
+      ensureSingleSegment(
+        messageBytes,
+        preserveCapabilityPointers: preserveCapabilityPointers,
+      ),
+    );
   }
 
   /// Writes a capability pointer at [ptrIndex] referencing [capTableIndex]
   /// within the message's capability table.
   void setCapabilityField(int ptrIndex, int capTableIndex) {
-    CapabilityPointer(capabilityIndex: capTableIndex)
-        .encode(_raw.segment.data, _raw.ptrWordOffset + ptrIndex);
+    CapabilityPointer(
+      capabilityIndex: capTableIndex,
+    ).encode(_raw.segment.data, _raw.ptrWordOffset + ptrIndex);
   }
 
   /// Allocates a new nested struct for the pointer at [ptrIndex] and returns
@@ -177,85 +233,121 @@ abstract class StructBuilder {
     int count, {
     int structDataWords = 0,
     int structPtrWords = 0,
-  }) =>
-      _raw.arena.allocateList(
-        ptrSeg: _raw.segment,
-        ptrWordOffset: _raw.ptrWordOffset + ptrIndex,
-        elementSize: elementSize,
-        elementCount: count,
-        structDataWords: structDataWords,
-        structPtrWords: structPtrWords,
-      );
+  }) => _raw.arena.allocateList(
+    ptrSeg: _raw.segment,
+    ptrWordOffset: _raw.ptrWordOffset + ptrIndex,
+    elementSize: elementSize,
+    elementCount: count,
+    structDataWords: structDataWords,
+    structPtrWords: structPtrWords,
+  );
 
   ListBuilder<Null> initVoidListField(int ptrIndex, int count) =>
-      VoidListBuilder(_allocateListField(ptrIndex, ListElementSize.void_, count));
+      VoidListBuilder(
+        _allocateListField(ptrIndex, ListElementSize.void_, count),
+      );
 
   ListBuilder<E> initEnumListField<E>(
-          int ptrIndex, int count, int Function(E) toUint16) =>
-      EnumListBuilder<E>(
-          _allocateListField(ptrIndex, ListElementSize.twoBytes, count),
-          toUint16);
+    int ptrIndex,
+    int count,
+    int Function(E) toUint16,
+  ) => EnumListBuilder<E>(
+    _allocateListField(ptrIndex, ListElementSize.twoBytes, count),
+    toUint16,
+  );
 
   ListBuilder<bool> initBoolListField(int ptrIndex, int count) =>
       BoolListBuilder(_allocateListField(ptrIndex, ListElementSize.bit, count));
 
   ListBuilder<int> initInt8ListField(int ptrIndex, int count) =>
       PrimitiveIntListBuilder(
-          _allocateListField(ptrIndex, ListElementSize.byte, count),
-          readInt8, writeInt8, 1);
+        _allocateListField(ptrIndex, ListElementSize.byte, count),
+        readInt8,
+        writeInt8,
+        1,
+      );
 
   ListBuilder<int> initUint8ListField(int ptrIndex, int count) =>
       PrimitiveIntListBuilder(
-          _allocateListField(ptrIndex, ListElementSize.byte, count),
-          readUint8, writeUint8, 1);
+        _allocateListField(ptrIndex, ListElementSize.byte, count),
+        readUint8,
+        writeUint8,
+        1,
+      );
 
   ListBuilder<int> initInt16ListField(int ptrIndex, int count) =>
       PrimitiveIntListBuilder(
-          _allocateListField(ptrIndex, ListElementSize.twoBytes, count),
-          readInt16, writeInt16, 2);
+        _allocateListField(ptrIndex, ListElementSize.twoBytes, count),
+        readInt16,
+        writeInt16,
+        2,
+      );
 
   ListBuilder<int> initUint16ListField(int ptrIndex, int count) =>
       PrimitiveIntListBuilder(
-          _allocateListField(ptrIndex, ListElementSize.twoBytes, count),
-          readUint16, writeUint16, 2);
+        _allocateListField(ptrIndex, ListElementSize.twoBytes, count),
+        readUint16,
+        writeUint16,
+        2,
+      );
 
   ListBuilder<int> initInt32ListField(int ptrIndex, int count) =>
       PrimitiveIntListBuilder(
-          _allocateListField(ptrIndex, ListElementSize.fourBytes, count),
-          readInt32, writeInt32, 4);
+        _allocateListField(ptrIndex, ListElementSize.fourBytes, count),
+        readInt32,
+        writeInt32,
+        4,
+      );
 
   ListBuilder<int> initUint32ListField(int ptrIndex, int count) =>
       PrimitiveIntListBuilder(
-          _allocateListField(ptrIndex, ListElementSize.fourBytes, count),
-          readUint32, writeUint32, 4);
+        _allocateListField(ptrIndex, ListElementSize.fourBytes, count),
+        readUint32,
+        writeUint32,
+        4,
+      );
 
   ListBuilder<int> initInt64ListField(int ptrIndex, int count) =>
       PrimitiveIntListBuilder(
-          _allocateListField(ptrIndex, ListElementSize.eightBytes, count),
-          readInt64, writeInt64, 8);
+        _allocateListField(ptrIndex, ListElementSize.eightBytes, count),
+        readInt64,
+        writeInt64,
+        8,
+      );
 
   ListBuilder<int> initUint64ListField(int ptrIndex, int count) =>
       PrimitiveIntListBuilder(
-          _allocateListField(ptrIndex, ListElementSize.eightBytes, count),
-          readUint64, writeUint64, 8);
+        _allocateListField(ptrIndex, ListElementSize.eightBytes, count),
+        readUint64,
+        writeUint64,
+        8,
+      );
 
   ListBuilder<double> initFloat32ListField(int ptrIndex, int count) =>
       PrimitiveDoubleListBuilder(
-          _allocateListField(ptrIndex, ListElementSize.fourBytes, count),
-          readFloat32, writeFloat32, 4);
+        _allocateListField(ptrIndex, ListElementSize.fourBytes, count),
+        readFloat32,
+        writeFloat32,
+        4,
+      );
 
   ListBuilder<double> initFloat64ListField(int ptrIndex, int count) =>
       PrimitiveDoubleListBuilder(
-          _allocateListField(ptrIndex, ListElementSize.eightBytes, count),
-          readFloat64, writeFloat64, 8);
+        _allocateListField(ptrIndex, ListElementSize.eightBytes, count),
+        readFloat64,
+        writeFloat64,
+        8,
+      );
 
   ListBuilder<String?> initTextListField(int ptrIndex, int count) =>
       TextListBuilder(
-          _allocateListField(ptrIndex, ListElementSize.pointer, count));
+        _allocateListField(ptrIndex, ListElementSize.pointer, count),
+      );
 
   ListBuilder<Uint8List?> initDataListField(int ptrIndex, int count) =>
       DataListBuilder(
-          _allocateListField(ptrIndex, ListElementSize.pointer, count));
+        _allocateListField(ptrIndex, ListElementSize.pointer, count),
+      );
 
   /// Allocates a composite struct list with [count] elements and returns a
   /// typed builder via [fromRaw].
@@ -265,12 +357,16 @@ abstract class StructBuilder {
     B Function(RawStructBuilder) fromRaw,
     int dataWords,
     int ptrWords,
-  ) =>
-      StructListBuilder<B>(
-        _allocateListField(ptrIndex, ListElementSize.composite, count,
-            structDataWords: dataWords, structPtrWords: ptrWords),
-        fromRaw,
-      );
+  ) => StructListBuilder<B>(
+    _allocateListField(
+      ptrIndex,
+      ListElementSize.composite,
+      count,
+      structDataWords: dataWords,
+      structPtrWords: ptrWords,
+    ),
+    fromRaw,
+  );
 
   /// Allocates a `List(Interface)` field with [count] capability pointer slots.
   ///
@@ -279,7 +375,8 @@ abstract class StructBuilder {
   /// in the `paramsCapabilities` list passed to [dispatch]).
   ListBuilder<int> initCapabilityListField(int ptrIndex, int count) =>
       CapabilityListBuilder(
-          _allocateListField(ptrIndex, ListElementSize.pointer, count));
+        _allocateListField(ptrIndex, ListElementSize.pointer, count),
+      );
 
   /// Allocates a `List(List(T))` field and returns a builder for the outer list.
   ///
@@ -293,8 +390,11 @@ abstract class StructBuilder {
     int innerStructDataWords = 0,
     int innerStructPtrWords = 0,
   }) {
-    final outerRaw =
-        _allocateListField(ptrIndex, ListElementSize.pointer, outerCount);
+    final outerRaw = _allocateListField(
+      ptrIndex,
+      ListElementSize.pointer,
+      outerCount,
+    );
     return NestedListBuilder<ListBuilder<T>>(
       length: outerRaw.elementCount,
       initAt: (i, innerCount) {
@@ -321,8 +421,11 @@ abstract class StructBuilder {
     int innerStructDataWords = 0,
     int innerStructPtrWords = 0,
   }) {
-    final outerRaw =
-        _allocateListField(ptrIndex, ListElementSize.pointer, outerCount);
+    final outerRaw = _allocateListField(
+      ptrIndex,
+      ListElementSize.pointer,
+      outerCount,
+    );
     return NestedListBuilder<NestedListBuilder<ListBuilder<T>>>(
       length: outerRaw.elementCount,
       initAt: (i, midCount) {

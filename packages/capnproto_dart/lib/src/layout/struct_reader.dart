@@ -30,64 +30,79 @@ abstract class StructReader {
     final byteIndex = bitOffset ~/ 8;
     final bitMask = 1 << (bitOffset & 7);
     final absOffset = _raw.dataWordOffset * bytesPerWord + byteIndex;
-    final storedBit =
-        (readUint8(_raw.segment.data, absOffset) & bitMask) != 0;
+    final storedBit = (readUint8(_raw.segment.data, absOffset) & bitMask) != 0;
     return storedBit ^ defaultValue;
   }
 
   int getUint8Field(int byteOffset, {int defaultValue = 0}) {
     if (byteOffset ~/ bytesPerWord >= _raw.dataWords) return defaultValue;
     return readUint8(
-            _raw.segment.data, _raw.dataWordOffset * bytesPerWord + byteOffset) ^
+          _raw.segment.data,
+          _raw.dataWordOffset * bytesPerWord + byteOffset,
+        ) ^
         defaultValue;
   }
 
   int getUint16Field(int byteOffset, {int defaultValue = 0}) {
     if (byteOffset ~/ bytesPerWord >= _raw.dataWords) return defaultValue;
     return readUint16(
-            _raw.segment.data, _raw.dataWordOffset * bytesPerWord + byteOffset) ^
+          _raw.segment.data,
+          _raw.dataWordOffset * bytesPerWord + byteOffset,
+        ) ^
         defaultValue;
   }
 
   int getUint32Field(int byteOffset, {int defaultValue = 0}) {
     if (byteOffset ~/ bytesPerWord >= _raw.dataWords) return defaultValue;
     return readUint32(
-            _raw.segment.data, _raw.dataWordOffset * bytesPerWord + byteOffset) ^
+          _raw.segment.data,
+          _raw.dataWordOffset * bytesPerWord + byteOffset,
+        ) ^
         defaultValue;
   }
 
   int getUint64Field(int byteOffset, {int defaultValue = 0}) {
     if (byteOffset ~/ bytesPerWord >= _raw.dataWords) return defaultValue;
     return readUint64(
-            _raw.segment.data, _raw.dataWordOffset * bytesPerWord + byteOffset) ^
+          _raw.segment.data,
+          _raw.dataWordOffset * bytesPerWord + byteOffset,
+        ) ^
         defaultValue;
   }
 
   int getInt8Field(int byteOffset, {int defaultValue = 0}) {
     if (byteOffset ~/ bytesPerWord >= _raw.dataWords) return defaultValue;
     return readInt8(
-            _raw.segment.data, _raw.dataWordOffset * bytesPerWord + byteOffset) ^
+          _raw.segment.data,
+          _raw.dataWordOffset * bytesPerWord + byteOffset,
+        ) ^
         defaultValue;
   }
 
   int getInt16Field(int byteOffset, {int defaultValue = 0}) {
     if (byteOffset ~/ bytesPerWord >= _raw.dataWords) return defaultValue;
     return readInt16(
-            _raw.segment.data, _raw.dataWordOffset * bytesPerWord + byteOffset) ^
+          _raw.segment.data,
+          _raw.dataWordOffset * bytesPerWord + byteOffset,
+        ) ^
         defaultValue;
   }
 
   int getInt32Field(int byteOffset, {int defaultValue = 0}) {
     if (byteOffset ~/ bytesPerWord >= _raw.dataWords) return defaultValue;
     return readInt32(
-            _raw.segment.data, _raw.dataWordOffset * bytesPerWord + byteOffset) ^
+          _raw.segment.data,
+          _raw.dataWordOffset * bytesPerWord + byteOffset,
+        ) ^
         defaultValue;
   }
 
   int getInt64Field(int byteOffset, {int defaultValue = 0}) {
     if (byteOffset ~/ bytesPerWord >= _raw.dataWords) return defaultValue;
     return readInt64(
-            _raw.segment.data, _raw.dataWordOffset * bytesPerWord + byteOffset) ^
+          _raw.segment.data,
+          _raw.dataWordOffset * bytesPerWord + byteOffset,
+        ) ^
         defaultValue;
   }
 
@@ -97,7 +112,8 @@ abstract class StructReader {
     if (defaultValue == 0.0) return readFloat32(_raw.segment.data, absOffset);
     final stored = readUint32(_raw.segment.data, absOffset);
     return reinterpretUint32AsFloat32(
-        stored ^ reinterpretFloat32AsUint32(defaultValue));
+      stored ^ reinterpretFloat32AsUint32(defaultValue),
+    );
   }
 
   double getFloat64Field(int byteOffset, {double defaultValue = 0.0}) {
@@ -106,7 +122,8 @@ abstract class StructReader {
     if (defaultValue == 0.0) return readFloat64(_raw.segment.data, absOffset);
     final stored = readUint64(_raw.segment.data, absOffset);
     return reinterpretUint64AsFloat64(
-        stored ^ reinterpretFloat64AsUint64(defaultValue));
+      stored ^ reinterpretFloat64AsUint64(defaultValue),
+    );
   }
 
   // ---- Pointer section helpers ----
@@ -131,24 +148,39 @@ abstract class StructReader {
   /// Returns null if the pointer is null.
   String? getTextField(int ptrIndex) {
     if (ptrIndex >= _raw.ptrWords) return null;
-    return _raw.arena
-        .resolveTextAt(_raw.segment, _raw.ptrWordOffset + ptrIndex);
+    return _raw.arena.resolveTextAt(
+      _raw.segment,
+      _raw.ptrWordOffset + ptrIndex,
+    );
   }
 
   /// Reads a Data (raw bytes) field from the pointer at [ptrIndex].
   /// Returns null if the pointer is null.
   Uint8List? getDataField(int ptrIndex) {
     if (ptrIndex >= _raw.ptrWords) return null;
-    return _raw.arena
-        .resolveDataAt(_raw.segment, _raw.ptrWordOffset + ptrIndex);
+    return _raw.arena.resolveDataAt(
+      _raw.segment,
+      _raw.ptrWordOffset + ptrIndex,
+    );
   }
 
   /// Reads the AnyPointer at [ptrIndex], deep-copies the referenced struct
   /// into a new standalone message, and returns the serialized bytes.
   /// Returns null if the pointer is null.
-  Uint8List? getAnyPointerAsMessageBytes(int ptrIndex) {
+  ///
+  /// Capability pointers are zeroed by default because raw message bytes do not
+  /// include a capability table. RPC payloads that carry a matching cap table
+  /// can set [preserveCapabilityPointers].
+  Uint8List? getAnyPointerAsMessageBytes(
+    int ptrIndex, {
+    bool preserveCapabilityPointers = false,
+  }) {
     if (ptrIndex >= _raw.ptrWords) return null;
-    return copyAnyPointerToNewMessage(_raw, ptrIndex);
+    return copyAnyPointerToNewMessage(
+      _raw,
+      ptrIndex,
+      preserveCapabilityPointers: preserveCapabilityPointers,
+    );
   }
 
   /// Reads a nested struct from the pointer at [ptrIndex].
@@ -162,8 +194,11 @@ abstract class StructReader {
   ) {
     if (ptrIndex >= _raw.ptrWords) return null;
     final wordOffset = _raw.ptrWordOffset + ptrIndex;
-    final raw = _raw.arena
-        .resolveOptionalStructAt(_raw.segment, wordOffset, _raw.nestingLimit);
+    final raw = _raw.arena.resolveOptionalStructAt(
+      _raw.segment,
+      wordOffset,
+      _raw.nestingLimit,
+    );
     return raw == null ? null : fromRaw(raw);
   }
 
@@ -172,7 +207,10 @@ abstract class StructReader {
   RawListReader? _resolveListField(int ptrIndex) {
     if (ptrIndex >= _raw.ptrWords) return null;
     return _raw.arena.resolveListAt(
-        _raw.segment, _raw.ptrWordOffset + ptrIndex, _raw.nestingLimit);
+      _raw.segment,
+      _raw.ptrWordOffset + ptrIndex,
+      _raw.nestingLimit,
+    );
   }
 
   ListReader<bool>? getBoolListField(int ptrIndex) {

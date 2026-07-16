@@ -131,7 +131,8 @@ const int _capDescSenderHosted = 1;
 class _MsgReader extends StructReader {
   _MsgReader(super.raw);
   int get disc => getUint16Field(_msgDiscOff);
-  _BootstrapReader? get asBootstrap => getStructFieldWith(0, _BootstrapReader.new);
+  _BootstrapReader? get asBootstrap =>
+      getStructFieldWith(0, _BootstrapReader.new);
   _CallReader? get asCall => getStructFieldWith(0, _CallReader.new);
   _ReturnReader? get asReturn => getStructFieldWith(0, _ReturnReader.new);
   _FinishReader? get asFinish => getStructFieldWith(0, _FinishReader.new);
@@ -141,12 +142,12 @@ class _MsgReader extends StructReader {
 
 class _MsgBuilder extends StructBuilder {
   _MsgBuilder(super.raw);
-  @override StructReader asReader() => throw UnsupportedError('internal');
+  @override
+  StructReader asReader() => throw UnsupportedError('internal');
   void setDisc(int v) => setUint16Field(_msgDiscOff, v);
   _BootstrapBuilder initBootstrap() =>
       initStructFieldWith(0, _BootstrapBuilder.new, 1, 1);
-  _CallBuilder initCall() =>
-      initStructFieldWith(0, _CallBuilder.new, 3, 3);
+  _CallBuilder initCall() => initStructFieldWith(0, _CallBuilder.new, 3, 3);
   _ReturnBuilder initReturn() =>
       initStructFieldWith(0, _ReturnBuilder.new, 2, 1);
   _FinishBuilder initFinish() =>
@@ -156,7 +157,8 @@ class _MsgBuilder extends StructBuilder {
   _ExceptionBuilder initAbort() =>
       initStructFieldWith(0, _ExceptionBuilder.new, 1, 2);
   // Embed the original message bytes as the 'unimplemented' payload (AnyPointer).
-  void setUnimplementedPayload(Uint8List bytes) => setAnyPointerFromMessage(0, bytes);
+  void setUnimplementedPayload(Uint8List bytes) =>
+      setAnyPointerFromMessage(0, bytes);
 }
 
 class _BootstrapReader extends StructReader {
@@ -166,7 +168,8 @@ class _BootstrapReader extends StructReader {
 
 class _BootstrapBuilder extends StructBuilder {
   _BootstrapBuilder(super.raw);
-  @override StructReader asReader() => throw UnsupportedError('internal');
+  @override
+  StructReader asReader() => throw UnsupportedError('internal');
   void setQuestionId(int v) => setUint32Field(_bootstrapQid, v);
 }
 
@@ -182,7 +185,8 @@ class _CallReader extends StructReader {
 
 class _CallBuilder extends StructBuilder {
   _CallBuilder(super.raw);
-  @override StructReader asReader() => throw UnsupportedError('internal');
+  @override
+  StructReader asReader() => throw UnsupportedError('internal');
   void setQuestionId(int v) => setUint32Field(_callQid, v);
   void setInterfaceId(int v) => setUint64Field(_callIfaceId, v);
   void setMethodId(int v) => setUint16Field(_callMethodId, v);
@@ -203,11 +207,13 @@ class _MessageTargetReader extends StructReader {
 
 class _MessageTargetBuilder extends StructBuilder {
   _MessageTargetBuilder(super.raw);
-  @override StructReader asReader() => throw UnsupportedError('internal');
+  @override
+  StructReader asReader() => throw UnsupportedError('internal');
   void setImportedCap(int v) {
     setUint32Field(_targetImportCap, v);
     setUint16Field(_targetDisc, 0);
   }
+
   void setPromisedAnswer(int questionId, int ptrIndex) {
     setUint16Field(_targetDisc, _targetPromisedAnswer);
     final pa = initStructFieldWith(0, _PromisedAnswerBuilder.new, 1, 1);
@@ -226,7 +232,8 @@ class _PromisedAnswerReader extends StructReader {
 
 class _PromisedAnswerBuilder extends StructBuilder {
   _PromisedAnswerBuilder(super.raw);
-  @override StructReader asReader() => throw UnsupportedError('internal');
+  @override
+  StructReader asReader() => throw UnsupportedError('internal');
   void setQuestionId(int v) => setUint32Field(_paQid, v);
   ListBuilder<_OpBuilder> initTransform(int count) =>
       initStructListFieldWith(0, count, _OpBuilder.new, 1, 0);
@@ -240,7 +247,8 @@ class _OpReader extends StructReader {
 
 class _OpBuilder extends StructBuilder {
   _OpBuilder(super.raw);
-  @override StructReader asReader() => throw UnsupportedError('internal');
+  @override
+  StructReader asReader() => throw UnsupportedError('internal');
   void setGetPointerField(int ptrIndex) {
     setUint16Field(_opDisc, 1);
     setUint16Field(_opGetPtrField, ptrIndex);
@@ -250,7 +258,8 @@ class _OpBuilder extends StructBuilder {
 class _PayloadReader extends StructReader {
   _PayloadReader(super.raw);
   // content (ptr 0): AnyPointer → deep-copied to a standalone message.
-  Uint8List? get contentBytes => getAnyPointerAsMessageBytes(0);
+  Uint8List? get contentBytes =>
+      getAnyPointerAsMessageBytes(0, preserveCapabilityPointers: true);
   // capTable (ptr 1): composite list of CapDescriptor.
   ListReader<_CapDescReader>? get capTable =>
       getStructListFieldWith(1, _CapDescReader.new);
@@ -258,9 +267,11 @@ class _PayloadReader extends StructReader {
 
 class _PayloadBuilder extends StructBuilder {
   _PayloadBuilder(super.raw);
-  @override StructReader asReader() => throw UnsupportedError('internal');
+  @override
+  StructReader asReader() => throw UnsupportedError('internal');
   // content (ptr 0): embed [v] (a serialized Cap'n Proto message) as AnyPointer.
-  void setContentBytes(Uint8List v) => setAnyPointerFromMessage(0, v);
+  void setContentBytes(Uint8List v) =>
+      setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
   // capTable built via initCapTable
   ListBuilder<_CapDescBuilder> initCapTable(int count) =>
       initStructListFieldWith(1, count, _CapDescBuilder.new, 1, 1);
@@ -274,11 +285,13 @@ class _CapDescReader extends StructReader {
 
 class _CapDescBuilder extends StructBuilder {
   _CapDescBuilder(super.raw);
-  @override StructReader asReader() => throw UnsupportedError('internal');
+  @override
+  StructReader asReader() => throw UnsupportedError('internal');
   void setSenderHosted(int exportId) {
     setUint32Field(_capDescData, exportId);
     setUint16Field(_capDescDisc, _capDescSenderHosted);
   }
+
   void setReceiverHosted(int importId) {
     setUint32Field(_capDescData, importId);
     setUint16Field(_capDescDisc, 3); // receiverHosted
@@ -290,12 +303,14 @@ class _ReturnReader extends StructReader {
   int get answerId => getUint32Field(_returnAnswerId);
   int get disc => getUint16Field(_returnDisc);
   _PayloadReader? get results => getStructFieldWith(0, _PayloadReader.new);
-  _ExceptionReader? get exception => getStructFieldWith(0, _ExceptionReader.new);
+  _ExceptionReader? get exception =>
+      getStructFieldWith(0, _ExceptionReader.new);
 }
 
 class _ReturnBuilder extends StructBuilder {
   _ReturnBuilder(super.raw);
-  @override StructReader asReader() => throw UnsupportedError('internal');
+  @override
+  StructReader asReader() => throw UnsupportedError('internal');
   void setAnswerId(int v) => setUint32Field(_returnAnswerId, v);
   void setDiscResults() => setUint16Field(_returnDisc, _retResults);
   void setDiscException() => setUint16Field(_returnDisc, _retException);
@@ -308,12 +323,14 @@ class _ReturnBuilder extends StructBuilder {
 class _FinishReader extends StructReader {
   _FinishReader(super.raw);
   int get questionId => getUint32Field(_finishQid);
-  bool get releaseResultCaps => getBoolField(_finishRelease, defaultValue: true);
+  bool get releaseResultCaps =>
+      getBoolField(_finishRelease, defaultValue: true);
 }
 
 class _FinishBuilder extends StructBuilder {
   _FinishBuilder(super.raw);
-  @override StructReader asReader() => throw UnsupportedError('internal');
+  @override
+  StructReader asReader() => throw UnsupportedError('internal');
   void setQuestionId(int v) => setUint32Field(_finishQid, v);
   void setReleaseResultCaps({bool value = true}) =>
       setBoolField(_finishRelease, value, defaultValue: true);
@@ -327,7 +344,8 @@ class _ReleaseReader extends StructReader {
 
 class _ReleaseBuilder extends StructBuilder {
   _ReleaseBuilder(super.raw);
-  @override StructReader asReader() => throw UnsupportedError('internal');
+  @override
+  StructReader asReader() => throw UnsupportedError('internal');
   void setId(int v) => setUint32Field(_releaseId, v);
   void setReferenceCount(int v) => setUint32Field(_releaseRefCnt, v);
 }
@@ -340,7 +358,8 @@ class _ExceptionReader extends StructReader {
 
 class _ExceptionBuilder extends StructBuilder {
   _ExceptionBuilder(super.raw);
-  @override StructReader asReader() => throw UnsupportedError('internal');
+  @override
+  StructReader asReader() => throw UnsupportedError('internal');
   void setType(int v) => setUint16Field(_excTypeOff, v);
   void setReason(String v) => setTextField(0, v);
 }
@@ -350,10 +369,14 @@ class _ExceptionBuilder extends StructBuilder {
 // ---------------------------------------------------------------------------
 
 final class _MsgFactory extends StructFactory<_MsgReader, _MsgBuilder> {
-  @override int get dataWords => 1;
-  @override int get ptrWords => 1;
-  @override _MsgReader fromRawReader(RawStructReader r) => _MsgReader(r);
-  @override _MsgBuilder fromRawBuilder(RawStructBuilder r) => _MsgBuilder(r);
+  @override
+  int get dataWords => 1;
+  @override
+  int get ptrWords => 1;
+  @override
+  _MsgReader fromRawReader(RawStructReader r) => _MsgReader(r);
+  @override
+  _MsgBuilder fromRawBuilder(RawStructBuilder r) => _MsgBuilder(r);
 }
 
 final _msgFactory = _MsgFactory();
@@ -475,7 +498,10 @@ Uint8List buildCallMessage({
   call.setMethodId(methodId);
   call.setSendResultsToCaller();
   if (targetPromisedAnswerQid != null) {
-    call.initTarget().setPromisedAnswer(targetPromisedAnswerQid, targetPtrIndex);
+    call.initTarget().setPromisedAnswer(
+      targetPromisedAnswerQid,
+      targetPtrIndex,
+    );
   } else {
     call.initTarget().setImportedCap(targetImportId);
   }

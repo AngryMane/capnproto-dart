@@ -709,11 +709,17 @@ class _WirePipelinedCapability extends Capability {
   // Set once the parent question resolves; null while still pending.
   // After resolution all new calls go directly to this cap (no pipelining).
   Capability? _resolved;
+  bool _disposed = false;
 
   _WirePipelinedCapability(
       this._conn, this._parentQid, this._ptrIndex, Future<DispatchResult> parentResult) {
-    parentResult.then((result) {
-      _resolved = capabilityFromResult(result, _ptrIndex) ?? NullCapability();
+    parentResult.then((result) async {
+      final resolved = capabilityFromResult(result, _ptrIndex) ?? NullCapability();
+      if (_disposed) {
+        await resolved.dispose();
+        return;
+      }
+      _resolved = resolved;
     }).catchError((_) {
       _resolved = NullCapability();
     });
@@ -768,7 +774,13 @@ class _WirePipelinedCapability extends Capability {
   }
 
   @override
-  Future<void> dispose() async {}
+  Future<void> dispose() async {
+    _disposed = true;
+    final resolved = _resolved;
+    if (resolved != null) {
+      await resolved.dispose();
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
