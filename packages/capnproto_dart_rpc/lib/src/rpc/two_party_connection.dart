@@ -1109,6 +1109,8 @@ class _WirePipelinedCapability extends Capability {
   Object? _resolutionError;
   StackTrace? _resolutionStackTrace;
   bool _disposed = false;
+  int _pendingPipelinedCalls = 0;
+  Future<void>? _resolvedDisposeFuture;
   bool get _hasResolved => _resolved != null || _resolutionError != null;
 
   _WirePipelinedCapability(
@@ -1124,11 +1126,10 @@ class _WirePipelinedCapability extends Capability {
     _resolution
         .then(
           (resolved) async {
-            if (_disposed) {
-              await resolved.dispose();
-              return;
-            }
             _resolved = resolved;
+            if (_disposed) {
+              await _disposeResolvedIfIdle();
+            }
           },
           onError: (Object err, StackTrace st) {
             _resolutionError = err;
@@ -1138,6 +1139,27 @@ class _WirePipelinedCapability extends Capability {
         .ignore();
   }
 
+  Future<T> _trackPipelinedCall<T>(Future<T> future) {
+    _pendingPipelinedCalls++;
+    future
+        .whenComplete(() {
+          _pendingPipelinedCalls--;
+          if (_disposed) {
+            _disposeResolvedIfIdle().ignore();
+          }
+        })
+        .ignore();
+    return future;
+  }
+
+  Future<void> _disposeResolvedIfIdle() {
+    final resolved = _resolved;
+    if (!_disposed || resolved == null || _pendingPipelinedCalls > 0) {
+      return Future.value();
+    }
+    return _resolvedDisposeFuture ??= resolved.dispose();
+  }
+
   @override
   Future<DispatchResult> dispatch(
     int interfaceId,
@@ -1145,6 +1167,9 @@ class _WirePipelinedCapability extends Capability {
     Uint8List params, {
     List<Capability> paramsCapabilities = const [],
   }) {
+    if (_disposed) {
+      return Future.error(const RpcException('capability is disposed'));
+    }
     final r = _resolved;
     if (r != null) {
       return r.dispatch(
@@ -1158,9 +1183,6 @@ class _WirePipelinedCapability extends Capability {
     if (resolutionError != null) {
       return Future.error(resolutionError, _resolutionStackTrace);
     }
-    if (_disposed) {
-      return Future.error(const RpcException('capability is disposed'));
-    }
     final (_, future) = _conn._startCall(
       null,
       interfaceId,
@@ -1170,7 +1192,7 @@ class _WirePipelinedCapability extends Capability {
       targetPromisedAnswerQid: _parentQid,
       targetPtrIndex: _ptrIndex,
     );
-    return future;
+    return _trackPipelinedCall(future);
   }
 
   @override
@@ -1180,6 +1202,9 @@ class _WirePipelinedCapability extends Capability {
     Uint8List params, {
     List<Capability> paramsCapabilities = const [],
   }) {
+    if (_disposed) {
+      return _ErrorCapCall(const RpcException('capability is disposed'));
+    }
     final r = _resolved;
     if (r != null) {
       return r.beginDispatch(
@@ -1193,9 +1218,6 @@ class _WirePipelinedCapability extends Capability {
     if (resolutionError != null) {
       return _ErrorCapCall(resolutionError, _resolutionStackTrace);
     }
-    if (_disposed) {
-      return _ErrorCapCall(const RpcException('capability is disposed'));
-    }
     final (qid, future) = _conn._startCall(
       null,
       interfaceId,
@@ -1205,16 +1227,13 @@ class _WirePipelinedCapability extends Capability {
       targetPromisedAnswerQid: _parentQid,
       targetPtrIndex: _ptrIndex,
     );
-    return _WireCapCall(future, _conn, qid);
+    return _WireCapCall(_trackPipelinedCall(future), _conn, qid);
   }
 
   @override
   Future<void> dispose() async {
     _disposed = true;
-    final resolved = _resolved;
-    if (resolved != null) {
-      await resolved.dispose();
-    }
+    await _disposeResolvedIfIdle();
   }
 }
 

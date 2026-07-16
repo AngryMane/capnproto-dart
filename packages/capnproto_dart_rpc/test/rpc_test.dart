@@ -810,6 +810,83 @@ void main() {
     );
 
     test(
+      'disposing pending pipelined capability waits for in-flight pipelined call',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        final captured = <Uint8List>[];
+        final completeParent = Completer<void>();
+        final uncaught = <Object>[];
+
+        final interceptSink =
+            StreamController<Uint8List>()
+              ..stream.listen((b) {
+                captured.add(b);
+                clientToServer.add(b);
+              });
+
+        TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: ChildPipelineServer(completer: completeParent),
+        );
+        final client = TwoPartyRpcConnection.client(
+          incoming: serverToClient.stream,
+          outgoing: interceptSink.sink,
+        );
+
+        final bodyDone = Completer<void>();
+        runZonedGuarded(() {
+          () async {
+            try {
+              final bootstrapCap = client.bootstrap(EchoClientFactory());
+              await bootstrapCap.echo('warmup');
+
+              captured.clear();
+              final parent = bootstrapCap.cap.beginDispatch(
+                _echoInterfaceId,
+                _pipelineMethodId,
+                _buildEchoParams(''),
+              );
+              final pipelinedCap = parent.pipelineResult(0);
+              final pipelinedCall = pipelinedCap.dispatch(
+                _echoInterfaceId,
+                _echoMethodId,
+                _buildEchoParams('piped'),
+              );
+
+              await pipelinedCap.dispose();
+              completeParent.complete();
+
+              await parent.result.timeout(const Duration(seconds: 2));
+              final pipedResult = await pipelinedCall.timeout(
+                const Duration(seconds: 2),
+              );
+              expect(
+                _parseEchoResult(pipedResult.bytes),
+                equals('echo: piped'),
+              );
+              await _waitForRelease(captured);
+              bodyDone.complete();
+            } catch (error, stackTrace) {
+              bodyDone.completeError(error, stackTrace);
+            }
+          }();
+        }, (error, _) => uncaught.add(error));
+
+        await bodyDone.future;
+        expect(uncaught, isEmpty);
+
+        final releases = _releaseMessages(captured);
+        expect(releases, hasLength(1));
+        expect(releases.single.referenceCount, equals(1));
+
+        await client.close();
+        await interceptSink.close();
+      },
+    );
+
+    test(
       'parent failure is preserved for resolved pipelined capability',
       () async {
         final server = PipelineServer();
