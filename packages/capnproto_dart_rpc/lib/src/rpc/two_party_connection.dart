@@ -313,6 +313,18 @@ class TwoPartyRpcConnection implements RpcConnection {
     );
   }
 
+  // 24-byte message: struct with 0 data words, 1 pointer word = CapabilityPointer(0).
+  // Used as the synthesised result for Bootstrap answers so that pipelined
+  // calls targeting {receiverAnswer: {questionId: <boot>, transform: []}}
+  // can resolve ptr[0] → _answerCaps[<boot>].caps[0].
+  // hi = (dataWords & 0xFFFF) | (ptrWords << 16)
+  // For dataWords=0, ptrWords=1: hi = 0x00010000 → LE bytes [0,0,1,0]
+  static final _bootstrapResultBytes = Uint8List.fromList([
+    0, 0, 0, 0, 2, 0, 0, 0, // header: 1 segment, 2 words
+    0, 0, 0, 0, 0, 0, 1, 0, // struct ptr: offset=0, data=0, ptrs=1
+    3, 0, 0, 0, 0, 0, 0, 0, // ptr[0] = CapabilityPointer(index=0)
+  ]);
+
   // Pre-built 16-byte message: single segment (1 word), null root pointer.
   // Used as fallback for `-> stream` and void methods that return no content.
   static final _emptyResultBytes = Uint8List.fromList([
@@ -398,6 +410,14 @@ class TwoPartyRpcConnection implements RpcConnection {
     _sendRaw(
       buildBootstrapReturnMessage(answerId: msg.questionId, exportId: 0),
     );
+    // Register the bootstrap answer so pipelined calls targeting
+    // {receiverAnswer: {questionId: msg.questionId, transform: []}} can
+    // resolve ptr[0] → the bootstrap capability.
+    final bootstrapCap = _exports[0]?.capability;
+    if (bootstrapCap != null) {
+      _answerCaps[msg.questionId] =
+          _ResolvedAnswer(_bootstrapResultBytes, [bootstrapCap]);
+    }
   }
 
   void _handleCall(RpcMessage msg) {

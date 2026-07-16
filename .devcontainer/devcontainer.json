@@ -1,0 +1,31 @@
+{
+  "name": "capnproto-dart",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+
+  // Mount Cargo registry/git cache outside the container so it survives rebuilds.
+  "mounts": [
+    "source=capnproto-dart-cargo-registry,target=/usr/local/cargo/registry,type=volume",
+    "source=capnproto-dart-cargo-git,target=/usr/local/cargo/git,type=volume"
+  ],
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "Dart-Code.dart-code",
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml"
+      ],
+      "settings": {
+        "dart.sdkPath": "/opt/dart-sdk",
+        "[rust]": {
+          "editor.defaultFormatter": "rust-lang.rust-analyzer"
+        }
+      }
+    }
+  },
+
+  // Fetch Dart package dependencies after the container is created.
+  "postCreateCommand": "find . -name pubspec.yaml -not -path '*/.*' -execdir dart pub get \\;"
+}

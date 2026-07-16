@@ -1,0 +1,12 @@
+name: complex_dart_server
+description: Dart server for Dart-as-server / Rust-as-client reverse interop test.
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  capnproto_dart:
+    path: ../../../packages/capnproto_dart
+  capnproto_dart_rpc:
+    path: ../../../packages/capnproto_dart_rpc

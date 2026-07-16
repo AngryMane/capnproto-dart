@@ -1,5 +1,5 @@
-use capnp::capability::Promise;
-use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
+use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
+use std::rc::Rc;
 use futures::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::task;
@@ -20,15 +20,15 @@ struct GreetSessionImpl {
 }
 
 impl greet_session::Server for GreetSessionImpl {
-    fn greet(
-        &mut self,
+    async fn greet(
+        self: Rc<Self>,
         _params: greet_session::GreetParams,
         mut results: greet_session::GreetResults,
-    ) -> Promise<(), capnp::Error> {
+    ) -> Result<(), capnp::Error> {
         println!("[server] session.greet() for \"{}\"", self.name);
         let reply = format!("Hello, {}! (session greeting from Rust server)", self.name);
         results.get().set_reply(reply.as_str());
-        Promise::ok(())
+        Ok(())
     }
 }
 
@@ -39,35 +39,29 @@ impl greet_session::Server for GreetSessionImpl {
 struct GreeterImpl;
 
 impl greeter::Server for GreeterImpl {
-    fn greet(
-        &mut self,
+    async fn greet(
+        self: Rc<Self>,
         params: greeter::GreetParams,
         mut results: greeter::GreetResults,
-    ) -> Promise<(), capnp::Error> {
-        let name = pry!(pry!(params.get()).get_name())
-            .to_str()
-            .unwrap_or("?")
-            .to_string();
+    ) -> Result<(), capnp::Error> {
+        let name = params.get()?.get_name()?.to_str().unwrap_or("?").to_string();
         println!("[server] greet(\"{}\")", name);
         let reply = format!("Hello, {}! (from Rust server)", name);
         results.get().set_reply(reply.as_str());
-        Promise::ok(())
+        Ok(())
     }
 
-    fn new_session(
-        &mut self,
+    async fn new_session(
+        self: Rc<Self>,
         params: greeter::NewSessionParams,
         mut results: greeter::NewSessionResults,
-    ) -> Promise<(), capnp::Error> {
-        let name = pry!(pry!(params.get()).get_name())
-            .to_str()
-            .unwrap_or("?")
-            .to_string();
+    ) -> Result<(), capnp::Error> {
+        let name = params.get()?.get_name()?.to_str().unwrap_or("?").to_string();
         println!("[server] newSession(\"{}\")", name);
         let session: greet_session::Client =
             capnp_rpc::new_client(GreetSessionImpl { name });
         results.get().set_session(session);
-        Promise::ok(())
+        Ok(())
     }
 }
 

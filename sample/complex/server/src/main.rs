@@ -1,5 +1,4 @@
-use capnp::capability::Promise;
-use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
+use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 use futures::AsyncReadExt;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -27,51 +26,48 @@ struct PipelineTargetImpl {
 }
 
 impl pipeline_target::Server for PipelineTargetImpl {
-    fn get_child(
-        &mut self,
+    async fn get_child(
+        self: Rc<Self>,
         params: pipeline_target::GetChildParams,
         mut results: pipeline_target::GetChildResults,
-    ) -> Promise<(), capnp::Error> {
-        let name = pry!(pry!(params.get()).get_name())
-            .to_str()
-            .unwrap_or("child")
-            .to_string();
+    ) -> Result<(), capnp::Error> {
+        let name = params.get()?.get_name()?.to_str().unwrap_or("child").to_string();
         println!("[server] pipeline.getChild(\"{}\")", name);
         let child: pipeline_target::Client = capnp_rpc::new_client(PipelineTargetImpl { name });
         results.get().set_child(child);
-        Promise::ok(())
+        Ok(())
     }
 
-    fn get_repository(
-        &mut self,
+    async fn get_repository(
+        self: Rc<Self>,
         _params: pipeline_target::GetRepositoryParams,
         mut results: pipeline_target::GetRepositoryResults,
-    ) -> Promise<(), capnp::Error> {
+    ) -> Result<(), capnp::Error> {
         println!("[server] pipeline[{}].getRepository()", self.name);
         let repo: repository::Client<capnp::text::Owned, complex_capnp::person::Owned> =
             capnp_rpc::new_client(RepositoryImpl::new());
         results.get().set_repository(repo);
-        Promise::ok(())
+        Ok(())
     }
 
-    fn ping(
-        &mut self,
+    async fn ping(
+        self: Rc<Self>,
         params: pipeline_target::PingParams,
         mut results: pipeline_target::PingResults,
-    ) -> Promise<(), capnp::Error> {
-        let payload = pry!(pry!(params.get()).get_payload());
+    ) -> Result<(), capnp::Error> {
+        let payload = params.get()?.get_payload()?;
         println!(
             "[server] pipeline[{}].ping({} bytes)",
             self.name,
             payload.len()
         );
         results.get().set_payload(payload);
-        Promise::ok(())
+        Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
-// RepositoryImpl - HashMap<String, (Vec<capnp::Word>, u64)>
+// RepositoryImpl - HashMap<String, (Vec<u8>, u64)>
 // ---------------------------------------------------------------------------
 
 struct RepositoryImpl {
@@ -110,69 +106,69 @@ impl GenericCellImpl {
 }
 
 impl readable::Server<capnp::any_pointer::Owned> for GenericCellImpl {
-    fn read(
-        &mut self,
+    async fn read(
+        self: Rc<Self>,
         _params: readable::ReadParams<capnp::any_pointer::Owned>,
         mut results: readable::ReadResults<capnp::any_pointer::Owned>,
-    ) -> Promise<(), capnp::Error> {
+    ) -> Result<(), capnp::Error> {
         let mut r = results.get();
         r.set_revision(*self.revision.borrow());
         if let Some(bytes) = self.value.borrow().as_ref() {
-            let msg = pry!(capnp::serialize::read_message_from_flat_slice(
+            let msg = capnp::serialize::read_message_from_flat_slice(
                 &mut &bytes[..],
-                Default::default()
-            ));
+                Default::default(),
+            )?;
             let value: capnp::any_pointer::Reader =
-                pry!(msg.get_root::<capnp::any_pointer::Reader>());
-            pry!(r.set_value(value));
+                msg.get_root::<capnp::any_pointer::Reader>()?;
+            r.set_value(value)?;
         }
-        Promise::ok(())
+        Ok(())
     }
 }
 
 impl writable::Server<capnp::any_pointer::Owned> for GenericCellImpl {
-    fn write(
-        &mut self,
+    async fn write(
+        self: Rc<Self>,
         params: writable::WriteParams<capnp::any_pointer::Owned>,
         mut results: writable::WriteResults<capnp::any_pointer::Owned>,
-    ) -> Promise<(), capnp::Error> {
-        let value = pry!(pry!(params.get()).get_value());
-        *self.value.borrow_mut() = Some(pry!(serialize_any_pointer(value)));
+    ) -> Result<(), capnp::Error> {
+        let value = params.get()?.get_value()?;
+        *self.value.borrow_mut() = Some(serialize_any_pointer(value)?);
         let mut revision = self.revision.borrow_mut();
         *revision += 1;
         results.get().set_new_revision(*revision);
-        Promise::ok(())
+        Ok(())
     }
 }
 
 impl read_write::Server<capnp::any_pointer::Owned> for GenericCellImpl {
-    fn compare_and_swap(
-        &mut self,
+    async fn compare_and_swap(
+        self: Rc<Self>,
         params: read_write::CompareAndSwapParams<capnp::any_pointer::Owned>,
         mut results: read_write::CompareAndSwapResults<capnp::any_pointer::Owned>,
-    ) -> Promise<(), capnp::Error> {
-        let p = pry!(params.get());
-        let expected = pry!(serialize_any_pointer(pry!(p.get_expected())));
-        let replacement = pry!(serialize_any_pointer(pry!(p.get_replacement())));
+    ) -> Result<(), capnp::Error> {
+        let p = params.get()?;
+        let expected = serialize_any_pointer(p.get_expected()?)?;
+        let replacement = serialize_any_pointer(p.get_replacement()?)?;
         let mut current = self.value.borrow_mut();
         let swapped = current.as_ref() == Some(&expected);
         let mut r = results.get();
         r.set_swapped(swapped);
         if let Some(bytes) = current.as_ref() {
-            let msg = pry!(capnp::serialize::read_message_from_flat_slice(
+            let msg = capnp::serialize::read_message_from_flat_slice(
                 &mut &bytes[..],
-                Default::default()
-            ));
+                Default::default(),
+            )?;
             let actual: capnp::any_pointer::Reader =
-                pry!(msg.get_root::<capnp::any_pointer::Reader>());
-            pry!(r.set_actual(actual));
+                msg.get_root::<capnp::any_pointer::Reader>()?;
+            r.set_actual(actual)?;
         }
         if swapped {
             *current = Some(replacement);
             *self.revision.borrow_mut() += 1;
         }
         r.set_revision(*self.revision.borrow());
-        Promise::ok(())
+        Ok(())
     }
 }
 
@@ -193,39 +189,39 @@ impl GenericRepositoryImpl {
 impl repository::Server<capnp::any_pointer::Owned, capnp::any_pointer::Owned>
     for GenericRepositoryImpl
 {
-    fn get(
-        &mut self,
+    async fn get(
+        self: Rc<Self>,
         params: repository::GetParams<capnp::any_pointer::Owned, capnp::any_pointer::Owned>,
         mut results: repository::GetResults<capnp::any_pointer::Owned, capnp::any_pointer::Owned>,
-    ) -> Promise<(), capnp::Error> {
-        let key = pry!(serialize_any_pointer(pry!(pry!(params.get()).get_key())));
+    ) -> Result<(), capnp::Error> {
+        let key = serialize_any_pointer(params.get()?.get_key()?)?;
         let store = self.store.borrow();
         let mut r = results.get();
         if let Some((bytes, rev)) = store.get(&key) {
             r.set_revision(*rev);
-            let msg = pry!(capnp::serialize::read_message_from_flat_slice(
+            let msg = capnp::serialize::read_message_from_flat_slice(
                 &mut &bytes[..],
-                Default::default()
-            ));
+                Default::default(),
+            )?;
             let value: capnp::any_pointer::Reader =
-                pry!(msg.get_root::<capnp::any_pointer::Reader>());
-            let mut opt = pry!(r.get_result());
-            pry!(opt.set_some(value));
+                msg.get_root::<capnp::any_pointer::Reader>()?;
+            let mut opt = r.get_result()?;
+            opt.set_some(value)?;
         } else {
             r.set_revision(0);
-            pry!(r.get_result()).set_none(());
+            r.get_result()?.set_none(());
         }
-        Promise::ok(())
+        Ok(())
     }
 
-    fn put(
-        &mut self,
+    async fn put(
+        self: Rc<Self>,
         params: repository::PutParams<capnp::any_pointer::Owned, capnp::any_pointer::Owned>,
         mut results: repository::PutResults<capnp::any_pointer::Owned, capnp::any_pointer::Owned>,
-    ) -> Promise<(), capnp::Error> {
-        let p = pry!(params.get());
-        let key = pry!(serialize_any_pointer(pry!(p.get_key())));
-        let value = pry!(serialize_any_pointer(pry!(p.get_value())));
+    ) -> Result<(), capnp::Error> {
+        let p = params.get()?;
+        let key = serialize_any_pointer(p.get_key()?)?;
+        let value = serialize_any_pointer(p.get_value()?)?;
         let mut store = self.store.borrow_mut();
         let mut revision = self.revision.borrow_mut();
         *revision += 1;
@@ -233,30 +229,30 @@ impl repository::Server<capnp::any_pointer::Owned, capnp::any_pointer::Owned>
         let mut r = results.get();
         r.set_new_revision(new_revision);
         if let Some((bytes, _)) = store.get(&key) {
-            let msg = pry!(capnp::serialize::read_message_from_flat_slice(
+            let msg = capnp::serialize::read_message_from_flat_slice(
                 &mut &bytes[..],
-                Default::default()
-            ));
+                Default::default(),
+            )?;
             let previous: capnp::any_pointer::Reader =
-                pry!(msg.get_root::<capnp::any_pointer::Reader>());
-            let mut prev = pry!(r.get_previous());
-            pry!(prev.set_some(previous));
+                msg.get_root::<capnp::any_pointer::Reader>()?;
+            let mut prev = r.get_previous()?;
+            prev.set_some(previous)?;
         } else {
-            pry!(r.get_previous()).set_none(());
+            r.get_previous()?.set_none(());
         }
         store.insert(key, (value, new_revision));
-        Promise::ok(())
+        Ok(())
     }
 
-    fn remove(
-        &mut self,
+    async fn remove(
+        self: Rc<Self>,
         params: repository::RemoveParams<capnp::any_pointer::Owned, capnp::any_pointer::Owned>,
         mut results: repository::RemoveResults<
             capnp::any_pointer::Owned,
             capnp::any_pointer::Owned,
         >,
-    ) -> Promise<(), capnp::Error> {
-        let key = pry!(serialize_any_pointer(pry!(pry!(params.get()).get_key())));
+    ) -> Result<(), capnp::Error> {
+        let key = serialize_any_pointer(params.get()?.get_key()?)?;
         let mut store = self.store.borrow_mut();
         let mut revision = self.revision.borrow_mut();
         *revision += 1;
@@ -264,117 +260,118 @@ impl repository::Server<capnp::any_pointer::Owned, capnp::any_pointer::Owned>
         let mut r = results.get();
         r.set_new_revision(new_revision);
         if let Some((bytes, _)) = store.remove(&key) {
-            let msg = pry!(capnp::serialize::read_message_from_flat_slice(
+            let msg = capnp::serialize::read_message_from_flat_slice(
                 &mut &bytes[..],
-                Default::default()
-            ));
+                Default::default(),
+            )?;
             let removed: capnp::any_pointer::Reader =
-                pry!(msg.get_root::<capnp::any_pointer::Reader>());
-            let mut result = pry!(r.get_removed());
-            pry!(result.set_some(removed));
+                msg.get_root::<capnp::any_pointer::Reader>()?;
+            let mut result = r.get_removed()?;
+            result.set_some(removed)?;
         } else {
-            pry!(r.get_removed()).set_none(());
+            r.get_removed()?.set_none(());
         }
-        Promise::ok(())
+        Ok(())
     }
 
-    fn list(
-        &mut self,
+    async fn list(
+        self: Rc<Self>,
         _params: repository::ListParams<capnp::any_pointer::Owned, capnp::any_pointer::Owned>,
         mut results: repository::ListResults<capnp::any_pointer::Owned, capnp::any_pointer::Owned>,
-    ) -> Promise<(), capnp::Error> {
+    ) -> Result<(), capnp::Error> {
         let store = self.store.borrow();
         let mut entries = results.get().init_entries(store.len() as u32);
         for (i, (key, (value, _))) in store.iter().enumerate() {
             let mut entry = entries.reborrow().get(i as u32);
-            let key_msg = pry!(capnp::serialize::read_message_from_flat_slice(
+            let key_msg = capnp::serialize::read_message_from_flat_slice(
                 &mut &key[..],
-                Default::default()
-            ));
+                Default::default(),
+            )?;
             let key_root: capnp::any_pointer::Reader =
-                pry!(key_msg.get_root::<capnp::any_pointer::Reader>());
-            let value_msg = pry!(capnp::serialize::read_message_from_flat_slice(
+                key_msg.get_root::<capnp::any_pointer::Reader>()?;
+            let value_msg = capnp::serialize::read_message_from_flat_slice(
                 &mut &value[..],
-                Default::default()
-            ));
+                Default::default(),
+            )?;
             let value_root: capnp::any_pointer::Reader =
-                pry!(value_msg.get_root::<capnp::any_pointer::Reader>());
-            pry!(entry.set_key(key_root));
-            pry!(entry.set_value(value_root));
+                value_msg.get_root::<capnp::any_pointer::Reader>()?;
+            entry.set_key(key_root)?;
+            entry.set_value(value_root)?;
         }
-        Promise::ok(())
+        Ok(())
     }
 
-    fn open_cursor(
-        &mut self,
+    async fn open_cursor(
+        self: Rc<Self>,
         _params: repository::OpenCursorParams<capnp::any_pointer::Owned, capnp::any_pointer::Owned>,
         _results: repository::OpenCursorResults<
             capnp::any_pointer::Owned,
             capnp::any_pointer::Owned,
         >,
-    ) -> Promise<(), capnp::Error> {
-        Promise::err(capnp::Error::failed(
+    ) -> Result<(), capnp::Error> {
+        Err(capnp::Error::failed(
             "generic openCursor: not implemented".to_string(),
         ))
     }
 
-    fn watch(
-        &mut self,
+    async fn watch(
+        self: Rc<Self>,
         _params: repository::WatchParams<capnp::any_pointer::Owned, capnp::any_pointer::Owned>,
         _results: repository::WatchResults<capnp::any_pointer::Owned, capnp::any_pointer::Owned>,
-    ) -> Promise<(), capnp::Error> {
-        Promise::err(capnp::Error::failed(
+    ) -> Result<(), capnp::Error> {
+        Err(capnp::Error::failed(
             "generic watch: not implemented".to_string(),
         ))
     }
 }
 
 impl repository::Server<capnp::text::Owned, complex_capnp::person::Owned> for RepositoryImpl {
-    fn get(
-        &mut self,
+    async fn get(
+        self: Rc<Self>,
         params: repository::GetParams<capnp::text::Owned, complex_capnp::person::Owned>,
         mut results: repository::GetResults<capnp::text::Owned, complex_capnp::person::Owned>,
-    ) -> Promise<(), capnp::Error> {
-        let key = pry!(pry!(pry!(params.get()).get_key())
+    ) -> Result<(), capnp::Error> {
+        let key = params
+            .get()?
+            .get_key()?
             .to_str()
-            .map_err(|e| { capnp::Error::failed(format!("invalid key utf8: {}", e)) }))
-        .to_string();
+            .map_err(|e| capnp::Error::failed(format!("invalid key utf8: {}", e)))?
+            .to_string();
         let store = self.store.borrow();
         let mut r = results.get();
         if let Some((bytes, rev)) = store.get(&key) {
             r.set_revision(*rev);
-            // Deserialize and set person into result.some
-            let msg = pry!(capnp::serialize::read_message_from_flat_slice(
+            let msg = capnp::serialize::read_message_from_flat_slice(
                 &mut &bytes[..],
-                Default::default()
-            ));
+                Default::default(),
+            )?;
             let person: complex_capnp::person::Reader =
-                pry!(msg.get_root::<complex_capnp::person::Reader>());
-            let mut opt = pry!(r.get_result());
-            pry!(opt.set_some(person));
+                msg.get_root::<complex_capnp::person::Reader>()?;
+            let mut opt = r.get_result()?;
+            opt.set_some(person)?;
         } else {
             r.set_revision(0);
-            let mut opt = pry!(r.get_result());
+            let mut opt = r.get_result()?;
             opt.set_none(());
         }
-        Promise::ok(())
+        Ok(())
     }
 
-    fn put(
-        &mut self,
+    async fn put(
+        self: Rc<Self>,
         params: repository::PutParams<capnp::text::Owned, complex_capnp::person::Owned>,
         mut results: repository::PutResults<capnp::text::Owned, complex_capnp::person::Owned>,
-    ) -> Promise<(), capnp::Error> {
-        let p = pry!(params.get());
-        let key = pry!(pry!(p.get_key())
+    ) -> Result<(), capnp::Error> {
+        let p = params.get()?;
+        let key = p
+            .get_key()?
             .to_str()
-            .map_err(|e| { capnp::Error::failed(format!("invalid key utf8: {}", e)) }))
-        .to_string();
-        let person_reader = pry!(p.get_value());
+            .map_err(|e| capnp::Error::failed(format!("invalid key utf8: {}", e)))?
+            .to_string();
+        let person_reader = p.get_value()?;
 
-        // Serialize person to words
         let mut msg = capnp::message::Builder::new_default();
-        pry!(msg.set_root(person_reader));
+        msg.set_root(person_reader)?;
         let words = capnp::serialize::write_message_to_words(&msg);
 
         let mut store = self.store.borrow_mut();
@@ -386,33 +383,34 @@ impl repository::Server<capnp::text::Owned, complex_capnp::person::Owned> for Re
         r.set_new_revision(new_rev);
 
         if let Some((old_bytes, _old_rev)) = store.get(&key) {
-            // Set previous to Some(old_person)
-            let old_msg = pry!(capnp::serialize::read_message_from_flat_slice(
+            let old_msg = capnp::serialize::read_message_from_flat_slice(
                 &mut &old_bytes[..],
-                Default::default()
-            ));
+                Default::default(),
+            )?;
             let old_person: complex_capnp::person::Reader =
-                pry!(old_msg.get_root::<complex_capnp::person::Reader>());
-            let mut prev = pry!(r.get_previous());
-            pry!(prev.set_some(old_person));
+                old_msg.get_root::<complex_capnp::person::Reader>()?;
+            let mut prev = r.get_previous()?;
+            prev.set_some(old_person)?;
         } else {
-            let mut prev = pry!(r.get_previous());
+            let mut prev = r.get_previous()?;
             prev.set_none(());
         }
 
         store.insert(key, (words, new_rev));
-        Promise::ok(())
+        Ok(())
     }
 
-    fn remove(
-        &mut self,
+    async fn remove(
+        self: Rc<Self>,
         params: repository::RemoveParams<capnp::text::Owned, complex_capnp::person::Owned>,
         mut results: repository::RemoveResults<capnp::text::Owned, complex_capnp::person::Owned>,
-    ) -> Promise<(), capnp::Error> {
-        let key = pry!(pry!(pry!(params.get()).get_key())
+    ) -> Result<(), capnp::Error> {
+        let key = params
+            .get()?
+            .get_key()?
             .to_str()
-            .map_err(|e| { capnp::Error::failed(format!("invalid key utf8: {}", e)) }))
-        .to_string();
+            .map_err(|e| capnp::Error::failed(format!("invalid key utf8: {}", e)))?
+            .to_string();
 
         let mut store = self.store.borrow_mut();
         let mut rev_cell = self.revision.borrow_mut();
@@ -423,63 +421,63 @@ impl repository::Server<capnp::text::Owned, complex_capnp::person::Owned> for Re
         r.set_new_revision(new_rev);
 
         if let Some((old_bytes, _)) = store.remove(&key) {
-            let old_msg = pry!(capnp::serialize::read_message_from_flat_slice(
+            let old_msg = capnp::serialize::read_message_from_flat_slice(
                 &mut &old_bytes[..],
-                Default::default()
-            ));
+                Default::default(),
+            )?;
             let old_person: complex_capnp::person::Reader =
-                pry!(old_msg.get_root::<complex_capnp::person::Reader>());
-            let mut removed = pry!(r.get_removed());
-            pry!(removed.set_some(old_person));
+                old_msg.get_root::<complex_capnp::person::Reader>()?;
+            let mut removed = r.get_removed()?;
+            removed.set_some(old_person)?;
         } else {
-            let mut removed = pry!(r.get_removed());
+            let mut removed = r.get_removed()?;
             removed.set_none(());
         }
 
-        Promise::ok(())
+        Ok(())
     }
 
-    fn list(
-        &mut self,
+    async fn list(
+        self: Rc<Self>,
         _params: repository::ListParams<capnp::text::Owned, complex_capnp::person::Owned>,
         mut results: repository::ListResults<capnp::text::Owned, complex_capnp::person::Owned>,
-    ) -> Promise<(), capnp::Error> {
+    ) -> Result<(), capnp::Error> {
         let store = self.store.borrow();
         let entries_count = store.len() as u32;
         let mut entries = results.get().init_entries(entries_count);
 
         for (i, (key, (bytes, _rev))) in store.iter().enumerate() {
             let mut kv = entries.reborrow().get(i as u32);
-            pry!(kv.set_key(key.as_str()));
+            kv.set_key(key.as_str())?;
 
-            let msg = pry!(capnp::serialize::read_message_from_flat_slice(
+            let msg = capnp::serialize::read_message_from_flat_slice(
                 &mut &bytes[..],
-                Default::default()
-            ));
+                Default::default(),
+            )?;
             let person: complex_capnp::person::Reader =
-                pry!(msg.get_root::<complex_capnp::person::Reader>());
-            pry!(kv.set_value(person));
+                msg.get_root::<complex_capnp::person::Reader>()?;
+            kv.set_value(person)?;
         }
 
-        Promise::ok(())
+        Ok(())
     }
 
-    fn open_cursor(
-        &mut self,
+    async fn open_cursor(
+        self: Rc<Self>,
         _params: repository::OpenCursorParams<capnp::text::Owned, complex_capnp::person::Owned>,
         _results: repository::OpenCursorResults<capnp::text::Owned, complex_capnp::person::Owned>,
-    ) -> Promise<(), capnp::Error> {
-        Promise::err(capnp::Error::failed(
+    ) -> Result<(), capnp::Error> {
+        Err(capnp::Error::failed(
             "openCursor: not implemented".to_string(),
         ))
     }
 
-    fn watch(
-        &mut self,
+    async fn watch(
+        self: Rc<Self>,
         _params: repository::WatchParams<capnp::text::Owned, complex_capnp::person::Owned>,
         _results: repository::WatchResults<capnp::text::Owned, complex_capnp::person::Owned>,
-    ) -> Promise<(), capnp::Error> {
-        Promise::err(capnp::Error::failed("watch: not implemented".to_string()))
+    ) -> Result<(), capnp::Error> {
+        Err(capnp::Error::failed("watch: not implemented".to_string()))
     }
 }
 
@@ -500,33 +498,33 @@ impl ByteSinkImpl {
 }
 
 impl byte_sink::Server for ByteSinkImpl {
-    fn write(&mut self, params: byte_sink::WriteParams) -> Promise<(), capnp::Error> {
-        let chunk = pry!(pry!(params.get()).get_chunk());
+    async fn write(self: Rc<Self>, params: byte_sink::WriteParams) -> Result<(), capnp::Error> {
+        let chunk = params.get()?.get_chunk()?;
         self.data.borrow_mut().extend_from_slice(chunk);
-        Promise::ok(())
+        Ok(())
     }
 
-    fn finish(
-        &mut self,
+    async fn finish(
+        self: Rc<Self>,
         _params: byte_sink::FinishParams,
         mut results: byte_sink::FinishResults,
-    ) -> Promise<(), capnp::Error> {
+    ) -> Result<(), capnp::Error> {
         let data = self.data.borrow();
         let byte_count = data.len() as u64;
         let checksum: u8 = data.iter().fold(0u8, |acc, &b| acc ^ b);
         let mut r = results.get();
         r.set_byte_count(byte_count);
         r.set_checksum(&[checksum]);
-        Promise::ok(())
+        Ok(())
     }
 
-    fn abort(
-        &mut self,
+    async fn abort(
+        self: Rc<Self>,
         _params: byte_sink::AbortParams,
         _results: byte_sink::AbortResults,
-    ) -> Promise<(), capnp::Error> {
+    ) -> Result<(), capnp::Error> {
         self.data.borrow_mut().clear();
-        Promise::ok(())
+        Ok(())
     }
 }
 
@@ -545,33 +543,34 @@ impl ByteSourceImpl {
 }
 
 impl byte_source::Server for ByteSourceImpl {
-    fn pump_to(
-        &mut self,
+    async fn pump_to(
+        self: Rc<Self>,
         params: byte_source::PumpToParams,
         mut results: byte_source::PumpToResults,
-    ) -> Promise<(), capnp::Error> {
-        let p = pry!(params.get());
-        let sink = pry!(p.get_sink());
-        let chunk_size = p.get_chunk_size() as usize;
-        let chunk_size = if chunk_size == 0 { 65536 } else { chunk_size };
-        let data = self.data.clone();
+    ) -> Result<(), capnp::Error> {
+        let (sink, chunk_size, data) = {
+            let p = params.get()?;
+            let sink = p.get_sink()?;
+            let chunk_size = p.get_chunk_size() as usize;
+            let chunk_size = if chunk_size == 0 { 65536 } else { chunk_size };
+            let data = self.data.clone();
+            (sink, chunk_size, data)
+        };
 
-        Promise::from_future(async move {
-            let mut offset = 0;
-            let total = data.len();
-            while offset < total {
-                let end = std::cmp::min(offset + chunk_size, total);
-                let chunk = &data[offset..end];
-                let mut req = sink.write_request();
-                req.get().set_chunk(chunk);
-                req.send().await?;
-                offset = end;
-            }
-            let finish_resp = sink.finish_request().send().promise.await?;
-            let byte_count = finish_resp.get()?.get_byte_count();
-            results.get().set_byte_count(byte_count);
-            Ok(())
-        })
+        let mut offset = 0;
+        let total = data.len();
+        while offset < total {
+            let end = std::cmp::min(offset + chunk_size, total);
+            let chunk = &data[offset..end];
+            let mut req = sink.write_request();
+            req.get().set_chunk(chunk);
+            req.send().await?;
+            offset = end;
+        }
+        let finish_resp = sink.finish_request().send().promise.await?;
+        let byte_count = finish_resp.get()?.get_byte_count();
+        results.get().set_byte_count(byte_count);
+        Ok(())
     }
 }
 
@@ -582,58 +581,56 @@ impl byte_source::Server for ByteSourceImpl {
 struct CapabilityFactoryImpl;
 
 impl capability_factory::Server for CapabilityFactoryImpl {
-    fn new_cell(
-        &mut self,
+    async fn new_cell(
+        self: Rc<Self>,
         params: capability_factory::NewCellParams,
         mut results: capability_factory::NewCellResults,
-    ) -> Promise<(), capnp::Error> {
-        let initial_value = pry!(serialize_any_pointer(pry!(
-            pry!(params.get()).get_initial_value()
-        )));
+    ) -> Result<(), capnp::Error> {
+        let initial_value = serialize_any_pointer(params.get()?.get_initial_value()?)?;
         let cell: read_write::Client<capnp::any_pointer::Owned> =
             capnp_rpc::new_client(GenericCellImpl::new(Some(initial_value)));
         results.get().set_cell(cell);
-        Promise::ok(())
+        Ok(())
     }
 
-    fn new_empty_cell(
-        &mut self,
+    async fn new_empty_cell(
+        self: Rc<Self>,
         _params: capability_factory::NewEmptyCellParams,
         mut results: capability_factory::NewEmptyCellResults,
-    ) -> Promise<(), capnp::Error> {
+    ) -> Result<(), capnp::Error> {
         let cell: read_write::Client<capnp::any_pointer::Owned> =
             capnp_rpc::new_client(GenericCellImpl::new(None));
         results.get().set_cell(cell);
-        Promise::ok(())
+        Ok(())
     }
 
-    fn new_repository(
-        &mut self,
+    async fn new_repository(
+        self: Rc<Self>,
         _params: capability_factory::NewRepositoryParams,
         mut results: capability_factory::NewRepositoryResults,
-    ) -> Promise<(), capnp::Error> {
+    ) -> Result<(), capnp::Error> {
         let repository: repository::Client<capnp::any_pointer::Owned, capnp::any_pointer::Owned> =
             capnp_rpc::new_client(GenericRepositoryImpl::new());
         results.get().set_repository(repository);
-        Promise::ok(())
+        Ok(())
     }
 
-    fn echo_capability(
-        &mut self,
+    async fn echo_capability(
+        self: Rc<Self>,
         params: capability_factory::EchoCapabilityParams,
         mut results: capability_factory::EchoCapabilityResults,
-    ) -> Promise<(), capnp::Error> {
-        let capability = pry!(pry!(params.get()).get_capability());
-        pry!(results.get().set_same_capability(capability));
-        Promise::ok(())
+    ) -> Result<(), capnp::Error> {
+        let capability = params.get()?.get_capability()?;
+        results.get().set_same_capability(capability)?;
+        Ok(())
     }
 
-    fn get_untyped(
-        &mut self,
+    async fn get_untyped(
+        self: Rc<Self>,
         params: capability_factory::GetUntypedParams,
         mut results: capability_factory::GetUntypedResults,
-    ) -> Promise<(), capnp::Error> {
-        let name = pry!(pry!(params.get()).get_name()).to_str().unwrap_or("");
+    ) -> Result<(), capnp::Error> {
+        let name = params.get()?.get_name()?.to_str().unwrap_or("");
         println!("[server] factory.getUntyped({})", name);
 
         let result_root = results.get();
@@ -651,7 +648,7 @@ impl capability_factory::Server for CapabilityFactoryImpl {
                 scalars.set_text_value("unknown untyped payload");
             }
         }
-        Promise::ok(())
+        Ok(())
     }
 }
 
@@ -660,55 +657,55 @@ impl capability_factory::Server for CapabilityFactoryImpl {
 // ---------------------------------------------------------------------------
 
 struct ComplexTestServiceImpl {
-    shutdown_tx: Option<oneshot::Sender<()>>,
+    shutdown_tx: RefCell<Option<oneshot::Sender<()>>>,
 }
 
 impl complex_test_service::Server for ComplexTestServiceImpl {
-    fn echo(
-        &mut self,
+    async fn echo(
+        self: Rc<Self>,
         params: complex_test_service::EchoParams,
         mut results: complex_test_service::EchoResults,
-    ) -> Promise<(), capnp::Error> {
-        let _req = pry!(pry!(params.get()).get_request());
+    ) -> Result<(), capnp::Error> {
+        let _req = params.get()?.get_request()?;
         let mut resp = results.get().init_response();
         resp.set_accepted(true);
         resp.set_status(complex_capnp::Status::Running);
         resp.set_message("echo from Rust");
-        Promise::ok(())
+        Ok(())
     }
 
-    fn echo_scalars(
-        &mut self,
+    async fn echo_scalars(
+        self: Rc<Self>,
         params: complex_test_service::EchoScalarsParams,
         mut results: complex_test_service::EchoScalarsResults,
-    ) -> Promise<(), capnp::Error> {
-        let p = pry!(params.get());
-        let value = pry!(p.get_value());
+    ) -> Result<(), capnp::Error> {
+        let p = params.get()?;
+        let value = p.get_value()?;
         println!("[server] echoScalars(boolean={})", value.get_boolean());
-        pry!(results.get().set_value(value));
-        Promise::ok(())
+        results.get().set_value(value)?;
+        Ok(())
     }
 
-    fn echo_lists(
-        &mut self,
+    async fn echo_lists(
+        self: Rc<Self>,
         params: complex_test_service::EchoListsParams,
         mut results: complex_test_service::EchoListsResults,
-    ) -> Promise<(), capnp::Error> {
-        let p = pry!(params.get());
-        let value = pry!(p.get_value());
+    ) -> Result<(), capnp::Error> {
+        let p = params.get()?;
+        let value = p.get_value()?;
         let text_count = value.get_texts().map(|l| l.len()).unwrap_or(0);
         println!("[server] echoLists(texts.len={})", text_count);
-        pry!(results.get().set_value(value));
-        Promise::ok(())
+        results.get().set_value(value)?;
+        Ok(())
     }
 
-    fn echo_union(
-        &mut self,
+    async fn echo_union(
+        self: Rc<Self>,
         params: complex_test_service::EchoUnionParams,
         mut results: complex_test_service::EchoUnionResults,
-    ) -> Promise<(), capnp::Error> {
-        let p = pry!(params.get());
-        let value = pry!(p.get_value());
+    ) -> Result<(), capnp::Error> {
+        let p = params.get()?;
+        let value = p.get_value()?;
         let which = value.get_payload().which();
         let variant = match &which {
             Ok(named_union::payload::Which::Empty(())) => "empty",
@@ -721,96 +718,95 @@ impl complex_test_service::Server for ComplexTestServiceImpl {
             Err(_) => "unknown",
         };
         println!("[server] echoUnion(payload={})", variant);
-        pry!(results.get().set_value(value));
-        Promise::ok(())
+        results.get().set_value(value)?;
+        Ok(())
     }
 
-    fn echo_any_pointer(
-        &mut self,
+    async fn echo_any_pointer(
+        self: Rc<Self>,
         params: complex_test_service::EchoAnyPointerParams,
         mut results: complex_test_service::EchoAnyPointerResults,
-    ) -> Promise<(), capnp::Error> {
-        let value = pry!(pry!(params.get()).get_value());
-        pry!(results
+    ) -> Result<(), capnp::Error> {
+        let value = params.get()?.get_value()?;
+        results
             .get()
             .init_value()
-            .set_as::<capnp::any_pointer::Owned>(value));
-        Promise::ok(())
+            .set_as::<capnp::any_pointer::Owned>(value)?;
+        Ok(())
     }
 
-    fn exchange_capabilities(
-        &mut self,
+    async fn exchange_capabilities(
+        self: Rc<Self>,
         params: complex_test_service::ExchangeCapabilitiesParams,
         mut results: complex_test_service::ExchangeCapabilitiesResults,
-    ) -> Promise<(), capnp::Error> {
+    ) -> Result<(), capnp::Error> {
         println!("[server] exchangeCapabilities");
-        let p = pry!(params.get());
-        let in_bundle = pry!(p.get_bundle());
-        let primary = pry!(in_bundle.get_primary());
-        let in_targets = pry!(in_bundle.get_targets());
+        let p = params.get()?;
+        let in_bundle = p.get_bundle()?;
+        let primary = in_bundle.get_primary()?;
+        let in_targets = in_bundle.get_targets()?;
         let mut out_bundle = results.get().init_bundle();
         out_bundle.set_primary(primary);
-        pry!(out_bundle.set_targets(in_targets));
-        Promise::ok(())
+        out_bundle.set_targets(in_targets)?;
+        Ok(())
     }
 
-    fn call_observer(
-        &mut self,
+    async fn call_observer(
+        self: Rc<Self>,
         params: complex_test_service::CallObserverParams,
         mut results: complex_test_service::CallObserverResults,
-    ) -> Promise<(), capnp::Error> {
-        let p = pry!(params.get());
-        let observer: observer::Client<complex_capnp::person::Owned> = pry!(p.get_observer());
-        let events = pry!(p.get_events());
-        let event_count = events.len();
+    ) -> Result<(), capnp::Error> {
+        let (observer, event_count) = {
+            let p = params.get()?;
+            let observer: observer::Client<complex_capnp::person::Owned> = p.get_observer()?;
+            let events = p.get_events()?;
+            let event_count = events.len();
+            println!("[server] callObserver(events={})", event_count);
+            (observer, event_count)
+        };
 
-        println!("[server] callObserver(events={})", event_count);
-
-        Promise::from_future(async move {
-            for seq in 0..event_count {
-                let mut req = observer.on_next_request();
-                req.get().set_sequence(seq as u64);
-                req.send().promise.await?;
-            }
-            observer.on_complete_request().send().promise.await?;
-            results.get().set_delivered(event_count);
-            Ok(())
-        })
+        for seq in 0..event_count {
+            let mut req = observer.on_next_request();
+            req.get().set_sequence(seq as u64);
+            req.send().promise.await?;
+        }
+        observer.on_complete_request().send().promise.await?;
+        results.get().set_delivered(event_count);
+        Ok(())
     }
 
-    fn make_pipeline(
-        &mut self,
+    async fn make_pipeline(
+        self: Rc<Self>,
         params: complex_test_service::MakePipelineParams,
         mut results: complex_test_service::MakePipelineResults,
-    ) -> Promise<(), capnp::Error> {
-        let depth = pry!(params.get()).get_depth();
+    ) -> Result<(), capnp::Error> {
+        let depth = params.get()?.get_depth();
         println!("[server] makePipeline(depth={})", depth);
         let target: pipeline_target::Client = capnp_rpc::new_client(PipelineTargetImpl {
             name: format!("root(depth={})", depth),
         });
         results.get().set_target(target);
-        Promise::ok(())
+        Ok(())
     }
 
-    fn open_upload(
-        &mut self,
+    async fn open_upload(
+        self: Rc<Self>,
         _params: complex_test_service::OpenUploadParams,
         mut results: complex_test_service::OpenUploadResults,
-    ) -> Promise<(), capnp::Error> {
+    ) -> Result<(), capnp::Error> {
         println!("[server] openUpload()");
         let sink: byte_sink::Client = capnp_rpc::new_client(ByteSinkImpl::new());
         results.get().set_sink(sink);
-        Promise::ok(())
+        Ok(())
     }
 
-    fn open_download(
-        &mut self,
+    async fn open_download(
+        self: Rc<Self>,
         params: complex_test_service::OpenDownloadParams,
         mut results: complex_test_service::OpenDownloadResults,
-    ) -> Promise<(), capnp::Error> {
-        let p = pry!(params.get());
-        let resource_id = pry!(p.get_resource_id());
-        // Use the text value of the identifier as the data to serve
+    ) -> Result<(), capnp::Error> {
+        let p = params.get()?;
+        let resource_id = p.get_resource_id()?;
         let data: Vec<u8> = match resource_id.which() {
             Ok(complex_capnp::identifier::Which::Textual(t)) => t
                 .unwrap_or(capnp::text::Reader::from(""))
@@ -822,109 +818,111 @@ impl complex_test_service::Server for ComplexTestServiceImpl {
         println!("[server] openDownload({} bytes)", data.len());
         let source: byte_source::Client = capnp_rpc::new_client(ByteSourceImpl::new(data));
         results.get().set_source(source);
-        Promise::ok(())
+        Ok(())
     }
 
-    fn get_repository(
-        &mut self,
+    async fn get_repository(
+        self: Rc<Self>,
         _params: complex_test_service::GetRepositoryParams,
         mut results: complex_test_service::GetRepositoryResults,
-    ) -> Promise<(), capnp::Error> {
+    ) -> Result<(), capnp::Error> {
         println!("[server] getRepository()");
         let repo: repository::Client<capnp::text::Owned, complex_capnp::person::Owned> =
             capnp_rpc::new_client(RepositoryImpl::new());
         results.get().set_repository(repo);
-        Promise::ok(())
+        Ok(())
     }
 
-    fn get_factory(
-        &mut self,
+    async fn get_factory(
+        self: Rc<Self>,
         _params: complex_test_service::GetFactoryParams,
         mut results: complex_test_service::GetFactoryResults,
-    ) -> Promise<(), capnp::Error> {
+    ) -> Result<(), capnp::Error> {
         println!("[server] getFactory()");
         let factory: capability_factory::Client = capnp_rpc::new_client(CapabilityFactoryImpl);
         results.get().set_factory(factory);
-        Promise::ok(())
+        Ok(())
     }
 
-    fn use_diamond(
-        &mut self,
+    async fn use_diamond(
+        self: Rc<Self>,
         params: complex_test_service::UseDiamondParams,
         mut results: complex_test_service::UseDiamondResults,
-    ) -> Promise<(), capnp::Error> {
-        let p = pry!(params.get());
-        let diamond: diamond::Client = pry!(p.get_diamond());
-        let value = p.get_value();
-        println!("[server] useDiamond(value={})", value);
+    ) -> Result<(), capnp::Error> {
+        let (diamond, value) = {
+            let p = params.get()?;
+            let diamond: diamond::Client = p.get_diamond()?;
+            let value = p.get_value();
+            println!("[server] useDiamond(value={})", value);
+            (diamond, value)
+        };
 
-        Promise::from_future(async move {
-            let mut req = diamond.both_request();
-            {
-                let mut b = req.get();
-                b.set_left_value(value);
-                b.set_right_value(value);
-            }
-            let resp = req.send().promise.await?;
-            let sum = resp.get()?.get_sum();
-            results.get().set_result(sum);
-            Ok(())
-        })
+        let mut req = diamond.both_request();
+        {
+            let mut b = req.get();
+            b.set_left_value(value);
+            b.set_right_value(value);
+        }
+        let resp = req.send().promise.await?;
+        let sum = resp.get()?.get_sum();
+        results.get().set_result(sum);
+        Ok(())
     }
 
-    fn fail_intentionally(
-        &mut self,
+    async fn fail_intentionally(
+        self: Rc<Self>,
         params: complex_test_service::FailIntentionallyParams,
         _results: complex_test_service::FailIntentionallyResults,
-    ) -> Promise<(), capnp::Error> {
-        let p = pry!(params.get());
+    ) -> Result<(), capnp::Error> {
+        let p = params.get()?;
         let code = p.get_code();
-        let message = pry!(p.get_message()).to_str().unwrap_or("").to_string();
+        let message = p.get_message()?.to_str().unwrap_or("").to_string();
         println!(
             "[server] failIntentionally(code={}, message=\"{}\")",
             code, message
         );
-        Promise::err(capnp::Error::failed(format!("[code={}] {}", code, message)))
+        Err(capnp::Error::failed(format!("[code={}] {}", code, message)))
     }
 
-    fn shutdown(
-        &mut self,
+    async fn shutdown(
+        self: Rc<Self>,
         _params: complex_test_service::ShutdownParams,
         _results: complex_test_service::ShutdownResults,
-    ) -> Promise<(), capnp::Error> {
+    ) -> Result<(), capnp::Error> {
         println!("[server] shutdown requested");
-        if let Some(tx) = self.shutdown_tx.take() {
+        if let Some(tx) = self.shutdown_tx.borrow_mut().take() {
             let _ = tx.send(());
         }
-        Promise::ok(())
+        Ok(())
     }
 
-    fn probe_pipeline_target(
-        &mut self,
+    async fn probe_pipeline_target(
+        self: Rc<Self>,
         params: complex_test_service::ProbePipelineTargetParams,
         mut results: complex_test_service::ProbePipelineTargetResults,
-    ) -> Promise<(), capnp::Error> {
-        let p = pry!(params.get());
-        let target: pipeline_target::Client = pry!(p.get_target());
-        let payload = pry!(p.get_payload()).to_vec();
-        println!("[server] probePipelineTarget({} bytes)", payload.len());
+    ) -> Result<(), capnp::Error> {
+        let (target, payload) = {
+            let p = params.get()?;
+            let target: pipeline_target::Client = p.get_target()?;
+            let payload = p.get_payload()?.to_vec();
+            println!("[server] probePipelineTarget({} bytes)", payload.len());
+            (target, payload)
+        };
 
-        Promise::from_future(async move {
-            let mut req = target.ping_request();
-            req.get().set_payload(&payload);
-            let resp = req.send().promise.await?;
-            let echoed = resp.get()?.get_payload()?;
-            results.get().set_payload(echoed);
-            Ok(())
-        })
+        let mut req = target.ping_request();
+        req.get().set_payload(&payload);
+        let resp = req.send().promise.await?;
+        let echoed = resp.get()?.get_payload()?;
+        results.get().set_payload(echoed);
+        Ok(())
     }
 
-    fn make_promised_pipeline(
-        &mut self,
+    async fn make_promised_pipeline(
+        self: Rc<Self>,
         params: complex_test_service::MakePromisedPipelineParams,
         mut results: complex_test_service::MakePromisedPipelineResults,
-    ) -> Promise<(), capnp::Error> {
-        let delay_ms = pry!(params.get()).get_delay_ms();
+    ) -> Result<(), capnp::Error> {
+        let delay_ms = params.get()?.get_delay_ms();
         println!("[server] makePromisedPipeline(delayMs={})", delay_ms);
         let target: pipeline_target::Client = capnp_rpc::new_future_client(async move {
             tokio::time::sleep(std::time::Duration::from_millis(delay_ms as u64)).await;
@@ -933,24 +931,27 @@ impl complex_test_service::Server for ComplexTestServiceImpl {
             }))
         });
         results.get().set_target(target);
-        Promise::ok(())
+        Ok(())
     }
 
-    fn echo_pipeline_target_later(
-        &mut self,
+    async fn echo_pipeline_target_later(
+        self: Rc<Self>,
         params: complex_test_service::EchoPipelineTargetLaterParams,
         mut results: complex_test_service::EchoPipelineTargetLaterResults,
-    ) -> Promise<(), capnp::Error> {
-        let p = pry!(params.get());
-        let target: pipeline_target::Client = pry!(p.get_target());
-        let delay_ms = p.get_delay_ms();
-        println!("[server] echoPipelineTargetLater(delayMs={})", delay_ms);
+    ) -> Result<(), capnp::Error> {
+        let (target, delay_ms) = {
+            let p = params.get()?;
+            let target: pipeline_target::Client = p.get_target()?;
+            let delay_ms = p.get_delay_ms();
+            println!("[server] echoPipelineTargetLater(delayMs={})", delay_ms);
+            (target, delay_ms)
+        };
         let promised: pipeline_target::Client = capnp_rpc::new_future_client(async move {
             tokio::time::sleep(std::time::Duration::from_millis(delay_ms as u64)).await;
             Ok(target)
         });
         results.get().set_target(promised);
-        Promise::ok(())
+        Ok(())
     }
 }
 
@@ -987,7 +988,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let tx = shutdown_tx.borrow_mut().take();
                         let svc: complex_test_service::Client =
                             capnp_rpc::new_client(ComplexTestServiceImpl {
-                                shutdown_tx: tx,
+                                shutdown_tx: RefCell::new(tx),
                             });
                         let rpc_system = RpcSystem::new(Box::new(network), Some(svc.client));
                         task::spawn_local(rpc_system);
