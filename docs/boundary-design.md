@@ -221,10 +221,16 @@ abstract class CapabilityFactory<T extends Capability> {
 /// Entry point for establishing and serving RPC connections.
 class RpcSystem {
   /// Connects to a remote Cap'n Proto RPC server.
-  static Future<RpcConnection> connect(Uri address);
+  ///
+  /// [onDisposeError] observes a capability's `dispose()` throwing during
+  /// internal cleanup — such a failure never blocks or fails the
+  /// surrounding operation, so this is the only way to see it.
+  static Future<RpcConnection> connect(Uri address,
+      {void Function(Object error, StackTrace stackTrace)? onDisposeError});
 
   /// Starts a server and serves the given bootstrap capability to incoming clients.
-  static Future<RpcServer> serve(Uri address, Capability bootstrap);
+  static Future<RpcServer> serve(Uri address, Capability bootstrap,
+      {void Function(Object error, StackTrace stackTrace)? onDisposeError});
 }
 
 /// Represents a running Cap'n Proto RPC server.

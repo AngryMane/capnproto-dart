@@ -14,7 +14,15 @@ class RpcSystem {
   /// Connects to a Cap'n Proto RPC server at [address].
   ///
   /// Supports `tcp://host:port` URIs.
-  static Future<RpcConnection> connect(Uri address) async {
+  ///
+  /// [onDisposeError] is invoked whenever a capability's `dispose()` throws
+  /// during internal cleanup (Release handling, re-export, or connection
+  /// teardown); such a failure never blocks or fails the surrounding
+  /// operation, so this is the only way to observe it.
+  static Future<RpcConnection> connect(
+    Uri address, {
+    void Function(Object error, StackTrace stackTrace)? onDisposeError,
+  }) async {
     if (address.scheme != 'tcp') {
       throw RpcException('unsupported scheme: ${address.scheme}');
     }
@@ -22,6 +30,7 @@ class RpcSystem {
     return TwoPartyRpcConnection.client(
       incoming: socket.cast<Uint8List>(),
       outgoing: _SocketSink(socket),
+      onDisposeError: onDisposeError,
     );
   }
 
@@ -29,7 +38,13 @@ class RpcSystem {
   /// to incoming clients.
   ///
   /// Supports `tcp://host:port` URIs.
-  static Future<RpcServer> serve(Uri address, Capability bootstrap) async {
+  ///
+  /// See [connect] for [onDisposeError].
+  static Future<RpcServer> serve(
+    Uri address,
+    Capability bootstrap, {
+    void Function(Object error, StackTrace stackTrace)? onDisposeError,
+  }) async {
     if (address.scheme != 'tcp') {
       throw RpcException('unsupported scheme: ${address.scheme}');
     }
@@ -42,6 +57,7 @@ class RpcSystem {
         incoming: socket.cast<Uint8List>(),
         outgoing: _SocketSink(socket),
         bootstrap: bootstrap,
+        onDisposeError: onDisposeError,
       );
     });
 

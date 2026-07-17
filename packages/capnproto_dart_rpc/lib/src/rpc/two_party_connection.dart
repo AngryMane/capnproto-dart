@@ -42,6 +42,7 @@ import 'rpc_proto.dart';
 class TwoPartyRpcConnection implements RpcConnection {
   final StreamSink<Uint8List> _outgoing;
   final bool _isClient;
+  final void Function(Object error, StackTrace stackTrace)? _onDisposeError;
 
   // Exports: capabilities we have sent to the peer.
   // Key = export ID; value tracks the remote reference count so we know
@@ -107,23 +108,39 @@ class TwoPartyRpcConnection implements RpcConnection {
     Stream<Uint8List> incoming,
     this._outgoing,
     this._isClient,
+    this._onDisposeError,
   ) {
     _runMessageLoop(incoming);
   }
 
   /// Creates a client-side connection.
+  ///
+  /// [onDisposeError] is invoked whenever a capability's `dispose()` throws
+  /// during internal cleanup (Release handling, re-export, or teardown). A
+  /// dispose failure never blocks or fails the surrounding operation — every
+  /// other capability still gets disposed — so without this callback such
+  /// errors are otherwise invisible.
   factory TwoPartyRpcConnection.client({
     required Stream<Uint8List> incoming,
     required StreamSink<Uint8List> outgoing,
-  }) => TwoPartyRpcConnection._(incoming, outgoing, true);
+    void Function(Object error, StackTrace stackTrace)? onDisposeError,
+  }) => TwoPartyRpcConnection._(incoming, outgoing, true, onDisposeError);
 
   /// Creates a server-side connection.
+  ///
+  /// See [TwoPartyRpcConnection.client] for [onDisposeError].
   factory TwoPartyRpcConnection.server({
     required Stream<Uint8List> incoming,
     required StreamSink<Uint8List> outgoing,
     required Capability bootstrap,
+    void Function(Object error, StackTrace stackTrace)? onDisposeError,
   }) {
-    final conn = TwoPartyRpcConnection._(incoming, outgoing, false);
+    final conn = TwoPartyRpcConnection._(
+      incoming,
+      outgoing,
+      false,
+      onDisposeError,
+    );
     // Register bootstrap as export 0.
     conn._exports[0] = _ExportEntry(bootstrap);
     conn._exportIds[bootstrap] = 0;
@@ -555,6 +572,12 @@ class TwoPartyRpcConnection implements RpcConnection {
         .then((result) {
           _pendingCaps.remove(qid);
           _dispatchCancellations.remove(qid);
+          // The connection was torn down while this dispatch was still
+          // running. _tearDown() already cleared the answer tables; don't
+          // resurrect an entry for a peer that's no longer there. _sendRaw()
+          // below would silently no-op anyway, but skip the bookkeeping too
+          // so nothing lingers for a caller to observe as a leak.
+          if (_closedError != null) return;
           if (_finishedAnswers.remove(qid)) {
             _answerCaps.remove(qid);
             _answers.remove(qid);
@@ -591,6 +614,8 @@ class TwoPartyRpcConnection implements RpcConnection {
           _pendingCaps.remove(qid);
           _dispatchCancellations.remove(qid);
           _answerCaps.remove(qid);
+          // See the matching comment in the success branch above.
+          if (_closedError != null) return;
           if (_finishedAnswers.remove(qid)) {
             _answers.remove(qid);
             return;
@@ -673,12 +698,26 @@ class TwoPartyRpcConnection implements RpcConnection {
   void _handleRelease(RpcMessage msg) {
     final entry = _exports[msg.releaseId];
     if (entry == null) return;
+    // A peer can only release references it actually holds. Silently
+    // clamping an excessive referenceCount to zero would mask a peer/local
+    // refcount mismatch — treat it as a protocol violation instead, since a
+    // legitimate peer implementation never sends one.
+    if (msg.referenceCount > entry.remoteRefCount) {
+      _tearDown(
+        RpcException(
+          'protocol violation: Release(id=${msg.releaseId}) referenceCount '
+          '${msg.referenceCount} exceeds outstanding remote reference count '
+          '${entry.remoteRefCount}',
+        ),
+      );
+      return;
+    }
     entry.remoteRefCount -= msg.referenceCount;
     if (entry.remoteRefCount <= 0) {
       _exports.remove(msg.releaseId);
       _exportIds.remove(entry.capability);
       _senderPromiseResolves.remove(msg.releaseId);
-      entry.capability.dispose().ignore();
+      _disposeIgnoringErrors(entry.capability);
     }
   }
 
@@ -864,8 +903,21 @@ class TwoPartyRpcConnection implements RpcConnection {
       _exports.remove(eid);
       _exportIds.remove(entry.capability);
       _senderPromiseResolves.remove(eid);
-      entry.capability.dispose().ignore();
+      _disposeIgnoringErrors(entry.capability);
     }
+  }
+
+  /// Disposes [capability] without awaiting or propagating a failure.
+  ///
+  /// Used for every internally-triggered dispose (Release handling,
+  /// re-export, teardown): one capability's `dispose()` throwing must never
+  /// block or fail the rest of that cleanup pass. The error isn't simply
+  /// dropped, though — it's routed to [_onDisposeError] so callers who care
+  /// can observe it instead of it being silently swallowed.
+  void _disposeIgnoringErrors(Capability capability) {
+    capability.dispose().catchError((Object error, StackTrace stackTrace) {
+      _onDisposeError?.call(error, stackTrace);
+    });
   }
 
   Capability _capabilityFromDescriptor(RpcCapDescriptor descriptor) {
@@ -959,7 +1011,7 @@ class TwoPartyRpcConnection implements RpcConnection {
 
     // Dispose all exported capabilities.
     for (final entry in _exports.values) {
-      entry.capability.dispose().ignore();
+      _disposeIgnoringErrors(entry.capability);
     }
     _exports.clear();
     _exportIds.clear();
@@ -998,6 +1050,34 @@ class TwoPartyRpcConnection implements RpcConnection {
 
   int get debugPendingQuestionCount => _questions.length;
   int get debugPendingQuestionSentCount => _questionSent.length;
+
+  /// Number of capabilities currently exported to the peer (i.e. still
+  /// holding at least one outstanding remote reference).
+  int get debugExportCount => _exports.length;
+
+  /// Number of remote capabilities currently imported from the peer (i.e.
+  /// still holding at least one outstanding local reference).
+  int get debugImportCount => _imports.length;
+
+  /// Number of incoming calls with some tracked answer-lifecycle state:
+  /// dispatch in flight ([_pendingCaps]), a resolved-but-not-yet-finished
+  /// answer ([_answerCaps]/[_answers]), or a Finish that arrived before
+  /// dispatch completed ([_finishedAnswers]). Zero means every incoming call
+  /// this connection has seen has fully settled.
+  int get debugAnswerCount => <int>{
+    ..._answers.keys,
+    ..._answerCaps.keys,
+    ..._pendingCaps.keys,
+    ..._finishedAnswers,
+  }.length;
+
+  /// Number of incoming dispatches with a live [DispatchCancellationController]
+  /// (i.e. dispatch is still running and could still observe cancellation).
+  int get debugCancellationCount => _dispatchCancellations.length;
+
+  /// Number of Disembargo round-trips currently awaiting the peer's
+  /// receiverLoopback response.
+  int get debugEmbargoCount => _embargoes.length;
 }
 
 // ---------------------------------------------------------------------------
