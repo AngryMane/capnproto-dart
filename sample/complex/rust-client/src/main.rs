@@ -2,15 +2,33 @@
 //
 // Connects to the Dart server (sample/complex/dart-server) on 127.0.0.1:12347
 // and verifies that the Dart RPC server correctly handles incoming calls from
-// an external Rust client.
+// an external Rust client. This mirrors (a subset of) the sections exercised
+// by the Dart client against the Rust server in sample/complex/client, so
+// that RPC coverage is roughly symmetric in both directions.
 //
 // Tests:
-//   1. echoScalars     — basic scalar encode/decode from Dart server
-//   2. makePipeline    — capability return + ping call
-//   3. callObserver    — Rust-side callback cap (Rust→Dart→Rust call chain)
-//   4. exchangeCapabilities — List(Interface) round-trip
-//   5. failIntentionally    — error propagation
-//   6. shutdown        — graceful server shutdown
+//    1. echo                     — basic struct-returning method
+//    2. echoScalars              — scalar encode/decode from Dart server
+//    3. echoLists                — list encode/decode from Dart server
+//    4. echoUnion                — union encode/decode from Dart server
+//    5. echoAnyPointer           — generic AnyPointer round-trip
+//    6. makePipeline             — capability return + ping call
+//    7. callObserver             — Rust-side callback cap (Rust→Dart→Rust call chain)
+//    8. exchangeCapabilities     — List(Interface) round-trip
+//    9. getRepository            — Repository(Text, Person) CRUD
+//   10. useDiamond               — Rust-side Diamond capability called back by Dart
+//   11. probePipelineTarget      — Rust-side PipelineTarget capability called back by Dart
+//   12. makePromisedPipeline     — promise pipelining on a Dart-side deferred capability
+//   13. echoPipelineTargetLater  — Dart returns a promise that resolves to the same cap sent to it
+//   14. getFactory + getUntyped  — capability factory, untyped AnyPointer payload
+//   15. failIntentionally        — error propagation
+//   16. shutdown                 — graceful server shutdown
+//
+// Not covered here (see docs/... for the tracked gap): openUpload/openDownload
+// (capnp streaming methods) and CapabilityFactory.newCell/newRepository/
+// echoCapability<T> generic-method testing from the Rust side — these are
+// already exercised from the Dart-client/Rust-server direction in
+// sample/complex/client (sections 17 and 21).
 
 use capnp::capability::FromClientHook;
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
@@ -25,7 +43,10 @@ pub mod complex_capnp {
     include!(concat!(env!("OUT_DIR"), "/complex_capnp.rs"));
 }
 
-use complex_capnp::{complex_test_service, observer, pipeline_target};
+use complex_capnp::{
+    complex_test_service, diamond, left, named_union, observer, optional, parent,
+    pipeline_target, right, Status,
+};
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -90,11 +111,82 @@ impl observer::Server<complex_capnp::person::Owned> for ObserverImpl {
 }
 
 // ---------------------------------------------------------------------------
+// Rust-side PipelineTarget implementation (used for probePipelineTarget /
+// echoPipelineTargetLater, where the Dart server calls back into a
+// Rust-hosted capability).
+// ---------------------------------------------------------------------------
+
+struct RustPipelineTargetImpl {
+    name: String,
+}
+
+impl pipeline_target::Server for RustPipelineTargetImpl {
+    async fn ping(
+        self: Rc<Self>,
+        params: pipeline_target::PingParams,
+        mut results: pipeline_target::PingResults,
+    ) -> Result<(), capnp::Error> {
+        let payload = params.get()?.get_payload()?;
+        println!(
+            "[rust-client] pipeline[{}].ping({} bytes)",
+            self.name,
+            payload.len()
+        );
+        results.get().set_payload(payload);
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Rust-side Diamond implementation (used for useDiamond, where the Dart
+// server calls diamond.both() back into this Rust-hosted capability).
+// Parent/Left/Right are left at their default "unimplemented" bodies since
+// the Dart server's useDiamond handler only calls `both`.
+// ---------------------------------------------------------------------------
+
+struct RustDiamondImpl;
+
+impl parent::Server for RustDiamondImpl {}
+impl left::Server for RustDiamondImpl {}
+impl right::Server for RustDiamondImpl {}
+
+impl diamond::Server for RustDiamondImpl {
+    async fn both(
+        self: Rc<Self>,
+        params: diamond::BothParams,
+        mut results: diamond::BothResults,
+    ) -> Result<(), capnp::Error> {
+        let p = params.get()?;
+        let sum = p.get_left_value() as i64 + p.get_right_value() as i64;
+        println!("[rust-client] diamond.both({}, {})", p.get_left_value(), p.get_right_value());
+        results.get().set_sum(sum);
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
+async fn test_echo(svc: &complex_test_service::Client) {
+    println!("[1] echo");
+    let req = svc.echo_request();
+    match req.send().promise.await {
+        Ok(resp) => match resp.get().and_then(|r| r.get_response()) {
+            Ok(r) => {
+                check_eq!("echo accepted", r.get_accepted(), true);
+                check_eq!("echo status", r.get_status(), Ok(Status::Running));
+                let msg = r.get_message().ok().and_then(|t| t.to_str().ok()).unwrap_or("");
+                check_eq!("echo message", msg, "echo from Dart");
+            }
+            Err(e) => fail("echo get_response", &e.to_string()),
+        },
+        Err(e) => fail("echo call", &e.to_string()),
+    }
+}
+
 async fn test_echo_scalars(svc: &complex_test_service::Client) {
-    println!("[1] echoScalars");
+    println!("[2] echoScalars");
     let mut req = svc.echo_scalars_request();
     {
         let mut b = req.get().init_value();
@@ -123,8 +215,84 @@ async fn test_echo_scalars(svc: &complex_test_service::Client) {
     }
 }
 
+async fn test_echo_lists(svc: &complex_test_service::Client) {
+    println!("[3] echoLists");
+    let mut req = svc.echo_lists_request();
+    {
+        let mut b = req.get().init_value();
+        let mut texts = b.reborrow().init_texts(3);
+        texts.set(0, "alpha");
+        texts.set(1, "beta");
+        texts.set(2, "gamma");
+    }
+    match req.send().promise.await {
+        Ok(resp) => match resp.get().and_then(|r| r.get_value()) {
+            Ok(v) => match v.get_texts() {
+                Ok(texts) => {
+                    check_eq!("echoLists texts.len", texts.len(), 3);
+                    let t1 = texts.get(1).ok().and_then(|t| t.to_str().ok()).unwrap_or("");
+                    check_eq!("echoLists texts[1]", t1, "beta");
+                }
+                Err(e) => fail("echoLists get_texts", &e.to_string()),
+            },
+            Err(e) => fail("echoLists get_value", &e.to_string()),
+        },
+        Err(e) => fail("echoLists call", &e.to_string()),
+    }
+}
+
+async fn test_echo_union(svc: &complex_test_service::Client) {
+    println!("[4] echoUnion");
+    let mut req = svc.echo_union_request();
+    {
+        let mut b = req.get().init_value();
+        b.set_selector(7);
+        b.get_payload().set_text("union from Rust");
+    }
+    match req.send().promise.await {
+        Ok(resp) => match resp.get().and_then(|r| r.get_value()) {
+            Ok(v) => {
+                check_eq!("echoUnion selector", v.get_selector(), 7u32);
+                match v.get_payload().which() {
+                    Ok(named_union::payload::Which::Text(Ok(t))) => {
+                        check_eq!("echoUnion text", t.to_str().unwrap_or(""), "union from Rust");
+                    }
+                    other => fail("echoUnion payload variant", &format!("{:?}", other.is_ok())),
+                }
+            }
+            Err(e) => fail("echoUnion get_value", &e.to_string()),
+        },
+        Err(e) => fail("echoUnion call", &e.to_string()),
+    }
+}
+
+async fn test_echo_any_pointer(svc: &complex_test_service::Client) {
+    println!("[5] echoAnyPointer");
+    let mut req = svc.echo_any_pointer_request();
+    {
+        let value = req.get().init_value();
+        let mut scalars = value.init_as::<complex_capnp::all_scalars::Builder>();
+        scalars.set_int32_value(777);
+        scalars.set_text_value("any-pointer from Rust");
+    }
+    match req.send().promise.await {
+        Ok(resp) => match resp.get().and_then(|r| r.get_value()) {
+            Ok(v) => match v.get_as::<complex_capnp::all_scalars::Reader>() {
+                Ok(s) => {
+                    check_eq!("echoAnyPointer int32Value", s.get_int32_value(), 777);
+                    let text = s.get_text_value().ok().and_then(|t| t.to_str().ok()).unwrap_or("");
+                    check_eq!("echoAnyPointer textValue", text, "any-pointer from Rust");
+                }
+                Err(e) => fail("echoAnyPointer get_as", &e.to_string()),
+            },
+            Err(e) => fail("echoAnyPointer get_value", &e.to_string()),
+        },
+        Err(e) => fail("echoAnyPointer call", &e.to_string()),
+    }
+}
+
 async fn test_make_pipeline(svc: &complex_test_service::Client) {
-    println!("[2] makePipeline + ping");
+    println!("[6] makePipeline + ping");
     let mut req = svc.make_pipeline_request();
     req.get().set_depth(2);
 
@@ -159,7 +327,7 @@ async fn test_make_pipeline(svc: &complex_test_service::Client) {
 }
 
 async fn test_call_observer(svc: &complex_test_service::Client) {
-    println!("[3] callObserver (Rust→Dart→Rust)");
+    println!("[7] callObserver (Rust→Dart→Rust)");
     let next_count = Rc::new(RefCell::new(0u32));
     let complete = Rc::new(RefCell::new(false));
 
@@ -193,7 +361,7 @@ async fn test_call_observer(svc: &complex_test_service::Client) {
 }
 
 async fn test_exchange_capabilities(svc: &complex_test_service::Client) {
-    println!("[4] exchangeCapabilities (List(Interface) round-trip)");
+    println!("[8] exchangeCapabilities (List(Interface) round-trip)");
 
     // First get a PipelineTarget cap
     let mut make_req = svc.make_pipeline_request();
@@ -263,8 +431,202 @@ async fn test_exchange_capabilities(svc: &complex_test_service::Client) {
     }
 }
 
+async fn test_get_repository(svc: &complex_test_service::Client) {
+    println!("[9] getRepository (Text, Person) CRUD");
+    let repo = match svc.get_repository_request().send().promise.await {
+        Ok(resp) => match resp.get().and_then(|r| r.get_repository()) {
+            Ok(r) => r,
+            Err(e) => { fail("getRepository get_repository", &e.to_string()); return; }
+        },
+        Err(e) => { fail("getRepository call", &e.to_string()); return; }
+    };
+    check!("getRepository returns capability", true);
+
+    // put
+    let mut put_req = repo.put_request();
+    {
+        let mut b = put_req.get();
+        let _ = b.set_key("rust-key-1");
+        let mut person = b.init_value();
+        person.set_name("Rust Person");
+        person.set_email("rust@example.com");
+    }
+    let rev1 = match put_req.send().promise.await {
+        Ok(resp) => resp.get().map(|r| r.get_new_revision()).unwrap_or(0),
+        Err(e) => { fail("getRepository put", &e.to_string()); return; }
+    };
+    check!("getRepository put revision > 0", rev1 > 0);
+
+    // get
+    let mut get_req = repo.get_request();
+    let _ = get_req.get().set_key("rust-key-1");
+    match get_req.send().promise.await {
+        Ok(resp) => match resp.get() {
+            Ok(r) => {
+                check_eq!("getRepository get revision", r.get_revision(), rev1);
+                match r.get_result() {
+                    Ok(opt) => match opt.which() {
+                        Ok(optional::Which::Some(Ok(person))) => {
+                            let name = person.get_name().ok().and_then(|t| t.to_str().ok()).unwrap_or("");
+                            check_eq!("getRepository get person name", name, "Rust Person");
+                        }
+                        other => fail("getRepository get result variant", &format!("{:?}", other.is_ok())),
+                    },
+                    Err(e) => fail("getRepository get_result", &e.to_string()),
+                }
+            }
+            Err(e) => fail("getRepository get response", &e.to_string()),
+        },
+        Err(e) => fail("getRepository get call", &e.to_string()),
+    }
+
+    // remove
+    let mut remove_req = repo.remove_request();
+    let _ = remove_req.get().set_key("rust-key-1");
+    match remove_req.send().promise.await {
+        Ok(resp) => {
+            let new_rev = resp.get().map(|r| r.get_new_revision()).unwrap_or(0);
+            check!("getRepository remove revision > previous", new_rev > rev1);
+        }
+        Err(e) => fail("getRepository remove call", &e.to_string()),
+    }
+
+    // get after remove → none
+    let mut get_req2 = repo.get_request();
+    let _ = get_req2.get().set_key("rust-key-1");
+    match get_req2.send().promise.await {
+        Ok(resp) => match resp.get().and_then(|r| r.get_result()) {
+            Ok(opt) => match opt.which() {
+                Ok(optional::Which::None(())) => pass("getRepository removed key is none"),
+                other => fail("getRepository removed key variant", &format!("{:?}", other.is_ok())),
+            },
+            Err(e) => fail("getRepository get_result", &e.to_string()),
+        },
+        Err(e) => fail("getRepository get-after-remove call", &e.to_string()),
+    }
+}
+
+async fn test_use_diamond(svc: &complex_test_service::Client) {
+    println!("[10] useDiamond (Dart→Rust callback)");
+    let diamond_client: diamond::Client = capnp_rpc::new_client(RustDiamondImpl);
+
+    let mut req = svc.use_diamond_request();
+    {
+        let mut b = req.get();
+        b.set_diamond(diamond_client);
+        b.set_value(21);
+    }
+    match req.send().promise.await {
+        Ok(resp) => {
+            let result = resp.get().map(|r| r.get_result()).unwrap_or(0);
+            check_eq!("useDiamond result", result, 42i64);
+        }
+        Err(e) => fail("useDiamond call", &e.to_string()),
+    }
+}
+
+async fn test_probe_pipeline_target(svc: &complex_test_service::Client) {
+    println!("[11] probePipelineTarget (Dart→Rust callback)");
+    let target: pipeline_target::Client = capnp_rpc::new_client(RustPipelineTargetImpl {
+        name: "rust-probe-target".to_string(),
+    });
+
+    let mut req = svc.probe_pipeline_target_request();
+    {
+        let mut b = req.get();
+        b.set_target(target);
+        b.set_payload(&[9, 8, 7]);
+    }
+    match req.send().promise.await {
+        Ok(resp) => {
+            let payload = resp.get().and_then(|r| r.get_payload()).unwrap_or_default();
+            check_eq!("probePipelineTarget echoed payload", payload, &[9, 8, 7][..]);
+        }
+        Err(e) => fail("probePipelineTarget call", &e.to_string()),
+    }
+}
+
+async fn test_make_promised_pipeline(svc: &complex_test_service::Client) {
+    println!("[12] makePromisedPipeline (promise pipelining)");
+    let mut req = svc.make_promised_pipeline_request();
+    req.get().set_delay_ms(50);
+
+    // Pipeline the ping call onto the not-yet-resolved target without
+    // awaiting makePromisedPipeline's response first.
+    let pipeline = req.send();
+    let target = pipeline.pipeline.get_target();
+    let mut ping_req = target.ping_request();
+    ping_req.get().set_payload(&[42]);
+
+    match ping_req.send().promise.await {
+        Ok(resp) => {
+            let payload = resp.get().and_then(|r| r.get_payload()).unwrap_or_default();
+            check_eq!("makePromisedPipeline pipelined ping[0]", payload.first().copied().unwrap_or(0), 42u8);
+        }
+        Err(e) => fail("makePromisedPipeline pipelined ping", &e.to_string()),
+    }
+}
+
+async fn test_echo_pipeline_target_later(svc: &complex_test_service::Client) {
+    println!("[13] echoPipelineTargetLater (Dart-delayed promise resolving to Rust cap)");
+    let target: pipeline_target::Client = capnp_rpc::new_client(RustPipelineTargetImpl {
+        name: "rust-echo-later-target".to_string(),
+    });
+
+    let mut req = svc.echo_pipeline_target_later_request();
+    {
+        let mut b = req.get();
+        b.set_target(target);
+        b.set_delay_ms(50);
+    }
+    match req.send().promise.await {
+        Ok(resp) => match resp.get().and_then(|r| r.get_target()) {
+            Ok(echoed) => {
+                let mut ping_req = echoed.ping_request();
+                ping_req.get().set_payload(&[5]);
+                match ping_req.send().promise.await {
+                    Ok(ping_resp) => {
+                        let payload = ping_resp.get().and_then(|r| r.get_payload()).unwrap_or_default();
+                        check_eq!("echoPipelineTargetLater ping[0]", payload.first().copied().unwrap_or(0), 5u8);
+                    }
+                    Err(e) => fail("echoPipelineTargetLater ping", &e.to_string()),
+                }
+            }
+            Err(e) => fail("echoPipelineTargetLater get_target", &e.to_string()),
+        },
+        Err(e) => fail("echoPipelineTargetLater call", &e.to_string()),
+    }
+}
+
+async fn test_get_factory(svc: &complex_test_service::Client) {
+    println!("[14] getFactory + getUntyped");
+    let factory = match svc.get_factory_request().send().promise.await {
+        Ok(resp) => match resp.get().and_then(|r| r.get_factory()) {
+            Ok(f) => f,
+            Err(e) => { fail("getFactory get_factory", &e.to_string()); return; }
+        },
+        Err(e) => { fail("getFactory call", &e.to_string()); return; }
+    };
+    check!("getFactory returns capability", true);
+
+    let mut req = factory.get_untyped_request();
+    req.get().set_name("scalars");
+    match req.send().promise.await {
+        Ok(resp) => match resp.get().map(|r| r.get_value()) {
+            Ok(v) => match v.get_as::<complex_capnp::all_scalars::Reader>() {
+                Ok(s) => {
+                    check_eq!("getUntyped int32Value", s.get_int32_value(), 20260717);
+                }
+                Err(e) => fail("getUntyped get_as", &e.to_string()),
+            },
+            Err(e) => fail("getUntyped get_value", &e.to_string()),
+        },
+        Err(e) => fail("getUntyped call", &e.to_string()),
+    }
+}
+
 async fn test_fail_intentionally(svc: &complex_test_service::Client) {
-    println!("[5] failIntentionally");
+    println!("[15] failIntentionally");
     let mut req = svc.fail_intentionally_request();
     {
         let mut b = req.get();
@@ -309,14 +671,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         task::spawn_local(rpc_system);
 
+        test_echo(&svc).await;
         test_echo_scalars(&svc).await;
+        test_echo_lists(&svc).await;
+        test_echo_union(&svc).await;
+        test_echo_any_pointer(&svc).await;
         test_make_pipeline(&svc).await;
         test_call_observer(&svc).await;
         test_exchange_capabilities(&svc).await;
+        test_get_repository(&svc).await;
+        test_use_diamond(&svc).await;
+        test_probe_pipeline_target(&svc).await;
+        test_make_promised_pipeline(&svc).await;
+        test_echo_pipeline_target_later(&svc).await;
+        test_get_factory(&svc).await;
         test_fail_intentionally(&svc).await;
 
         // Shutdown the Dart server
-        println!("\n[6] shutdown");
+        println!("\n[16] shutdown");
         let _ = svc.shutdown_request().send().promise.await;
         pass("shutdown sent");
 

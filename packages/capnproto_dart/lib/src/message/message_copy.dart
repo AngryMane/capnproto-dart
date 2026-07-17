@@ -107,35 +107,18 @@ Uint8List? copyAnyPointerToNewMessage(
   // Peek at the pointer type before attempting resolution.
   final peeked = WirePointer.decode(host.segment.data, ptrWordOffset);
   if (peeked is NullPointer) return null;
-  if (peeked is CapabilityPointer) {
-    if (!preserveCapabilityPointers) return null;
-    final dst = ArenaBuilder();
-    final (ptrSeg, rootPtrOffset) = dst.allocate(1);
-    _copyPointer(
-      host.arena,
-      host.segment,
-      ptrWordOffset,
-      host.nestingLimit,
-      dst,
-      ptrSeg,
-      rootPtrOffset,
-      preserveCapabilityPointers: true,
-    );
-    return dst.serialize();
-  }
+  if (peeked is CapabilityPointer && !preserveCapabilityPointers) return null;
 
-  final src = host.arena.resolveOptionalStructAt(
+  // Delegate to the general pointer copier so struct, list (Text/Data/
+  // List(T)), and capability payloads are all handled uniformly — the
+  // AnyPointer's actual wire representation isn't necessarily a struct.
+  final dst = ArenaBuilder();
+  final (ptrSeg, rootPtrOffset) = dst.allocate(1);
+  _copyPointer(
+    host.arena,
     host.segment,
     ptrWordOffset,
     host.nestingLimit,
-  );
-  if (src == null) return null;
-
-  final dst = ArenaBuilder();
-  final (ptrSeg, rootPtrOffset) = dst.allocate(1);
-  _copyStruct(
-    src,
-    host.arena,
     dst,
     ptrSeg,
     rootPtrOffset,

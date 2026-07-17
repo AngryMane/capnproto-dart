@@ -2085,7 +2085,10 @@ void _s26_schemaEvolution() {
   pass('field additions backward-compatible (compile-time verified)');
   pass('union additions safe (unknown discriminant → default)');
   pass('method additions safe (unknown methodId → "not implemented" error)');
-  skip('runtime forward-compat test - would require two versions of schema');
+  // A runtime round-trip needs two independently-generated schema versions,
+  // which doesn't fit this single-schema interop suite. That test now lives
+  // in sample/schema-evolution (driven by ci/run-tests.sh) instead of here.
+  skip('runtime forward-compat test - see sample/schema-evolution');
 }
 
 // ─── 27. Load and Concurrency ────────────────────────────────────────────────
