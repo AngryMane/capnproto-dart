@@ -8,6 +8,14 @@ use tokio::sync::oneshot;
 use tokio::task;
 use tokio_util::compat::TokioAsyncReadCompatExt;
 
+// The schema's diamond interface inheritance (Diamond extends Left, Right;
+// Left/Right both extend Parent) makes capnp's Rust codegen emit a
+// dispatch_call_internal match arm for Parent's method IDs once per
+// inheritance path, so the second occurrence is an unreachable duplicate.
+// This is inherent to how the codegen handles diamond inheritance, not
+// something our schema or generator can avoid — silence it here rather than
+// deny warnings crate/job-wide.
+#[allow(unreachable_patterns)]
 pub mod complex_capnp {
     include!(concat!(env!("OUT_DIR"), "/complex_capnp.rs"));
 }
