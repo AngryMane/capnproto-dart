@@ -4,14 +4,7 @@ packages:
   capnproto_dart:
     dependency: "direct main"
     description:
-      path: "../../../packages/capnproto_dart"
-      relative: true
-    source: path
-    version: "0.1.0"
-  capnproto_dart_rpc:
-    dependency: "direct main"
-    description:
-      path: "../../../packages/capnproto_dart_rpc"
+      path: "../../../../packages/capnproto_dart"
       relative: true
     source: path
     version: "0.1.0"

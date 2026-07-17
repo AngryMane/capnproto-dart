@@ -20,8 +20,9 @@ fi
 # All Rust sub-projects that depend on the capnp crate family.
 CARGO_DIRS=(
   "sample/greeter/server"
-  "sample/complex/server"
-  "sample/complex/rust-client"
+  "test/interop/complex/server"
+  "test/interop/complex/rust-client"
+  "test/interop/schema-evolution/rust"
 )
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"

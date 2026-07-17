@@ -1,6 +1,6 @@
 // Wire-format golden-test driver (Dart side).
 //
-// See sample/wire-format-golden/README.md (well — this comment, there's no
+// See test/interop/wire-format-golden/README.md (well — this comment, there's no
 // separate README) for the full picture: ci/run-tests.sh uses the official
 // `capnp` CLI as the oracle for wire-format correctness, independent of RPC.
 //

@@ -1,10 +1,10 @@
 // Dart-as-server reverse interop test server.
 //
 // Implements ComplexTestService to be tested by the Rust client
-// (sample/complex/rust-client). Listens on 127.0.0.1:12347.
+// (test/interop/complex/rust-client). Listens on 127.0.0.1:12347.
 //
 // Run before starting the Rust client:
-//   dart run sample/complex/dart-server/bin/main.dart
+//   dart run test/interop/complex/dart-server/bin/main.dart
 
 import 'dart:async';
 import 'dart:convert';

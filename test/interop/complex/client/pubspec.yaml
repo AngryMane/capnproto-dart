@@ -7,6 +7,6 @@ environment:
 
 dependencies:
   capnproto_dart:
-    path: ../../../packages/capnproto_dart
+    path: ../../../../packages/capnproto_dart
   capnproto_dart_rpc:
-    path: ../../../packages/capnproto_dart_rpc
+    path: ../../../../packages/capnproto_dart_rpc

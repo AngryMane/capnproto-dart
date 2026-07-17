@@ -88,7 +88,7 @@ fi
 # ── 3. Complex sample: Rust server + Dart client ────────────────────────────
 
 run_section "Complex: build Rust server"
-if cargo build --manifest-path sample/complex/server/Cargo.toml --release 2>&1; then
+if cargo build --manifest-path test/interop/complex/server/Cargo.toml --release 2>&1; then
   pass "complex server build"
 else
   fail "complex server build"; goto_summary2=1
@@ -96,12 +96,12 @@ fi
 
 if [[ -z "${goto_summary2:-}" ]]; then
   run_section "Complex: integration test (Rust server + Dart client)"
-  ./sample/complex/server/target/release/complex-server &
+  ./test/interop/complex/server/target/release/complex-server &
   COMPLEX_SERVER_PID=$!
   trap 'kill $COMPLEX_SERVER_PID 2>/dev/null || true' EXIT
 
   if wait_for_port 127.0.0.1 12346; then
-    if (cd sample/complex/client && dart pub get && dart run bin/main.dart); then
+    if (cd test/interop/complex/client && dart pub get && dart run bin/main.dart); then
       pass "complex integration (Rust server + Dart client)"
     else
       fail "complex integration (Rust server + Dart client)"
@@ -117,7 +117,7 @@ fi
 # ── 4. Complex sample: Dart server + Rust client ────────────────────────────
 
 run_section "Complex: build Rust client"
-if cargo build --manifest-path sample/complex/rust-client/Cargo.toml --release 2>&1; then
+if cargo build --manifest-path test/interop/complex/rust-client/Cargo.toml --release 2>&1; then
   pass "complex rust-client build"
 else
   fail "complex rust-client build"; goto_summary3=1
@@ -125,12 +125,12 @@ fi
 
 if [[ -z "${goto_summary3:-}" ]]; then
   run_section "Complex: integration test (Dart server + Rust client)"
-  (cd sample/complex/dart-server && dart pub get && dart run bin/main.dart) &
+  (cd test/interop/complex/dart-server && dart pub get && dart run bin/main.dart) &
   DART_SERVER_PID=$!
   trap 'kill $DART_SERVER_PID 2>/dev/null || true' EXIT
 
   if wait_for_port 127.0.0.1 12347; then
-    if ./sample/complex/rust-client/target/release/complex-rust-client; then
+    if ./test/interop/complex/rust-client/target/release/complex-rust-client; then
       pass "complex integration (Dart server + Rust client)"
     else
       fail "complex integration (Dart server + Rust client)"
@@ -151,7 +151,7 @@ fi
 # (fields only ever appended, never renumbered/retyped).
 
 run_section "Schema evolution: build Rust binary"
-if cargo build --manifest-path sample/schema-evolution/rust/Cargo.toml --release 2>&1; then
+if cargo build --manifest-path test/interop/schema-evolution/rust/Cargo.toml --release 2>&1; then
   pass "schema-evolution rust build"
 else
   fail "schema-evolution rust build"; goto_summary4=1
@@ -159,7 +159,7 @@ fi
 
 if [[ -z "${goto_summary4:-}" ]]; then
   run_section "Schema evolution: dart pub get"
-  if (cd sample/schema-evolution/dart && dart pub get); then
+  if (cd test/interop/schema-evolution/dart && dart pub get); then
     pass "schema-evolution dart pub get"
   else
     fail "schema-evolution dart pub get"; goto_summary4=1
@@ -168,8 +168,8 @@ fi
 
 if [[ -z "${goto_summary4:-}" ]]; then
   run_section "Schema evolution: cross-language round-trip"
-  SE_BIN="$REPO_ROOT/sample/schema-evolution/rust/target/release/schema-evolution-rust"
-  se_dart() { (cd sample/schema-evolution/dart && dart run bin/main.dart "$@"); }
+  SE_BIN="$REPO_ROOT/test/interop/schema-evolution/rust/target/release/schema-evolution-rust"
+  se_dart() { (cd test/interop/schema-evolution/dart && dart run bin/main.dart "$@"); }
   SE_TMP="$(mktemp -d)"
   trap 'rm -rf "$SE_TMP"' EXIT
 
@@ -218,7 +218,7 @@ fi
 #      decode the exact field values back out.
 
 run_section "Wire-format golden: dart pub get"
-if (cd sample/wire-format-golden/dart && dart pub get); then
+if (cd test/interop/wire-format-golden/dart && dart pub get); then
   pass "wire-format-golden dart pub get"
 else
   fail "wire-format-golden dart pub get"; goto_summary5=1
@@ -226,10 +226,10 @@ fi
 
 if [[ -z "${goto_summary5:-}" ]]; then
   run_section "Wire-format golden: cross-check against capnp CLI"
-  WFG_SCHEMA="$REPO_ROOT/sample/wire-format-golden/schema/golden.capnp"
+  WFG_SCHEMA="$REPO_ROOT/test/interop/wire-format-golden/schema/golden.capnp"
   WFG_TMP="$(mktemp -d)"
   trap 'rm -rf "$WFG_TMP"' EXIT
-  wfg_dart() { (cd sample/wire-format-golden/dart && dart run bin/main.dart "$@"); }
+  wfg_dart() { (cd test/interop/wire-format-golden/dart && dart run bin/main.dart "$@"); }
 
   LITERAL_SCALARS='(boolean = true, int8Value = -8, int16Value = -1600, int32Value = -320000, int64Value = -6400000000, uint8Value = 8, uint16Value = 1600, uint32Value = 320000, uint64Value = 6400000000, float32Value = 1.25, float64Value = -2.5, textValue = "hello \"world\"", dataValue = 0x"00 01 02 03 7f 80 fe ff", color = green)'
   LITERAL_NESTED='(label = "root", values = [1, 2, 3], tags = ["a", "b"], children = [(label = "child1", values = [4], tags = [], children = []), (label = "child2", values = [], tags = ["x"], children = [])])'

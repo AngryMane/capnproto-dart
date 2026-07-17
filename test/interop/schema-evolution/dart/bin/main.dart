@@ -1,8 +1,8 @@
 // Cross-language schema-evolution runtime compat driver (Dart side).
 //
-// See sample/schema-evolution/README.md for the full picture. This binary
+// See test/interop/schema-evolution/README.md for the full picture. This binary
 // only implements one language's half; ci/run-tests.sh interleaves it with
-// the Rust binary (sample/schema-evolution/rust) so that messages written by
+// the Rust binary (test/interop/schema-evolution/rust) so that messages written by
 // one language's vN schema are read back by the other language's vM schema.
 //
 // Usage:

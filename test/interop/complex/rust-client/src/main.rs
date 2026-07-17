@@ -1,9 +1,9 @@
 // Rust-as-client reverse interop test client.
 //
-// Connects to the Dart server (sample/complex/dart-server) on 127.0.0.1:12347
+// Connects to the Dart server (test/interop/complex/dart-server) on 127.0.0.1:12347
 // and verifies that the Dart RPC server correctly handles incoming calls from
 // an external Rust client. This mirrors (a subset of) the sections exercised
-// by the Dart client against the Rust server in sample/complex/client, so
+// by the Dart client against the Rust server in test/interop/complex/client, so
 // that RPC coverage is roughly symmetric in both directions.
 //
 // Tests:
@@ -28,7 +28,7 @@
 // (capnp streaming methods) and CapabilityFactory.newCell/newRepository/
 // echoCapability<T> generic-method testing from the Rust side — these are
 // already exercised from the Dart-client/Rust-server direction in
-// sample/complex/client (sections 17 and 21).
+// test/interop/complex/client (sections 17 and 21).
 
 use capnp::capability::FromClientHook;
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};

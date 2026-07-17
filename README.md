@@ -18,8 +18,12 @@ capnproto-dart/
 │   ├── capnproto_dart/       # Serialization + streaming runtime
 │   └── capnproto_dart_rpc/   # RPC runtime (Level 1 subset)
 ├── sample/
-│   ├── greeter/              # Simple Dart↔Rust greeter (RPC basics)
-│   └── complex/              # Full interop suite (Dart↔Rust, bidirectional RPC)
+│   └── greeter/              # Simple Dart↔Rust greeter (RPC basics)
+├── test/
+│   └── interop/              # Cross-language correctness suites (Dart↔Rust), run by ci/run-tests.sh
+│       ├── complex/               # 29-section RPC interop suite, both directions
+│       ├── schema-evolution/      # Runtime forward/backward-compat cross-check
+│       └── wire-format-golden/    # Wire-format cross-check against the official capnp CLI
 └── docs/                     # Design documents
 ```
 
@@ -120,20 +124,31 @@ cargo run --manifest-path sample/greeter/server/Cargo.toml
 dart run sample/greeter/client/bin/main.dart
 ```
 
-### `sample/complex` — Full interop suite
+## Cross-Language Interop Tests
 
-A comprehensive test covering 29 sections: encoding, all field types, pipelining, bidirectional callbacks, and Level 1 subset flows. Includes both Dart and Rust server/client implementations.
+`test/interop/` holds correctness suites, not usage samples — see [`ci/run-tests.sh`](ci/run-tests.sh) for the full, automated run. Each suite is runnable by hand too:
+
+### `test/interop/complex` — RPC interop suite
+
+A 29-section test covering encoding, all field types, pipelining, bidirectional callbacks, and Level 1 subset flows, driven in both directions (Dart client ↔ Rust server, and Rust client ↔ Dart server).
 
 ```sh
-# Terminal 1: start the Dart server
-dart run sample/complex/server/bin/main.dart
+# Dart client against the Rust server
+cargo run --manifest-path test/interop/complex/server/Cargo.toml &
+dart run test/interop/complex/client/bin/main.dart
 
-# Terminal 2: run the Dart client against the Dart server
-dart run sample/complex/client/bin/main.dart
-
-# Or run the Rust client against the Dart server
-cargo run --manifest-path sample/complex/rust-client/Cargo.toml
+# Or the Rust client against the Dart server
+dart run test/interop/complex/dart-server/bin/main.dart &
+cargo run --manifest-path test/interop/complex/rust-client/Cargo.toml
 ```
+
+### `test/interop/schema-evolution` — runtime forward/backward compatibility
+
+Proves at runtime, across both languages, that a message written against an old schema version is readable by the other language's newer schema (and vice versa) — see [`ci/run-tests.sh`](ci/run-tests.sh) for the four write/read combinations it drives.
+
+### `test/interop/wire-format-golden` — official `capnp` CLI as oracle
+
+Independent of RPC: checks that this library's serialized bytes are byte-for-byte interchangeable with the official C++ reference implementation, using the `capnp decode`/`capnp encode` CLI as ground truth.
 
 ## Development
 
@@ -157,6 +172,10 @@ dart test tools/capnpc-dart/
 # Runtime tests
 dart test packages/capnproto_dart/
 dart test packages/capnproto_dart_rpc/
+
+# Everything above, plus the cross-language interop suites in test/interop/
+# (requires the `capnp` CLI and a Rust toolchain — see ci/run-tests.sh)
+ci/run-tests.sh
 ```
 
 ### CI

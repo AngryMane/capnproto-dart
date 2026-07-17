@@ -2,8 +2,8 @@
 // Covers all 28 test categories defined in the spec.
 //
 // Run after starting the Rust server:
-//   cargo run --manifest-path sample/complex/server/Cargo.toml
-//   dart run sample/complex/client/bin/main.dart
+//   cargo run --manifest-path test/interop/complex/server/Cargo.toml
+//   dart run test/interop/complex/client/bin/main.dart
 
 import 'dart:async';
 import 'dart:math';
@@ -2087,8 +2087,8 @@ void _s26_schemaEvolution() {
   pass('method additions safe (unknown methodId → "not implemented" error)');
   // A runtime round-trip needs two independently-generated schema versions,
   // which doesn't fit this single-schema interop suite. That test now lives
-  // in sample/schema-evolution (driven by ci/run-tests.sh) instead of here.
-  skip('runtime forward-compat test - see sample/schema-evolution');
+  // in test/interop/schema-evolution (driven by ci/run-tests.sh) instead of here.
+  skip('runtime forward-compat test - see test/interop/schema-evolution');
 }
 
 // ─── 27. Load and Concurrency ────────────────────────────────────────────────
