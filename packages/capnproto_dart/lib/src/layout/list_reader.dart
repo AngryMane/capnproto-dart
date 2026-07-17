@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import '../arena/arena_reader.dart';
 import '../exception/decode_exception.dart';
-import '../wire/pointer.dart' show CapabilityPointer, WirePointer;
+import '../wire/pointer.dart' show CapabilityPointer, NullPointer, WirePointer;
 import '../wire/wire_helpers.dart';
 
 /// Read-only, iterable view of a Cap'n Proto list field.
@@ -292,7 +292,11 @@ class CapabilityListReader extends ListReader<int> {
     RangeError.checkValidIndex(index, this);
     final ptrWordOffset = _raw.dataByteOffset ~/ bytesPerWord + index;
     final ptr = WirePointer.decode(_raw.segment.data, ptrWordOffset);
-    return ptr is CapabilityPointer ? ptr.capabilityIndex : -1;
+    if (ptr is NullPointer) return -1;
+    if (ptr is CapabilityPointer) return ptr.capabilityIndex;
+    throw DecodeException(
+      'expected capability pointer, got ${ptr.runtimeType}',
+    );
   }
 }
 
@@ -316,7 +320,12 @@ class TypedCapabilityListReader<T> extends ListReader<T?> {
     RangeError.checkValidIndex(index, this);
     final ptrWordOffset = _raw.dataByteOffset ~/ bytesPerWord + index;
     final ptr = WirePointer.decode(_raw.segment.data, ptrWordOffset);
-    if (ptr is! CapabilityPointer) return null;
+    if (ptr is NullPointer) return null;
+    if (ptr is! CapabilityPointer) {
+      throw DecodeException(
+        'expected capability pointer, got ${ptr.runtimeType}',
+      );
+    }
     final capIndex = ptr.capabilityIndex;
     if (capIndex >= _capabilities.length) {
       throw DecodeException(

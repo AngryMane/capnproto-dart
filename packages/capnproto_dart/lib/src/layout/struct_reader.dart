@@ -152,7 +152,11 @@ abstract class StructReader {
     if (ptrIndex >= _raw.ptrWords) return -1;
     final wordOffset = _raw.ptrWordOffset + ptrIndex;
     final wp = WirePointer.decode(_raw.segment.data, wordOffset);
-    return wp is CapabilityPointer ? wp.capabilityIndex : -1;
+    if (wp is NullPointer) return -1;
+    if (wp is CapabilityPointer) return wp.capabilityIndex;
+    throw DecodeException(
+      'expected capability pointer, got ${wp.runtimeType}',
+    );
   }
 
   /// Returns the capability object referenced by [ptrIndex], or null if the

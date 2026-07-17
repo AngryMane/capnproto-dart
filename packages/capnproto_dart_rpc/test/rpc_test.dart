@@ -126,6 +126,69 @@ class EchoServer extends Capability {
   Future<void> dispose() async {}
 }
 
+// Throws synchronously inside dispatchWithContext (before returning a Future).
+class _SyncThrowingCapability extends Capability {
+  @override
+  Future<DispatchResult> dispatchWithContext(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+    DispatchContext? context,
+  }) {
+    throw StateError('deliberate synchronous throw');
+  }
+
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) => Future.error(UnsupportedError('not reached'));
+
+  @override
+  Future<void> dispose() async {}
+}
+
+// Throws synchronously only on the first call; subsequent calls echo normally.
+class _FirstCallSyncThrowCapability extends Capability {
+  int _callCount = 0;
+
+  @override
+  Future<DispatchResult> dispatchWithContext(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+    DispatchContext? context,
+  }) {
+    _callCount++;
+    if (_callCount == 1) throw StateError('deliberate synchronous throw');
+    return dispatch(
+      interfaceId,
+      methodId,
+      params,
+      paramsCapabilities: paramsCapabilities,
+    );
+  }
+
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) async {
+    final mr = MessageReader.deserialize(params);
+    final message = mr.getRoot(_TextParamFactory()).getTextField(0) ?? '';
+    return DispatchResult(bytes: _buildEchoParams('echo: $message'));
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
 class ThrowingDisposeCapability extends Capability {
   @override
   Future<DispatchResult> dispatch(
@@ -2434,4 +2497,49 @@ void main() {
       },
     );
   });
+
+  // ─── Fix 1: synchronous exception in dispatchWithContext ─────────────────────
+
+  group(
+    'TwoPartyRpcConnection — synchronous dispatchWithContext exception',
+    () {
+      test('sync throw is returned as RPC exception, not leaked', () async {
+        final (client, serverConn) = _makePipe(_SyncThrowingCapability());
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+
+        // The call must fail — the synchronous throw must be converted to a
+        // Return(exception) rather than crashing the stream listener.
+        await expectLater(
+          bootstrapCap.echo('test'),
+          throwsA(anything),
+        );
+
+        // Connection close must succeed (stream must not have crashed).
+        await client.close();
+        await serverConn.close();
+      });
+
+      test(
+        'connection handles subsequent calls after sync throw',
+        () async {
+          final server = _FirstCallSyncThrowCapability();
+          final (client, serverConn) = _makePipe(server);
+          final bootstrapCap = client.bootstrap(EchoClientFactory());
+
+          // First call: server throws synchronously.
+          await expectLater(
+            bootstrapCap.echo('call1'),
+            throwsA(anything),
+          );
+
+          // Second call: server echoes normally.
+          final result = await bootstrapCap.echo('call2');
+          expect(result, 'echo: call2');
+
+          await client.close();
+          await serverConn.close();
+        },
+      );
+    },
+  );
 }

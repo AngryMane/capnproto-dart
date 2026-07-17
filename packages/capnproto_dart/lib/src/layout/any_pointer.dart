@@ -186,7 +186,11 @@ final class AnyPointerReader {
       _owner.segment.data,
       _owner.ptrWordOffset + _ptrIndex,
     );
-    return ptr is CapabilityPointer ? ptr.capabilityIndex : -1;
+    if (ptr is NullPointer) return -1;
+    if (ptr is CapabilityPointer) return ptr.capabilityIndex;
+    throw DecodeException(
+      'expected capability pointer, got ${ptr.runtimeType}',
+    );
   }
 
   Object? asCapability() {
@@ -241,35 +245,83 @@ final class DynamicListReader {
 
   int get structPointerWords => raw.structPtrWords;
 
-  bool getBool(int index) => BoolListReader(raw)[index];
+  void _requireElementSize(ListElementSize expected) {
+    if (raw.elementSize != expected) {
+      throw DecodeException(
+        'expected $expected list, got ${raw.elementSize}',
+      );
+    }
+  }
 
-  int getInt8(int index) => PrimitiveIntListReader(raw, readInt8, 1)[index];
+  bool getBool(int index) {
+    _requireElementSize(ListElementSize.bit);
+    return BoolListReader(raw)[index];
+  }
 
-  int getUint8(int index) => PrimitiveIntListReader(raw, readUint8, 1)[index];
+  int getInt8(int index) {
+    _requireElementSize(ListElementSize.byte);
+    return PrimitiveIntListReader(raw, readInt8, 1)[index];
+  }
 
-  int getInt16(int index) => PrimitiveIntListReader(raw, readInt16, 2)[index];
+  int getUint8(int index) {
+    _requireElementSize(ListElementSize.byte);
+    return PrimitiveIntListReader(raw, readUint8, 1)[index];
+  }
 
-  int getUint16(int index) => PrimitiveIntListReader(raw, readUint16, 2)[index];
+  int getInt16(int index) {
+    _requireElementSize(ListElementSize.twoBytes);
+    return PrimitiveIntListReader(raw, readInt16, 2)[index];
+  }
 
-  int getInt32(int index) => PrimitiveIntListReader(raw, readInt32, 4)[index];
+  int getUint16(int index) {
+    _requireElementSize(ListElementSize.twoBytes);
+    return PrimitiveIntListReader(raw, readUint16, 2)[index];
+  }
 
-  int getUint32(int index) => PrimitiveIntListReader(raw, readUint32, 4)[index];
+  int getInt32(int index) {
+    _requireElementSize(ListElementSize.fourBytes);
+    return PrimitiveIntListReader(raw, readInt32, 4)[index];
+  }
 
-  int getInt64(int index) => PrimitiveIntListReader(raw, readInt64, 8)[index];
+  int getUint32(int index) {
+    _requireElementSize(ListElementSize.fourBytes);
+    return PrimitiveIntListReader(raw, readUint32, 4)[index];
+  }
 
-  int getUint64(int index) => PrimitiveIntListReader(raw, readUint64, 8)[index];
+  int getInt64(int index) {
+    _requireElementSize(ListElementSize.eightBytes);
+    return PrimitiveIntListReader(raw, readInt64, 8)[index];
+  }
 
-  double getFloat32(int index) =>
-      PrimitiveDoubleListReader(raw, readFloat32, 4)[index];
+  int getUint64(int index) {
+    _requireElementSize(ListElementSize.eightBytes);
+    return PrimitiveIntListReader(raw, readUint64, 8)[index];
+  }
 
-  double getFloat64(int index) =>
-      PrimitiveDoubleListReader(raw, readFloat64, 8)[index];
+  double getFloat32(int index) {
+    _requireElementSize(ListElementSize.fourBytes);
+    return PrimitiveDoubleListReader(raw, readFloat32, 4)[index];
+  }
 
-  String? getText(int index) => TextListReader(raw)[index];
+  double getFloat64(int index) {
+    _requireElementSize(ListElementSize.eightBytes);
+    return PrimitiveDoubleListReader(raw, readFloat64, 8)[index];
+  }
 
-  Uint8List? getData(int index) => DataListReader(raw)[index];
+  String? getText(int index) {
+    _requireElementSize(ListElementSize.pointer);
+    return TextListReader(raw)[index];
+  }
 
-  int getCapabilityIndex(int index) => CapabilityListReader(raw)[index];
+  Uint8List? getData(int index) {
+    _requireElementSize(ListElementSize.pointer);
+    return DataListReader(raw)[index];
+  }
+
+  int getCapabilityIndex(int index) {
+    _requireElementSize(ListElementSize.pointer);
+    return CapabilityListReader(raw)[index];
+  }
 
   Object? getCapabilityObject(int index) {
     final capIndex = getCapabilityIndex(index);
@@ -383,81 +435,145 @@ final class DynamicListBuilder {
 
   int get structPointerWords => raw.structPtrWords;
 
-  bool getBool(int index) => BoolListBuilder(raw)[index];
+  void _requireElementSize(ListElementSize expected) {
+    if (raw.elementSize != expected) {
+      throw DecodeException(
+        'expected $expected list, got ${raw.elementSize}',
+      );
+    }
+  }
 
-  void setBool(int index, bool value) => BoolListBuilder(raw)[index] = value;
+  bool getBool(int index) {
+    _requireElementSize(ListElementSize.bit);
+    return BoolListBuilder(raw)[index];
+  }
 
-  int getInt8(int index) =>
-      PrimitiveIntListBuilder(raw, readInt8, writeInt8, 1)[index];
+  void setBool(int index, bool value) {
+    _requireElementSize(ListElementSize.bit);
+    BoolListBuilder(raw)[index] = value;
+  }
 
-  void setInt8(int index, int value) =>
-      PrimitiveIntListBuilder(raw, readInt8, writeInt8, 1)[index] = value;
+  int getInt8(int index) {
+    _requireElementSize(ListElementSize.byte);
+    return PrimitiveIntListBuilder(raw, readInt8, writeInt8, 1)[index];
+  }
 
-  int getUint8(int index) =>
-      PrimitiveIntListBuilder(raw, readUint8, writeUint8, 1)[index];
+  void setInt8(int index, int value) {
+    _requireElementSize(ListElementSize.byte);
+    PrimitiveIntListBuilder(raw, readInt8, writeInt8, 1)[index] = value;
+  }
 
-  void setUint8(int index, int value) =>
-      PrimitiveIntListBuilder(raw, readUint8, writeUint8, 1)[index] = value;
+  int getUint8(int index) {
+    _requireElementSize(ListElementSize.byte);
+    return PrimitiveIntListBuilder(raw, readUint8, writeUint8, 1)[index];
+  }
 
-  int getInt16(int index) =>
-      PrimitiveIntListBuilder(raw, readInt16, writeInt16, 2)[index];
+  void setUint8(int index, int value) {
+    _requireElementSize(ListElementSize.byte);
+    PrimitiveIntListBuilder(raw, readUint8, writeUint8, 1)[index] = value;
+  }
 
-  void setInt16(int index, int value) =>
-      PrimitiveIntListBuilder(raw, readInt16, writeInt16, 2)[index] = value;
+  int getInt16(int index) {
+    _requireElementSize(ListElementSize.twoBytes);
+    return PrimitiveIntListBuilder(raw, readInt16, writeInt16, 2)[index];
+  }
 
-  int getUint16(int index) =>
-      PrimitiveIntListBuilder(raw, readUint16, writeUint16, 2)[index];
+  void setInt16(int index, int value) {
+    _requireElementSize(ListElementSize.twoBytes);
+    PrimitiveIntListBuilder(raw, readInt16, writeInt16, 2)[index] = value;
+  }
 
-  void setUint16(int index, int value) =>
-      PrimitiveIntListBuilder(raw, readUint16, writeUint16, 2)[index] = value;
+  int getUint16(int index) {
+    _requireElementSize(ListElementSize.twoBytes);
+    return PrimitiveIntListBuilder(raw, readUint16, writeUint16, 2)[index];
+  }
 
-  int getInt32(int index) =>
-      PrimitiveIntListBuilder(raw, readInt32, writeInt32, 4)[index];
+  void setUint16(int index, int value) {
+    _requireElementSize(ListElementSize.twoBytes);
+    PrimitiveIntListBuilder(raw, readUint16, writeUint16, 2)[index] = value;
+  }
 
-  void setInt32(int index, int value) =>
-      PrimitiveIntListBuilder(raw, readInt32, writeInt32, 4)[index] = value;
+  int getInt32(int index) {
+    _requireElementSize(ListElementSize.fourBytes);
+    return PrimitiveIntListBuilder(raw, readInt32, writeInt32, 4)[index];
+  }
 
-  int getUint32(int index) =>
-      PrimitiveIntListBuilder(raw, readUint32, writeUint32, 4)[index];
+  void setInt32(int index, int value) {
+    _requireElementSize(ListElementSize.fourBytes);
+    PrimitiveIntListBuilder(raw, readInt32, writeInt32, 4)[index] = value;
+  }
 
-  void setUint32(int index, int value) =>
-      PrimitiveIntListBuilder(raw, readUint32, writeUint32, 4)[index] = value;
+  int getUint32(int index) {
+    _requireElementSize(ListElementSize.fourBytes);
+    return PrimitiveIntListBuilder(raw, readUint32, writeUint32, 4)[index];
+  }
 
-  int getInt64(int index) =>
-      PrimitiveIntListBuilder(raw, readInt64, writeInt64, 8)[index];
+  void setUint32(int index, int value) {
+    _requireElementSize(ListElementSize.fourBytes);
+    PrimitiveIntListBuilder(raw, readUint32, writeUint32, 4)[index] = value;
+  }
 
-  void setInt64(int index, int value) =>
-      PrimitiveIntListBuilder(raw, readInt64, writeInt64, 8)[index] = value;
+  int getInt64(int index) {
+    _requireElementSize(ListElementSize.eightBytes);
+    return PrimitiveIntListBuilder(raw, readInt64, writeInt64, 8)[index];
+  }
 
-  int getUint64(int index) =>
-      PrimitiveIntListBuilder(raw, readUint64, writeUint64, 8)[index];
+  void setInt64(int index, int value) {
+    _requireElementSize(ListElementSize.eightBytes);
+    PrimitiveIntListBuilder(raw, readInt64, writeInt64, 8)[index] = value;
+  }
 
-  void setUint64(int index, int value) =>
-      PrimitiveIntListBuilder(raw, readUint64, writeUint64, 8)[index] = value;
+  int getUint64(int index) {
+    _requireElementSize(ListElementSize.eightBytes);
+    return PrimitiveIntListBuilder(raw, readUint64, writeUint64, 8)[index];
+  }
 
-  double getFloat32(int index) =>
-      PrimitiveDoubleListBuilder(raw, readFloat32, writeFloat32, 4)[index];
+  void setUint64(int index, int value) {
+    _requireElementSize(ListElementSize.eightBytes);
+    PrimitiveIntListBuilder(raw, readUint64, writeUint64, 8)[index] = value;
+  }
 
-  void setFloat32(int index, double value) =>
-      PrimitiveDoubleListBuilder(raw, readFloat32, writeFloat32, 4)[index] =
-          value;
+  double getFloat32(int index) {
+    _requireElementSize(ListElementSize.fourBytes);
+    return PrimitiveDoubleListBuilder(raw, readFloat32, writeFloat32, 4)[index];
+  }
 
-  double getFloat64(int index) =>
-      PrimitiveDoubleListBuilder(raw, readFloat64, writeFloat64, 8)[index];
+  void setFloat32(int index, double value) {
+    _requireElementSize(ListElementSize.fourBytes);
+    PrimitiveDoubleListBuilder(raw, readFloat32, writeFloat32, 4)[index] =
+        value;
+  }
 
-  void setFloat64(int index, double value) =>
-      PrimitiveDoubleListBuilder(raw, readFloat64, writeFloat64, 8)[index] =
-          value;
+  double getFloat64(int index) {
+    _requireElementSize(ListElementSize.eightBytes);
+    return PrimitiveDoubleListBuilder(raw, readFloat64, writeFloat64, 8)[index];
+  }
 
-  void setText(int index, String? value) => TextListBuilder(raw)[index] = value;
+  void setFloat64(int index, double value) {
+    _requireElementSize(ListElementSize.eightBytes);
+    PrimitiveDoubleListBuilder(raw, readFloat64, writeFloat64, 8)[index] =
+        value;
+  }
 
-  void setData(int index, Uint8List? value) =>
-      DataListBuilder(raw)[index] = value;
+  void setText(int index, String? value) {
+    _requireElementSize(ListElementSize.pointer);
+    TextListBuilder(raw)[index] = value;
+  }
 
-  int getCapabilityIndex(int index) => CapabilityListBuilder(raw)[index];
+  void setData(int index, Uint8List? value) {
+    _requireElementSize(ListElementSize.pointer);
+    DataListBuilder(raw)[index] = value;
+  }
 
-  void setCapabilityIndex(int index, int capTableIndex) =>
-      CapabilityListBuilder(raw)[index] = capTableIndex;
+  int getCapabilityIndex(int index) {
+    _requireElementSize(ListElementSize.pointer);
+    return CapabilityListBuilder(raw)[index];
+  }
+
+  void setCapabilityIndex(int index, int capTableIndex) {
+    _requireElementSize(ListElementSize.pointer);
+    CapabilityListBuilder(raw)[index] = capTableIndex;
+  }
 
   DynamicStructBuilder getStruct(int index) {
     RangeError.checkValidIndex(index, this, 'index', raw.elementCount);

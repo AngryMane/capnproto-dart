@@ -520,12 +520,14 @@ class TwoPartyRpcConnection implements RpcConnection {
     final cancellation = DispatchCancellationController();
     _dispatchCancellations[qid] = cancellation;
 
-    final dispatchFuture = cap.dispatchWithContext(
-      msg.interfaceId,
-      msg.methodId,
-      params,
-      paramsCapabilities: paramsCapabilities,
-      context: cancellation.context,
+    final dispatchFuture = Future.sync(
+      () => cap.dispatchWithContext(
+        msg.interfaceId,
+        msg.methodId,
+        params,
+        paramsCapabilities: paramsCapabilities,
+        context: cancellation.context,
+      ),
     );
 
     // Track the resolved-answer future so pipelined calls can queue behind it.

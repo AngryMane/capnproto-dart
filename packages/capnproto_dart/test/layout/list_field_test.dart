@@ -2,6 +2,8 @@ import 'dart:typed_data';
 
 import 'package:capnproto_dart/src/arena/arena_builder.dart';
 import 'package:capnproto_dart/src/arena/arena_reader.dart';
+import 'package:capnproto_dart/src/exception/decode_exception.dart';
+import 'package:capnproto_dart/src/layout/any_pointer.dart';
 import 'package:capnproto_dart/src/layout/list_builder.dart';
 import 'package:capnproto_dart/src/layout/list_reader.dart';
 import 'package:capnproto_dart/src/layout/struct_builder.dart';
@@ -145,6 +147,33 @@ class _CapabilityListContainerFactory
 }
 
 final capabilityListContainerFactory = _CapabilityListContainerFactory();
+
+// ---------------------------------------------------------------------------
+// Minimal struct with 1 pointer word, used by Dynamic API and capability tests.
+// ---------------------------------------------------------------------------
+
+class _OnePtrReader extends StructReader {
+  _OnePtrReader(super.raw);
+}
+
+class _OnePtrBuilder extends StructBuilder {
+  _OnePtrBuilder(super.raw);
+  @override
+  StructReader asReader() => throw UnimplementedError();
+}
+
+class _OnePtrFactory extends StructFactory<_OnePtrReader, _OnePtrBuilder> {
+  @override
+  int get dataWords => 0;
+  @override
+  int get ptrWords => 1;
+  @override
+  _OnePtrReader fromRawReader(RawStructReader r) => _OnePtrReader(r);
+  @override
+  _OnePtrBuilder fromRawBuilder(RawStructBuilder r) => _OnePtrBuilder(r);
+}
+
+final _onePtrFactory = _OnePtrFactory();
 
 // ---------------------------------------------------------------------------
 // Hand-written structs for nested list tests.
@@ -587,6 +616,219 @@ void main() {
           ],
         ]),
       );
+    });
+  });
+
+  // ─── Dynamic List API — element type validation (Fix 2) ─────────────────────
+
+  group('DynamicListReader element type validation', () {
+    DynamicListReader makeReader(ListElementSize elementSize, int count) {
+      final mb = MessageBuilder();
+      DynamicStructBuilder(mb.initRoot(_onePtrFactory).raw)
+          .initDynamicListField(0, elementSize: elementSize, count: count);
+      return MessageReader.deserialize(mb.serialize())
+          .getRoot(_onePtrFactory)
+          .getAnyPointerField(0)!
+          .asDynamicList()!;
+    }
+
+    test('getInt64 on byte list throws DecodeException', () {
+      final r = makeReader(ListElementSize.byte, 4);
+      expect(r.getUint8(0), 0); // correct accessor works
+      expect(() => r.getInt64(0), throwsA(isA<DecodeException>()));
+    });
+
+    test('getUint8 on pointer list throws DecodeException', () {
+      final r = makeReader(ListElementSize.pointer, 2);
+      expect(() => r.getUint8(0), throwsA(isA<DecodeException>()));
+    });
+
+    test('getText on fourBytes list throws DecodeException', () {
+      final r = makeReader(ListElementSize.fourBytes, 2);
+      expect(() => r.getText(0), throwsA(isA<DecodeException>()));
+    });
+
+    test('getCapabilityIndex on byte list throws DecodeException', () {
+      final r = makeReader(ListElementSize.byte, 4);
+      expect(() => r.getCapabilityIndex(0), throwsA(isA<DecodeException>()));
+    });
+
+    test('getBool on byte list throws DecodeException', () {
+      final r = makeReader(ListElementSize.byte, 8);
+      expect(() => r.getBool(0), throwsA(isA<DecodeException>()));
+    });
+
+    test('getFloat64 on eightBytes list succeeds', () {
+      final mb = MessageBuilder();
+      final listBuilder =
+          DynamicStructBuilder(mb.initRoot(_onePtrFactory).raw)
+              .initDynamicListField(
+                0,
+                elementSize: ListElementSize.eightBytes,
+                count: 1,
+              );
+      listBuilder.setFloat64(0, 3.14);
+      final r = MessageReader.deserialize(mb.serialize())
+          .getRoot(_onePtrFactory)
+          .getAnyPointerField(0)!
+          .asDynamicList()!;
+      expect(r.getFloat64(0), closeTo(3.14, 1e-10));
+      expect(() => r.getInt32(0), throwsA(isA<DecodeException>()));
+    });
+  });
+
+  group('DynamicListBuilder element type validation', () {
+    DynamicListBuilder makeBuilder(ListElementSize elementSize, int count) {
+      return DynamicStructBuilder(MessageBuilder().initRoot(_onePtrFactory).raw)
+          .initDynamicListField(0, elementSize: elementSize, count: count);
+    }
+
+    test('setInt64 on byte list throws DecodeException', () {
+      final b = makeBuilder(ListElementSize.byte, 4);
+      expect(() => b.setInt64(0, 42), throwsA(isA<DecodeException>()));
+    });
+
+    test('setUint8 on composite list throws DecodeException', () {
+      final b = makeBuilder(
+        ListElementSize.composite,
+        2,
+      );
+      expect(() => b.setUint8(0, 1), throwsA(isA<DecodeException>()));
+    });
+
+    test('setCapabilityIndex on byte list throws DecodeException', () {
+      final b = makeBuilder(ListElementSize.byte, 4);
+      expect(() => b.setCapabilityIndex(0, 0), throwsA(isA<DecodeException>()));
+    });
+
+    test('setBool on eightBytes list throws DecodeException', () {
+      final b = makeBuilder(ListElementSize.eightBytes, 2);
+      expect(() => b.setBool(0, true), throwsA(isA<DecodeException>()));
+    });
+
+    test('setText on pointer list succeeds (no type confusion)', () {
+      final b = makeBuilder(ListElementSize.pointer, 2);
+      expect(() => b.setText(0, 'hello'), returnsNormally);
+    });
+  });
+
+  // ─── Capability pointer kind validation (Fix 3) ──────────────────────────────
+
+  group('StructReader.getCapabilityField pointer kind validation', () {
+    test('returns -1 for null pointer (unset field)', () {
+      final mb = MessageBuilder();
+      mb.initRoot(containerFactory);
+      final reader =
+          MessageReader.deserialize(mb.serialize()).getRoot(containerFactory);
+      // ptrIndex 0 (bools) is null when unset
+      expect(reader.getCapabilityField(0), -1);
+    });
+
+    test('throws DecodeException for non-capability pointer (text field)', () {
+      final mb = MessageBuilder();
+      mb.initRoot(containerFactory).initTexts(1)[0] = 'hello';
+      final reader =
+          MessageReader.deserialize(mb.serialize()).getRoot(containerFactory);
+      // ptrIndex 4 (texts) has a ListPointer, not a CapabilityPointer
+      expect(
+        () => reader.getCapabilityField(4),
+        throwsA(isA<DecodeException>()),
+      );
+    });
+  });
+
+  group('CapabilityListReader pointer kind validation', () {
+    ({DynamicListReader listReader}) makePointerListWithNested() {
+      final mb = MessageBuilder();
+      final listBuilder =
+          DynamicStructBuilder(mb.initRoot(_onePtrFactory).raw)
+              .initDynamicListField(
+                0,
+                elementSize: ListElementSize.pointer,
+                count: 2,
+              );
+      // Slot 0: put a nested byte list (ListPointer, not CapabilityPointer)
+      listBuilder.initList(0, elementSize: ListElementSize.byte, count: 1);
+      // Slot 1: leave as null (NullPointer)
+      return (
+        listReader: MessageReader.deserialize(mb.serialize())
+            .getRoot(_onePtrFactory)
+            .getAnyPointerField(0)!
+            .asDynamicList()!,
+      );
+    }
+
+    test('returns -1 for null slot', () {
+      final (:listReader) = makePointerListWithNested();
+      final capReader = CapabilityListReader(listReader.raw);
+      expect(capReader[1], -1);
+    });
+
+    test('throws DecodeException for non-null non-capability pointer', () {
+      final (:listReader) = makePointerListWithNested();
+      final capReader = CapabilityListReader(listReader.raw);
+      expect(() => capReader[0], throwsA(isA<DecodeException>()));
+    });
+  });
+
+  group('TypedCapabilityListReader pointer kind validation', () {
+    test('returns null for null slot', () {
+      final mb = MessageBuilder();
+      DynamicStructBuilder(mb.initRoot(_onePtrFactory).raw)
+          .initDynamicListField(
+            0,
+            elementSize: ListElementSize.pointer,
+            count: 2,
+          );
+      final listReader = MessageReader.deserialize(mb.serialize())
+          .getRoot(_onePtrFactory)
+          .getAnyPointerField(0)!
+          .asDynamicList()!;
+      final typedReader = TypedCapabilityListReader<String>(
+        listReader.raw,
+        const [],
+        (cap) => cap as String,
+      );
+      expect(typedReader[0], isNull);
+    });
+
+    test('throws DecodeException for non-null non-capability pointer', () {
+      final mb = MessageBuilder();
+      final listBuilder =
+          DynamicStructBuilder(mb.initRoot(_onePtrFactory).raw)
+              .initDynamicListField(
+                0,
+                elementSize: ListElementSize.pointer,
+                count: 1,
+              );
+      listBuilder.initList(0, elementSize: ListElementSize.byte, count: 1);
+      final listReader = MessageReader.deserialize(mb.serialize())
+          .getRoot(_onePtrFactory)
+          .getAnyPointerField(0)!
+          .asDynamicList()!;
+      final typedReader = TypedCapabilityListReader<String>(
+        listReader.raw,
+        const [],
+        (cap) => cap as String,
+      );
+      expect(() => typedReader[0], throwsA(isA<DecodeException>()));
+    });
+  });
+
+  group('AnyPointerReader.capabilityIndex pointer kind validation', () {
+    test('throws DecodeException for non-capability pointer in slot', () {
+      final mb = MessageBuilder();
+      // Put a list pointer in the AnyPointer slot
+      DynamicStructBuilder(mb.initRoot(_onePtrFactory).raw)
+          .initDynamicListField(
+            0,
+            elementSize: ListElementSize.byte,
+            count: 1,
+          );
+      final reader = MessageReader.deserialize(mb.serialize())
+          .getRoot(_onePtrFactory);
+      final anyPtr = reader.getAnyPointerField(0)!;
+      expect(() => anyPtr.capabilityIndex, throwsA(isA<DecodeException>()));
     });
   });
 }
