@@ -6,6 +6,8 @@ FROM ubuntu:24.04
 # ci/update-capnp-version.sh for the version-matrix workflow.
 ARG CAPNP_VERSION=1.0.1
 ARG DART_VERSION=3.7.2
+# Node.js: only needed to build/preview the Docusaurus docs site under website/.
+ARG NODE_VERSION=24.18.0
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -45,5 +47,13 @@ RUN wget -q "https://storage.googleapis.com/dart-archive/channels/stable/release
     && rm dartsdk-linux-x64-release.zip
 
 ENV PATH=/opt/dart-sdk/bin:${PATH}
+
+# ── Node.js (for the Docusaurus docs site under website/) ───────────────────
+RUN wget -q "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+    && tar xf "node-v${NODE_VERSION}-linux-x64.tar.xz" -C /opt \
+    && mv "/opt/node-v${NODE_VERSION}-linux-x64" /opt/node \
+    && rm "node-v${NODE_VERSION}-linux-x64.tar.xz"
+
+ENV PATH=/opt/node/bin:${PATH}
 
 WORKDIR /workspace

@@ -1,0 +1,24 @@
+name: Deploy docs site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'packages/*/doc/**'
+      - 'tools/*/doc/**'
+      - 'website/**'
+      - '.github/workflows/docs.yml'
+      - '.github/workflows/docs-deploy.yml'
+  workflow_dispatch:
+
+# Reusable-workflow calls only get as much token access as the caller grants (this acts
+# as a ceiling on what docs-deploy.yml can request), so this must match its needs.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/docs-deploy.yml

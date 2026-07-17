@@ -14,9 +14,12 @@ The only existing way to use Cap'n Proto from Flutter is to call C++ or Rust lib
 capnproto-dart/
 ├── tools/
 │   └── capnpc-dart/          # Code generator plugin (dart pub global activate)
+│       └── doc/               # External spec + internal design for this component
 ├── packages/
 │   ├── capnproto_dart/       # Serialization + streaming runtime
+│   │   └── doc/               # External spec + internal design for this component
 │   └── capnproto_dart_rpc/   # RPC runtime (Level 1 subset)
+│       └── doc/               # External spec + internal design for this component
 ├── sample/
 │   └── greeter/              # Simple Dart↔Rust greeter (RPC basics)
 ├── test/
@@ -25,7 +28,9 @@ capnproto-dart/
 │       ├── schema-evolution/      # Runtime forward/backward-compat cross-check
 │       └── wire-format-golden/    # Wire-format cross-check against the official capnp CLI
 ├── ci/                        # Test runner and capnp-version-bump scripts
-└── docs/                     # Design documents
+├── docs/                     # Requirements, repo-level external spec, and howto guides
+│   └── howto/                 # Task-oriented usage guides
+└── website/                  # Docusaurus site aggregating all of the above (gh-pages)
 ```
 
 ## Quick Start
@@ -185,14 +190,28 @@ The GitHub Actions workflow (`.github/workflows/compat.yml`) tests against capnp
 
 ## Documentation
 
-Design documents are in [`docs/`](docs/):
+The full documentation is also published as a [Docusaurus site](website/) (see
+`website/README` for how to build it locally; gh-pages hosting is set up but must be
+enabled once in the repo's Pages settings).
+
+### Repository-level: requirements and howto
 
 | File | Contents |
 |---|---|
-| [`purpose.md`](docs/purpose.md) | Problem statement and motivation |
-| [`scope.md`](docs/scope.md) | Feature scope and out-of-scope items |
-| [`global-design.md`](docs/global-design.md) | Overall architecture |
-| [`boundary-design.md`](docs/boundary-design.md) | Public API surface |
-| [`internal-design.md`](docs/internal-design.md) | Internal design and data structures |
-| [`usecase.md`](docs/usecase.md) | Use-case walkthrough |
-| [`constraint.md`](docs/constraint.md) | Design constraints |
+| [`docs/purpose.md`](docs/purpose.md) | Problem statement and motivation |
+| [`docs/scope.md`](docs/scope.md) | Feature scope and out-of-scope items |
+| [`docs/constraint.md`](docs/constraint.md) | Design constraints |
+| [`docs/global-design.md`](docs/global-design.md) | How the 3 components relate to each other and to external systems |
+| [`docs/howto/getting-started.md`](docs/howto/getting-started.md) | Install, generate code, first message, first RPC call |
+| [`docs/howto/schema-and-codegen.md`](docs/howto/schema-and-codegen.md) | Writing schemas, running `capnpc-dart`, compatibility checks |
+| [`docs/howto/serialization.md`](docs/howto/serialization.md) | Building/reading messages, packed encoding, streaming, dynamic access |
+| [`docs/howto/rpc.md`](docs/howto/rpc.md) | Connecting, bootstrap, capabilities, promise pipelining, streaming calls |
+| [`docs/howto/samples-and-testing.md`](docs/howto/samples-and-testing.md) | Running `sample/greeter` and the `test/interop/*` suites |
+
+### Per-component: external spec and internal design
+
+| Component | External spec | Internal design |
+|---|---|---|
+| CLI Tool (`capnpc-dart`) | [`tools/capnpc-dart/doc/external-spec.md`](tools/capnpc-dart/doc/external-spec.md) | [`tools/capnpc-dart/doc/internal-design.md`](tools/capnpc-dart/doc/internal-design.md) *(stub)* |
+| Serialization Runtime (`capnproto_dart`) | [`packages/capnproto_dart/doc/external-spec.md`](packages/capnproto_dart/doc/external-spec.md) | [`packages/capnproto_dart/doc/internal-design.md`](packages/capnproto_dart/doc/internal-design.md) |
+| RPC Runtime (`capnproto_dart_rpc`) | [`packages/capnproto_dart_rpc/doc/external-spec.md`](packages/capnproto_dart_rpc/doc/external-spec.md) | [`packages/capnproto_dart_rpc/doc/internal-design.md`](packages/capnproto_dart_rpc/doc/internal-design.md) |

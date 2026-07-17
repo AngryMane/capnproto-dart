@@ -1,47 +1,8 @@
-# Boundary Design
-
-This document defines the external interfaces provided by all three components.
-
----
-
-## Component 1: CLI Tool (`capnpc-dart`)
-
-The CLI Tool is implemented as a plugin for the official `capnp` compiler. Schema parsing is delegated to the official compiler; this component handles only code generation and compatibility checking. The implementation language is not restricted to Dart.
-
-### `capnpc-dart` — Code Generator Plugin
-
-Invoked by the `capnp` compiler via its plugin mechanism. Users do not call this binary directly.
-
-```
-# User-facing invocation (capnp compiler delegates to capnpc-dart)
-capnp compile -o dart <schema.capnp...>
-```
-
-**Input**: `CodeGeneratorRequest` message in Cap'n Proto binary format, received via **stdin**  
-**Output**: Generated `.dart` source files written to disk  
-**Exit code**: `0` on success, non-zero on error
-
-#### Compatibility check mode
-
-```
-capnp compile -o dart:check=<old.capnp> <new.capnp>
-```
-
-**Input**: `CodeGeneratorRequest` for the new schema via **stdin**; old schema path provided as the `check` option  
-**Output**: List of incompatible changes printed to stdout  
-**Exit code**: `0` if compatible, `1` if incompatible changes are detected, `2` on error
-
-### Dependency
-
-`capnpc-dart` requires the official `capnp` compiler to be installed on the developer's machine. It is used at build time only and is never shipped with the Flutter/Dart application.
-
----
-
-## Component 2: Serialization Runtime (`capnproto_dart`)
+# External Spec: Serialization Runtime (`capnproto_dart`)
 
 A pure Dart library with no FFI dependencies. Provides encoding, decoding, packed encoding, and streaming for Cap'n Proto messages.
 
-### Message Encoding
+## Message Encoding
 
 ```dart
 /// Entry point for building a new Cap'n Proto message.
@@ -57,7 +18,7 @@ class MessageBuilder {
 }
 ```
 
-### Message Decoding
+## Message Decoding
 
 ```dart
 /// Configuration options for reading a Cap'n Proto message.
@@ -107,7 +68,7 @@ class MessageReader {
 }
 ```
 
-### Base Classes for Generated Code
+## Base Classes for Generated Code
 
 Generated Dart code subclasses these types to provide typed field access.
 
@@ -146,7 +107,7 @@ abstract class ListBuilder<T> {
 }
 ```
 
-### Primitive Type Mapping
+## Primitive Type Mapping
 
 | Cap'n Proto type | Dart type |
 |---|---|
@@ -160,7 +121,7 @@ abstract class ListBuilder<T> {
 | Enum | Dart `enum` |
 | Union | Dart `sealed class` |
 
-### Streaming
+## Streaming
 
 ```dart
 /// Utilities for sending and receiving sequences of Cap'n Proto messages over a byte stream.
@@ -174,7 +135,7 @@ class MessageStream {
 }
 ```
 
-### Dynamic Access and Schema Reflection
+## Dynamic Access and Schema Reflection
 
 For cases where the concrete struct type isn't known at compile time — inspecting an
 `AnyPointer` field, or the RPC layer resolving `Payload.content` — the runtime provides
@@ -213,7 +174,7 @@ final class DynamicStructBuilder extends StructBuilder {}
 final class DynamicListBuilder {}
 ```
 
-### Error Handling
+## Error Handling
 
 All errors thrown by this library are subclasses of `CapnpException`.
 
@@ -229,141 +190,4 @@ class DecodeException extends CapnpException {}
 
 /// Thrown when a schema violation is detected (e.g., required field missing, type mismatch).
 class SchemaException extends CapnpException {}
-```
-
----
-
-## Component 3: RPC Runtime (`capnproto_dart_rpc`)
-
-A pure Dart library with no FFI dependencies. Depends on Component 2 (`capnproto_dart`) for message encoding; only needed by applications that use RPC.
-
-Implements a **Cap'n Proto RPC Level 1 subset**: object-capability references and promise pipelining
-in two-party connections. The following Level 1 features are **not** implemented:
-- `Resolve` and `Disembargo` messages sent by the Dart vat (only received/processed when sent by a peer)
-- Three-party handoff (required for full Level 1 compliance)
-
-Level 2 and above (persistent capabilities) are out of scope.
-
-### Core RPC types
-
-```dart
-/// Base class for all Cap'n Proto capabilities (remote object references).
-/// A capability both designates an object and confers permission to call it.
-abstract class Capability {
-  Future<void> dispose();
-}
-
-/// Manages an RPC connection to a remote peer.
-abstract class RpcConnection {
-  /// Returns the bootstrap capability offered by the remote peer.
-  T bootstrap<T extends Capability>(CapabilityFactory<T> factory);
-
-  /// Closes the connection and releases all associated capabilities.
-  Future<void> close();
-}
-
-/// Factory for wrapping a raw RPC connection as a typed capability.
-abstract class CapabilityFactory<T extends Capability> {
-  T fromConnection(RpcConnection connection);
-}
-
-/// Entry point for establishing and serving RPC connections.
-class RpcSystem {
-  /// Connects to a remote Cap'n Proto RPC server.
-  ///
-  /// [onDisposeError] observes a capability's `dispose()` throwing during
-  /// internal cleanup — such a failure never blocks or fails the
-  /// surrounding operation, so this is the only way to see it.
-  static Future<RpcConnection> connect(Uri address,
-      {void Function(Object error, StackTrace stackTrace)? onDisposeError});
-
-  /// Starts a server and serves the given bootstrap capability to incoming clients.
-  static Future<RpcServer> serve(Uri address, Capability bootstrap,
-      {void Function(Object error, StackTrace stackTrace)? onDisposeError});
-}
-
-/// Represents a running Cap'n Proto RPC server.
-abstract class RpcServer {
-  Future<void> close();
-}
-```
-
-### Promise Pipelining
-
-Dart's `Future<T>` naturally supports promise pipelining. Generated client stubs return
-`Future<T>` where `T` is itself a capability, enabling callers to chain calls without
-waiting for intermediate results to resolve:
-
-```dart
-// Without pipelining: 2 round-trips
-final fooResult = await client.getFoo();
-final barResult = await fooResult.getBar();
-
-// With pipelining: 1 round-trip (calls are sent immediately)
-final barResult = await client.getFoo().then((foo) => foo.getBar());
-```
-
-The runtime sends both calls to the server in a single round-trip when the intermediate
-result is a capability.
-
-### Error Handling
-
-RPC errors extend `CapnpException` (defined in Component 2, `capnproto_dart`).
-
-```dart
-/// Thrown when an RPC call fails (e.g., connection lost, remote exception).
-class RpcException extends CapnpException {}
-```
-
----
-
-## Generated Code Interface
-
-`capnpc-dart` generates one `.dart` file per `.capnp` file. The generated code provides
-typed accessors built on top of the Serialization Runtime base classes.
-
-### Example: Schema
-
-```capnp
-struct Person {
-  name @0 :Text;
-  age  @1 :UInt32;
-  address @2 :Address;
-}
-
-struct Address {
-  city @0 :Text;
-}
-```
-
-### Example: Generated Dart Code
-
-```dart
-// Generated — do not edit by hand.
-
-import 'package:capnproto_dart/capnproto_dart.dart';
-
-// ignore_for_file: annotate_overrides
-
-final class PersonReader extends StructReader {
-  String      get name    => ...;
-  int         get age     => ...;
-  AddressReader get address => ...;
-  bool        hasAddress()  => ...;
-}
-
-final class PersonBuilder extends StructBuilder {
-  String      get name      => ...;
-  set name(String value)    => ...;
-  int         get age       => ...;
-  set age(int value)        => ...;
-  AddressReader get address => ...;
-  AddressBuilder initAddress() => ...;
-  bool        hasAddress()     => ...;
-
-  @override
-  PersonReader asReader() => ...;
-}
-
-final personFactory = _PersonFactory();
 ```

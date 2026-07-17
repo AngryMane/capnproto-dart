@@ -5,17 +5,39 @@
   },
 
   // Mount Cargo registry/git cache outside the container so it survives rebuilds.
+  // Also bind-mount the host's Claude Code / Codex CLI credential directories so
+  // logging in once on the host carries over into the container (no re-login).
+  // This is a live two-way bind, not a one-time copy: session/history files the
+  // CLIs write inside the container land in these same host directories too.
+  // Only works if the host stores the session as a file here rather than in an
+  // OS keychain (macOS Keychain / Windows Credential Manager) — both tools fall
+  // back to file storage by default when no OS keyring is available (e.g. this
+  // Linux container), but a macOS host may need one `claude login` / `codex login`
+  // inside the container the first time if it was using Keychain-backed storage.
   "mounts": [
     "source=capnproto-dart-cargo-registry,target=/usr/local/cargo/registry,type=volume",
-    "source=capnproto-dart-cargo-git,target=/usr/local/cargo/git,type=volume"
+    "source=capnproto-dart-cargo-git,target=/usr/local/cargo/git,type=volume",
+    "source=${localEnv:HOME}/.claude,target=/root/.claude,type=bind",
+    "source=${localEnv:HOME}/.codex,target=/root/.codex,type=bind"
   ],
+
+  // 3000: Docusaurus dev server (website/, `npm run start`).
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": {
+      "label": "Docusaurus docs site",
+      "onAutoForward": "notify"
+    }
+  },
 
   "customizations": {
     "vscode": {
       "extensions": [
         "Dart-Code.dart-code",
         "rust-lang.rust-analyzer",
-        "tamasfe.even-better-toml"
+        "tamasfe.even-better-toml",
+        "anthropic.claude-code",
+        "openai.chatgpt"
       ],
       "settings": {
         "dart.sdkPath": "/opt/dart-sdk",
