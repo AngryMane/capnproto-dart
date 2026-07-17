@@ -24,6 +24,7 @@ capnproto-dart/
 │       ├── complex/               # 29-section RPC interop suite, both directions
 │       ├── schema-evolution/      # Runtime forward/backward-compat cross-check
 │       └── wire-format-golden/    # Wire-format cross-check against the official capnp CLI
+├── ci/                        # Test runner and capnp-version-bump scripts
 └── docs/                     # Design documents
 ```
 

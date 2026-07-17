@@ -93,7 +93,17 @@ class MessageReader {
       [MessageReaderOptions options = const MessageReaderOptions()]);
 
   /// Returns the root struct of the message.
-  T getRoot<T extends StructReader>(StructFactory<T> factory);
+  /// [capabilities] resolves interface pointers for RPC callers;
+  /// plain serialization callers can omit it.
+  T getRoot<T extends StructReader>(StructFactory<T> factory,
+      {List<Object?> capabilities = const []});
+
+  /// Returns the [canonical](https://capnproto.org/encoding.html#canonicalization)
+  /// encoding of this message: struct data/pointer sections are trimmed of
+  /// trailing default-valued words, and struct lists are re-packed to the
+  /// smallest uniform element size. Throws [DecodeException] if the message
+  /// contains a capability pointer anywhere.
+  Uint8List canonicalize();
 }
 ```
 
@@ -162,6 +172,45 @@ class MessageStream {
   /// Wraps a stream of MessageBuilders and emits serialized bytes per message.
   static Stream<Uint8List> serializeStream(Stream<MessageBuilder> messages);
 }
+```
+
+### Dynamic Access and Schema Reflection
+
+For cases where the concrete struct type isn't known at compile time — inspecting an
+`AnyPointer` field, or the RPC layer resolving `Payload.content` — the runtime provides
+schema-less read/write access built on metadata that `capnpc-dart` emits alongside each
+generated type.
+
+```dart
+/// Generated code emits a `const SchemaInfo` per struct/enum/interface,
+/// exposed via `StructFactory.schema`.
+sealed class SchemaInfo {}
+final class StructSchemaInfo extends SchemaInfo {
+  FieldSchemaInfo? fieldByName(String name);
+}
+final class EnumSchemaInfo extends SchemaInfo {}
+final class InterfaceSchemaInfo extends SchemaInfo {
+  MethodSchemaInfo? methodByName(String name);
+}
+
+/// Read-only view of an AnyPointer field.
+final class AnyPointerReader {
+  DynamicStructReader? asDynamicStruct();
+  DynamicListReader? asDynamicList();
+  ListReader<String?>? asTextList();
+  ListReader<Uint8List?>? asDataList();
+  Object? asCapability();
+}
+
+/// Mutable view of an AnyPointer field.
+final class AnyPointerBuilder { /* mirrors AnyPointerReader, plus init*/set* methods */ }
+
+/// Schema-driven struct/list views: fields are addressed via [SchemaInfo]
+/// rather than generated per-field getters.
+final class DynamicStructReader extends StructReader {}
+final class DynamicListReader {}
+final class DynamicStructBuilder extends StructBuilder {}
+final class DynamicListBuilder {}
 ```
 
 ### Error Handling

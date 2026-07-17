@@ -40,7 +40,8 @@ packages/capnproto_dart/
         ├── message/
         │   ├── message_builder.dart
         │   ├── message_reader.dart
-        │   └── message_reader_options.dart
+        │   ├── message_reader_options.dart
+        │   └── message_copy.dart   # Deep-copy / canonicalization helpers
         ├── arena/
         │   ├── arena_builder.dart  # Manages writable segments; grows on demand
         │   ├── arena_reader.dart   # Manages readable segments
@@ -51,14 +52,16 @@ packages/capnproto_dart/
         │   ├── struct_builder.dart
         │   ├── list_reader.dart
         │   ├── list_builder.dart
-        │   └── struct_factory.dart
+        │   ├── struct_factory.dart
+        │   └── any_pointer.dart    # Schema-less (dynamic) AnyPointer read/write
+        ├── schema/
+        │   └── reflection.dart     # Generated schema metadata (SchemaInfo) for runtime reflection
         ├── wire/
         │   ├── wire_helpers.dart   # Low-level read/write on word-aligned ByteData
         │   └── pointer.dart        # Pointer kind, encoding, and decoding
-        ├── packed/
-        │   └── packed_codec.dart   # Packed encoding / decoding
         ├── stream/
-        │   └── message_stream.dart
+        │   ├── packed_codec.dart   # Packed encoding / decoding
+        │   └── message_stream.dart # Framing multiple messages over a byte stream
         └── exception/
             ├── capnp_exception.dart
             ├── decode_exception.dart
@@ -82,6 +85,15 @@ This guards against amplification attacks with minimal overhead.
 All pointer types (struct, list, far, capability) are resolved in `wire/pointer.dart`.
 Far pointers transparently redirect traversal to another segment,
 keeping all higher-level code segment-agnostic.
+
+#### Dynamic Reflection (AnyPointer + SchemaInfo)
+`capnpc-dart` emits a `const SchemaInfo` (`schema/reflection.dart`) describing each
+generated struct/enum/interface, exposed via `StructFactory.schema`.
+`layout/any_pointer.dart` uses this metadata to give schema-less read/write access to
+`AnyPointer` fields (`AnyPointerReader`/`AnyPointerBuilder`, backed by
+`DynamicStructReader`/`DynamicStructBuilder`/`DynamicListReader`/`DynamicListBuilder`),
+for cases where the concrete type isn't known at compile time — most notably the RPC
+layer resolving `Payload.content`.
 
 ### Data Flow: Encoding
 
@@ -149,8 +161,8 @@ sequenceDiagram
 ```mermaid
 graph TD
     A["Public API Layer\nRpcSystem / RpcConnection / RpcServer\nCapability / CapabilityFactory"]
-    B["Protocol Layer\nRPC message dispatch\nQuestion / Answer / Export / Import tables\nPromise pipelining"]
-    C["Transport Layer\nAbstract VatNetwork interface\nTCP implementation"]
+    B["Connection Layer\nTwoPartyRpcConnection:\nmessage loop, question/answer/export/import\nbookkeeping, capability lifecycle,\npromise pipelining"]
+    C["Wire Codec\nrpc_proto.dart: Bootstrap / Call / Return /\nFinish / Release / Resolve / Disembargo (de)serialization"]
 
     A --> B --> C
     B --> capnproto_dart["capnproto_dart\n(message encoding/decoding)"]
@@ -161,37 +173,37 @@ graph TD
 ```
 packages/capnproto_dart_rpc/
 └── lib/
-    ├── capnproto_dart_rpc.dart    # Public barrel export
+    ├── capnproto_dart_rpc.dart    # Public barrel export (re-exports capnproto_dart)
     └── src/
-        ├── rpc/
-        │   ├── rpc_system.dart
-        │   ├── rpc_connection.dart
-        │   └── rpc_server.dart
         ├── capability/
-        │   ├── capability.dart
+        │   ├── capability.dart               # Capability, DispatchContext/Result, CapCall,
+        │   │                                  # pipelined/null/deferred capability stubs
         │   ├── capability_factory.dart
-        │   └── pipeline.dart       # Pipelined promise tracking
-        ├── protocol/
-        │   ├── rpc_messages.dart   # Bootstrap, Call, Return, Finish, Release
-        │   ├── question_table.dart # Tracks outgoing calls awaiting Return
-        │   ├── answer_table.dart   # Tracks incoming calls being handled
-        │   ├── export_table.dart   # Tracks capabilities sent to remote peer
-        │   └── import_table.dart   # Tracks capabilities received from remote peer
-        └── transport/
-            ├── vat_network.dart    # Abstract transport interface
-            └── tcp_transport.dart  # TCP implementation
+        │   └── capability_any_pointer_codec.dart
+        └── rpc/
+            ├── rpc_system.dart          # RpcSystem.connect/serve — TCP transport (dart:io Socket)
+            ├── rpc_server.dart
+            ├── rpc_exception.dart
+            ├── rpc_proto.dart           # Wire codec for RPC messages (Call/Return/Resolve/...)
+            ├── flow_controller.dart     # Fixed-window streaming backpressure
+            └── two_party_connection.dart  # TwoPartyRpcConnection: message loop, all four
+                                            # tables, and capability lifecycle
 ```
 
 ### Key Design Patterns
 
 #### Four-Table Model
-Each RPC connection maintains four tables that track the lifecycle of capabilities and calls:
-- **QuestionTable**: outgoing calls waiting for a `Return` message
-- **AnswerTable**: incoming calls being handled by the local server
-- **ExportTable**: local capabilities sent to the remote peer (ref-counted)
-- **ImportTable**: remote capabilities received from the peer (ref-counted)
+Each RPC connection tracks the lifecycle of capabilities and calls via four logical tables:
+- **Questions**: outgoing calls waiting for a `Return` message
+- **Answers**: incoming calls being handled by the local server
+- **Exports**: local capabilities sent to the remote peer (ref-counted)
+- **Imports**: remote capabilities received from the peer (ref-counted)
 
-This model follows the Cap'n Proto Level 1 RPC specification (two-party subset; Resolve/Disembargo sending is not implemented).
+These are not separate classes — they are private state (e.g. `_ExportEntry`,
+`_ImportState`, and question/answer tracking maps) held directly inside the single
+`TwoPartyRpcConnection` class, which owns the message loop end-to-end. This follows the
+Cap'n Proto Level 1 RPC specification (two-party subset; Resolve/Disembargo sending is
+not implemented).
 
 #### Promise Pipelining via Dart Futures
 When a client sends a `Call` whose return value is a `Capability`,
@@ -199,31 +211,33 @@ the runtime immediately creates a pipelined `Capability` stub backed by the pend
 Subsequent calls on this stub are queued locally and forwarded to the server in a single
 network round-trip once the original `Return` arrives.
 
-#### VatNetwork Abstraction
-All I/O is routed through the abstract `VatNetwork` interface,
-making the protocol layer testable without a real network
-and allowing alternative transports (e.g., Unix sockets, in-process pipes) to be added without changing the protocol layer.
+#### Transport
+`TwoPartyRpcConnection` operates directly on a raw `Stream<Uint8List>` /
+`StreamSink<Uint8List>` pair (via its `.client()` / `.server()` factories) — there is no
+`VatNetwork`-style pluggable transport interface. `RpcSystem.connect`/`serve` hardcode a
+`tcp://` transport by wrapping `dart:io` `Socket`/`ServerSocket` directly. Callers who
+need a different transport (e.g. in-process pipes for testing) construct a
+`TwoPartyRpcConnection` directly instead of going through `RpcSystem`.
 
 ### Data Flow: RPC Call
 
 ```mermaid
 sequenceDiagram
     participant Client
-    participant RpcConnection
-    participant QuestionTable
-    participant Transport
+    participant TwoPartyRpcConnection
+    participant Socket
     participant RemoteServer
 
-    Client->>RpcConnection: call capability method (params)
-    RpcConnection->>QuestionTable: register question, get questionId
-    RpcConnection->>Transport: send Call message (questionId, params)
-    RpcConnection-->>Client: Future<Result> (pipelined stub available immediately)
+    Client->>TwoPartyRpcConnection: call capability method (params)
+    TwoPartyRpcConnection->>TwoPartyRpcConnection: register question, get questionId
+    TwoPartyRpcConnection->>Socket: send Call message (questionId, params)
+    TwoPartyRpcConnection-->>Client: Future<Result> (pipelined stub available immediately)
 
-    Transport->>RemoteServer: deliver Call message
-    RemoteServer-->>Transport: send Return message (questionId, result)
-    Transport->>RpcConnection: receive Return
-    RpcConnection->>QuestionTable: resolve question
-    QuestionTable-->>Client: Future<Result> completes
+    Socket->>RemoteServer: deliver Call message
+    RemoteServer-->>Socket: send Return message (questionId, result)
+    Socket->>TwoPartyRpcConnection: receive Return
+    TwoPartyRpcConnection->>TwoPartyRpcConnection: resolve question
+    TwoPartyRpcConnection-->>Client: Future<Result> completes
 ```
 
 ---
