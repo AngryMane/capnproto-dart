@@ -91,12 +91,15 @@ sequenceDiagram
     participant MessageBuilder
     participant ArenaBuilder
     participant SegmentBuilder
+    participant StructFactory as StructFactory (layout)
 
     User->>MessageBuilder: initRoot(factory)
-    MessageBuilder->>ArenaBuilder: allocate root struct
+    MessageBuilder->>ArenaBuilder: allocateStruct(dataWords, ptrWords)
     ArenaBuilder->>SegmentBuilder: bump-allocate words
     SegmentBuilder-->>ArenaBuilder: offset
-    ArenaBuilder-->>MessageBuilder: StructBuilder
+    ArenaBuilder-->>MessageBuilder: RawStructBuilder (untyped)
+    MessageBuilder->>StructFactory: fromRawBuilder(raw)
+    StructFactory-->>MessageBuilder: typed StructBuilder
     MessageBuilder-->>User: StructBuilder
 
     User->>MessageBuilder: serialize()
@@ -112,6 +115,7 @@ sequenceDiagram
     participant User
     participant MessageReader
     participant ArenaReader
+    participant StructFactory as StructFactory (layout)
     participant StructReader
 
     User->>MessageReader: deserialize(bytes, options)
@@ -120,14 +124,20 @@ sequenceDiagram
     MessageReader-->>User: MessageReader
 
     User->>MessageReader: getRoot(factory)
-    MessageReader->>ArenaReader: resolve root pointer (segment 0, word 0)
-    ArenaReader-->>MessageReader: raw struct reference
+    MessageReader->>ArenaReader: getRootRaw() — resolve root pointer, charge traversal
+    ArenaReader-->>MessageReader: RawStructReader (untyped)
+    MessageReader->>StructFactory: fromRawReaderWithCapabilities(raw, caps)
+    StructFactory-->>MessageReader: typed StructReader
     MessageReader-->>User: StructReader
 
-    User->>StructReader: getField()
-    StructReader->>ArenaReader: traverse pointer, decrement budget
-    ArenaReader-->>StructReader: raw value
+    User->>StructReader: getPrimitiveField()
+    Note right of StructReader: reads segment bytes directly via wire helpers — ArenaReader is not involved
     StructReader-->>User: typed value
+
+    User->>StructReader: getStructField() / getListField()
+    StructReader->>ArenaReader: resolve pointer, charge traversal
+    ArenaReader-->>StructReader: RawStructReader / RawListReader (untyped)
+    StructReader-->>User: nested StructReader / ListReader
 ```
 
 ---
