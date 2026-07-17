@@ -475,6 +475,12 @@ class ArenaReader {
       throw DecodeException('message too short');
     }
     final numSegments = readUint32(ByteData.sublistView(bytes, 0, 4), 0) + 1;
+    if (numSegments > options.maxSegments) {
+      throw DecodeException(
+        'message declares $numSegments segments, exceeding maxSegments '
+        '(${options.maxSegments})',
+      );
+    }
 
     final minHeaderBytes = 4 + numSegments * 4;
     if (bytes.lengthInBytes < minHeaderBytes) {

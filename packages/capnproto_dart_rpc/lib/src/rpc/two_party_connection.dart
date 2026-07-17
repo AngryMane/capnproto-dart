@@ -374,13 +374,15 @@ class TwoPartyRpcConnection implements RpcConnection {
         try {
           final msg = parseRpcMessage(rawBytes);
           _handleIncomingMessage(msg, rawBytes);
-        } catch (error) {
+        } catch (error, stackTrace) {
           _tearDown(
             RpcException('invalid incoming RPC message: $error'),
+            stackTrace: stackTrace,
           );
         }
       },
-      onError: (Object error) => _tearDown(error),
+      onError: (Object error, StackTrace stackTrace) =>
+          _tearDown(error, stackTrace: stackTrace),
       onDone: () => _tearDown(null),
     );
   }
@@ -923,7 +925,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     _outgoing.add(bytes);
   }
 
-  Future<void> _tearDown(Object? error) async {
+  Future<void> _tearDown(Object? error, {StackTrace? stackTrace}) async {
     if (_closedError != null) return;
     _closedError = error ?? 'closed';
 
@@ -984,7 +986,7 @@ class TwoPartyRpcConnection implements RpcConnection {
       if (error != null) {
         // Suppress unhandled-rejection if nobody awaits done.
         _closedCompleter.future.ignore();
-        _closedCompleter.completeError(error);
+        _closedCompleter.completeError(error, stackTrace);
       } else {
         _closedCompleter.complete();
       }

@@ -391,16 +391,27 @@ final class DynamicStructBuilder extends StructBuilder {
   AnyPointerBuilder initPointerField(int ptrIndex) =>
       initAnyPointerField(ptrIndex);
 
+  // Callers of the dynamic API supply ptrIndex directly (unlike generated
+  // code, where it's always a schema-verified offset), so it must be
+  // validated before use — an out-of-range index would otherwise silently
+  // write into whatever word follows this struct's pointer section.
+  void _checkPointerIndex(int ptrIndex) {
+    RangeError.checkValidIndex(ptrIndex, this, 'ptrIndex', raw.ptrWords);
+  }
+
   DynamicStructBuilder initDynamicStructField(
     int ptrIndex, {
     required int dataWords,
     required int pointerWords,
-  }) => initStructFieldWith(
-    ptrIndex,
-    DynamicStructBuilder.new,
-    dataWords,
-    pointerWords,
-  );
+  }) {
+    _checkPointerIndex(ptrIndex);
+    return initStructFieldWith(
+      ptrIndex,
+      DynamicStructBuilder.new,
+      dataWords,
+      pointerWords,
+    );
+  }
 
   DynamicListBuilder initDynamicListField(
     int ptrIndex, {
@@ -409,6 +420,7 @@ final class DynamicStructBuilder extends StructBuilder {
     int structDataWords = 0,
     int structPointerWords = 0,
   }) {
+    _checkPointerIndex(ptrIndex);
     final rawList = raw.arena.allocateList(
       ptrSeg: raw.segment,
       ptrWordOffset: raw.ptrWordOffset + ptrIndex,
@@ -624,7 +636,14 @@ final class AnyPointerBuilder {
   final RawStructBuilder _owner;
   final int _ptrIndex;
 
-  const AnyPointerBuilder(this._owner, this._ptrIndex);
+  /// Generated code always passes a schema-verified [ptrIndex], but the
+  /// dynamic/reflection API (see [DynamicStructBuilder]) lets callers supply
+  /// an arbitrary one — validate here so an out-of-range index fails loudly
+  /// instead of silently corrupting whatever word follows this struct's
+  /// pointer section in the segment.
+  AnyPointerBuilder(this._owner, this._ptrIndex) {
+    RangeError.checkValidIndex(_ptrIndex, _owner, 'ptrIndex', _owner.ptrWords);
+  }
 
   RawListBuilder _allocateList(
     ListElementSize elementSize,

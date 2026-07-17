@@ -70,9 +70,15 @@ class MessageReaderOptions {
   /// Guards against stack overflow. Default: 64.
   final int nestingLimit;
 
+  /// Maximum number of segments a message's framing header may declare.
+  /// Guards against a small message claiming an enormous segment count.
+  /// Default: 512.
+  final int maxSegments;
+
   const MessageReaderOptions({
     this.traversalLimitInWords = 8 * 1024 * 1024,
     this.nestingLimit = 64,
+    this.maxSegments = 512,
   });
 }
 
