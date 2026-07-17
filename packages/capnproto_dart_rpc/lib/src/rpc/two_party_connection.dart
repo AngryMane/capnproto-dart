@@ -452,6 +452,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   }
 
   void _handleBootstrap(RpcMessage msg) {
+    if (_rejectDuplicateQuestionId(msg.questionId)) return;
     // Server side: send Return with our bootstrap capability (export 0).
     _sendRaw(
       buildBootstrapReturnMessage(answerId: msg.questionId, exportId: 0),
@@ -551,6 +552,7 @@ class TwoPartyRpcConnection implements RpcConnection {
 
   void _dispatchToCapability(RpcMessage msg, Capability cap) {
     final qid = msg.questionId;
+    if (_rejectDuplicateQuestionId(qid)) return;
     final params = msg.paramsBytes ?? _emptyResultBytes;
 
     // Resolve capabilities from the incoming capTable.
@@ -721,6 +723,18 @@ class TwoPartyRpcConnection implements RpcConnection {
   void _handleRelease(RpcMessage msg) {
     final entry = _exports[msg.releaseId];
     if (entry == null) return;
+    // Releasing zero references is meaningless — a legitimate peer never
+    // sends one — and silently accepting it would be a no-op that masks the
+    // same kind of peer bug the excessive-count check below guards against.
+    if (msg.referenceCount <= 0) {
+      _tearDown(
+        RpcException(
+          'protocol violation: Release(id=${msg.releaseId}) referenceCount '
+          'must be positive, got ${msg.referenceCount}',
+        ),
+      );
+      return;
+    }
     // A peer can only release references it actually holds. Silently
     // clamping an excessive referenceCount to zero would mask a peer/local
     // refcount mismatch — treat it as a protocol violation instead, since a
@@ -746,6 +760,12 @@ class TwoPartyRpcConnection implements RpcConnection {
 
   void _handleResolve(RpcMessage msg) {
     if (msg.isResolveException) {
+      // Mirror the success branch below: if we've already fully released
+      // this import (removed from _importRefCounts), a Resolve that arrives
+      // late must not resurrect tracking state for it — _importStateForId
+      // would otherwise create a brand new _ImportState/_brokenImports
+      // entry that nothing will ever clean up.
+      if (!_importRefCounts.containsKey(msg.promiseId)) return;
       final state = _imports[msg.promiseId] ?? _importStateForId(msg.promiseId);
       final error = RpcException(
         msg.exceptionReason ?? 'promise resolved to exception',
@@ -815,6 +835,26 @@ class TwoPartyRpcConnection implements RpcConnection {
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
+
+  /// If [qid] already has tracked answer-lifecycle state (from Bootstrap or
+  /// an in-flight/finished Call), tears the connection down as a protocol
+  /// violation and returns true. A well-behaved peer never reuses a question
+  /// ID before it has fully settled (Finish sent and Return received) — if
+  /// it does anyway, registering the new dispatch would silently clobber
+  /// _dispatchCancellations/_pendingCaps/_answerCaps for the still-live one,
+  /// corrupting cancellation and Return/Finish bookkeeping for both.
+  bool _rejectDuplicateQuestionId(int qid) {
+    final inUse =
+        _pendingCaps.containsKey(qid) ||
+        _answerCaps.containsKey(qid) ||
+        _answers.containsKey(qid) ||
+        _finishedAnswers.contains(qid);
+    if (!inUse) return false;
+    _tearDown(
+      RpcException('protocol violation: duplicate incoming question ID $qid'),
+    );
+    return true;
+  }
 
   /// Returns the existing export ID for [cap] (incrementing its remote ref
   /// count), or allocates a new export ID if this is the first export.
@@ -1037,7 +1077,18 @@ class TwoPartyRpcConnection implements RpcConnection {
 
   void _sendRaw(Uint8List bytes) {
     if (_closedError != null) return;
-    _outgoing.add(bytes);
+    // StreamSink.add() isn't documented to throw synchronously (failures are
+    // normally reported asynchronously via the sink's `done` future), but
+    // nothing stops a sink implementation from doing so anyway. Some call
+    // sites (e.g. completing a dispatch) run from an async continuation with
+    // no enclosing message-loop try/catch, so an uncaught throw here would
+    // otherwise surface as an unhandled future rejection instead of a clean
+    // teardown.
+    try {
+      _outgoing.add(bytes);
+    } catch (error, stackTrace) {
+      _tearDown(error, stackTrace: stackTrace);
+    }
   }
 
   Future<void> _tearDown(Object? error, {StackTrace? stackTrace}) async {
@@ -1121,6 +1172,13 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// Number of remote capabilities currently imported from the peer (i.e.
   /// still holding at least one outstanding local reference).
   int get debugImportCount => _imports.length;
+
+  /// Number of imports recorded as broken (their promise resolved to an
+  /// exception). Tracked separately from [debugImportCount] because a
+  /// broken import can still be observed after the import itself is
+  /// released — this should settle back to zero once every import that
+  /// ever broke has also been fully released.
+  int get debugBrokenImportCount => _brokenImports.length;
 
   /// Number of incoming calls with some tracked answer-lifecycle state:
   /// dispatch in flight ([_pendingCaps]), a resolved-but-not-yet-finished

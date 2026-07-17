@@ -1908,6 +1908,75 @@ void main() {
     );
 
     test(
+      'Release with referenceCount 0 tears the connection down as a '
+      'protocol violation',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        final captured = <Uint8List>[];
+
+        final interceptSink =
+            StreamController<Uint8List>()
+              ..stream.listen((b) {
+                captured.add(b);
+                clientToServer.add(b);
+              });
+
+        TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: EchoServer(),
+        );
+        final client = TwoPartyRpcConnection.client(
+          incoming: serverToClient.stream,
+          outgoing: interceptSink.sink,
+        );
+
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        await bootstrapCap.echo('warmup');
+
+        captured.clear();
+        await bootstrapCap.cap.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          _buildEchoParams('with-cap'),
+          paramsCapabilities: [EchoServer()],
+        );
+
+        final callWithCap =
+            captured
+                .map(parseRpcMessage)
+                .where(
+                  (m) =>
+                      m.type == RpcMessageType.call &&
+                      m.capTableDescriptors.isNotEmpty,
+                )
+                .single;
+        final exportId = callWithCap.capTableDescriptors.single.id;
+
+        // Releasing zero references is meaningless — a legitimate peer
+        // never sends one — and must not be silently accepted as a no-op.
+        serverToClient.add(buildReleaseMessage(exportId, 0));
+
+        await expectLater(
+          client.done,
+          throwsA(
+            predicate<Object>(
+              (e) => e.toString().contains('protocol violation'),
+            ),
+          ),
+        );
+
+        await expectLater(
+          bootstrapCap.echo('after-violation'),
+          throwsA(anything),
+        );
+
+        await interceptSink.close();
+      },
+    );
+
+    test(
       'bootstrap Return without a capability fails the bootstrap cap',
       () async {
         final clientToServer = StreamController<Uint8List>();
@@ -2398,6 +2467,164 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 20));
 
         expect(client.debugPendingQuestionCount, equals(0));
+      },
+    );
+
+    test(
+      'a duplicate incoming question ID while the first dispatch is still '
+      'in flight tears the connection down as a protocol violation',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        serverToClient.stream.listen((_) {});
+
+        final server = SlowEchoServer();
+        final serverConn = TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: server,
+        );
+
+        clientToServer.add(
+          buildCallMessage(
+            questionId: 1,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _echoMethodId,
+            paramsBytes: _buildEchoParams('first'),
+          ),
+        );
+        await server.started.future;
+
+        // Same question ID reused while the first dispatch it named is
+        // still running — a legitimate peer never does this.
+        clientToServer.add(
+          buildCallMessage(
+            questionId: 1,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _echoMethodId,
+            paramsBytes: _buildEchoParams('second'),
+          ),
+        );
+
+        await expectLater(
+          serverConn.done,
+          throwsA(
+            predicate<Object>(
+              (e) =>
+                  e.toString().contains('protocol violation') &&
+                  e.toString().contains('duplicate incoming question ID'),
+            ),
+          ),
+        );
+
+        server.complete.complete();
+        await clientToServer.close();
+      },
+    );
+
+    test(
+      'a Bootstrap reusing a question ID with an in-flight Call tears the '
+      'connection down as a protocol violation',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        serverToClient.stream.listen((_) {});
+
+        final server = SlowEchoServer();
+        final serverConn = TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: server,
+        );
+
+        clientToServer.add(
+          buildCallMessage(
+            questionId: 5,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _echoMethodId,
+            paramsBytes: _buildEchoParams('slow'),
+          ),
+        );
+        await server.started.future;
+
+        clientToServer.add(buildBootstrapMessage(5));
+
+        await expectLater(
+          serverConn.done,
+          throwsA(
+            predicate<Object>(
+              (e) =>
+                  e.toString().contains('protocol violation') &&
+                  e.toString().contains('duplicate incoming question ID'),
+            ),
+          ),
+        );
+
+        server.complete.complete();
+        await clientToServer.close();
+      },
+    );
+
+    test(
+      'a synchronous throw from the outgoing sink tears the connection '
+      'down instead of leaking as an unhandled error',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        // StreamController.close() never completes without a listener
+        // (there's no "done" for a subscription that never existed) —
+        // attach a no-op one so the close() below can actually finish.
+        final serverToClient = StreamController<Uint8List>()
+          ..stream.listen((_) {});
+
+        final serverConn = TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: EchoServer(),
+        );
+
+        // Close the outgoing sink out from under the connection, so the
+        // next _sendRaw() call hits StreamController's synchronous "Cannot
+        // add event after closing" throw rather than a normal asynchronous
+        // sink failure (reported via the sink's `done` future).
+        await serverToClient.close();
+
+        Object? doneError;
+        serverConn.done.catchError((Object e) => doneError = e);
+
+        final uncaught = <Object>[];
+        final bodyDone = Completer<void>();
+        runZonedGuarded(() {
+          () async {
+            try {
+              clientToServer.add(
+                buildCallMessage(
+                  questionId: 1,
+                  targetImportId: 0,
+                  interfaceId: _echoInterfaceId,
+                  methodId: _echoMethodId,
+                  paramsBytes: _buildEchoParams('hi'),
+                ),
+              );
+              await Future<void>.delayed(const Duration(milliseconds: 20));
+              bodyDone.complete();
+            } catch (error, stackTrace) {
+              bodyDone.completeError(error, stackTrace);
+            }
+          }();
+        }, (error, _) => uncaught.add(error));
+
+        await bodyDone.future;
+
+        // The send failure must be routed through teardown (surfacing as
+        // the sink's own StateError, not miscategorized as a malformed
+        // incoming message) rather than becoming an unhandled zone error.
+        expect(uncaught, isEmpty);
+        expect(doneError, isA<StateError>());
+
+        await clientToServer.close();
       },
     );
   });
@@ -3182,6 +3409,60 @@ void main() {
           received.where((m) => m.type == RpcMessageType.unimplemented),
           isEmpty,
         );
+
+        await input.close();
+        await conn.done;
+      },
+    );
+
+    test(
+      'a Resolve(exception) that arrives after the senderPromise import it '
+      'names was already released does not resurrect import/broken-import '
+      'state',
+      () async {
+        final input = StreamController<Uint8List>();
+        final output = StreamController<Uint8List>();
+        output.stream.listen((_) {});
+
+        final capReceiver = CapReceivingServer();
+        final conn = TwoPartyRpcConnection.server(
+          incoming: input.stream,
+          outgoing: output.sink,
+          bootstrap: capReceiver,
+        );
+
+        // A Call whose params capTable carries a senderPromise(10)
+        // descriptor makes the server genuinely import it — matching how a
+        // real peer references a promise capability it's hosting.
+        input.add(
+          buildCallMessage(
+            questionId: 1,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _echoMethodId,
+            paramsBytes: _buildEchoParams(''),
+            capTableDescriptors: const [RpcCapDescriptor.senderPromise(10)],
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        expect(capReceiver.lastParams, hasLength(1));
+        expect(conn.debugImportCount, equals(1));
+
+        // Release our only reference to the promise import.
+        await capReceiver.lastParams.single.dispose();
+        expect(conn.debugImportCount, equals(0));
+        expect(conn.debugBrokenImportCount, equals(0));
+
+        // A delayed Resolve(exception) for the same (now fully-released)
+        // promiseId must be a no-op, not resurrect tracking state for it.
+        input.add(
+          buildResolveExceptionMessage(promiseId: 10, reason: 'too late'),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        expect(conn.debugImportCount, equals(0));
+        expect(conn.debugBrokenImportCount, equals(0));
 
         await input.close();
         await conn.done;
