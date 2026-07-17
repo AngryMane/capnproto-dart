@@ -283,22 +283,15 @@ class ArenaBuilder {
     final tagWords = isComposite ? 1 : 0;
     final allocationWords = tagWords + totalDataWords;
 
-    if (allocationWords == 0) {
-      // Zero-word non-composite list: empty primitive lists and List(Void)
-      // store no data, but List(Void) still carries its element count.
-      ListPointer(
-        offset: 0,
-        elementSize: elementSize,
-        elementCountOrWordCount: listPointerCount,
-      ).encode(ptrSeg.data, ptrWordOffset);
-      return RawListBuilder(
-        segment: ptrSeg,
-        arena: this,
-        dataByteOffset: 0,
-        elementSize: elementSize,
-        elementCount: elementCount,
-      );
-    }
+    // Note: allocationWords == 0 (empty non-composite lists, and List(Void)
+    // regardless of element count) is NOT special-cased here. tryAllocate(0)
+    // still returns the current bump position without consuming capacity, so
+    // it falls through the same-segment path below and gets a real (rather
+    // than hardcoded-zero) offset. This matters for canonicalization:
+    // capnp's reference implementation likewise still "allocates" zero-sized
+    // objects at the current bump cursor, so a hardcoded offset of 0 would
+    // produce non-canonical output whenever some other allocation already
+    // advanced the cursor before this empty list was written.
 
     // Try same-segment allocation when ptrSeg is the current (last) segment.
     if (_segments.last.id == ptrSeg.id) {
@@ -427,15 +420,10 @@ class ArenaBuilder {
     final elementCount = bytes.length + (includeNullTerminator ? 1 : 0);
     final wordCount = (elementCount + bytesPerWord - 1) ~/ bytesPerWord;
 
-    if (wordCount == 0) {
-      // Empty data list: write a zero-element list pointer; no data to allocate.
-      ListPointer(
-        offset: 0,
-        elementSize: ListElementSize.byte,
-        elementCountOrWordCount: 0,
-      ).encode(ptrSeg.data, ptrWordOffset);
-      return;
-    }
+    // Note: wordCount == 0 (an explicitly-set empty Data field; Text always
+    // has wordCount >= 1 for its null terminator) is deliberately not
+    // special-cased — see the comment in allocateList about why a hardcoded
+    // offset of 0 would be non-canonical.
 
     // Try same-segment allocation.
     if (_segments.last.id == ptrSeg.id) {

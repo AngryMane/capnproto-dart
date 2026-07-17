@@ -10092,11 +10092,10 @@ class ByteSinkClient extends Capability {
   ByteSinkClient(this._cap);
   Capability get capability => _cap;
 
-  Future<StreamResultReader> write(void Function(ByteSinkWriteParamsBuilder) build) async {
+  Future<void> write(void Function(ByteSinkWriteParamsBuilder) build) async {
     final mb = MessageBuilder();
     build(mb.initRoot(byteSinkWriteParamsFactory));
-    final result = await _cap.dispatch(0xbef98c1dd8be91de, 0, mb.serialize());
-    return MessageReader.deserialize(result.bytes).getRoot(streamResultFactory, capabilities: result.caps);
+    await _cap.dispatchStreaming(0xbef98c1dd8be91de, 0, mb.serialize());
   }
 
   Future<ByteSinkFinishResultsReader> finish(void Function(ByteSinkFinishParamsBuilder) build) async {

@@ -21,6 +21,7 @@ export 'src/capability/capability.dart'
         requireCapabilityFromResult;
 export 'src/capability/capability_any_pointer_codec.dart';
 export 'src/capability/capability_factory.dart';
+export 'src/rpc/flow_controller.dart';
 export 'src/rpc/rpc_exception.dart';
 export 'src/rpc/rpc_server.dart';
 export 'src/rpc/rpc_system.dart';

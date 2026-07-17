@@ -78,6 +78,8 @@ class ArenaReader {
 
   int get nestingLimit => _options.nestingLimit;
 
+  int get segmentCount => _segments.length;
+
   SegmentReader getSegment(int id) {
     if (id < 0 || id >= _segments.length) {
       throw DecodeException(

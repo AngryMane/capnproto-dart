@@ -210,12 +210,14 @@ fi
 # Independent of RPC: proves this library's serializer/deserializer produce
 # and consume bytes that are byte-for-byte interchangeable with the official
 # C++ reference implementation (the `capnp` CLI itself, not another client of
-# the spec). Two directions:
+# the spec). Three directions:
 #   1. Dart encodes a message; `capnp decode --short` on Dart's bytes must
 #      produce the exact same text as encoding+decoding an equivalent literal
 #      entirely within the official implementation.
 #   2. `capnp encode` builds a message from a hand-written literal; Dart must
 #      decode the exact field values back out.
+#   3. MessageReader.canonicalize() must match `capnp convert binary:canonical`
+#      byte-for-byte on fixtures with default/null trailing fields.
 
 run_section "Wire-format golden: dart pub get"
 if (cd test/interop/wire-format-golden/dart && dart pub get); then
@@ -267,6 +269,28 @@ if [[ -z "${goto_summary5:-}" ]]; then
   else
     fail "wire-format golden: Dart decodes capnp-encoded Nested"
   fi
+
+  # Direction 3: canonicalization. `capnp convert binary:canonical` is the
+  # reference implementation's canonical encoding; MessageReader.canonicalize()
+  # must produce byte-for-byte identical output on the same input, including
+  # fixtures that deliberately leave fields at their default/null value so
+  # data-section and pointer-section trimming (and struct-list re-packing)
+  # are actually exercised, not just round-tripped.
+  wfg_canon() {
+    local mode=$1 type=$2 name=$3
+    wfg_dart "$mode" "$WFG_TMP/$name.bin"
+    wfg_dart canonicalize "$WFG_TMP/$name.bin" "$WFG_TMP/$name.dart.canonical"
+    capnp convert binary:canonical "$WFG_SCHEMA" "$type" < "$WFG_TMP/$name.bin" > "$WFG_TMP/$name.capnp.canonical"
+    if cmp -s "$WFG_TMP/$name.dart.canonical" "$WFG_TMP/$name.capnp.canonical"; then
+      pass "wire-format golden: canonicalize $name matches capnp convert binary:canonical"
+    else
+      fail "wire-format golden: canonicalize $name matches capnp convert binary:canonical"
+    fi
+  }
+  wfg_canon encode-scalars-sparse AllScalars scalars_sparse
+  wfg_canon encode-sparse Nested sparse
+  wfg_canon encode-children Nested children
+  wfg_canon encode-nested Nested nested
 
   rm -rf "$WFG_TMP"
   trap - EXIT

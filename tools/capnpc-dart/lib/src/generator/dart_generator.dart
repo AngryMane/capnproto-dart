@@ -1,5 +1,13 @@
 import '../schema/schema_model.dart';
 
+/// Type ID of `capnp/stream.capnp`'s `StreamResult`, the well-known empty
+/// struct the schema compiler substitutes for a method declared with
+/// `-> stream` instead of an explicit result type. There's no dedicated
+/// "this method streams" flag anywhere in the compiled schema — checking a
+/// method's result type against this ID is how the official C++ and Rust
+/// code generators recognize streaming methods too.
+const int streamResultTypeId = 0x995f9a3377c0b16e;
+
 /// Generates a single Dart source file from a set of [SchemaNode]s that
 /// belong to a given file node.
 String generateDartFile(
@@ -274,6 +282,34 @@ void _writeClientMethod(
       capParams.isEmpty ? '' : ', paramsCapabilities: [$capsList]';
 
   sb.writeln();
+
+  if (method.resultStructTypeId == streamResultTypeId) {
+    // `-> stream` method: dispatchStreaming() applies flow-control windowing
+    // on RPC-connected capabilities (see FlowController) instead of a plain
+    // awaited dispatch. The result is always the empty StreamResult struct,
+    // so there's nothing to return. Pipelining and generic/Typed variants
+    // aren't generated here — StreamResult never has fields to pipeline on,
+    // and a `-> stream` method with generic params is not supported by this
+    // generator today.
+    sb.writeln(
+      '  Future<void> $methodName(void Function(${paramsName}Builder) build$namedParams) async {',
+    );
+    sb.writeln('    final mb = MessageBuilder();');
+    if (capParams.isEmpty) {
+      sb.writeln('    build(mb.initRoot(${_lcfirst(paramsName)}Factory));');
+    } else {
+      sb.writeln('    final b = mb.initRoot(${_lcfirst(paramsName)}Factory);');
+      for (final (_, fname, capIdx) in capParams) {
+        sb.writeln('    b.set${_ucfirst(fname)}($capIdx);');
+      }
+      sb.writeln('    build(b);');
+    }
+    sb.writeln(
+      '    await _cap.dispatchStreaming($ifaceId, $ordinal, mb.serialize()$dispatchCaps);',
+    );
+    sb.writeln('  }');
+    return;
+  }
 
   // ---- Normal async method ----
   // Methods with capability results return a wrapper that keeps the returned

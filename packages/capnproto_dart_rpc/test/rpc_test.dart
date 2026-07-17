@@ -622,6 +622,45 @@ class SlowEchoServer extends Capability {
   Future<void> dispose() async {}
 }
 
+// A server whose calls each stay pending until individually released via
+// completeNext(), in call order — used to control exactly when each
+// streaming call's "ack" (Return) lands, to test FlowController windowing
+// deterministically.
+class QueuedSlowServer extends Capability {
+  final List<Completer<DispatchResult>> _pending = [];
+  int dispatchCount = 0;
+
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) {
+    dispatchCount++;
+    final c = Completer<DispatchResult>();
+    _pending.add(c);
+    return c.future;
+  }
+
+  /// Completes the oldest still-pending call successfully, allowing its
+  /// Return to be sent.
+  void completeNext() {
+    if (_pending.isNotEmpty) {
+      _pending.removeAt(0).complete(DispatchResult.empty);
+    }
+  }
+
+  /// Fails the oldest still-pending call, causing a Return-exception to be
+  /// sent for it.
+  void failNext(Object error) {
+    if (_pending.isNotEmpty) _pending.removeAt(0).completeError(error);
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
 Future<void> _waitForRelease(List<Uint8List> captured) async {
   for (var i = 0; i < 20; i++) {
     if (captured
@@ -2013,6 +2052,169 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 20));
 
         expect(client.debugPendingQuestionCount, equals(0));
+      },
+    );
+  });
+
+  group('TwoPartyRpcConnection — streaming flow control', () {
+    test(
+      'dispatchStreaming applies window backpressure and unblocks as calls '
+      'are acked, in order',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+
+        final server = QueuedSlowServer();
+        TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: server,
+        );
+
+        // Measure one real (empty) params message so the window arithmetic
+        // below is exact regardless of framing overhead.
+        final params = _buildEchoParams('');
+        final messageSize = params.lengthInBytes;
+
+        // windowSize = 2x message size: sends 1 and 2 fit (in-flight <=
+        // 2*size, limit = window(2*size) + maxMessage(size) = 3*size); send
+        // 3 does not (in-flight 3*size is not < limit 3*size).
+        final client = TwoPartyRpcConnection.client(
+          incoming: serverToClient.stream,
+          outgoing: clientToServer.sink,
+          streamWindowSize: messageSize * 2,
+        );
+
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        final cap = bootstrapCap.cap;
+
+        final order = <int>[];
+        Future<void> streamCall(int n) => cap
+            .dispatchStreaming(_echoInterfaceId, _echoMethodId, params)
+            .then((_) => order.add(n));
+
+        unawaited(streamCall(1));
+        unawaited(streamCall(2));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(
+          order,
+          equals([1, 2]),
+          reason: 'first two calls fit in the window',
+        );
+        expect(server.dispatchCount, equals(2));
+
+        unawaited(streamCall(3));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(
+          order,
+          equals([1, 2]),
+          reason: 'third call is blocked by the full window, not yet sent '
+              'to the flow-control caller — but it IS already on the wire',
+        );
+        // The call was still sent immediately despite being window-blocked
+        // (message order on the wire is never delayed by flow control).
+        expect(server.dispatchCount, equals(3));
+
+        // Acking the oldest call frees enough window for the third send's
+        // future to resolve.
+        server.completeNext();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(order, equals([1, 2, 3]));
+
+        server.completeNext();
+        server.completeNext();
+        await client.close();
+      },
+    );
+
+    test(
+      'a failed streaming call poisons that capability\'s flow-control '
+      'window for later streaming calls, but not for regular calls',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+
+        final server = QueuedSlowServer();
+        TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: server,
+        );
+
+        final params = _buildEchoParams('');
+        final messageSize = params.lengthInBytes;
+
+        // windowSize == one message: the first send is never blocked by its
+        // own size, but a second concurrent send is — giving a
+        // genuinely-blocked call to observe the poisoning propagate through.
+        final client = TwoPartyRpcConnection.client(
+          incoming: serverToClient.stream,
+          outgoing: clientToServer.sink,
+          streamWindowSize: messageSize,
+        );
+
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        final cap = bootstrapCap.cap;
+
+        var firstResolved = false;
+        unawaited(
+          cap
+              .dispatchStreaming(_echoInterfaceId, _echoMethodId, params)
+              .then((_) => firstResolved = true),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(
+          firstResolved,
+          isTrue,
+          reason: 'the first send is never blocked by its own size',
+        );
+
+        // Attach the listener immediately so the pending rejection below
+        // isn't briefly unobserved and flagged as an unhandled zone error.
+        final blockedResult = cap.dispatchStreaming(
+          _echoInterfaceId,
+          _echoMethodId,
+          params,
+        );
+        Object? blockedError;
+        unawaited(blockedResult.catchError((Object e) => blockedError = e));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(server.dispatchCount, equals(2));
+        expect(
+          blockedError,
+          isNull,
+          reason: 'second send is still window-blocked, not yet failed',
+        );
+
+        // Failing the first call's ack poisons the flow controller: the
+        // still-blocked second send now rejects with that failure.
+        server.failNext(StateError('write failed'));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(blockedError, isA<RpcException>());
+
+        // Poisoning persists for later streaming sends on the same
+        // capability — this one is rejected immediately, without even
+        // waiting on its own ack.
+        await expectLater(
+          cap.dispatchStreaming(_echoInterfaceId, _echoMethodId, params),
+          throwsA(isA<RpcException>()),
+        );
+
+        // But poisoning is scoped to the streaming flow controller, not the
+        // capability itself — a regular (non-streaming) dispatch still
+        // completes normally once acked.
+        final regularResult = cap.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          params,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        server.completeNext();
+        server.completeNext();
+        server.completeNext();
+        await expectLater(regularResult, completes);
+
+        await client.close();
       },
     );
   });

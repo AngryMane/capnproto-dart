@@ -52,6 +52,7 @@ export 'src/layout/list_builder.dart'
         structListBuilderFromRaw,
         CapabilityListBuilder,
         capabilityListBuilderFromRaw;
+export 'src/message/message_copy.dart' show canonicalizeMessage;
 export 'src/message/message_reader_options.dart';
 export 'src/message/message_reader.dart';
 export 'src/message/message_builder.dart';

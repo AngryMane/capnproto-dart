@@ -9,6 +9,7 @@ import '../arena/arena_builder.dart';
 import '../arena/arena_reader.dart';
 import '../arena/segment_builder.dart';
 import '../arena/segment_reader.dart';
+import '../exception/decode_exception.dart';
 import '../wire/pointer.dart';
 import '../wire/wire_helpers.dart';
 import 'message_reader_options.dart';
@@ -127,9 +128,98 @@ Uint8List? copyAnyPointerToNewMessage(
   return dst.serialize();
 }
 
+/// Deep-copies the root pointer of [messageBytes] into the
+/// [canonical](https://capnproto.org/encoding.html#canonicalization) form of
+/// the message: every struct's data and pointer sections are trimmed of
+/// trailing default-valued (all-zero / null) words, and lists of structs are
+/// re-packed to the smallest uniform element size that still fits every
+/// element.
+///
+/// The returned bytes are the raw words of that single canonical segment —
+/// starting with the root pointer word — with no Cap'n Proto message framing
+/// (no segment-count/segment-size header). This matches capnp-rust's
+/// `message::Reader::canonicalize()` (whose result is likewise the bare
+/// segment content, not a standalone re-parseable message) and the `capnp`
+/// CLI's `canonical` output format, so it's suitable for byte-for-byte
+/// comparison against either.
+///
+/// Throws [DecodeException] if the message contains a capability pointer
+/// anywhere, since a capability's meaning depends on a side-channel table
+/// that isn't part of the canonical byte representation.
+Uint8List canonicalizeMessage(
+  Uint8List messageBytes, [
+  MessageReaderOptions options = const MessageReaderOptions(),
+]) => canonicalizeArena(ArenaReader.fromBytes(messageBytes, options));
+
+/// Same as [canonicalizeMessage] but operating on an already-parsed
+/// [ArenaReader], avoiding a redundant re-parse of the source bytes.
+Uint8List canonicalizeArena(ArenaReader srcArena) {
+  var totalSourceWords = 0;
+  for (var i = 0; i < srcArena.segmentCount; i++) {
+    totalSourceWords += srcArena.getSegment(i).wordCount;
+  }
+
+  // Canonicalization only ever trims trailing default-valued words, so a
+  // single segment sized to the whole source message is always large enough
+  // to hold the result without spilling into a second segment.
+  final dst = ArenaBuilder(totalSourceWords + 1);
+  final (ptrSeg, rootPtrOffset) = dst.allocate(1);
+  _copyPointer(
+    srcArena,
+    srcArena.getSegment(0),
+    0,
+    srcArena.nestingLimit,
+    dst,
+    ptrSeg,
+    rootPtrOffset,
+    canonicalize: true,
+  );
+  assert(
+    dst.segmentCount == 1,
+    'canonicalization must fit in a single pre-sized segment',
+  );
+  final seg0 = dst.getSegment(0).usedData;
+  return seg0.buffer.asUint8List(seg0.offsetInBytes, seg0.lengthInBytes);
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/// Returns the largest `n <= wordCount` such that word `n` (and everything
+/// after it) is either out of range or entirely zero, i.e. the word count
+/// left after trimming trailing all-zero words from [byteOffset].
+int _trimTrailingZeroWords(ByteData data, int byteOffset, int wordCount) {
+  final buf = data.buffer.asUint8List(data.offsetInBytes);
+  while (wordCount > 0) {
+    final wordStart = byteOffset + (wordCount - 1) * bytesPerWord;
+    var allZero = true;
+    for (var b = 0; b < bytesPerWord; b++) {
+      if (buf[wordStart + b] != 0) {
+        allZero = false;
+        break;
+      }
+    }
+    if (!allZero) break;
+    wordCount--;
+  }
+  return wordCount;
+}
+
+/// Returns the largest `n <= ptrWords` such that pointer slots `[n,
+/// ptrWords)` starting at word [ptrWordOffset] of [segment] are all null.
+int _trimTrailingNullPointers(
+  SegmentReader segment,
+  int ptrWordOffset,
+  int ptrWords,
+) {
+  while (ptrWords > 0 &&
+      WirePointer.decode(segment.data, ptrWordOffset + ptrWords - 1)
+          is NullPointer) {
+    ptrWords--;
+  }
+  return ptrWords;
+}
 
 void _copyStruct(
   RawStructReader src,
@@ -138,17 +228,33 @@ void _copyStruct(
   SegmentBuilder dstPtrSeg,
   int dstPtrWordOffset, {
   bool preserveCapabilityPointers = false,
+  bool canonicalize = false,
 }) {
+  var dataWords = src.dataWords;
+  var ptrWords = src.ptrWords;
+  if (canonicalize) {
+    dataWords = _trimTrailingZeroWords(
+      src.segment.data,
+      src.dataWordOffset * bytesPerWord,
+      dataWords,
+    );
+    ptrWords = _trimTrailingNullPointers(
+      src.segment,
+      src.ptrWordOffset,
+      ptrWords,
+    );
+  }
+
   final dst = dstArena.allocateStruct(
     ptrSeg: dstPtrSeg,
     ptrWordOffset: dstPtrWordOffset,
-    dataWords: src.dataWords,
-    ptrWords: src.ptrWords,
+    dataWords: dataWords,
+    ptrWords: ptrWords,
   );
 
   // Copy data section byte-by-byte.
-  if (src.dataWords > 0) {
-    final byteCount = src.dataWords * bytesPerWord;
+  if (dataWords > 0) {
+    final byteCount = dataWords * bytesPerWord;
     final srcBase = src.dataWordOffset * bytesPerWord;
     final dstBase = dst.dataWordOffset * bytesPerWord;
     final srcBuf = src.segment.data.buffer.asUint8List(
@@ -158,8 +264,10 @@ void _copyStruct(
     dstBuf.setRange(dstBase, dstBase + byteCount, srcBuf, srcBase);
   }
 
-  // Recursively copy pointer section.
-  for (var i = 0; i < src.ptrWords; i++) {
+  // Recursively copy pointer section. src.ptrWordOffset is fixed by the
+  // struct's original (untrimmed) layout, so it stays correct as the
+  // pointer-section base even when dataWords was trimmed above.
+  for (var i = 0; i < ptrWords; i++) {
     _copyPointer(
       srcArena,
       src.segment,
@@ -169,6 +277,7 @@ void _copyStruct(
       dst.segment,
       dst.ptrWordOffset + i,
       preserveCapabilityPointers: preserveCapabilityPointers,
+      canonicalize: canonicalize,
     );
   }
 }
@@ -182,6 +291,7 @@ void _copyPointer(
   SegmentBuilder dstSeg,
   int dstPtrWordOffset, {
   bool preserveCapabilityPointers = false,
+  bool canonicalize = false,
 }) {
   final ptr = WirePointer.decode(srcSeg.data, srcPtrWordOffset);
   switch (ptr) {
@@ -200,6 +310,7 @@ void _copyPointer(
           dstSeg,
           dstPtrWordOffset,
           preserveCapabilityPointers: preserveCapabilityPointers,
+          canonicalize: canonicalize,
         );
       } else {
         // Double-far landing pad: [far_ptr, struct_tag]
@@ -226,6 +337,7 @@ void _copyPointer(
             dstSeg,
             dstPtrWordOffset,
             preserveCapabilityPointers: preserveCapabilityPointers,
+            canonicalize: canonicalize,
           );
         }
       }
@@ -243,6 +355,7 @@ void _copyPointer(
         dstSeg,
         dstPtrWordOffset,
         preserveCapabilityPointers: preserveCapabilityPointers,
+        canonicalize: canonicalize,
       );
 
     case ListPointer():
@@ -255,9 +368,15 @@ void _copyPointer(
         dstSeg,
         dstPtrWordOffset,
         preserveCapabilityPointers: preserveCapabilityPointers,
+        canonicalize: canonicalize,
       );
 
     case CapabilityPointer():
+      if (canonicalize) {
+        throw const DecodeException(
+          'cannot create a canonical message with a capability',
+        );
+      }
       if (preserveCapabilityPointers) {
         final byteOffset = srcPtrWordOffset * bytesPerWord;
         final dstByteOffset = dstPtrWordOffset * bytesPerWord;
@@ -292,6 +411,7 @@ void _copyList(
   SegmentBuilder dstSeg,
   int dstPtrWordOffset, {
   bool preserveCapabilityPointers = false,
+  bool canonicalize = false,
 }) {
   final raw = srcArena.resolveListAt(srcSeg, srcPtrWordOffset, nestingLimit);
   if (raw == null) return;
@@ -299,7 +419,9 @@ void _copyList(
   switch (raw.elementSize) {
     case ListElementSize.byte:
       // Text or Data: copy elementCount bytes verbatim (includes null
-      // terminator for Text, which is counted in elementCount).
+      // terminator for Text, which is counted in elementCount). List
+      // contents are actual data, not defaultable fields, so canonicalize
+      // never trims them.
       final bytes = Uint8List(raw.elementCount);
       final srcBuf = raw.segment.data.buffer.asUint8List(
         raw.segment.data.offsetInBytes,
@@ -308,23 +430,55 @@ void _copyList(
       dstArena.writeDataField(dstSeg, dstPtrWordOffset, bytes);
 
     case ListElementSize.composite:
+      // Every element shares one uniform layout, so canonicalizing trims to
+      // the smallest data/pointer section size that still fits every
+      // element (not each element's own minimum) — matching capnp-rust.
+      var dataWords = raw.structDataWords;
+      var ptrWords = raw.structPtrWords;
+      if (canonicalize) {
+        var maxDataWords = 0;
+        var maxPtrWords = 0;
+        final elementWords = raw.structDataWords + raw.structPtrWords;
+        for (var i = 0; i < raw.elementCount; i++) {
+          final elemWordOff =
+              raw.dataByteOffset ~/ bytesPerWord + i * elementWords;
+          final localDataWords = _trimTrailingZeroWords(
+            raw.segment.data,
+            elemWordOff * bytesPerWord,
+            raw.structDataWords,
+          );
+          if (localDataWords > maxDataWords) maxDataWords = localDataWords;
+          final localPtrWords = _trimTrailingNullPointers(
+            raw.segment,
+            elemWordOff + raw.structDataWords,
+            raw.structPtrWords,
+          );
+          if (localPtrWords > maxPtrWords) maxPtrWords = localPtrWords;
+        }
+        dataWords = maxDataWords;
+        ptrWords = maxPtrWords;
+      }
+
       final dstList = dstArena.allocateList(
         ptrSeg: dstSeg,
         ptrWordOffset: dstPtrWordOffset,
         elementSize: ListElementSize.composite,
         elementCount: raw.elementCount,
-        structDataWords: raw.structDataWords,
-        structPtrWords: raw.structPtrWords,
+        structDataWords: dataWords,
+        structPtrWords: ptrWords,
       );
-      final elementWords = raw.structDataWords + raw.structPtrWords;
+      // Source elements keep their original (untrimmed) stride; only the
+      // destination's per-element layout shrinks.
+      final srcElementWords = raw.structDataWords + raw.structPtrWords;
+      final dstElementWords = dataWords + ptrWords;
       for (var i = 0; i < raw.elementCount; i++) {
         final srcElemWordOff =
-            raw.dataByteOffset ~/ bytesPerWord + i * elementWords;
+            raw.dataByteOffset ~/ bytesPerWord + i * srcElementWords;
         final dstElemWordOff =
-            dstList.dataByteOffset ~/ bytesPerWord + i * elementWords;
+            dstList.dataByteOffset ~/ bytesPerWord + i * dstElementWords;
         // Copy data section.
-        if (raw.structDataWords > 0) {
-          final byteCount = raw.structDataWords * bytesPerWord;
+        if (dataWords > 0) {
+          final byteCount = dataWords * bytesPerWord;
           final srcBase = srcElemWordOff * bytesPerWord;
           final dstBase = dstElemWordOff * bytesPerWord;
           final srcBuf = raw.segment.data.buffer.asUint8List(
@@ -334,7 +488,7 @@ void _copyList(
           dstBuf.setRange(dstBase, dstBase + byteCount, srcBuf, srcBase);
         }
         // Copy pointer section recursively.
-        for (var p = 0; p < raw.structPtrWords; p++) {
+        for (var p = 0; p < ptrWords; p++) {
           _copyPointer(
             srcArena,
             raw.segment,
@@ -342,8 +496,9 @@ void _copyList(
             nestingLimit - 1,
             dstArena,
             dstList.segment,
-            dstElemWordOff + raw.structDataWords + p,
+            dstElemWordOff + dataWords + p,
             preserveCapabilityPointers: preserveCapabilityPointers,
+            canonicalize: canonicalize,
           );
         }
       }
@@ -367,6 +522,7 @@ void _copyList(
           dstList.segment,
           dstSlot,
           preserveCapabilityPointers: preserveCapabilityPointers,
+          canonicalize: canonicalize,
         );
       }
 

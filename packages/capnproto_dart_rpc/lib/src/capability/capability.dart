@@ -97,6 +97,34 @@ abstract class Capability {
     ),
   );
 
+  /// Dispatches a call to a `-> stream` method.
+  ///
+  /// Streaming methods always return the empty `StreamResult` struct, so
+  /// there's nothing meaningful to return — this exists as a separate method
+  /// (rather than just calling [dispatch] and discarding the result) so that
+  /// RPC-connected capabilities can apply flow-control windowing: many
+  /// streaming calls can be pipelined without unbounded buffering, instead
+  /// of a full round-trip per call.
+  ///
+  /// The default implementation just awaits [dispatch], which is correct —
+  /// per the Cap'n Proto spec, flow control is an optional optimization for
+  /// `-> stream` methods, not a requirement for correctness. Only
+  /// RPC-connected capabilities (see `TwoPartyRpcConnection`) override this
+  /// with real windowing.
+  Future<void> dispatchStreaming(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) async {
+    await dispatch(
+      interfaceId,
+      methodId,
+      params,
+      paramsCapabilities: paramsCapabilities,
+    );
+  }
+
   /// Dispatches an incoming method call with cooperative cancellation state.
   ///
   /// Existing implementations may continue to override [dispatch]. Server

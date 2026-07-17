@@ -14,6 +14,7 @@ import '../capability/capability.dart'
         capabilityFromResult,
         requireCapabilityFromResult;
 import '../capability/capability_factory.dart';
+import 'flow_controller.dart';
 import 'rpc_exception.dart';
 import 'rpc_proto.dart';
 
@@ -43,6 +44,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   final StreamSink<Uint8List> _outgoing;
   final bool _isClient;
   final void Function(Object error, StackTrace stackTrace)? _onDisposeError;
+  final int _streamWindowSize;
 
   // Exports: capabilities we have sent to the peer.
   // Key = export ID; value tracks the remote reference count so we know
@@ -109,6 +111,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     this._outgoing,
     this._isClient,
     this._onDisposeError,
+    this._streamWindowSize,
   ) {
     _runMessageLoop(incoming);
   }
@@ -120,26 +123,40 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// dispose failure never blocks or fails the surrounding operation — every
   /// other capability still gets disposed — so without this callback such
   /// errors are otherwise invisible.
+  ///
+  /// [streamWindowSize] sets the flow-control window (in bytes) used by
+  /// `-> stream` method calls made through capabilities on this connection —
+  /// see [FlowController].
   factory TwoPartyRpcConnection.client({
     required Stream<Uint8List> incoming,
     required StreamSink<Uint8List> outgoing,
     void Function(Object error, StackTrace stackTrace)? onDisposeError,
-  }) => TwoPartyRpcConnection._(incoming, outgoing, true, onDisposeError);
+    int streamWindowSize = FlowController.defaultWindowSize,
+  }) => TwoPartyRpcConnection._(
+    incoming,
+    outgoing,
+    true,
+    onDisposeError,
+    streamWindowSize,
+  );
 
   /// Creates a server-side connection.
   ///
-  /// See [TwoPartyRpcConnection.client] for [onDisposeError].
+  /// See [TwoPartyRpcConnection.client] for [onDisposeError] and
+  /// [streamWindowSize].
   factory TwoPartyRpcConnection.server({
     required Stream<Uint8List> incoming,
     required StreamSink<Uint8List> outgoing,
     required Capability bootstrap,
     void Function(Object error, StackTrace stackTrace)? onDisposeError,
+    int streamWindowSize = FlowController.defaultWindowSize,
   }) {
     final conn = TwoPartyRpcConnection._(
       incoming,
       outgoing,
       false,
       onDisposeError,
+      streamWindowSize,
     );
     // Register bootstrap as export 0.
     conn._exports[0] = _ExportEntry(bootstrap);
@@ -1126,6 +1143,12 @@ class _ImportedCapability extends Capability {
   final Future<_ImportState>? _stateFuture;
   _ImportState? _cachedState;
 
+  // Lazily created on the first `-> stream` call through this capability
+  // reference, then reused for every subsequent streaming call so the
+  // window is shared/accumulated across the whole call sequence — matching
+  // capnp-rust, which scopes one FlowController per call target.
+  FlowController? _flowController;
+
   _ImportedCapability(this._conn, this._importIdFuture) : _stateFuture = null {
     // Suppress unhandled rejection if nobody awaits this future before the
     // connection closes (e.g. bootstrap() called then close() immediately).
@@ -1189,6 +1212,51 @@ class _ImportedCapability extends Capability {
       paramsCapabilities: paramsCapabilities,
     );
     return future;
+  }
+
+  @override
+  Future<void> dispatchStreaming(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) async {
+    if (_disposed) {
+      throw const RpcException('capability is disposed');
+    }
+    final state = await _state;
+    if (_disposed) {
+      throw const RpcException('capability is disposed');
+    }
+    final replacement = state.replacement;
+    if (replacement != null) {
+      return replacement.dispatchStreaming(
+        interfaceId,
+        methodId,
+        params,
+        paramsCapabilities: paramsCapabilities,
+      );
+    }
+    final error = state.error;
+    if (error != null) {
+      return Future<void>.error(error, state.stackTrace);
+    }
+    state.receivedCall = true;
+    // The call is started (and its Call message sent) immediately either
+    // way — the flow controller only ever delays how long the *returned*
+    // future takes to resolve, never the send itself, so wire ordering is
+    // unaffected by window state.
+    final (_, future) = _conn._startCall(
+      Future.value(state.importId),
+      interfaceId,
+      methodId,
+      params,
+      paramsCapabilities: paramsCapabilities,
+    );
+    final controller = _flowController ??= FlowController(
+      windowSize: _conn._streamWindowSize,
+    );
+    return controller.send(params.lengthInBytes, future);
   }
 
   @override

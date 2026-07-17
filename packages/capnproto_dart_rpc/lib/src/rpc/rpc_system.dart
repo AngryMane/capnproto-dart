@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import '../capability/capability.dart';
+import 'flow_controller.dart';
 import 'rpc_exception.dart';
 import 'rpc_server.dart';
 import 'two_party_connection.dart';
@@ -19,9 +20,13 @@ class RpcSystem {
   /// during internal cleanup (Release handling, re-export, or connection
   /// teardown); such a failure never blocks or fails the surrounding
   /// operation, so this is the only way to observe it.
+  ///
+  /// [streamWindowSize] sets the flow-control window (in bytes) for
+  /// `-> stream` method calls — see [FlowController].
   static Future<RpcConnection> connect(
     Uri address, {
     void Function(Object error, StackTrace stackTrace)? onDisposeError,
+    int streamWindowSize = FlowController.defaultWindowSize,
   }) async {
     if (address.scheme != 'tcp') {
       throw RpcException('unsupported scheme: ${address.scheme}');
@@ -31,6 +36,7 @@ class RpcSystem {
       incoming: socket.cast<Uint8List>(),
       outgoing: _SocketSink(socket),
       onDisposeError: onDisposeError,
+      streamWindowSize: streamWindowSize,
     );
   }
 
@@ -39,11 +45,12 @@ class RpcSystem {
   ///
   /// Supports `tcp://host:port` URIs.
   ///
-  /// See [connect] for [onDisposeError].
+  /// See [connect] for [onDisposeError] and [streamWindowSize].
   static Future<RpcServer> serve(
     Uri address,
     Capability bootstrap, {
     void Function(Object error, StackTrace stackTrace)? onDisposeError,
+    int streamWindowSize = FlowController.defaultWindowSize,
   }) async {
     if (address.scheme != 'tcp') {
       throw RpcException('unsupported scheme: ${address.scheme}');
@@ -58,6 +65,7 @@ class RpcSystem {
         outgoing: _SocketSink(socket),
         bootstrap: bootstrap,
         onDisposeError: onDisposeError,
+        streamWindowSize: streamWindowSize,
       );
     });
 

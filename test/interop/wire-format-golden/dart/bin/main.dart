@@ -17,11 +17,24 @@
 //     verify Dart reads back the exact same field values, exiting non-zero on
 //     any mismatch.
 //
+//   Direction 3 (canonicalization):
+//     `encode-sparse`/`encode-children`/`encode-scalars-sparse` build fixtures
+//     that deliberately leave some fields at their default (zero/null) value,
+//     and `canonicalize` reads a framed message and writes the raw bytes of
+//     its `MessageReader.canonicalize()` — the caller diffs that,
+//     byte-for-byte, against `capnp convert binary:canonical` run on the same
+//     input, which is the official reference for what a canonical encoding
+//     looks like.
+//
 // Usage:
 //   dart run bin/main.dart encode-scalars <path>
 //   dart run bin/main.dart decode-scalars <path>
 //   dart run bin/main.dart encode-nested  <path>
 //   dart run bin/main.dart decode-nested  <path>
+//   dart run bin/main.dart encode-scalars-sparse <path>
+//   dart run bin/main.dart encode-sparse  <path>
+//   dart run bin/main.dart encode-children <path>
+//   dart run bin/main.dart canonicalize <in-path> <out-path>
 
 import 'dart:io';
 import 'dart:typed_data';
@@ -160,27 +173,86 @@ void decodeNested(String path) {
   _checkList('children[1].tags', children?[1].tags?.toList(), ['x']);
 }
 
+// Only `boolean` is set; every other AllScalars field is left at its wire
+// default (0 / false / empty). Canonicalizing this should trim the data
+// section down to just the word holding `boolean`, since every field after
+// it is a trailing default (per the wire layout, boolean is the first field
+// and word-splits before the multi-byte fields, so this is not simply "field
+// order == trim order" in general, but is a real trim capnp's canonicalizer
+// performs — see the CI diff against `capnp convert binary:canonical`).
+void encodeScalarsSparse(String path) {
+  final mb = MessageBuilder();
+  final s = mb.initRoot(allScalarsFactory);
+  s.boolean = true;
+  File(path).writeAsBytesSync(mb.serialize());
+  print('dart encode-scalars-sparse -> $path');
+}
+
+// Only `label` is set; values/tags/children are never touched, so their
+// pointer slots are genuinely null (not just empty lists). Canonicalizing
+// should trim the struct's pointer section from 4 words down to 1.
+void encodeSparse(String path) {
+  final mb = MessageBuilder();
+  final root = mb.initRoot(nestedFactory);
+  root.label = 'root';
+  File(path).writeAsBytesSync(mb.serialize());
+  print('dart encode-sparse -> $path');
+}
+
+// A children list whose elements need different amounts of trimming:
+// child[0] only sets `label` (needs 1 pointer word), child[1] also sets
+// `values` (needs 2). Canonicalizing a list of structs must re-pack every
+// element to the same, smallest-common size (max across elements: 2 pointer
+// words here), not each element's own individual minimum.
+void encodeChildren(String path) {
+  final mb = MessageBuilder();
+  final root = mb.initRoot(nestedFactory);
+  root.label = 'root';
+  final children = root.initChildren(2);
+  children[0].label = 'only-label';
+  children[1].label = 'with-values';
+  children[1].initValues(1)[0] = 42;
+  File(path).writeAsBytesSync(mb.serialize());
+  print('dart encode-children -> $path');
+}
+
+void canonicalize(String inPath, String outPath) {
+  final bytes = File(inPath).readAsBytesSync();
+  final canonical = MessageReader.deserialize(bytes).canonicalize();
+  File(outPath).writeAsBytesSync(canonical);
+  print('dart canonicalize $inPath -> $outPath (${canonical.length} bytes)');
+}
+
 void main(List<String> args) {
-  if (args.length != 2) {
-    stderr.writeln(
-      'usage: main.dart <encode-scalars|decode-scalars|encode-nested|decode-nested> <path>',
-    );
+  if (args.isEmpty) {
+    stderr.writeln('usage: main.dart <mode> <path...>');
     exit(2);
   }
   final mode = args[0];
-  final path = args[1];
   switch (mode) {
     case 'encode-scalars':
-      encodeScalars(path);
+      encodeScalars(args[1]);
       break;
     case 'decode-scalars':
-      decodeScalars(path);
+      decodeScalars(args[1]);
       break;
     case 'encode-nested':
-      encodeNested(path);
+      encodeNested(args[1]);
       break;
     case 'decode-nested':
-      decodeNested(path);
+      decodeNested(args[1]);
+      break;
+    case 'encode-scalars-sparse':
+      encodeScalarsSparse(args[1]);
+      break;
+    case 'encode-sparse':
+      encodeSparse(args[1]);
+      break;
+    case 'encode-children':
+      encodeChildren(args[1]);
+      break;
+    case 'canonicalize':
+      canonicalize(args[1], args[2]);
       break;
     default:
       stderr.writeln('unknown mode: $mode');
