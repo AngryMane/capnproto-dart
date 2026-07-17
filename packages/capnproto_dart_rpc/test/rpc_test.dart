@@ -205,6 +205,25 @@ class ThrowingDisposeCapability extends Capability {
   }
 }
 
+// Unlike ThrowingDisposeCapability, this one is deliberately NOT `async`: it
+// throws before ever returning a Future, exercising the case where
+// Capability.dispose() (typed Future<void>) is implemented by something
+// that isn't actually asynchronous under the hood.
+class SyncThrowingDisposeCapability extends Capability {
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) => Future.error(UnsupportedError('not used'));
+
+  @override
+  Future<void> dispose() {
+    throw StateError('sync dispose failed');
+  }
+}
+
 class CountingCapability extends EchoServer {
   int disposeCount = 0;
   int dispatchCount = 0;
@@ -616,6 +635,40 @@ class SlowEchoServer extends Capability {
       params,
       paramsCapabilities: paramsCapabilities,
     );
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
+// A server whose dispatch stays pending until complete() is called, and
+// then resolves with a result carrying [resultCaps] (which may repeat the
+// same instance, to test dedup) — used to test that a dispatch result
+// discarded before it could be sent as a Return (connection closed, or a
+// Finish canceled the answer first) still gets its capabilities disposed
+// instead of leaked.
+class SlowCapResultServer extends Capability {
+  final Completer<void> started = Completer<void>();
+  final Completer<void> complete = Completer<void>();
+  final List<Capability> resultCaps;
+
+  SlowCapResultServer(this.resultCaps);
+
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) async {
+    if (!started.isCompleted) started.complete();
+    await complete.future;
+    final mb = MessageBuilder();
+    final root = mb.initRoot(_TwoPtrFactory());
+    for (var i = 0; i < resultCaps.length; i++) {
+      root.setCapabilityField(i, i);
+    }
+    return DispatchResult(bytes: mb.serialize(), caps: resultCaps);
   }
 
   @override
@@ -1660,6 +1713,131 @@ void main() {
     );
 
     test(
+      'a capability whose dispose() throws synchronously does not abort '
+      "teardown's export-disposal loop — later capabilities are still "
+      'disposed and close()/done still complete normally',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+
+        TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: EchoServer(),
+        );
+
+        final observedErrors = <Object>[];
+        final client = TwoPartyRpcConnection.client(
+          incoming: serverToClient.stream,
+          outgoing: clientToServer.sink,
+          onDisposeError: (error, stackTrace) => observedErrors.add(error),
+        );
+
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        await bootstrapCap.echo('warmup');
+
+        // Exporting a capability as a call *parameter* makes the sending
+        // side (the client, here) the one that hosts/exports it — the same
+        // mechanism the pre-existing Release-triggered dispose-failure
+        // tests above use, just reaching _exports via teardown instead of
+        // an explicit Release message.
+        final syncFailingCap = SyncThrowingDisposeCapability();
+        final okCap = CountingCapability();
+        await bootstrapCap.cap.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          _buildEchoParams('a'),
+          paramsCapabilities: [syncFailingCap],
+        );
+        await bootstrapCap.cap.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          _buildEchoParams('b'),
+          paramsCapabilities: [okCap],
+        );
+        expect(client.debugExportCount, equals(2));
+
+        // If the synchronous throw from syncFailingCap.dispose() escaped
+        // _disposeIgnoringErrors unguarded, this would either hang (the
+        // export loop/teardown never finishing) or reject with a
+        // StateError instead of completing normally.
+        await client.close().timeout(const Duration(milliseconds: 200));
+        await client.done.timeout(const Duration(milliseconds: 200));
+
+        expect(client.debugExportCount, equals(0));
+        expect(okCap.disposeCount, equals(1));
+        expect(observedErrors, hasLength(1));
+        expect(observedErrors.single, isA<StateError>());
+      },
+    );
+
+    test(
+      'a throwing onDisposeError callback does not break dispose-error '
+      'reporting for other capabilities, nor teardown completion',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+
+        TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: EchoServer(),
+        );
+
+        final uncaught = <Object>[];
+        final client = TwoPartyRpcConnection.client(
+          incoming: serverToClient.stream,
+          outgoing: clientToServer.sink,
+          onDisposeError: (error, stackTrace) =>
+              throw StateError('onDisposeError callback exploded'),
+        );
+        final okCap = CountingCapability();
+
+        final bodyDone = Completer<void>();
+        runZonedGuarded(() {
+          () async {
+            try {
+              final bootstrapCap = client.bootstrap(EchoClientFactory());
+              await bootstrapCap.echo('warmup');
+
+              final firstFailingCap = ThrowingDisposeCapability();
+              final secondFailingCap = ThrowingDisposeCapability();
+              await bootstrapCap.cap.dispatch(
+                _echoInterfaceId,
+                _echoMethodId,
+                _buildEchoParams('a'),
+                paramsCapabilities: [firstFailingCap],
+              );
+              await bootstrapCap.cap.dispatch(
+                _echoInterfaceId,
+                _echoMethodId,
+                _buildEchoParams('b'),
+                paramsCapabilities: [secondFailingCap],
+              );
+              await bootstrapCap.cap.dispatch(
+                _echoInterfaceId,
+                _echoMethodId,
+                _buildEchoParams('c'),
+                paramsCapabilities: [okCap],
+              );
+
+              await client.close().timeout(const Duration(milliseconds: 200));
+              await client.done.timeout(const Duration(milliseconds: 200));
+              bodyDone.complete();
+            } catch (error, stackTrace) {
+              bodyDone.completeError(error, stackTrace);
+            }
+          }();
+        }, (error, _) => uncaught.add(error));
+
+        await bodyDone.future;
+
+        expect(okCap.disposeCount, equals(1));
+        expect(uncaught, isEmpty);
+      },
+    );
+
+    test(
       'Release with referenceCount exceeding the outstanding remote '
       'refcount tears the connection down as a protocol violation',
       () async {
@@ -1851,6 +2029,174 @@ void main() {
       expect(serverConn.debugCancellationCount, equals(0));
       expect(serverConn.debugAnswerCount, equals(0));
     });
+
+    test(
+      'a result capability is disposed exactly once when the connection '
+      'closes before the dispatch that produced it resolves',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        serverToClient.stream.listen((_) {});
+
+        final resultCap = CountingCapability();
+        final server = SlowCapResultServer([resultCap]);
+        final serverConn = TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: server,
+        );
+
+        clientToServer.add(
+          buildCallMessage(
+            questionId: 1,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _pipelineMethodId,
+            paramsBytes: _buildEchoParams(''),
+          ),
+        );
+        await server.started.future;
+
+        await clientToServer.close();
+        await serverConn.done;
+
+        // Teardown finished before the dispatch itself resolved; the result
+        // capability only becomes reachable once it does.
+        expect(resultCap.disposeCount, equals(0));
+        server.complete.complete();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(resultCap.disposeCount, equals(1));
+      },
+    );
+
+    test(
+      'a result capability is disposed instead of leaked when the answer '
+      'was already canceled by a Finish that arrived before dispatch '
+      'resolved',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        final captured = <RpcMessage>[];
+        serverToClient.stream.listen(
+          (bytes) => captured.add(parseRpcMessage(bytes)),
+        );
+
+        final resultCap = CountingCapability();
+        final server = SlowCapResultServer([resultCap]);
+        final serverConn = TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: server,
+        );
+
+        clientToServer.add(
+          buildCallMessage(
+            questionId: 1,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _pipelineMethodId,
+            paramsBytes: _buildEchoParams(''),
+          ),
+        );
+        await server.started.future;
+
+        clientToServer.add(buildFinishMessage(1));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        // The dispatch ignores cancellation and succeeds anyway; its result
+        // capability was never going to be sent (Finish already suppressed
+        // this answer), so it must be disposed instead of dropped.
+        server.complete.complete();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(
+          captured.where((m) => m.type == RpcMessageType.return_),
+          isEmpty,
+        );
+        expect(resultCap.disposeCount, equals(1));
+
+        await clientToServer.close();
+        await serverConn.done;
+      },
+    );
+
+    test(
+      'the same capability instance appearing twice in a discarded result '
+      'is disposed once, not twice',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        serverToClient.stream.listen((_) {});
+
+        final resultCap = CountingCapability();
+        final server = SlowCapResultServer([resultCap, resultCap]);
+        final serverConn = TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: server,
+        );
+
+        clientToServer.add(
+          buildCallMessage(
+            questionId: 1,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _pipelineMethodId,
+            paramsBytes: _buildEchoParams(''),
+          ),
+        );
+        await server.started.future;
+
+        await clientToServer.close();
+        await serverConn.done;
+        server.complete.complete();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(resultCap.disposeCount, equals(1));
+      },
+    );
+
+    test(
+      'one capability failing to dispose does not stop others in the same '
+      'discarded result from being disposed',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        serverToClient.stream.listen((_) {});
+
+        final failingCap = ThrowingDisposeCapability();
+        final okCap = CountingCapability();
+        final onDisposeErrors = <Object>[];
+        final server = SlowCapResultServer([failingCap, okCap]);
+        final serverConn = TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: server,
+          onDisposeError: (error, stackTrace) => onDisposeErrors.add(error),
+        );
+
+        clientToServer.add(
+          buildCallMessage(
+            questionId: 1,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _pipelineMethodId,
+            paramsBytes: _buildEchoParams(''),
+          ),
+        );
+        await server.started.future;
+
+        await clientToServer.close();
+        await serverConn.done;
+        server.complete.complete();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(okCap.disposeCount, equals(1));
+        expect(onDisposeErrors, hasLength(1));
+        expect(onDisposeErrors.single, isA<StateError>());
+      },
+    );
 
     test(
       'debugExportCount / debugImportCount track an exchanged capability '

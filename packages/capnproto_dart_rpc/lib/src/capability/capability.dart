@@ -11,6 +11,14 @@ final Future<void> _neverCanceledFuture = Completer<void>().future;
 ///
 /// [bytes] is a serialized Cap'n Proto message containing the method results.
 /// [caps] contains any capabilities returned by the method, in capTable order.
+///
+/// Ownership of every capability in [caps] passes to the RPC runtime the
+/// moment the `dispatch`/`dispatchWithContext` future resolves with this
+/// result: from that point on, the implementation that returned it must not
+/// dispose or otherwise assume continued ownership of them. The runtime
+/// either exports them to the peer as part of the Return message, or — if
+/// the answer is discarded before a Return can be sent (the connection
+/// closed, or a Finish canceled it first) — disposes them itself.
 class DispatchResult {
   final Uint8List bytes;
   final List<Capability> caps;

@@ -593,11 +593,17 @@ class TwoPartyRpcConnection implements RpcConnection {
           // running. _tearDown() already cleared the answer tables; don't
           // resurrect an entry for a peer that's no longer there. _sendRaw()
           // below would silently no-op anyway, but skip the bookkeeping too
-          // so nothing lingers for a caller to observe as a leak.
-          if (_closedError != null) return;
+          // so nothing lingers for a caller to observe as a leak. The result
+          // is never sent as a Return, so any capabilities it carries would
+          // otherwise never be disposed — dispose them here instead.
+          if (_closedError != null) {
+            _disposeResultCapabilities(result);
+            return;
+          }
           if (_finishedAnswers.remove(qid)) {
             _answerCaps.remove(qid);
             _answers.remove(qid);
+            _disposeResultCapabilities(result);
             return;
           }
           _answerCaps[qid] = _ResolvedAnswer(result.bytes, result.caps);
@@ -931,10 +937,50 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// block or fail the rest of that cleanup pass. The error isn't simply
   /// dropped, though — it's routed to [_onDisposeError] so callers who care
   /// can observe it instead of it being silently swallowed.
+  ///
+  /// `Capability.dispose()` is typed `Future<void>` but nothing requires an
+  /// implementation to actually be `async` — a synchronously-throwing
+  /// override would otherwise throw straight out of this call, aborting
+  /// whatever cleanup loop is currently disposing capabilities (teardown's
+  /// export walk, a discarded dispatch result's capability list, etc.).
+  /// `Future.sync` normalizes both cases into a single rejected future.
   void _disposeIgnoringErrors(Capability capability) {
-    capability.dispose().catchError((Object error, StackTrace stackTrace) {
+    Future<void>.sync(capability.dispose).catchError(_reportDisposeError);
+  }
+
+  /// Reports a dispose failure via [_onDisposeError], if one was supplied.
+  /// Guards against the callback itself throwing, which would otherwise
+  /// surface as an unhandled error on this future's cleanup zone instead of
+  /// wherever the caller actually observes such things.
+  void _reportDisposeError(Object error, StackTrace stackTrace) {
+    try {
       _onDisposeError?.call(error, stackTrace);
-    });
+    } catch (_) {
+      // Swallowed deliberately: a misbehaving onDisposeError callback must
+      // not break dispose-error reporting for the next capability.
+    }
+  }
+
+  /// Disposes every capability in a completed dispatch [result] that will
+  /// never be sent to the peer as a Return (the connection closed, or a
+  /// Finish arrived and canceled this answer before dispatch finished).
+  /// Ownership of `result.caps` passes to the RPC runtime the moment the
+  /// dispatch future resolves; if the result isn't going out on the wire,
+  /// this is the only remaining chance to release those capabilities.
+  ///
+  /// These capabilities were never exported (that only happens on the send
+  /// path we're skipping here), so there's no refcount to fall back on if
+  /// the same capability instance appears more than once in `result.caps` —
+  /// each distinct instance is disposed exactly once, by identity, rather
+  /// than once per occurrence. A dispose failure on one capability doesn't
+  /// stop the rest from being disposed.
+  void _disposeResultCapabilities(DispatchResult result) {
+    final disposed = <Capability>{};
+    for (final cap in result.caps) {
+      if (disposed.add(cap)) {
+        _disposeIgnoringErrors(cap);
+      }
+    }
   }
 
   Capability _capabilityFromDescriptor(RpcCapDescriptor descriptor) {
