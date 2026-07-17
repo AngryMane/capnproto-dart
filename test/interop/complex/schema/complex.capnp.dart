@@ -1189,6 +1189,8 @@ final class KeyValueBuilder extends StructBuilder {
   void setKeyMessage(Uint8List? v) {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(0).clear();
     }
   }
 
@@ -1211,6 +1213,8 @@ final class KeyValueBuilder extends StructBuilder {
   void setValueMessage(Uint8List? v) {
     if (v != null) {
       setAnyPointerFromMessage(1, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(1).clear();
     }
   }
 
@@ -1304,6 +1308,8 @@ final class OptionalBuilder extends StructBuilder {
     setUint16Field(0, 1);
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(0).clear();
     }
   }
 
@@ -1400,6 +1406,8 @@ final class ResultBuilder extends StructBuilder {
     setUint16Field(0, 0);
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(0).clear();
     }
   }
 
@@ -1426,6 +1434,8 @@ final class ResultBuilder extends StructBuilder {
     setUint16Field(0, 1);
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(0).clear();
     }
   }
 
@@ -1513,6 +1523,8 @@ final class TreeBuilder extends StructBuilder {
   void setValueMessage(Uint8List? v) {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(0).clear();
     }
   }
 
@@ -1995,6 +2007,8 @@ final class DynamicEnvelopeBuilder extends StructBuilder {
   void setPayloadMessage(Uint8List? v) {
     if (v != null) {
       setAnyPointerFromMessage(1, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(1).clear();
     }
   }
 
@@ -2093,6 +2107,8 @@ final class ObserverOnNextParamsBuilder extends StructBuilder {
   void setEventMessage(Uint8List? v) {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(0).clear();
     }
   }
 
@@ -2223,6 +2239,8 @@ final class ObserverOnErrorParamsBuilder extends StructBuilder {
   void setDetailMessage(Uint8List? v) {
     if (v != null) {
       setAnyPointerFromMessage(1, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(1).clear();
     }
   }
 
@@ -2645,6 +2663,8 @@ final class ReadableReadResultsBuilder extends StructBuilder {
   void setValueMessage(Uint8List? v) {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(0).clear();
     }
   }
 
@@ -2731,6 +2751,8 @@ final class WritableWriteParamsBuilder extends StructBuilder {
   void setValueMessage(Uint8List? v) {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(0).clear();
     }
   }
 
@@ -2873,6 +2895,8 @@ final class ReadWriteCompareAndSwapParamsBuilder extends StructBuilder {
   void setExpectedMessage(Uint8List? v) {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(0).clear();
     }
   }
 
@@ -2895,6 +2919,8 @@ final class ReadWriteCompareAndSwapParamsBuilder extends StructBuilder {
   void setReplacementMessage(Uint8List? v) {
     if (v != null) {
       setAnyPointerFromMessage(1, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(1).clear();
     }
   }
 
@@ -2983,6 +3009,8 @@ final class ReadWriteCompareAndSwapResultsBuilder extends StructBuilder {
   void setActualMessage(Uint8List? v) {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(0).clear();
     }
   }
 
@@ -3087,6 +3115,8 @@ final class CursorResultBuilder extends StructBuilder {
     setUint16Field(0, 1);
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(0).clear();
     }
   }
 
@@ -3265,6 +3295,8 @@ final class RepositoryGetParamsBuilder extends StructBuilder {
   void setKeyMessage(Uint8List? v) {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(0).clear();
     }
   }
 
@@ -3412,6 +3444,8 @@ final class RepositoryPutParamsBuilder extends StructBuilder {
   void setKeyMessage(Uint8List? v) {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(0).clear();
     }
   }
 
@@ -3434,6 +3468,8 @@ final class RepositoryPutParamsBuilder extends StructBuilder {
   void setValueMessage(Uint8List? v) {
     if (v != null) {
       setAnyPointerFromMessage(1, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(1).clear();
     }
   }
 
@@ -3599,6 +3635,8 @@ final class RepositoryRemoveParamsBuilder extends StructBuilder {
   void setKeyMessage(Uint8List? v) {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(0).clear();
     }
   }
 
@@ -4482,6 +4520,8 @@ final class CapabilityFactoryNewCellParamsBuilder extends StructBuilder {
   void setInitialValueMessage(Uint8List? v) {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(0).clear();
     }
   }
 
@@ -4822,6 +4862,8 @@ final class CapabilityFactoryEchoCapabilityParamsBuilder extends StructBuilder {
   void setCapabilityMessage(Uint8List? v) {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(0).clear();
     }
   }
 
@@ -4895,6 +4937,8 @@ final class CapabilityFactoryEchoCapabilityResultsBuilder extends StructBuilder 
   void setSameCapabilityMessage(Uint8List? v) {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(0).clear();
     }
   }
 
@@ -5020,6 +5064,8 @@ final class CapabilityFactoryGetUntypedResultsBuilder extends StructBuilder {
   void setValueMessage(Uint8List? v) {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(0).clear();
     }
   }
 
@@ -6250,6 +6296,8 @@ final class ComplexResponseBuilder extends StructBuilder {
   void setExtraMessage(Uint8List? v) {
     if (v != null) {
       setAnyPointerFromMessage(5, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(5).clear();
     }
   }
 
@@ -6943,6 +6991,8 @@ final class ComplexTestServiceEchoAnyPointerParamsBuilder extends StructBuilder 
   void setValueMessage(Uint8List? v) {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(0).clear();
     }
   }
 
@@ -7016,6 +7066,8 @@ final class ComplexTestServiceEchoAnyPointerResultsBuilder extends StructBuilder
   void setValueMessage(Uint8List? v) {
     if (v != null) {
       setAnyPointerFromMessage(0, v, preserveCapabilityPointers: true);
+    } else {
+      initAnyPointerField(0).clear();
     }
   }
 

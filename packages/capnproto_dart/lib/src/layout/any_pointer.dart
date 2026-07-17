@@ -640,11 +640,27 @@ final class AnyPointerBuilder {
     structPtrWords: structPtrWords,
   );
 
+  /// Zeroes the pointer word, encoding it as Cap'n Proto's null pointer.
+  ///
+  /// Arena-allocated builders never reclaim space, so this cannot free
+  /// whatever the slot previously pointed to — it only clears the pointer
+  /// itself. That's enough to make subsequent reads see a null AnyPointer,
+  /// matching normal Dart setter semantics for `= null`.
+  void clear() {
+    const NullPointer().encode(
+      _owner.segment.data,
+      _owner.ptrWordOffset + _ptrIndex,
+    );
+  }
+
   void setMessageBytes(
     Uint8List? messageBytes, {
     bool preserveCapabilityPointers = false,
   }) {
-    if (messageBytes == null) return;
+    if (messageBytes == null) {
+      clear();
+      return;
+    }
     copyMessageRootToBuilder(
       messageBytes,
       _owner.arena,
@@ -658,7 +674,10 @@ final class AnyPointerBuilder {
     AnyPointerReader? reader, {
     bool preserveCapabilityPointers = true,
   }) {
-    if (reader == null) return;
+    if (reader == null) {
+      clear();
+      return;
+    }
     setMessageBytes(
       reader.asMessageBytes(
         preserveCapabilityPointers: preserveCapabilityPointers,

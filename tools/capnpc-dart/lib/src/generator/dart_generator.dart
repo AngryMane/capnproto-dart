@@ -1147,6 +1147,8 @@ void _writeBuilderPointerField(
     sb.writeln(
       '      setAnyPointerFromMessage($offset, v, preserveCapabilityPointers: true);',
     );
+    sb.writeln('    } else {');
+    sb.writeln('      initAnyPointerField($offset).clear();');
     sb.writeln('    }');
     sb.writeln('  }');
     sb.writeln();
