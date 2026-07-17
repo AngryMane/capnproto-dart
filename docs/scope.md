@@ -1,6 +1,6 @@
 # Scope
 
-This repository contains two components in a single codebase. They may be separated into individual repositories in the future if needed.
+This repository contains three components in a single codebase. They may be separated into individual repositories in the future if needed.
 
 ---
 
@@ -16,7 +16,7 @@ Used by developers to generate Dart code from `.capnp` schema files.
 
 ---
 
-## Component 2: Runtime Library (application-level)
+## Component 2: Serialization Runtime (`capnproto_dart`, application-level)
 
 A pure Dart library embedded in Flutter/Dart applications. The generated code (Component 1) depends on this library.
 
@@ -24,9 +24,18 @@ A pure Dart library embedded in Flutter/Dart applications. The generated code (C
 |---|---|---|
 | F-01 | Cap'n Proto binary encoding | Serialize Dart objects into Cap'n Proto binary format |
 | F-02 | Cap'n Proto binary decoding | Deserialize Cap'n Proto binary data into Dart objects |
-| F-05 | Cap'n Proto RPC | Remote procedure calls between client and server over a network |
 | F-06 | Packed encoding | Reduce data size by compressing zero bytes |
 | F-07 | Streaming support | Send and receive large messages in segments |
+
+---
+
+## Component 3: RPC Runtime (`capnproto_dart_rpc`, application-level, optional)
+
+A pure Dart library depended on by applications that need Cap'n Proto RPC. Depends on Component 2 (`capnproto_dart`) for message encoding; not required for applications that only serialize/deserialize.
+
+| ID | Feature | Description |
+|---|---|---|
+| F-05 | Cap'n Proto RPC | Remote procedure calls between client and server over a network |
 
 ---
 

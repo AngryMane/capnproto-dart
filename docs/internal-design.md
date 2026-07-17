@@ -1,6 +1,6 @@
 # Internal Design
 
-This document describes the internal architecture of both packages.
+This document describes the internal architecture of Component 2 (Serialization Runtime, `capnproto_dart`) and Component 3 (RPC Runtime, `capnproto_dart_rpc`). See [scope.md](scope.md) for the full three-component breakdown, including Component 1 (CLI Tool).
 
 ---
 
@@ -9,15 +9,15 @@ This document describes the internal architecture of both packages.
 ```
 capnproto-dart/
 ├── packages/
-│   ├── capnproto_dart/         # Core runtime (encoding / decoding / streaming)
-│   └── capnproto_dart_rpc/     # RPC support (depends on capnproto_dart)
+│   ├── capnproto_dart/         # Serialization Runtime (Component 2): encoding / decoding / streaming
+│   └── capnproto_dart_rpc/     # RPC Runtime (Component 3): depends on capnproto_dart
 └── tools/
-    └── capnpc-dart/            # Code generator plugin (language TBD)
+    └── capnpc-dart/            # CLI Tool (Component 1): code generator plugin (language TBD)
 ```
 
 ---
 
-## Package: `capnproto_dart`
+## Component 2: Serialization Runtime (`capnproto_dart`)
 
 ### Layer Structure
 
@@ -132,7 +132,7 @@ sequenceDiagram
 
 ---
 
-## Package: `capnproto_dart_rpc`
+## Component 3: RPC Runtime (`capnproto_dart_rpc`)
 
 ### Layer Structure
 

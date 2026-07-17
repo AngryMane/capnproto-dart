@@ -8,10 +8,10 @@ This document describes the overall relationship between this repository and ext
 
 | System | Role |
 |---|---|
-| **Cap'n Proto Specification** | Defines the binary encoding format and RPC protocol. Both components must conform to this specification. |
-| **Application Developer** | Uses the CLI Tool to generate Dart code from schemas and integrates the Runtime Library into their Flutter/Dart application. |
-| **Flutter/Dart Application** | The end product that embeds the Runtime Library and the generated Dart code. |
-| **pub.dev** | The Dart package registry where both components are published and distributed. |
+| **Cap'n Proto Specification** | Defines the binary encoding format and RPC protocol. All three components must conform to this specification. |
+| **Application Developer** | Uses the CLI Tool to generate Dart code from schemas, links the Serialization Runtime for encoding/decoding, and optionally adds the RPC Runtime when RPC is needed. |
+| **Flutter/Dart Application** | The end product that embeds the Serialization Runtime (and, if RPC is used, the RPC Runtime) plus the generated Dart code. |
+| **pub.dev** | The Dart package registry. Currently only the Serialization Runtime (`capnproto_dart`) is published there; the CLI Tool and RPC Runtime have `publish_to: none` and are consumed within this repo. |
 | **capnpc (reference implementation)** | The official Cap'n Proto compiler. Used as a reference for understanding schema syntax and binary format. No FFI dependency on it. |
 
 ## Relationship Diagram
@@ -24,26 +24,29 @@ graph TD
     capnpc["capnpc (reference implementation)"]
 
     subgraph repo["capnproto-dart (this repo)"]
-        CLI["CLI Tool (Component 1)\n- Schema Parser\n- Code Generator\n- Compat Check"]
-        Runtime["Runtime Library (Component 2)\n- Encode/Decode\n- RPC\n- Packed/Stream"]
+        CLI["CLI Tool (Component 1)\ncapnpc-dart\n- Schema Parser\n- Code Generator\n- Compat Check"]
+        Serialization["Serialization Runtime (Component 2)\ncapnproto_dart\n- Encode/Decode\n- Packed/Stream"]
+        Rpc["RPC Runtime (Component 3)\ncapnproto_dart_rpc\n- Object Capabilities\n- Promise Pipelining"]
     end
 
     Generated["Generated Dart Code"]
     App["Flutter/Dart Application"]
 
     Spec -->|conforms to| CLI
-    Spec -->|conforms to| Runtime
+    Spec -->|conforms to| Serialization
+    Spec -->|conforms to| Rpc
     capnpc -->|reference for spec| CLI
 
     Dev -->|runs| CLI
     Dev -->|installs via| PubDev
-    PubDev -->|distributes| CLI
-    PubDev -->|distributes| Runtime
+    PubDev -->|distributes| Serialization
 
     CLI -->|generates| Generated
-    Generated -->|depends on| Runtime
+    Generated -->|depends on| Serialization
     Generated -->|integrated into| App
-    Runtime -->|integrated into| App
+    Serialization -->|integrated into| App
+    Rpc -->|depends on| Serialization
+    Rpc -->|integrated into| App
 ```
 
 ## Component Responsibilities
@@ -56,15 +59,21 @@ graph TD
 - Verifies backward compatibility when schemas change.
 - Used by the developer at build time, not shipped with the application.
 
-### Component 2: Runtime Library (application-level)
+### Component 2: Serialization Runtime (`capnproto_dart`, application-level)
 
 - Provides encoding and decoding of Cap'n Proto binary messages.
-- Implements Cap'n Proto RPC (client stubs and server skeletons).
 - Supports packed encoding and streaming for large messages.
-- Depended on by both the generated Dart code and the application directly.
+- Depended on by the generated Dart code, the RPC Runtime, and the application directly.
 - Published as a Dart package on pub.dev and shipped with the application.
+
+### Component 3: RPC Runtime (`capnproto_dart_rpc`, application-level, optional)
+
+- Implements Cap'n Proto RPC (client stubs and server skeletons).
+- Depends on the Serialization Runtime for message encoding.
+- Only needed by applications that use RPC; not required for pure serialization use cases.
+- Not yet published to pub.dev (`publish_to: none`); consumed as a path dependency within this repo.
 
 ## Notes
 
-- The CLI Tool and Runtime Library reside in the same repository for now. They may be separated into individual repositories in the future if needed.
+- The CLI Tool, Serialization Runtime, and RPC Runtime reside in the same repository for now. They may be separated into individual repositories in the future if needed.
 - `capnpc` is referenced for understanding the specification but is never called at runtime or linked via FFI.

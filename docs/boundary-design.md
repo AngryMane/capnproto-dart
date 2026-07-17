@@ -1,10 +1,10 @@
 # Boundary Design
 
-This document defines the external interfaces provided by both components.
+This document defines the external interfaces provided by all three components.
 
 ---
 
-## Component 1: CLI Tool
+## Component 1: CLI Tool (`capnpc-dart`)
 
 The CLI Tool is implemented as a plugin for the official `capnp` compiler. Schema parsing is delegated to the official compiler; this component handles only code generation and compatibility checking. The implementation language is not restricted to Dart.
 
@@ -37,14 +37,9 @@ capnp compile -o dart:check=<old.capnp> <new.capnp>
 
 ---
 
-## Component 2: Runtime Library
+## Component 2: Serialization Runtime (`capnproto_dart`)
 
-A pure Dart library with no FFI dependencies. Organized as the following Dart packages within the repository:
-
-| Package | Description |
-|---|---|
-| `capnproto_dart` | Core runtime: encoding, decoding, streaming |
-| `capnproto_dart_rpc` | RPC support (depends on `capnproto_dart`) |
+A pure Dart library with no FFI dependencies. Provides encoding, decoding, packed encoding, and streaming for Cap'n Proto messages.
 
 ### Message Encoding
 
@@ -163,7 +158,29 @@ class MessageStream {
 }
 ```
 
-### RPC (`capnproto_dart_rpc`)
+### Error Handling
+
+All errors thrown by this library are subclasses of `CapnpException`.
+
+```dart
+/// Base class for all Cap'n Proto exceptions.
+class CapnpException implements Exception {
+  final String message;
+  const CapnpException(this.message);
+}
+
+/// Thrown when binary data cannot be decoded (e.g., malformed framing, traversal limit exceeded).
+class DecodeException extends CapnpException {}
+
+/// Thrown when a schema violation is detected (e.g., required field missing, type mismatch).
+class SchemaException extends CapnpException {}
+```
+
+---
+
+## Component 3: RPC Runtime (`capnproto_dart_rpc`)
+
+A pure Dart library with no FFI dependencies. Depends on Component 2 (`capnproto_dart`) for message encoding; only needed by applications that use RPC.
 
 Implements a **Cap'n Proto RPC Level 1 subset**: object-capability references and promise pipelining
 in two-party connections. The following Level 1 features are **not** implemented:
@@ -172,7 +189,7 @@ in two-party connections. The following Level 1 features are **not** implemented
 
 Level 2 and above (persistent capabilities) are out of scope.
 
-#### Core RPC types
+### Core RPC types
 
 ```dart
 /// Base class for all Cap'n Proto capabilities (remote object references).
@@ -210,7 +227,7 @@ abstract class RpcServer {
 }
 ```
 
-#### Promise Pipelining
+### Promise Pipelining
 
 Dart's `Future<T>` naturally supports promise pipelining. Generated client stubs return
 `Future<T>` where `T` is itself a capability, enabling callers to chain calls without
@@ -230,21 +247,9 @@ result is a capability.
 
 ### Error Handling
 
-All errors thrown by this library are subclasses of `CapnpException`.
+RPC errors extend `CapnpException` (defined in Component 2, `capnproto_dart`).
 
 ```dart
-/// Base class for all Cap'n Proto exceptions.
-class CapnpException implements Exception {
-  final String message;
-  const CapnpException(this.message);
-}
-
-/// Thrown when binary data cannot be decoded (e.g., malformed framing, traversal limit exceeded).
-class DecodeException extends CapnpException {}
-
-/// Thrown when a schema violation is detected (e.g., required field missing, type mismatch).
-class SchemaException extends CapnpException {}
-
 /// Thrown when an RPC call fails (e.g., connection lost, remote exception).
 class RpcException extends CapnpException {}
 ```
@@ -254,7 +259,7 @@ class RpcException extends CapnpException {}
 ## Generated Code Interface
 
 `capnpc-dart` generates one `.dart` file per `.capnp` file. The generated code provides
-typed accessors built on top of the Runtime Library base classes.
+typed accessors built on top of the Serialization Runtime base classes.
 
 ### Example: Schema
 
