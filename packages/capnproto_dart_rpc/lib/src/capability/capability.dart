@@ -208,6 +208,14 @@ Capability? capabilityFromResult(DispatchResult result, int ptrIndex) {
 
 /// Resolves the capability at pointer slot [ptrIndex], or throws an
 /// [RpcException] that preserves why the pipeline target could not resolve.
+///
+/// Returns a vended handle (see [vendCapabilityHandle]), not the raw
+/// [DispatchResult.caps] entry directly: the same underlying capability is
+/// commonly reachable through more than one independent path from generated
+/// code (e.g. an eagerly-pipelined `XxxPipeline.someCap` and the same field
+/// read off the awaited `XxxPipeline.result` reader both resolve to the
+/// identical [DispatchResult.caps] entry), and disposing one such reference
+/// must not silently invalidate the other.
 Capability requireCapabilityFromResult(DispatchResult result, int ptrIndex) {
   if (result.caps.isEmpty) {
     throw const RpcException('result has no capability table entries');
@@ -232,11 +240,116 @@ Capability requireCapabilityFromResult(DispatchResult result, int ptrIndex) {
         'capability table index $capIdx is out of range for ${result.caps.length} result capabilities',
       );
     }
-    return result.caps[capIdx];
+    return vendCapabilityHandle(result.caps[capIdx]);
   } on RpcException {
     rethrow;
   } catch (e) {
     throw RpcException('failed to decode result capability: $e');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Reference-counted capability handles.
+//
+// A single resolved capability object (an entry in DispatchResult.caps, or
+// equivalently the same entry read via a generated struct reader's
+// interface-field getter) is often reachable through more than one
+// independent path — see requireCapabilityFromResult's doc comment. Neither
+// path "owns" the underlying object exclusively, so disposing through one of
+// them must not invalidate the other. vendCapabilityHandle hands out a
+// disposable proxy per call site, all sharing one refcount per underlying
+// object (keyed by identity); the real object is only disposed once every
+// vended handle for it has itself been disposed.
+// ---------------------------------------------------------------------------
+
+class _CapabilityRefCount {
+  int count = 0;
+  Future<void>? disposeFuture;
+}
+
+final Expando<_CapabilityRefCount> _capabilityRefCounts =
+    Expando<_CapabilityRefCount>();
+
+/// Returns a new disposable handle referencing [target], sharing reference
+/// counting with every other handle vended for the same [target] instance
+/// (by identity). [target] itself is only disposed once every handle vended
+/// for it has been disposed.
+Capability vendCapabilityHandle(Capability target) {
+  final refCount = _capabilityRefCounts[target] ??= _CapabilityRefCount();
+  return _CapabilityHandle(target, refCount);
+}
+
+class _CapabilityHandle extends Capability {
+  final Capability _target;
+  final _CapabilityRefCount _refCount;
+  bool _handleDisposed = false;
+
+  _CapabilityHandle(this._target, this._refCount) {
+    _refCount.count++;
+  }
+
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) => _target.dispatch(
+    interfaceId,
+    methodId,
+    params,
+    paramsCapabilities: paramsCapabilities,
+  );
+
+  @override
+  Future<void> dispatchStreaming(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) => _target.dispatchStreaming(
+    interfaceId,
+    methodId,
+    params,
+    paramsCapabilities: paramsCapabilities,
+  );
+
+  @override
+  Future<DispatchResult> dispatchWithContext(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+    DispatchContext? context,
+  }) => _target.dispatchWithContext(
+    interfaceId,
+    methodId,
+    params,
+    paramsCapabilities: paramsCapabilities,
+    context: context,
+  );
+
+  @override
+  CapCall beginDispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) => _target.beginDispatch(
+    interfaceId,
+    methodId,
+    params,
+    paramsCapabilities: paramsCapabilities,
+  );
+
+  @override
+  Future<void> dispose() async {
+    if (_handleDisposed) return;
+    _handleDisposed = true;
+    _refCount.count--;
+    if (_refCount.count <= 0) {
+      await (_refCount.disposeFuture ??= _target.dispose());
+    }
   }
 }
 

@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:capnproto_dart/src/exception/decode_exception.dart';
 import 'package:capnproto_dart/src/stream/packed_codec.dart';
 import 'package:test/test.dart';
 
@@ -171,6 +172,42 @@ void main() {
       expect(unpacked[0], equals(0xAA));
       expect(unpacked.sublist(1, 8), equals(bytes([0, 0, 0, 0, 0, 0, 0])));
       expect(unpacked[15], equals(0xBB));
+    });
+  });
+
+  group('unpackBytes — truncated/malformed input', () {
+    // Regression coverage: a tag byte promising more literal/count/verbatim
+    // bytes than actually remain must surface as DecodeException, not a raw
+    // RangeError escaping from the `packed[i++]` index accesses.
+
+    test('tag 0xFF claims 8 literal bytes but only 2 remain', () {
+      expect(
+        () => unpackBytes(bytes([0xFF, 1, 2])),
+        throwsA(isA<DecodeException>()),
+      );
+    });
+
+    test('tag byte present but word bytes are cut off entirely', () {
+      expect(
+        () => unpackBytes(bytes([0x01])), // promises 1 non-zero byte, 0 left
+        throwsA(isA<DecodeException>()),
+      );
+    });
+
+    test('tag 0x00 count byte itself is missing', () {
+      expect(
+        () => unpackBytes(bytes([0x00])),
+        throwsA(isA<DecodeException>()),
+      );
+    });
+
+    test('tag 0xFF verbatim run count claims more words than remain', () {
+      final wire = bytes([
+        0xFF, 1, 2, 3, 4, 5, 6, 7, 8, // first word + tag
+        2, // literal count claims 2 more words (16 bytes)...
+        10, 20, 30, 40, // ...but only 4 bytes are actually present
+      ]);
+      expect(() => unpackBytes(wire), throwsA(isA<DecodeException>()));
     });
   });
 

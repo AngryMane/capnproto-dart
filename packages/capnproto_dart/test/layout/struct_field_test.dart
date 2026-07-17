@@ -105,6 +105,12 @@ class WithPointersReader extends StructReader {
   Uint8List? get data => getDataField(1);
   bool get hasName => hasPointerField(0);
   bool get hasData => hasPointerField(1);
+
+  // Mirrors what capnpc-dart generates for a field with an explicit
+  // schema-declared default (`name @0 :Text = "fallback";`).
+  String? get nameWithDefault => getTextField(0, defaultValue: 'fallback');
+  Uint8List? get dataWithDefault =>
+      getDataField(1, defaultValue: Uint8List.fromList([9, 8, 7]));
 }
 
 class WithPointersBuilder extends StructBuilder {
@@ -399,6 +405,30 @@ void main() {
         equals(text),
       );
     });
+
+    test(
+      'unset field with an explicit default returns the default, not null',
+      () {
+        // Regression test: getTextField's defaultValue param — used to be
+        // ignored entirely, so an unset field with a schema-declared
+        // default read back as null instead of that default.
+        expect(
+          _roundTrip(withPtrsFactory, (_) {}, (r) => r.nameWithDefault),
+          equals('fallback'),
+        );
+      },
+    );
+
+    test('a field explicitly set overrides the default', () {
+      expect(
+        _roundTrip(
+          withPtrsFactory,
+          (b) => b.name = 'explicit',
+          (r) => r.nameWithDefault,
+        ),
+        equals('explicit'),
+      );
+    });
   });
 
   group('StructReader pointer section — Data fields', () {
@@ -431,6 +461,16 @@ void main() {
         equals(<int>[]),
       );
     });
+
+    test(
+      'unset field with an explicit default returns the default, not null',
+      () {
+        expect(
+          _roundTrip(withPtrsFactory, (_) {}, (r) => r.dataWithDefault),
+          equals([9, 8, 7]),
+        );
+      },
+    );
   });
 
   group('StructReader pointer section — nested struct fields', () {

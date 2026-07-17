@@ -12,7 +12,7 @@ Used by developers to generate Dart code from `.capnp` schema files.
 |---|---|---|
 | F-03 | `.capnp` schema parser | Delegated to the official `capnp` compiler via its plugin mechanism. Not implemented in this repository. |
 | F-04 | Dart code generator (`capnpc-dart`) | Receives `CodeGeneratorRequest` from the official compiler via stdin and generates Dart source files. Also handles F-08 via an option flag. Implementation language is not restricted to Dart. |
-| F-08 | Schema compatibility check | Built into `capnpc-dart` as an option mode (`-o dart:check=<old.capnp>`). No separate binary. |
+| F-08 | Schema compatibility check | Built into `capnpc-dart` as an option mode, invoked as `capnp compile -o- <new.capnp> \| capnpc-dart --check=<old.capnp>` (see `tools/capnpc-dart/doc/external-spec.md`). No separate binary. |
 
 ---
 

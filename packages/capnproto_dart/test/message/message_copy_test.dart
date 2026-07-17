@@ -9,8 +9,51 @@ import 'package:capnproto_dart/src/layout/struct_reader.dart';
 import 'package:capnproto_dart/src/message/message_builder.dart';
 import 'package:capnproto_dart/src/message/message_copy.dart';
 import 'package:capnproto_dart/src/message/message_reader.dart';
+import 'package:capnproto_dart/src/message/message_reader_options.dart';
 import 'package:capnproto_dart/src/wire/pointer.dart';
+import 'package:capnproto_dart/src/wire/wire_helpers.dart';
 import 'package:test/test.dart';
+
+// Builds a 3-segment message whose root struct (dataWords=0, ptrWords=1) has
+// a single pointer field reached via a double-far pointer:
+//   Segment 0: [root struct ptr (dW=0, pW=1)] [double-far to seg1 word 0]
+//   Segment 1: [single-far to seg2 word 0]     [list tag]
+//   Segment 2: <list element data>
+// Mirrors ArenaReaderTest's buildDoubleFarMessage, adapted so the far
+// pointer sits behind a real root struct (matching anyHostFactory's shape)
+// instead of being the message root itself.
+Uint8List _buildDoubleFarListMessage({
+  required WirePointer listTag,
+  required List<int> dataBytes,
+}) {
+  final paddedLen = ((dataBytes.length + 7) ~/ bytesPerWord) * bytesPerWord;
+  final paddedData = Uint8List(paddedLen)..setRange(0, dataBytes.length, dataBytes);
+  final dataWords = paddedLen ~/ bytesPerWord;
+
+  // 3 segments (odd) → header is 4 + 3×4 = 16 bytes, no padding word.
+  final out = Uint8List(16 + (2 + 2 + dataWords) * bytesPerWord);
+  final bd = ByteData.view(out.buffer);
+
+  writeUint32(bd, 0, 2); // numSegments - 1 = 2
+  writeUint32(bd, 4, 2); // seg0: 2 words (root struct ptr + its 1 ptr field)
+  writeUint32(bd, 8, 2); // seg1: 2 words (single-far landing pad + list tag)
+  writeUint32(bd, 12, dataWords); // seg2: element data
+
+  final seg0 = ByteData.view(out.buffer, 16);
+  StructPointer(offset: 0, dataWords: 0, ptrWords: 1).encode(seg0, 0);
+  FarPointer(isDoubleFar: true, landingPadOffset: 0, segmentId: 1)
+      .encode(seg0, 1);
+
+  final seg1 = ByteData.view(out.buffer, 16 + 2 * bytesPerWord);
+  FarPointer(isDoubleFar: false, landingPadOffset: 0, segmentId: 2)
+      .encode(seg1, 0);
+  listTag.encode(seg1, 1);
+
+  out.setRange(16 + 4 * bytesPerWord, 16 + 4 * bytesPerWord + paddedLen,
+      paddedData);
+
+  return out;
+}
 
 class CapHolderReader extends StructReader {
   CapHolderReader(super.raw, {super.capabilities});
@@ -174,6 +217,69 @@ void main() {
           orderedEquals(
             Uint8List.fromList(List<int>.generate(10000, (i) => i & 0xff)),
           ),
+        );
+      },
+    );
+
+    test(
+      'ensureSingleSegment copies a Text field reached via a double-far pointer',
+      () {
+        // Regression test: the double-far branch of _copyPointer only
+        // handled a struct-shaped landing pad tag; a list-shaped tag (Text,
+        // Data, List(T)) fell through with no error, leaving the destination
+        // pointer slot null instead of copying the list.
+        final sourceBytes = _buildDoubleFarListMessage(
+          listTag: const ListPointer(
+            offset: 0,
+            elementSize: ListElementSize.byte,
+            elementCountOrWordCount: 6, // "hello\0"
+          ),
+          dataBytes: [0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x00],
+        );
+
+        final copiedBytes = ensureSingleSegment(sourceBytes);
+        final copiedReader = MessageReader.deserialize(
+          copiedBytes,
+        ).getRoot(anyHostFactory);
+
+        expect(copiedReader.getTextField(0), equals('hello'));
+      },
+    );
+
+    test(
+      'ensureSingleSegment copies a primitive List field reached via a '
+      'double-far pointer',
+      () {
+        final sourceBytes = _buildDoubleFarListMessage(
+          listTag: const ListPointer(
+            offset: 0,
+            elementSize: ListElementSize.fourBytes,
+            elementCountOrWordCount: 2,
+          ),
+          dataBytes: [42, 0, 0, 0, 100, 0, 0, 0],
+        );
+
+        final copiedBytes = ensureSingleSegment(sourceBytes);
+        final copiedArena = ArenaReader.fromBytes(
+          copiedBytes,
+          const MessageReaderOptions(),
+        );
+        final rootRaw = copiedArena.getRootRaw();
+        final list = copiedArena.resolveListAt(
+          rootRaw.segment,
+          rootRaw.ptrWordOffset,
+          rootRaw.nestingLimit,
+        );
+
+        expect(list, isNotNull);
+        expect(list!.elementCount, equals(2));
+        expect(
+          readUint32(list.segment.data, list.dataByteOffset),
+          equals(42),
+        );
+        expect(
+          readUint32(list.segment.data, list.dataByteOffset + 4),
+          equals(100),
         );
       },
     );

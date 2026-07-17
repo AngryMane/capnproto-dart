@@ -59,17 +59,25 @@ class RpcSystem {
         InternetAddress.loopbackIPv4;
     final serverSocket = await ServerSocket.bind(host, address.port);
 
+    // Tracked so close() can tear down already-accepted connections, not
+    // just stop accepting new ones — closing only the listening socket would
+    // otherwise leave every client connected at the time of close() running
+    // (and its underlying TCP socket open) indefinitely.
+    final connections = <TwoPartyRpcConnection>{};
+
     serverSocket.listen((socket) {
-      TwoPartyRpcConnection.server(
+      final conn = TwoPartyRpcConnection.server(
         incoming: socket.cast<Uint8List>(),
         outgoing: _SocketSink(socket),
         bootstrap: bootstrap,
         onDisposeError: onDisposeError,
         streamWindowSize: streamWindowSize,
       );
+      connections.add(conn);
+      conn.done.whenComplete(() => connections.remove(conn));
     });
 
-    return _TcpRpcServer(serverSocket);
+    return _TcpRpcServer(serverSocket, connections);
   }
 }
 
@@ -98,8 +106,18 @@ class _SocketSink implements StreamSink<Uint8List> {
 
 class _TcpRpcServer implements RpcServer {
   final ServerSocket _socket;
-  _TcpRpcServer(this._socket);
+  final Set<TwoPartyRpcConnection> _connections;
+  _TcpRpcServer(this._socket, this._connections);
 
   @override
-  Future<void> close() => _socket.close();
+  int get port => _socket.port;
+
+  @override
+  Future<void> close() async {
+    await _socket.close();
+    // Snapshot first: each connection's `done.whenComplete` callback removes
+    // itself from `_connections`, which would otherwise mutate the set while
+    // this iterates it.
+    await Future.wait(_connections.toList().map((c) => c.close()));
+  }
 }

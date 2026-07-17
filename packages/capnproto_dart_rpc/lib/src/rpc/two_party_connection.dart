@@ -158,8 +158,14 @@ class TwoPartyRpcConnection implements RpcConnection {
       onDisposeError,
       streamWindowSize,
     );
-    // Register bootstrap as export 0.
-    conn._exports[0] = _ExportEntry(bootstrap);
+    // Register bootstrap as export 0. Its remoteRefCount starts at 0 (not 1,
+    // unlike the _ExportEntry constructor's default for _getOrCreateExportId
+    // callers): the entry needs to exist now so _handleCall/_handleBootstrap
+    // can route to it, but the peer doesn't actually hold a reference until
+    // it sends a Bootstrap request — _handleBootstrap increments this on
+    // every one it answers, matching how _getOrCreateExportId increments on
+    // every ordinary export vend.
+    conn._exports[0] = _ExportEntry(bootstrap)..remoteRefCount = 0;
     conn._exportIds[bootstrap] = 0;
     return conn;
   }
@@ -334,6 +340,17 @@ class TwoPartyRpcConnection implements RpcConnection {
     if (ret.isReturnException) {
       throw RpcException(ret.exceptionReason ?? 'remote exception');
     }
+    if (!ret.isReturnResults) {
+      // canceled / resultsSentElsewhere / takeFromOtherQuestion /
+      // acceptFromThirdParty — none of these are implemented by this vat.
+      // Surfacing them as an explicit error is important specifically for
+      // resultsSentElsewhere: a peer that performs a tail call sends this,
+      // and treating it as an empty success would silently hand the caller
+      // a bogus empty-struct result instead of the real one.
+      throw RpcException(
+        'unsupported Return variant: ${describeReturnDisc(ret.returnDisc)}',
+      );
+    }
 
     // Convert capTable entries into ImportedCapabilities.
     final caps = <Capability>[];
@@ -457,10 +474,18 @@ class TwoPartyRpcConnection implements RpcConnection {
     _sendRaw(
       buildBootstrapReturnMessage(answerId: msg.questionId, exportId: 0),
     );
+    // Each Bootstrap request hands the peer a new reference to export 0,
+    // exactly like _getOrCreateExportId does for capabilities returned from
+    // ordinary calls — without this, a peer that bootstraps twice and later
+    // disposes just one of the two resulting capabilities would drop this
+    // side's refcount to 0 and dispose the capability out from under the
+    // peer's other, still-live reference.
+    final exportEntry = _exports[0];
+    exportEntry?.remoteRefCount++;
     // Register the bootstrap answer so pipelined calls targeting
     // {receiverAnswer: {questionId: msg.questionId, transform: []}} can
     // resolve ptr[0] → the bootstrap capability.
-    final bootstrapCap = _exports[0]?.capability;
+    final bootstrapCap = exportEntry?.capability;
     if (bootstrapCap != null) {
       _answerCaps[msg.questionId] =
           _ResolvedAnswer(_bootstrapResultBytes, [bootstrapCap]);

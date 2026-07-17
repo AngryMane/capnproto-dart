@@ -17,11 +17,18 @@ capnp compile -o dart <schema.capnp...>
 
 ### Compatibility check mode
 
+`capnp`'s own `-o<lang>[:<dir>]` plugin-selection syntax always treats everything after
+the first colon as an output directory — there is no channel for a plugin to receive
+freeform options through it. So this mode is invoked by dumping the request with
+`capnp compile -o-` (which writes the raw `CodeGeneratorRequest` to stdout instead of
+invoking a plugin) and piping it directly into the `capnpc-dart` binary, which then
+reads ordinary argv flags:
+
 ```
-capnp compile -o dart:check=<old.capnp> <new.capnp>
+capnp compile -o- <new.capnp> | capnpc-dart --check=<old.capnp>
 ```
 
-**Input**: `CodeGeneratorRequest` for the new schema via **stdin**; old schema path provided as the `check` option
+**Input**: `CodeGeneratorRequest` for the new schema via **stdin**; old schema path provided via `--check=<path>`
 **Output**: List of incompatible changes printed to stdout
 **Exit code**: `0` if compatible, `1` if incompatible changes are detected, `2` on error
 

@@ -313,32 +313,50 @@ void _copyPointer(
           canonicalize: canonicalize,
         );
       } else {
-        // Double-far landing pad: [far_ptr, struct_tag]
+        // Double-far landing pad: [far_ptr, tag]. The tag's own discriminant
+        // (struct vs list) says which resolver + copier this delegates to.
+        // srcArena.resolveStructAt/resolveListAt re-walk the *original*
+        // far pointer (including the double-far case) using the same
+        // validated logic the direct (non-copy) reader path relies on —
+        // reusing that here instead of hand-rebuilding a RawStructReader/
+        // RawListReader from the landing pad avoids a second, easily
+        // divergent implementation of that math (this hand-rolled version
+        // previously only handled a struct tag, silently dropping lists).
         final inner = WirePointer.decode(targetSeg.data, ptr.landingPadOffset);
+        if (inner is! FarPointer || inner.isDoubleFar) {
+          throw const DecodeException('invalid double-far inner pointer');
+        }
         final tag = WirePointer.decode(
           targetSeg.data,
           ptr.landingPadOffset + 1,
         );
-        if (inner is FarPointer && !inner.isDoubleFar && tag is StructPointer) {
-          final dataSeg = srcArena.getSegment(inner.segmentId);
-          final structSrc = RawStructReader(
-            segment: dataSeg,
-            arena: srcArena,
-            dataWordOffset: inner.landingPadOffset,
-            dataWords: tag.dataWords,
-            ptrWordOffset: inner.landingPadOffset + tag.dataWords,
-            ptrWords: tag.ptrWords,
-            nestingLimit: nestingLimit - 1,
-          );
-          _copyStruct(
-            structSrc,
-            srcArena,
-            dstArena,
-            dstSeg,
-            dstPtrWordOffset,
-            preserveCapabilityPointers: preserveCapabilityPointers,
-            canonicalize: canonicalize,
-          );
+        switch (tag) {
+          case StructPointer():
+            _copyStruct(
+              srcArena.resolveStructAt(srcSeg, srcPtrWordOffset, nestingLimit),
+              srcArena,
+              dstArena,
+              dstSeg,
+              dstPtrWordOffset,
+              preserveCapabilityPointers: preserveCapabilityPointers,
+              canonicalize: canonicalize,
+            );
+          case ListPointer():
+            _copyList(
+              srcArena,
+              srcSeg,
+              srcPtrWordOffset,
+              nestingLimit,
+              dstArena,
+              dstSeg,
+              dstPtrWordOffset,
+              preserveCapabilityPointers: preserveCapabilityPointers,
+              canonicalize: canonicalize,
+            );
+          default:
+            throw DecodeException(
+              'invalid double-far tag: ${tag.runtimeType}',
+            );
         }
       }
 

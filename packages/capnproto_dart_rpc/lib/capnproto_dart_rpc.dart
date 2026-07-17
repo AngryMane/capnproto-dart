@@ -18,7 +18,8 @@ export 'src/capability/capability.dart'
         DispatchResult,
         NullCapability,
         PipelinedCapability,
-        requireCapabilityFromResult;
+        requireCapabilityFromResult,
+        vendCapabilityHandle;
 export 'src/capability/capability_any_pointer_codec.dart';
 export 'src/capability/capability_factory.dart';
 export 'src/rpc/flow_controller.dart';

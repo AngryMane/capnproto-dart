@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:capnpc_dart/capnpc_dart.dart';
 import 'package:test/test.dart';
 
@@ -70,6 +72,7 @@ SchemaField dataField(
 ) => SchemaField(
   name: name,
   codeOrder: codeOrder,
+  ordinal: codeOrder,
   discriminantValue: 0xFFFF,
   body: SlotField(offset: offset, type: type, hadExplicitDefault: false),
 );
@@ -83,6 +86,7 @@ SchemaField unionField(
 ) => SchemaField(
   name: name,
   codeOrder: codeOrder,
+  ordinal: codeOrder,
   discriminantValue: discVal,
   body: SlotField(offset: offset, type: type, hadExplicitDefault: false),
 );
@@ -91,6 +95,7 @@ SchemaField ptrField(String name, int codeOrder, int offset, SchemaType type) =>
     SchemaField(
       name: name,
       codeOrder: codeOrder,
+      ordinal: codeOrder,
       discriminantValue: 0xFFFF,
       body: SlotField(offset: offset, type: type, hadExplicitDefault: false),
     );
@@ -104,6 +109,7 @@ SchemaField defaultedField(
 ) => SchemaField(
   name: name,
   codeOrder: codeOrder,
+  ordinal: codeOrder,
   discriminantValue: 0xFFFF,
   body: SlotField(
     offset: offset,
@@ -383,7 +389,7 @@ void main() {
       expect(
         src,
         contains(
-          'ListReader<SessionClient?>? get sessions => getCapabilityListFieldWith<SessionClient>(0, (cap) => SessionClient(cap as Capability))',
+          'ListReader<SessionClient?>? get sessions => getCapabilityListFieldWith<SessionClient>(0, (cap) => SessionClient(vendCapabilityHandle(cap as Capability)))',
         ),
       );
       expect(
@@ -636,6 +642,7 @@ void main() {
         SchemaField(
           name: 'x',
           codeOrder: 0,
+          ordinal: 0,
           discriminantValue: 0xFFFF,
           body: const SlotField(
             offset: 0,
@@ -662,6 +669,24 @@ void main() {
     });
 
     test(
+      '-0.0 default is emitted (not collapsed into the positive-0.0 '
+      'no-default case)',
+      () {
+        // Regression test: Dart's `-0.0 == 0.0` is true, so a naive `v ==
+        // 0.0` check treats an explicit -0.0 default the same as "no
+        // default", silently downgrading it to +0.0.
+        final sNode = structNode(20, 'S', 1, 0, [
+          defaultedField('ratio', 0, 0, const Float64Type(), -0.0),
+        ]);
+        final file = fileNode(1, [SchemaNestedNode(name: 'S', id: 20)]);
+        final src = generateDartFile(file, [file, sNode]);
+
+        expect(src, contains('getFloat64Field(0, defaultValue: -0.0)'));
+        expect(src, contains('setFloat64Field(0, v, defaultValue: -0.0)'));
+      },
+    );
+
+    test(
       'enum field with non-zero default emits defaultValue: inside getUint16',
       () {
         const colorId = 50;
@@ -685,6 +710,68 @@ void main() {
         expect(
           src,
           contains('setUint16Field(0, colorToUint16(v), defaultValue: 1)'),
+        );
+      },
+    );
+
+    test(
+      'Text field with explicit default emits defaultValue: as a string '
+      'literal',
+      () {
+        // Regression test: an unset Text field with a schema-declared
+        // default must read back as that default, not null — the getter
+        // previously ignored sf.defaultValue entirely for Text/Data.
+        final sNode = structNode(20, 'S', 0, 1, [
+          defaultedField('name', 0, 0, const TextType(), 'hello'),
+        ]);
+        final file = fileNode(1, [SchemaNestedNode(name: 'S', id: 20)]);
+        final src = generateDartFile(file, [file, sNode]);
+
+        expect(
+          src,
+          contains("getTextField(0, defaultValue: 'hello')"),
+        );
+      },
+    );
+
+    test(
+      "Text default value is escaped as a valid Dart string literal "
+      "(quotes, backslash, newline)",
+      () {
+        final sNode = structNode(20, 'S', 0, 1, [
+          defaultedField('name', 0, 0, const TextType(), "a'b\\c\nd"),
+        ]);
+        final file = fileNode(1, [SchemaNestedNode(name: 'S', id: 20)]);
+        final src = generateDartFile(file, [file, sNode]);
+
+        expect(
+          src,
+          contains(r"getTextField(0, defaultValue: 'a\'b\\c\nd')"),
+        );
+      },
+    );
+
+    test(
+      'Data field with explicit default emits defaultValue: as a '
+      'Uint8List.fromList(...) literal',
+      () {
+        final sNode = structNode(20, 'S', 0, 1, [
+          defaultedField(
+            'blob',
+            0,
+            0,
+            const DataType(),
+            Uint8List.fromList([1, 2, 3]),
+          ),
+        ]);
+        final file = fileNode(1, [SchemaNestedNode(name: 'S', id: 20)]);
+        final src = generateDartFile(file, [file, sNode]);
+
+        expect(
+          src,
+          contains(
+            'getDataField(0, defaultValue: Uint8List.fromList([1, 2, 3]))',
+          ),
         );
       },
     );
@@ -1350,6 +1437,51 @@ void main() {
       expect(src, contains('NestedListBuilder<ListBuilder<int>>'));
       expect(src, contains('initNestedListField('));
       expect(src, contains('capabilityListBuilderFromRaw'));
+    });
+  });
+
+  group('generateDartFile — Dart reserved-word identifiers (GEN)', () {
+    // Regression coverage: a schema identifier that happens to collide with
+    // a Dart reserved word must not be emitted verbatim — `int get class`
+    // is a syntax error, not just an unusual name.
+
+    test('a field named after a Dart reserved word is escaped', () {
+      final sNode = structNode(20, 'S', 1, 0, [
+        dataField('class', 0, 0, const Int32Type()),
+      ]);
+      final file = fileNode(1, [SchemaNestedNode(name: 'S', id: 20)]);
+      final src = generateDartFile(file, [file, sNode]);
+
+      expect(src, contains('int get class_ =>'));
+      expect(src, contains('set class_(int v)'));
+    });
+
+    test(
+      'an enum value named after a Dart reserved word is escaped',
+      () {
+        final eNode = enumNode(10, 'Kind', [
+          const SchemaEnumerant(name: 'this', codeOrder: 0),
+          const SchemaEnumerant(name: 'normal', codeOrder: 1),
+        ]);
+        final file = fileNode(1, [SchemaNestedNode(name: 'Kind', id: 10)]);
+        final src = generateDartFile(file, [file, eNode]);
+
+        expect(src, contains('this_,'));
+        expect(src, contains('normal,'));
+      },
+    );
+
+    test('a Text field with a reserved-word name compiles as valid Dart', () {
+      // End-to-end sanity check beyond string matching: actually parse the
+      // generated source and confirm it has no syntax errors.
+      final sNode = structNode(20, 'S', 0, 1, [
+        ptrField('var', 0, 0, const TextType()),
+      ]);
+      final file = fileNode(1, [SchemaNestedNode(name: 'S', id: 20)]);
+      final src = generateDartFile(file, [file, sNode]);
+
+      expect(src, contains('String? get var_ =>'));
+      expect(src, contains('set var_(String? v)'));
     });
   });
 

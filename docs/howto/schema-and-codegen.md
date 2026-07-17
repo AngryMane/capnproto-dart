@@ -48,16 +48,20 @@ generation at all.
 ## Checking backward/forward compatibility
 
 When a schema evolves, you can ask `capnpc-dart` to diff the new schema against a
-previous version before shipping the change:
+previous version before shipping the change. `capnp`'s `-o` plugin syntax has no
+channel for freeform options, so this mode is invoked by dumping the request with
+`-o-` and piping it into the plugin binary directly, rather than through
+`capnp compile -o`:
 
 ```sh
-capnp compile -o dart:check=<old.capnp> <new.capnp>
+capnp compile -o- <new.capnp> | capnpc-dart --check=<old.capnp>
 ```
 
 - **Output**: a list of incompatible changes printed to stdout (empty if none).
 - **Exit code**: `0` if compatible, `1` if incompatible changes were detected, `2` on
   error.
 
-This is the same mechanism exercised end-to-end (across both Dart and Rust) by
 [`test/interop/schema-evolution/`](https://github.com/AngryMane/capnproto-dart/tree/main/test/interop/schema-evolution) — see
-[`samples-and-testing.md`](samples-and-testing.md).
+[`samples-and-testing.md`](samples-and-testing.md) — is a related but separate check:
+it proves the *generated code* reads/writes old and new schema versions correctly at
+runtime, not this static compatibility-check CLI mode.

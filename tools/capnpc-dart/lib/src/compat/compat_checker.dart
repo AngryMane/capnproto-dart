@@ -72,8 +72,12 @@ void _checkNestedNodes(
 
 void _checkStruct(
     String name, StructBody oldBody, StructBody newBody, List<String> errors) {
-  final oldByOrdinal = {for (final f in oldBody.fields) f.codeOrder: f};
-  final newByOrdinal = {for (final f in newBody.fields) f.codeOrder: f};
+  // Match by wire ordinal (the `@N` that actually governs slot allocation),
+  // not codeOrder (textual declaration order) — two schema versions can
+  // legally reorder field declarations without touching any `@N`, and that
+  // must not be reported as every reordered field's type/offset changing.
+  final oldByOrdinal = {for (final f in oldBody.fields) f.ordinal: f};
+  final newByOrdinal = {for (final f in newBody.fields) f.ordinal: f};
 
   for (final entry in oldByOrdinal.entries) {
     final ordinal = entry.key;

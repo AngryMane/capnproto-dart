@@ -130,6 +130,17 @@ class _FieldReader extends StructReader {
   int get discriminantValue => getUint16Field(2, defaultValue: 0xffff);
   int get _slotGroupDisc => getUint16Field(8);
 
+  // Field.ordinal :union { implicit @7 :Void; explicit @8 :UInt16; } —
+  // verified against real `capnp compile -o-` output (capnp 1.0.1): disc at
+  // byte 10-11 (0=implicit, 1=explicit), value at byte 12-13. Every field
+  // declared with normal `.capnp` syntax (`name @N :Type`) gets an explicit
+  // ordinal from the compiler; the implicit case only exists for the wire
+  // format's own theoretical completeness, so codeOrder is a reasonable
+  // fallback for it (matches this reader's behavior before ordinal existed).
+  int get _ordinalDisc => getUint16Field(10);
+  int get _ordinalExplicit => getUint16Field(12);
+  int get ordinal => _ordinalDisc == 1 ? _ordinalExplicit : codeOrder;
+
   // slot fields
   int get slotOffset => getUint32Field(4);
   bool get slotHadExplicitDefault => getBoolField(128); // byte 16, bit 0
@@ -249,6 +260,12 @@ class _ValueReader extends StructReader {
   int get uint64Value => getUint64Field(8);
   double get float32Value => getFloat32Field(4);
   double get float64Value => getFloat64Field(8);
+  // text/data/list/struct/interface/anyPointer are all pointer-typed
+  // variants of this union, so — like any Cap'n Proto union mixing
+  // data-section and pointer-section variants — they share the single
+  // pointer slot 0 (only one of them is ever set at a time).
+  String? get textValue => getTextField(0);
+  Uint8List? get dataValue => getDataField(0);
 }
 
 // ---- Method @0x9500cce23b334d80 (dataWords=3, ptrWords=5) ----
@@ -480,6 +497,8 @@ SchemaField _buildField(_FieldReader r) {
         9 => dv.uint64Value,
         10 => dv.float32Value,
         11 => dv.float64Value,
+        12 => dv.textValue,
+        13 => dv.dataValue,
         15 => dv.uint16Value, // enum stored as uint16
         _ => null,
       };
@@ -498,6 +517,7 @@ SchemaField _buildField(_FieldReader r) {
   return SchemaField(
     name: r.name ?? '',
     codeOrder: r.codeOrder,
+    ordinal: r.ordinal,
     discriminantValue: r.discriminantValue,
     body: body,
   );

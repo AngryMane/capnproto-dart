@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import '../exception/decode_exception.dart';
+
 /// Packs [input] using the Cap'n Proto packed encoding.
 ///
 /// [input] must be a multiple of 8 bytes (whole words). Encoding rules for
@@ -92,23 +94,34 @@ Uint8List unpackBytes(Uint8List packed) {
   final out = <int>[];
   int i = 0;
 
-  while (i < packed.length) {
-    final tag = packed[i++];
+  try {
+    while (i < packed.length) {
+      final tag = packed[i++];
 
-    // Reconstruct the 8 bytes of the current word.
-    for (int b = 0; b < 8; b++) {
-      out.add((tag >> b) & 1 == 1 ? packed[i++] : 0);
-    }
+      // Reconstruct the 8 bytes of the current word.
+      for (int b = 0; b < 8; b++) {
+        out.add((tag >> b) & 1 == 1 ? packed[i++] : 0);
+      }
 
-    if (tag == 0x00) {
-      // Emit additional zero words.
-      final count = packed[i++];
-      for (int j = 0; j < count * 8; j++) { out.add(0); }
-    } else if (tag == 0xFF) {
-      // Emit additional verbatim words.
-      final count = packed[i++];
-      for (int j = 0; j < count * 8; j++) { out.add(packed[i++]); }
+      if (tag == 0x00) {
+        // Emit additional zero words.
+        final count = packed[i++];
+        for (int j = 0; j < count * 8; j++) { out.add(0); }
+      } else if (tag == 0xFF) {
+        // Emit additional verbatim words.
+        final count = packed[i++];
+        for (int j = 0; j < count * 8; j++) { out.add(packed[i++]); }
+      }
     }
+  } on RangeError {
+    // A tag promised more literal/verbatim bytes than actually remain —
+    // truncated or otherwise malformed packed input. Surfaced as a
+    // DecodeException like every other malformed-input case in this
+    // library, rather than leaking the raw RangeError.
+    throw DecodeException(
+      'packed data truncated or malformed: expected more bytes after '
+      'offset $i (have ${packed.length})',
+    );
   }
 
   return Uint8List.fromList(out);

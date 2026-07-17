@@ -121,6 +121,19 @@ abstract class ListBuilder<T> {
 | Enum | Dart `enum` |
 | Union | Dart `sealed class` |
 
+**`Int64`/`UInt64` precision on web compile targets**: these map to Dart's built-in
+`int`, which is a true 64-bit integer on the Dart VM and AOT-compiled native targets, but
+is represented as a JavaScript `number` (an IEEE 754 double) when compiled with dart2js
+or DDC (i.e. most `flutter run -d chrome` / web-deployed builds). JS numbers only
+represent integers exactly up to ±2^53; values outside that range read or written through
+`Int64`/`UInt64` fields on those targets can silently lose precision. This is a property
+of Dart's own `int` type on web compile targets, not specific to this library, and is
+consistent with how `dart:typed_data`'s `ByteData.getInt64`/`getUint64` (which this
+library uses internally) already behaves on those targets. `dart2wasm` targets are
+unaffected (they have a true 64-bit `int`). If your application needs exact `Int64`/
+`UInt64` precision on dart2js/DDC web builds, avoid relying on values outside
+±2^53 (±9,007,199,254,740,992) on those targets specifically.
+
 ## Streaming
 
 ```dart

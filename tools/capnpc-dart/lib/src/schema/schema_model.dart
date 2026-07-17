@@ -109,12 +109,24 @@ class SchemaEnumerant {
 class SchemaField {
   final String name;
   final int codeOrder;
+
+  /// The field's wire ordinal (`@N` in schema source) — the number that
+  /// actually determines slot allocation and thus wire compatibility.
+  ///
+  /// Distinct from [codeOrder] (textual declaration order in the schema
+  /// file), which two schema versions can legally differ on for the exact
+  /// same wire-compatible field set (e.g. reordering declarations without
+  /// touching any `@N`). Schema-evolution comparisons must match fields by
+  /// [ordinal], not [codeOrder] — matching by the latter would misreport a
+  /// pure declaration-order shuffle as type/offset changes.
+  final int ordinal;
   final int discriminantValue; // 0xFFFF if not a union field
   final SchemaFieldBody body;
 
   const SchemaField({
     required this.name,
     required this.codeOrder,
+    required this.ordinal,
     required this.discriminantValue,
     required this.body,
   });

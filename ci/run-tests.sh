@@ -205,6 +205,68 @@ if [[ -z "${goto_summary4:-}" ]]; then
   trap - EXIT
 fi
 
+# ── 5b. F-08: capnpc-dart compatibility-check CLI against the real capnp CLI ─
+#
+# capnp's own `-o<lang>[:<dir>]` plugin syntax always treats everything after
+# the first colon as an output directory, so `capnp compile -o dart:check=...`
+# (this component's former documented invocation) can never actually reach
+# capnpc-dart with a `check` option — capnp itself rejects it before the
+# plugin even runs. The real mechanism is `capnp compile -o-` (dump the
+# request to stdout) piped directly into the capnpc-dart binary, which reads
+# ordinary argv flags. This section exercises that real end-to-end path
+# against the actual `capnp` CLI.
+#
+# The compat checker correlates nodes by their Cap'n Proto node id, which is
+# derived from the file's own `@0x...` id — so, unlike the schema-evolution
+# runtime fixtures (which deliberately use two independently-versioned files,
+# each with its own id), the old/new pair here must share one file id, as if
+# it were the same schema file edited in place between commits.
+
+run_section "F-08 compat-check: schema fixtures"
+F08_TMP="$(mktemp -d)"
+trap 'rm -rf "$F08_TMP"' EXIT
+cat > "$F08_TMP/old.capnp" <<'EOF'
+@0x9c4f478e91f1c34a;
+struct Widget {
+  id @0 :UInt64;
+  name @1 :Text;
+}
+EOF
+cat > "$F08_TMP/new_compatible.capnp" <<'EOF'
+@0x9c4f478e91f1c34a;
+struct Widget {
+  id @0 :UInt64;
+  name @1 :Text;
+  color @2 :Text;
+}
+EOF
+cat > "$F08_TMP/new_incompatible.capnp" <<'EOF'
+@0x9c4f478e91f1c34a;
+struct Widget {
+  id @0 :Text;
+  name @1 :Text;
+}
+EOF
+
+run_section "F-08 compat-check: compatible change (appended field)"
+if capnp compile -o- "$F08_TMP/new_compatible.capnp" \
+    | dart run tools/capnpc-dart/bin/capnpc_dart.dart --check="$F08_TMP/old.capnp"; then
+  pass "F-08: compatible change reports no incompatibilities"
+else
+  fail "F-08: compatible change reports no incompatibilities"
+fi
+
+run_section "F-08 compat-check: incompatible change (retyped field)"
+if capnp compile -o- "$F08_TMP/new_incompatible.capnp" \
+    | dart run tools/capnpc-dart/bin/capnpc_dart.dart --check="$F08_TMP/old.capnp"; then
+  fail "F-08: incompatible change (retyped field) correctly rejected (exit 0, expected 1)"
+else
+  pass "F-08: incompatible change (retyped field) correctly rejected"
+fi
+
+rm -rf "$F08_TMP"
+trap - EXIT
+
 # ── 6. Wire-format golden test: official capnp CLI as oracle ────────────────
 #
 # Independent of RPC: proves this library's serializer/deserializer produce

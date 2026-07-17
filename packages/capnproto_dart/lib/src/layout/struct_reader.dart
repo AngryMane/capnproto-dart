@@ -177,23 +177,29 @@ abstract class StructReader {
   }
 
   /// Reads a Text (UTF-8 string) from the pointer at [ptrIndex].
-  /// Returns null if the pointer is null.
-  String? getTextField(int ptrIndex) {
-    if (ptrIndex >= _raw.ptrWords) return null;
+  /// Returns [defaultValue] if the pointer is null — either because the
+  /// field is genuinely absent (older message / never set) or, per the
+  /// Cap'n Proto default-value spec, because it was explicitly set back to
+  /// the schema-declared default (which pointer fields encode as a null
+  /// pointer, same as "unset").
+  String? getTextField(int ptrIndex, {String? defaultValue}) {
+    if (ptrIndex >= _raw.ptrWords) return defaultValue;
     return _raw.arena.resolveTextAt(
-      _raw.segment,
-      _raw.ptrWordOffset + ptrIndex,
-    );
+          _raw.segment,
+          _raw.ptrWordOffset + ptrIndex,
+        ) ??
+        defaultValue;
   }
 
   /// Reads a Data (raw bytes) field from the pointer at [ptrIndex].
-  /// Returns null if the pointer is null.
-  Uint8List? getDataField(int ptrIndex) {
-    if (ptrIndex >= _raw.ptrWords) return null;
+  /// Returns [defaultValue] if the pointer is null (see [getTextField]).
+  Uint8List? getDataField(int ptrIndex, {Uint8List? defaultValue}) {
+    if (ptrIndex >= _raw.ptrWords) return defaultValue;
     return _raw.arena.resolveDataAt(
-      _raw.segment,
-      _raw.ptrWordOffset + ptrIndex,
-    );
+          _raw.segment,
+          _raw.ptrWordOffset + ptrIndex,
+        ) ??
+        defaultValue;
   }
 
   /// Reads the AnyPointer at [ptrIndex], deep-copies the referenced struct

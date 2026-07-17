@@ -23,16 +23,24 @@ class MessageStream {
     Stream<Uint8List> bytes, [
     MessageReaderOptions options = const MessageReaderOptions(),
   ]) =>
-      deserializeStreamRaw(bytes)
+      deserializeStreamRaw(bytes, options)
           .map((raw) => MessageReader.deserialize(raw, options));
 
   /// Like [deserializeStream] but yields the raw framed bytes for each message
   /// instead of a parsed [MessageReader].  Useful when the caller needs both
   /// the parsed content and the original bytes (e.g., to echo them back in an
   /// Unimplemented response).
+  ///
+  /// [options] bounds how much a single declared message is allowed to make
+  /// this method buffer *before* any of its content has actually arrived:
+  /// [MessageReaderOptions.maxSegments] caps the declared segment count (read
+  /// from the first 4 bytes alone) and [MessageReaderOptions.traversalLimitInWords]
+  /// caps the declared total size, so a peer can't force unbounded buffering
+  /// by framing a header that claims an enormous message.
   static Stream<Uint8List> deserializeStreamRaw(
-    Stream<Uint8List> bytes,
-  ) async* {
+    Stream<Uint8List> bytes, [
+    MessageReaderOptions options = const MessageReaderOptions(),
+  ]) async* {
     final buffer = <int>[];
 
     await for (final chunk in bytes) {
@@ -44,6 +52,12 @@ class MessageStream {
         if (buffer.length < 4) break;
 
         final numSegments = _readUint32LE(buffer, 0) + 1;
+        if (numSegments > options.maxSegments) {
+          throw DecodeException(
+            'message declares $numSegments segments, exceeding maxSegments '
+            '(${options.maxSegments})',
+          );
+        }
 
         // Header size: (1 + numSegments) uint32s, padded to 8-byte boundary
         // when numSegments is even (so the count of uint32s is odd).
@@ -56,6 +70,12 @@ class MessageStream {
         int totalDataBytes = 0;
         for (int i = 0; i < numSegments; i++) {
           totalDataBytes += _readUint32LE(buffer, (1 + i) * 4) * 8;
+        }
+        if (totalDataBytes ~/ 8 > options.traversalLimitInWords) {
+          throw DecodeException(
+            'message declares ${totalDataBytes ~/ 8} words, exceeding '
+            'traversalLimitInWords (${options.traversalLimitInWords})',
+          );
         }
 
         final totalBytes = headerBytes + totalDataBytes;

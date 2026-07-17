@@ -3,11 +3,13 @@ import 'dart:typed_data';
 
 import 'package:capnproto_dart/src/arena/arena_builder.dart';
 import 'package:capnproto_dart/src/arena/arena_reader.dart';
+import 'package:capnproto_dart/src/exception/decode_exception.dart';
 import 'package:capnproto_dart/src/layout/struct_builder.dart';
 import 'package:capnproto_dart/src/layout/struct_factory.dart';
 import 'package:capnproto_dart/src/layout/struct_reader.dart';
 import 'package:capnproto_dart/src/message/message_builder.dart';
 import 'package:capnproto_dart/src/message/message_reader.dart';
+import 'package:capnproto_dart/src/message/message_reader_options.dart';
 import 'package:capnproto_dart/src/stream/message_stream.dart';
 import 'package:test/test.dart';
 
@@ -188,6 +190,58 @@ void main() {
         expect(results[i].y, equals(i * 10 + 1));
       }
     });
+  });
+
+  group('MessageStream.deserializeStreamRaw size limits', () {
+    // Regression coverage: a declared (not yet delivered) message size must
+    // be rejected as soon as the declaring bytes are seen, not only after
+    // enough bytes have already been buffered to reach that size — otherwise
+    // a peer could force unbounded buffering just by sending a header that
+    // claims an enormous message.
+
+    test(
+      'rejects an oversized declared segment count from only 4 header bytes',
+      () async {
+        final ctrl = StreamController<Uint8List>();
+        // numSegments - 1 = 1000 → 1001 segments, exceeding the default
+        // maxSegments (512). Only the 4-byte segment-count field is sent —
+        // if this weren't rejected immediately, the stream would sit
+        // waiting for a header (1001 further uint32s) that never arrives.
+        final header = Uint8List(4);
+        ByteData.view(header.buffer).setUint32(0, 1000, Endian.little);
+        ctrl.add(header);
+
+        final results = MessageStream.deserializeStreamRaw(ctrl.stream);
+        final future = results.toList();
+        await expectLater(future, throwsA(isA<DecodeException>()));
+        await ctrl.close();
+      },
+    );
+
+    test(
+      'rejects an oversized declared word count without buffering it',
+      () async {
+        final ctrl = StreamController<Uint8List>();
+        // 1 segment declaring 10,000,000 words — exceeds a small
+        // traversalLimitInWords passed below. Only the 8-byte header is
+        // sent, no segment data — if this weren't rejected immediately, the
+        // stream would sit waiting for ~76MB of segment bytes that never
+        // arrive.
+        final header = Uint8List(8);
+        final bd = ByteData.view(header.buffer);
+        bd.setUint32(0, 0, Endian.little); // numSegments - 1 = 0
+        bd.setUint32(4, 10000000, Endian.little); // segment 0: 10M words
+        ctrl.add(header);
+
+        final results = MessageStream.deserializeStreamRaw(
+          ctrl.stream,
+          const MessageReaderOptions(traversalLimitInWords: 1024),
+        );
+        final future = results.toList();
+        await expectLater(future, throwsA(isA<DecodeException>()));
+        await ctrl.close();
+      },
+    );
   });
 
   group('MessageReader.deserializePacked / MessageBuilder.serializePacked', () {

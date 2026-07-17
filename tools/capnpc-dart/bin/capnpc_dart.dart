@@ -3,9 +3,13 @@ import 'dart:io';
 import 'package:capnpc_dart/capnpc_dart.dart';
 
 void main(List<String> args) async {
-  // capnp invokes us as: capnpc-dart (stdin = CodeGeneratorRequest binary)
-  // Optional check mode: -o dart:check=<old.capnp>
-  final checkFile = _parseCheckFile(args);
+  // Normal mode: capnp invokes us as `capnpc-dart` via `-o dart:<dir>`
+  // (stdin = CodeGeneratorRequest binary).
+  //
+  // Check mode: capnp's `-o` syntax has no channel for freeform plugin
+  // options, so this is invoked directly instead of through `capnp compile
+  // -o`: `capnp compile -o- new.capnp | capnpc-dart --check=old.capnp`.
+  final checkFile = parseCheckFileArg(args);
 
   final bytes = await _readStdin();
   if (bytes.isEmpty) {
@@ -53,16 +57,6 @@ Future<void> _runCheckMode(
     stderr.writeln('capnpc-dart: check mode error: $e');
     exitCode = 2;
   }
-}
-
-String? _parseCheckFile(List<String> args) {
-  for (final arg in args) {
-    const prefix = '-o dart:check=';
-    if (arg.startsWith(prefix)) {
-      return arg.substring(prefix.length);
-    }
-  }
-  return null;
 }
 
 Future<List<int>> _readStdin() async {

@@ -498,6 +498,63 @@ void main() {
     });
   });
 
+  group('Struct list upgraded from a non-composite list', () {
+    // Regression coverage for reading a List(Struct) field whose wire bytes
+    // were actually written as a plain non-struct list — the legal
+    // "upgrading a list to a struct list" schema-evolution path (see
+    // https://capnproto.org/language.html). Item.value is Int32Field(0);
+    // Item.label is TextField(0) (its only pointer field).
+
+    test('eightBytes list upgrades: element becomes the struct data word', () {
+      final result = _rt(
+        (b) => b.initUint64ListField(6, 2)
+          ..[0] = 10
+          ..[1] = 20,
+        (r) => r.items!.map((e) => e.value).toList(),
+      );
+      expect(result, equals([10, 20]));
+    });
+
+    test('pointer list upgrades: element becomes the struct pointer word', () {
+      final result = _rt(
+        (b) => b.initTextListField(6, 2)
+          ..[0] = 'ten'
+          ..[1] = 'twenty',
+        (r) => r.items!.map((e) => e.label).toList(),
+      );
+      expect(result, equals(['ten', 'twenty']));
+    });
+
+    test('void list upgrades: every element reads back as all-default', () {
+      final result = _rt(
+        (b) => b.initVoidListField(6, 3),
+        (r) => r.items!.toList(),
+      );
+      expect(result, hasLength(3));
+      expect(result.every((e) => e.value == 0 && e.label == null), isTrue);
+    });
+
+    test('fourBytes list cannot upgrade (sub-word element size)', () {
+      expect(
+        () => _rt(
+          (b) => b.initInt32ListField(6, 2),
+          (r) => r.items,
+        ),
+        throwsA(isA<DecodeException>()),
+      );
+    });
+
+    test('bit list cannot upgrade (sub-word element size)', () {
+      expect(
+        () => _rt(
+          (b) => b.initBoolListField(6, 2),
+          (r) => r.items,
+        ),
+        throwsA(isA<DecodeException>()),
+      );
+    });
+  });
+
   group('RangeError on out-of-bounds access', () {
     test('Int32 list throws RangeError', () {
       final msg = MessageBuilder();

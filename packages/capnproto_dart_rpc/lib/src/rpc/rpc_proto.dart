@@ -96,6 +96,23 @@ const int _returnDisc = 6;
 
 const int _retResults = 0;
 const int _retException = 1;
+// Not implemented by this vat (see _awaitReturn in two_party_connection.dart).
+const int _retCanceled = 2;
+const int _retResultsSentElsewhere = 3;
+const int _retTakeFromOtherQuestion = 4;
+const int _retAcceptFromThirdParty = 5;
+
+/// Human-readable name for a [RpcMessage.returnDisc] value, for diagnostics
+/// when a peer sends a `Return` variant this vat doesn't implement.
+String describeReturnDisc(int disc) => switch (disc) {
+  _retResults => 'results',
+  _retException => 'exception',
+  _retCanceled => 'canceled',
+  _retResultsSentElsewhere => 'resultsSentElsewhere',
+  _retTakeFromOtherQuestion => 'takeFromOtherQuestion',
+  _retAcceptFromThirdParty => 'acceptFromThirdParty',
+  _ => 'unknown($disc)',
+};
 
 // Resolve (dw=1, pw=1)
 //   bytes 0-3: promiseId (UInt32, @0)
@@ -360,6 +377,7 @@ class _ReturnBuilder extends StructBuilder {
   void setAnswerId(int v) => setUint32Field(_returnAnswerId, v);
   void setDiscResults() => setUint16Field(_returnDisc, _retResults);
   void setDiscException() => setUint16Field(_returnDisc, _retException);
+  void setDiscRaw(int disc) => setUint16Field(_returnDisc, disc);
   _PayloadBuilder initResults() =>
       initStructFieldWith(0, _PayloadBuilder.new, 0, 2);
   _ExceptionBuilder initException() =>
@@ -551,6 +569,13 @@ final class RpcMessage {
   final int answerId;
   final bool isReturnResults;
   final bool isReturnException;
+  // Raw Return.disc (0=results, 1=exception, 2=canceled,
+  // 3=resultsSentElsewhere, 4=takeFromOtherQuestion, 5=acceptFromThirdParty).
+  // Only results and exception are handled as first-class outcomes above;
+  // callers that need to distinguish canceled/resultsSentElsewhere/etc. from
+  // an actual empty-results success (neither isReturnResults nor
+  // isReturnException is true for either) must check this.
+  final int returnDisc;
   final Uint8List? resultsBytes;
   final String? exceptionReason;
   // senderHosted export IDs from the return payload's capTable, in order.
@@ -596,6 +621,7 @@ final class RpcMessage {
     this.answerId = 0,
     this.isReturnResults = false,
     this.isReturnException = false,
+    this.returnDisc = _retResults,
     this.resultsBytes,
     this.exceptionReason,
     this.capTableExportIds = const [],
@@ -713,6 +739,21 @@ Uint8List buildReturnResultsWithCapsMessage({
         .map(RpcCapDescriptor.senderHosted)
         .toList(growable: false),
   );
+}
+
+/// Serializes a `Return` message with a raw disc value and no payload —
+/// covers the variants this vat doesn't implement (canceled,
+/// resultsSentElsewhere, takeFromOtherQuestion, acceptFromThirdParty; see
+/// [describeReturnDisc]). Used to test how a vat reacts to receiving one of
+/// these from a peer, since this vat never sends them itself.
+Uint8List buildReturnOtherMessage({required int answerId, required int disc}) {
+  final mb = MessageBuilder();
+  final msg = mb.initRoot(_msgFactory);
+  msg.setDisc(_msgReturn);
+  final ret = msg.initReturn();
+  ret.setAnswerId(answerId);
+  ret.setDiscRaw(disc);
+  return mb.serialize();
 }
 
 /// Serializes a Return-results message with raw capTable descriptors.
@@ -1013,6 +1054,7 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
           type: RpcMessageType.return_,
           answerId: ret?.answerId ?? 0,
           isReturnResults: true,
+          returnDisc: retDisc,
           resultsBytes: payload?.contentBytes,
           capTableExportIds: exportIds,
           capTableEntries: capTablePairs,
@@ -1024,12 +1066,18 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
           type: RpcMessageType.return_,
           answerId: ret?.answerId ?? 0,
           isReturnException: true,
+          returnDisc: retDisc,
           exceptionReason: exc?.reason ?? 'unknown error',
         );
       } else {
+        // canceled(2) / resultsSentElsewhere(3) / takeFromOtherQuestion(4) /
+        // acceptFromThirdParty(5) — none of these are implemented (see
+        // _awaitReturn), but the disc is still preserved here rather than
+        // silently discarded, so callers can report exactly what happened.
         return RpcMessage._(
           type: RpcMessageType.return_,
           answerId: ret?.answerId ?? 0,
+          returnDisc: retDisc,
         );
       }
 

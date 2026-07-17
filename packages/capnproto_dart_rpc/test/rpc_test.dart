@@ -1501,6 +1501,52 @@ void main() {
       await serverConn.close();
     });
 
+    test(
+      'disposing a pipelined capability does not invalidate the same '
+      'capability independently read from the awaited result',
+      () async {
+        // Regression test: the eagerly-pipelined capability
+        // (call.pipelineResult(0)) and the capability independently resolved
+        // from the awaited result (requireCapabilityFromResult(result, 0))
+        // both resolve to the identical underlying capability object (the
+        // same DispatchResult.caps entry). Disposing one must not silently
+        // invalidate the other — this is exactly how generated code exposes
+        // the same field twice: eagerly via `XxxPipeline.someCap` and again
+        // via the corresponding getter on the awaited `.result` reader.
+        final server = PipelineServer();
+        final (client, serverConn) = _makePipe(server);
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        await bootstrapCap.echo('warmup');
+
+        final call = bootstrapCap.cap.beginDispatch(
+          _echoInterfaceId,
+          _pipelineMethodId,
+          _buildEchoParams(''),
+        );
+        final pipelinedCap = call.pipelineResult(0);
+
+        final result = await call.result;
+        final resolvedCap = requireCapabilityFromResult(result, 0);
+
+        // Let pipelinedCap's internal resolution (which runs off the same
+        // `call.result` future, asynchronously) settle before disposing it.
+        await Future<void>.delayed(Duration.zero);
+        await pipelinedCap.dispose();
+
+        // resolvedCap must still work — it was never disposed.
+        final reply = await resolvedCap.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          _buildEchoParams('still alive'),
+        );
+        expect(_parseEchoResult(reply.bytes), equals('echo: still alive'));
+
+        await resolvedCap.dispose();
+        await client.close();
+        await serverConn.close();
+      },
+    );
+
     test('negative result pointer index is rejected explicitly', () async {
       final server = DuplicateCapsServer();
       final (client, serverConn) = _makePipe(server);
@@ -3979,5 +4025,115 @@ void main() {
         await clientToServer.close();
       },
     );
+  });
+
+  group('TwoPartyRpcConnection — bootstrap export refcount', () {
+    // Regression coverage: each Bootstrap request hands the peer a new
+    // reference to export 0. If the server-side refcount doesn't reflect
+    // that, a peer that bootstraps twice and later releases just one of the
+    // two resulting local capabilities would incorrectly drop the server's
+    // count to 0 — and since a peer's second, independent Release(id=0,
+    // referenceCount=1) would then exceed the (wrongly tracked) outstanding
+    // count, _handleRelease's protocol-violation guard tears the whole
+    // connection down.
+    test(
+      'two Bootstrap requests followed by two separate single Releases do '
+      'not tear the connection down or drop the export early',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>()
+          ..stream.listen((_) {});
+
+        final server = TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: EchoServer(),
+        );
+
+        // Simulate a peer that calls bootstrap() twice on the same
+        // connection — each is a legitimate, independent Bootstrap request.
+        clientToServer.add(buildBootstrapMessage(0));
+        clientToServer.add(buildBootstrapMessage(1));
+        await Future<void>.delayed(Duration.zero);
+
+        expect(server.debugExportCount, equals(1));
+
+        // Peer disposes only ONE of its two local capability objects.
+        clientToServer.add(buildReleaseMessage(0, 1));
+        await Future<void>.delayed(Duration.zero);
+
+        // The export must still be alive — the peer's other bootstrap
+        // reference is still outstanding — and the connection must not have
+        // been torn down as a (false) protocol violation.
+        expect(server.debugExportCount, equals(1));
+
+        // Peer disposes its second (and last) reference.
+        clientToServer.add(buildReleaseMessage(0, 1));
+        await Future<void>.delayed(Duration.zero);
+
+        expect(server.debugExportCount, equals(0));
+
+        await clientToServer.close();
+        await serverToClient.close();
+      },
+    );
+  });
+
+  group('TwoPartyRpcConnection — unsupported Return variants', () {
+    // Regression coverage: a peer sending a Return variant this vat doesn't
+    // implement (canceled, resultsSentElsewhere, takeFromOtherQuestion,
+    // acceptFromThirdParty) must surface as an explicit error to the waiting
+    // caller, not silently resolve as an empty-struct success — this matters
+    // most for resultsSentElsewhere, which a peer performing a tail call
+    // would send instead of the real result.
+    for (final (name, disc) in [
+      ('canceled', 2),
+      ('resultsSentElsewhere', 3),
+      ('takeFromOtherQuestion', 4),
+      ('acceptFromThirdParty', 5),
+    ]) {
+      test('Return.$name is rejected, not treated as empty success', () async {
+        final serverToClient = StreamController<Uint8List>();
+        final clientToServer = StreamController<Uint8List>();
+        final captured = <RpcMessage>[];
+        clientToServer.stream.listen(
+          (bytes) => captured.add(parseRpcMessage(bytes)),
+        );
+
+        final client = TwoPartyRpcConnection.client(
+          incoming: serverToClient.stream,
+          outgoing: clientToServer.sink,
+        );
+
+        final stub = client.bootstrap(EchoClientFactory());
+        await Future<void>.delayed(Duration.zero);
+        serverToClient.add(buildBootstrapReturnMessage(answerId: 0, exportId: 0));
+        await Future<void>.delayed(Duration.zero);
+
+        final echoFuture = stub.echo('hello');
+        await Future<void>.delayed(Duration.zero);
+        final callMsg = captured.firstWhere(
+          (m) => m.type == RpcMessageType.call,
+          orElse: () => throw TestFailure('expected a Call message but none found'),
+        );
+
+        serverToClient.add(
+          buildReturnOtherMessage(answerId: callMsg.questionId, disc: disc),
+        );
+
+        await expectLater(
+          echoFuture,
+          throwsA(
+            allOf(
+              isA<RpcException>(),
+              predicate<Object>((e) => e.toString().contains(name)),
+            ),
+          ),
+        );
+
+        await serverToClient.close();
+        await clientToServer.close();
+      });
+    }
   });
 }

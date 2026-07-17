@@ -55,10 +55,14 @@ SchemaNode _enum(List<SchemaEnumerant> enumerants) => SchemaNode(
     );
 
 SchemaField _slotField(String name, int codeOrder, SchemaType type,
-        {int offset = 0}) =>
+        {int offset = 0, int? ordinal}) =>
     SchemaField(
       name: name,
       codeOrder: codeOrder,
+      // Defaults to codeOrder so existing callers that don't care about the
+      // codeOrder-vs-ordinal distinction are unaffected; tests that
+      // specifically exercise that distinction pass ordinal explicitly.
+      ordinal: ordinal ?? codeOrder,
       discriminantValue: 0xFFFF,
       body: SlotField(offset: offset, type: type, hadExplicitDefault: false),
     );
@@ -111,6 +115,54 @@ void main() {
       ]);
       expect(checkCompatibility(old, newReq), isEmpty);
     });
+
+    test(
+      'reordering field declarations without changing @N ordinals is '
+      'compatible',
+      () {
+        // Regression test: the checker must match fields by wire ordinal
+        // (@N), not by codeOrder (textual declaration order). Here `a` and
+        // `b` swap declaration order between old/new, but each keeps its own
+        // @N (and therefore its own type/offset) — a no-op on the wire.
+        final old = _req([
+          _struct([
+            _slotField('a', 0, const Int32Type(), offset: 0, ordinal: 0),
+            _slotField('b', 1, const TextType(), offset: 0, ordinal: 1),
+          ]),
+        ]);
+        final newReq = _req([
+          _struct([
+            _slotField('b', 0, const TextType(), offset: 0, ordinal: 1),
+            _slotField('a', 1, const Int32Type(), offset: 0, ordinal: 0),
+          ]),
+        ]);
+        expect(checkCompatibility(old, newReq), isEmpty);
+      },
+    );
+
+    test(
+      'changing a field\'s actual @N ordinal is detected even when '
+      'codeOrder stays the same',
+      () {
+        // Complements the reordering test above: codeOrder alone must not
+        // be treated as compatible either — a real ordinal change (which
+        // does change the field's wire slot) has to still be caught.
+        final old = _req([
+          _struct([
+            _slotField('a', 0, const Int32Type(), offset: 0, ordinal: 0),
+          ]),
+        ]);
+        final newReq = _req([
+          _struct([
+            _slotField('a', 0, const Int32Type(), offset: 1, ordinal: 1),
+          ]),
+        ]);
+        expect(
+          checkCompatibility(old, newReq),
+          contains('MyStruct.a (ordinal 0) was removed'),
+        );
+      },
+    );
 
     test('empty struct with no fields produces no errors', () {
       final req = _req([

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../schema/schema_model.dart';
 
 /// Type ID of `capnp/stream.capnp`'s `StreamResult`, the well-known empty
@@ -999,7 +1001,7 @@ void _writeReaderField(
     sb.writeln('  ${capIfaceName}Client? get $fname {');
     sb.writeln('    final cap = getCapabilityObjectField($offset);');
     sb.writeln(
-      '    return cap == null ? null : ${capIfaceName}Client(cap as Capability);',
+      '    return cap == null ? null : ${capIfaceName}Client(vendCapabilityHandle(cap as Capability));',
     );
     sb.writeln('  }');
     sb.writeln();
@@ -1263,9 +1265,41 @@ String _defaultSuffix(Object? v) {
   if (v == null) return '';
   if (v is int && v == 0) return '';
   if (v is bool && !v) return '';
-  if (v is double && v == 0.0) return '';
+  // `-0.0 == 0.0` is true in Dart, so this must also check isNegative — a
+  // schema default of exactly `-0.0` is otherwise indistinguishable here
+  // from "no default", silently downgrading it to positive `0.0`.
+  if (v is double && v == 0.0 && !v.isNegative) return '';
   return ', defaultValue: $v';
 }
+
+/// Like [_defaultSuffix] but for Text fields: unlike scalars (whose
+/// omitted-defaultValue behavior is already 0/false, so a matching explicit
+/// default can skip the suffix), a Text/Data getter's omitted-defaultValue
+/// behavior is `null` — never equal to a real explicit default, even an
+/// empty one — so any non-null [v] here must be emitted, and as a properly
+/// escaped Dart string literal rather than raw interpolation.
+String _textDefaultSuffix(Object? v) =>
+    v is String ? ', defaultValue: ${_dartStringLiteral(v)}' : '';
+
+/// Like [_textDefaultSuffix] but for Data fields.
+String _dataDefaultSuffix(Object? v) =>
+    v is Uint8List ? ', defaultValue: ${_dartBytesLiteral(v)}' : '';
+
+/// Formats [value] as a single-quoted Dart string literal, escaping
+/// characters that would otherwise break out of it or change its meaning.
+String _dartStringLiteral(String value) {
+  final escaped = value
+      .replaceAll(r'\', r'\\')
+      .replaceAll("'", r"\'")
+      .replaceAll('\n', r'\n')
+      .replaceAll('\r', r'\r')
+      .replaceAll(r'$', r'\$');
+  return "'$escaped'";
+}
+
+/// Formats [bytes] as a `Uint8List.fromList([...])` Dart expression.
+String _dartBytesLiteral(Uint8List bytes) =>
+    'Uint8List.fromList([${bytes.join(', ')}])';
 
 (String, String) _readerGetter(
   SchemaType type,
@@ -1299,8 +1333,14 @@ String _defaultSuffix(Object? v) {
     UInt64Type() => ('int', 'getUint64Field(${offset * 8}$ds)'),
     Float32Type() => ('double', 'getFloat32Field(${offset * 4}$ds)'),
     Float64Type() => ('double', 'getFloat64Field(${offset * 8}$ds)'),
-    TextType() => ('String?', 'getTextField($offset)'),
-    DataType() => ('Uint8List?', 'getDataField($offset)'),
+    TextType() => (
+      'String?',
+      'getTextField($offset${_textDefaultSuffix(fieldDefault)})',
+    ),
+    DataType() => (
+      'Uint8List?',
+      'getDataField($offset${_dataDefaultSuffix(fieldDefault)})',
+    ),
     AnyPointerType() => ('AnyPointerReader?', 'getAnyPointerField($offset)'),
     EnumRefType(:final typeId) => _enumReaderGetter(
       typeId,
@@ -1534,7 +1574,7 @@ String _defaultSuffix(Object? v) {
   final name = _dartClassName(node?.displayName ?? 'UnknownInterface');
   return (
     'ListReader<${name}Client?>?',
-    'getCapabilityListFieldWith<${name}Client>($ptrIndex, (cap) => ${name}Client(cap as Capability))',
+    'getCapabilityListFieldWith<${name}Client>($ptrIndex, (cap) => ${name}Client(vendCapabilityHandle(cap as Capability)))',
   );
 }
 
@@ -1978,10 +2018,28 @@ String _dartClassName(String rawName) {
   return name;
 }
 
+// Dart's reserved words (cannot be used as an identifier under any
+// circumstance — as opposed to "built-in identifiers" like `async` or
+// `factory`, which remain legal as ordinary identifiers and don't need
+// escaping here). A schema field/method/enumerant name that happens to
+// collide with one of these would otherwise generate non-compiling code
+// (e.g. a field named `class` producing `int get class => ...`).
+const _dartReservedWords = {
+  'assert', 'break', 'case', 'catch', 'class', 'const', 'continue',
+  'default', 'do', 'else', 'enum', 'extends', 'false', 'final', 'finally',
+  'for', 'if', 'in', 'is', 'new', 'null', 'rethrow', 'return', 'super',
+  'switch', 'this', 'throw', 'true', 'try', 'var', 'void', 'while', 'with',
+  // Only reserved within async/async*/sync* bodies, but escaped
+  // unconditionally too since a generated identifier can end up inside one
+  // (e.g. an RPC client method's own body is `async`).
+  'await', 'yield',
+};
+
 String _camel(String s) {
   if (s.isEmpty) return s;
-  if (s[0] == s[0].toLowerCase()) return s;
-  return s[0].toLowerCase() + s.substring(1);
+  final result =
+      s[0] == s[0].toLowerCase() ? s : s[0].toLowerCase() + s.substring(1);
+  return _dartReservedWords.contains(result) ? '${result}_' : result;
 }
 
 String _lcfirst(String s) =>
@@ -2081,6 +2139,7 @@ SchemaField _substituteFieldType(SchemaField field, List<SchemaType> typeArgs) {
   return SchemaField(
     name: field.name,
     codeOrder: field.codeOrder,
+    ordinal: field.ordinal,
     discriminantValue: field.discriminantValue,
     body: SlotField(
       offset: sf.offset,

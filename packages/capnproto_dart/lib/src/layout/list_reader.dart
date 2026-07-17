@@ -2,7 +2,8 @@ import 'dart:typed_data';
 
 import '../arena/arena_reader.dart';
 import '../exception/decode_exception.dart';
-import '../wire/pointer.dart' show CapabilityPointer, NullPointer, WirePointer;
+import '../wire/pointer.dart'
+    show CapabilityPointer, ListElementSize, NullPointer, WirePointer;
 import '../wire/wire_helpers.dart';
 
 /// Read-only, iterable view of a Cap'n Proto list field.
@@ -138,11 +139,52 @@ class DataListReader extends ListReader<Uint8List?> {
 ///
 /// [R] is the typed reader for each element. Uses a callback [fromRaw] to
 /// avoid an import cycle between the layout and struct layers.
+///
+/// A `List(Struct)` field's wire representation is usually `composite`, but
+/// Cap'n Proto's schema-evolution rules also allow reading a struct list
+/// back from a list that a peer or older schema version wrote as a plain
+/// non-struct list before the field's type became a struct (see
+/// https://capnproto.org/language.html, "upgrading a list to a struct
+/// list"). That's only representable here when the original element already
+/// occupies exactly one whole word — `pointer` (the struct becomes `{ f0
+/// :SomeInterface/AnyPointer/... }`) and `eightBytes` (the struct becomes
+/// `{ f0 :Int64/UInt64/Float64 }`) — because [RawStructReader]'s addressing
+/// is word-granular: `void` upgrades trivially too, since every "element" is
+/// legitimately the same empty struct. Sub-word element sizes (`bit`,
+/// `byte`, `twoBytes`, `fourBytes`) would need a byte-granular struct
+/// addressing model this codebase doesn't have — reading those as a struct
+/// list throws [DecodeException] instead of silently aliasing every
+/// "element" onto the same offset (stride 0, since [RawListReader]'s
+/// `structDataWords`/`structPtrWords` default to 0 for non-composite lists).
 class StructListReader<R> extends ListReader<R> {
   final RawListReader _raw;
   final R Function(RawStructReader) _fromRaw;
+  final int _elementDataWords;
+  final int _elementPtrWords;
 
-  StructListReader(this._raw, this._fromRaw);
+  StructListReader(this._raw, this._fromRaw)
+      : _elementDataWords = switch (_raw.elementSize) {
+          ListElementSize.eightBytes => 1,
+          _ => _raw.structDataWords,
+        },
+        _elementPtrWords = switch (_raw.elementSize) {
+          ListElementSize.pointer => 1,
+          _ => _raw.structPtrWords,
+        } {
+    switch (_raw.elementSize) {
+      case ListElementSize.composite:
+      case ListElementSize.pointer:
+      case ListElementSize.eightBytes:
+      case ListElementSize.void_:
+        break;
+      default:
+        throw DecodeException(
+          'cannot read a List(${_raw.elementSize.name}) as List(Struct): '
+          'only composite, pointer, eightBytes, and void element sizes can '
+          'be upgraded to a struct list',
+        );
+    }
+  }
 
   @override
   int get length => _raw.elementCount;
@@ -150,7 +192,7 @@ class StructListReader<R> extends ListReader<R> {
   @override
   R operator [](int index) {
     RangeError.checkValidIndex(index, this);
-    final stride = (_raw.structDataWords + _raw.structPtrWords) * bytesPerWord;
+    final stride = (_elementDataWords + _elementPtrWords) * bytesPerWord;
     final elementWordOffset =
         (_raw.dataByteOffset + index * stride) ~/ bytesPerWord;
     return _fromRaw(
@@ -158,9 +200,9 @@ class StructListReader<R> extends ListReader<R> {
         segment: _raw.segment,
         arena: _raw.arena,
         dataWordOffset: elementWordOffset,
-        dataWords: _raw.structDataWords,
-        ptrWordOffset: elementWordOffset + _raw.structDataWords,
-        ptrWords: _raw.structPtrWords,
+        dataWords: _elementDataWords,
+        ptrWordOffset: elementWordOffset + _elementDataWords,
+        ptrWords: _elementPtrWords,
         nestingLimit: _raw.nestingLimit,
       ),
     );
