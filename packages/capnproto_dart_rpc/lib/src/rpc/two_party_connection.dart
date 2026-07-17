@@ -367,10 +367,20 @@ class TwoPartyRpcConnection implements RpcConnection {
     // Use raw-bytes stream so the Unimplemented handler can echo the original.
     MessageStream.deserializeStreamRaw(incoming).listen(
       (rawBytes) {
-        final msg = parseRpcMessage(rawBytes);
-        _handleIncomingMessage(msg, rawBytes);
+        // Wrap in try/catch: parseRpcMessage() or _handleIncomingMessage() can
+        // throw synchronously (e.g. malformed message). A synchronous throw from
+        // an onData callback bypasses onError and becomes an uncaught Zone
+        // exception, leaving _tearDown() uncalled and all state unreleased.
+        try {
+          final msg = parseRpcMessage(rawBytes);
+          _handleIncomingMessage(msg, rawBytes);
+        } catch (error) {
+          _tearDown(
+            RpcException('invalid incoming RPC message: $error'),
+          );
+        }
       },
-      onError: (Object err) => _tearDown(err),
+      onError: (Object error) => _tearDown(error),
       onDone: () => _tearDown(null),
     );
   }
@@ -967,6 +977,8 @@ class TwoPartyRpcConnection implements RpcConnection {
 
     if (!_closedCompleter.isCompleted) {
       if (error != null) {
+        // Suppress unhandled-rejection if nobody awaits done.
+        _closedCompleter.future.ignore();
         _closedCompleter.completeError(error);
       } else {
         _closedCompleter.complete();

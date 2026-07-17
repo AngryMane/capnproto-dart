@@ -2542,4 +2542,81 @@ void main() {
       );
     },
   );
+
+  // ─── Malformed incoming bytes: _runMessageLoop try/catch ─────────────────────
+
+  group('TwoPartyRpcConnection — malformed incoming message teardown', () {
+    // A valid Cap'n Proto frame (1 segment, 1 word) whose root struct pointer
+    // references a data section that lies outside the segment bounds.
+    // parseRpcMessage() throws DecodeException when processing this frame.
+    //
+    // Header (8 bytes): numSegments-1=0 (→1 seg), seg0 size=1 word
+    // Segment (8 bytes): struct ptr offset=1, dataWords=1, ptrWords=0
+    //   → struct data starts at word 2 but segment only has 1 word → out-of-bounds
+    final malformedFrame = Uint8List.fromList([
+      0x00, 0x00, 0x00, 0x00, // numSegments-1 = 0 → 1 segment
+      0x01, 0x00, 0x00, 0x00, // segment 0: 1 word (8 bytes)
+      0x04, 0x00, 0x00, 0x00, // struct ptr: kind=0, offset=1
+      0x01, 0x00, 0x00, 0x00, // dataWords=1, ptrWords=0
+    ]);
+
+    test(
+      'malformed frame tears down connection and rejects pending calls',
+      () async {
+        // Manually wire up a client without a real server.
+        final serverToClient = StreamController<Uint8List>();
+        final clientToServer = StreamController<Uint8List>()
+          ..stream.listen((_) {});
+
+        final client = TwoPartyRpcConnection.client(
+          incoming: serverToClient.stream,
+          outgoing: clientToServer.sink,
+        );
+
+        // Kick off an echo call. It awaits bootstrap resolution internally,
+        // creating a pending question that tearDown must reject.
+        final callFuture = client.bootstrap(EchoClientFactory()).echo('hello');
+
+        // Inject the malformed frame. parseRpcMessage() will throw
+        // DecodeException, which the try/catch in _runMessageLoop catches
+        // and converts to a _tearDown() call.
+        serverToClient.add(malformedFrame);
+
+        // The pending call must fail (tearDown rejected the bootstrap completer).
+        await expectLater(callFuture, throwsA(anything));
+
+        await serverToClient.close();
+        await clientToServer.close();
+      },
+    );
+
+    test(
+      'malformed frame tears down connection cleanly (no pending calls)',
+      () async {
+        final serverToClient = StreamController<Uint8List>();
+        final clientToServer = StreamController<Uint8List>()
+          ..stream.listen((_) {});
+
+        final client = TwoPartyRpcConnection.client(
+          incoming: serverToClient.stream,
+          outgoing: clientToServer.sink,
+        );
+
+        serverToClient.add(malformedFrame);
+
+        // Give the event loop a chance to process the malformed frame.
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        // After teardown, new calls must be rejected immediately.
+        // bootstrap() may throw synchronously, so wrap in Future.sync.
+        await expectLater(
+          Future.sync(() => client.bootstrap(EchoClientFactory()).echo('hello')),
+          throwsA(anything),
+        );
+
+        await serverToClient.close();
+        await clientToServer.close();
+      },
+    );
+  });
 }
