@@ -2619,4 +2619,114 @@ void main() {
       },
     );
   });
+
+  group('TwoPartyRpcConnection — Bootstrap Finish message', () {
+    test(
+      'client sends Finish after receiving Bootstrap Return',
+      () async {
+        final serverToClient = StreamController<Uint8List>();
+        final clientToServer = StreamController<Uint8List>();
+        final captured = <RpcMessage>[];
+        clientToServer.stream.listen(
+          (bytes) => captured.add(parseRpcMessage(bytes)),
+        );
+
+        final client = TwoPartyRpcConnection.client(
+          incoming: serverToClient.stream,
+          outgoing: clientToServer.sink,
+        );
+
+        // Trigger bootstrap — sends Bootstrap(QID=0).
+        final stub = client.bootstrap(EchoClientFactory());
+
+        // Let the Bootstrap message reach the captured list.
+        await Future<void>.delayed(Duration.zero);
+
+        // Simulate server sending Bootstrap Return with one senderHosted cap.
+        serverToClient.add(
+          buildBootstrapReturnMessage(answerId: 0, exportId: 0),
+        );
+
+        // Let the Return be processed and the Finish be sent.
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        // Verify Bootstrap was sent first (QID=0).
+        expect(
+          captured,
+          contains(
+            predicate<RpcMessage>(
+              (m) =>
+                  m.type == RpcMessageType.bootstrap && m.questionId == 0,
+            ),
+          ),
+        );
+
+        // Verify Finish(QID=0, releaseResultCaps=false) was sent after.
+        final finishMsg = captured.firstWhere(
+          (m) => m.type == RpcMessageType.finish && m.questionId == 0,
+          orElse: () => throw TestFailure('expected Finish(0) but not found'),
+        );
+        expect(finishMsg.releaseResultCaps, isFalse);
+
+        // Verify Finish appears after Bootstrap in message order.
+        final bootstrapIndex = captured.indexWhere(
+          (m) => m.type == RpcMessageType.bootstrap && m.questionId == 0,
+        );
+        final finishIndex = captured.indexWhere(
+          (m) => m.type == RpcMessageType.finish && m.questionId == 0,
+        );
+        expect(finishIndex, greaterThan(bootstrapIndex));
+
+        // The bootstrap cap must be usable after the exchange completes.
+        stub.dispose();
+
+        await serverToClient.close();
+        await clientToServer.close();
+      },
+    );
+
+    test(
+      'client sends Finish even when Bootstrap Return carries an exception',
+      () async {
+        final serverToClient = StreamController<Uint8List>();
+        final clientToServer = StreamController<Uint8List>();
+        final captured = <RpcMessage>[];
+        clientToServer.stream.listen(
+          (bytes) => captured.add(parseRpcMessage(bytes)),
+        );
+
+        final client = TwoPartyRpcConnection.client(
+          incoming: serverToClient.stream,
+          outgoing: clientToServer.sink,
+        );
+
+        final stub = client.bootstrap(EchoClientFactory());
+
+        await Future<void>.delayed(Duration.zero);
+
+        // Simulate server sending a Bootstrap Return exception.
+        serverToClient.add(
+          buildReturnExceptionMessage(
+            answerId: 0,
+            reason: 'no bootstrap cap',
+          ),
+        );
+
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        // Finish(QID=0) must still be sent, even for a failed bootstrap.
+        final finishMsg = captured.firstWhere(
+          (m) => m.type == RpcMessageType.finish && m.questionId == 0,
+          orElse: () => throw TestFailure('expected Finish(0) but not found'),
+        );
+        expect(finishMsg.releaseResultCaps, isFalse);
+
+        // The stub itself should fail.
+        await expectLater(stub.echo('hello'), throwsA(isA<RpcException>()));
+
+        await serverToClient.close();
+        await clientToServer.close();
+      },
+    );
+  });
 }

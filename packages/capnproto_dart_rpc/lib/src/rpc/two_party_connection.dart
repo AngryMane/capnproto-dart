@@ -627,6 +627,7 @@ class TwoPartyRpcConnection implements RpcConnection {
 
     // Only drive the bootstrap completer for the bootstrap question itself.
     if (msg.answerId == _bootstrapQuestionId) {
+      final bootstrapQid = _bootstrapQuestionId!;
       _bootstrapQuestionId = null;
       if (msg.isReturnResults && msg.capTableEntries.isNotEmpty) {
         final importId = _importIdFromDescriptor(msg.capTableDescriptors.first);
@@ -656,6 +657,10 @@ class TwoPartyRpcConnection implements RpcConnection {
           );
         }
       }
+      // Send Finish to release the server's answer state for this Bootstrap
+      // question. releaseResultCaps=false because the client is retaining the
+      // imported bootstrap capability.
+      _sendRaw(buildFinishMessage(bootstrapQid, releaseResultCaps: false));
     }
 
     if (!completer.isCompleted) {
