@@ -52,7 +52,9 @@ Uint8List packBytes(Uint8List input) {
       buf[outIdx++] = count;
     } else if (tag == 0xFF) {
       // Write all 8 bytes of the current word verbatim.
-      for (int b = 0; b < 8; b++) { buf[outIdx++] = input[base + b]; }
+      for (int b = 0; b < 8; b++) {
+        buf[outIdx++] = input[base + b];
+      }
       wordIdx++;
 
       // Look ahead: include consecutive words that have ≤ 1 zero byte as
@@ -99,12 +101,20 @@ Uint8List packBytes(Uint8List input) {
 /// chance to run. Throws [DecodeException] as soon as the output would
 /// exceed the cap, rather than finishing the expansion first.
 Uint8List unpackBytes(Uint8List packed, {int? maxOutputBytes}) {
+  if (maxOutputBytes != null && maxOutputBytes < 0) {
+    throw ArgumentError.value(
+      maxOutputBytes,
+      'maxOutputBytes',
+      'must be non-negative or null',
+    );
+  }
   // Use a List<int> because zero-run expansion can be large and unpredictable.
   final out = <int>[];
   int i = 0;
 
-  void checkLimit() {
-    if (maxOutputBytes != null && out.length > maxOutputBytes) {
+  void ensureCapacityFor(int additionalBytes) {
+    if (maxOutputBytes != null &&
+        out.length + additionalBytes > maxOutputBytes) {
       throw DecodeException(
         'packed data expands beyond maxOutputBytes ($maxOutputBytes bytes)',
       );
@@ -116,6 +126,7 @@ Uint8List unpackBytes(Uint8List packed, {int? maxOutputBytes}) {
       final tag = packed[i++];
 
       // Reconstruct the 8 bytes of the current word.
+      ensureCapacityFor(8);
       for (int b = 0; b < 8; b++) {
         out.add((tag >> b) & 1 == 1 ? packed[i++] : 0);
       }
@@ -123,14 +134,18 @@ Uint8List unpackBytes(Uint8List packed, {int? maxOutputBytes}) {
       if (tag == 0x00) {
         // Emit additional zero words.
         final count = packed[i++];
-        for (int j = 0; j < count * 8; j++) { out.add(0); }
+        ensureCapacityFor(count * 8);
+        for (int j = 0; j < count * 8; j++) {
+          out.add(0);
+        }
       } else if (tag == 0xFF) {
         // Emit additional verbatim words.
         final count = packed[i++];
-        for (int j = 0; j < count * 8; j++) { out.add(packed[i++]); }
+        ensureCapacityFor(count * 8);
+        for (int j = 0; j < count * 8; j++) {
+          out.add(packed[i++]);
+        }
       }
-
-      checkLimit();
     }
   } on RangeError {
     // A tag promised more literal/verbatim bytes than actually remain —

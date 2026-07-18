@@ -42,6 +42,16 @@ import 'rpc_proto.dart';
 ///   bootstrap: MyServerImpl(),
 /// );
 /// ```
+void _validateDisembargoTimeout(Duration? timeout) {
+  if (timeout != null && timeout.isNegative) {
+    throw ArgumentError.value(
+      timeout,
+      'disembargoTimeout',
+      'must be non-negative or null',
+    );
+  }
+}
+
 class TwoPartyRpcConnection implements RpcConnection {
   final StreamSink<Uint8List> _outgoing;
   final bool _isClient;
@@ -93,7 +103,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   // completed. Their dispatch result must be dropped instead of returned.
   final Set<int> _finishedAnswers = {};
   final Map<int, DispatchCancellationController> _dispatchCancellations = {};
-  final Map<int, Completer<void>> _embargoes = {};
+  final Map<int, _EmbargoEntry> _embargoes = {};
   int _nextEmbargoId = 0;
   final Set<int> _senderPromiseResolves = {};
 
@@ -149,14 +159,17 @@ class TwoPartyRpcConnection implements RpcConnection {
     void Function(Object error, StackTrace stackTrace)? onDisposeError,
     int streamWindowSize = FlowController.defaultWindowSize,
     Duration? disembargoTimeout = defaultDisembargoTimeout,
-  }) => TwoPartyRpcConnection._(
-    incoming,
-    outgoing,
-    true,
-    onDisposeError,
-    streamWindowSize,
-    disembargoTimeout,
-  );
+  }) {
+    _validateDisembargoTimeout(disembargoTimeout);
+    return TwoPartyRpcConnection._(
+      incoming,
+      outgoing,
+      true,
+      onDisposeError,
+      streamWindowSize,
+      disembargoTimeout,
+    );
+  }
 
   /// Creates a server-side connection.
   ///
@@ -170,6 +183,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     int streamWindowSize = FlowController.defaultWindowSize,
     Duration? disembargoTimeout = defaultDisembargoTimeout,
   }) {
+    _validateDisembargoTimeout(disembargoTimeout);
     final conn = TwoPartyRpcConnection._(
       incoming,
       outgoing,
@@ -1079,13 +1093,14 @@ class TwoPartyRpcConnection implements RpcConnection {
     if (state.receivedCall && _isLocalCapability(replacement)) {
       final embargoId = _nextEmbargoId++;
       final completer = Completer<void>();
-      _embargoes[embargoId] = completer;
+      final entry = _EmbargoEntry(completer);
+      _embargoes[embargoId] = entry;
       final timeout = _disembargoTimeout;
       if (timeout != null) {
-        Timer(timeout, () {
+        entry.timer = Timer(timeout, () {
           // Already resolved by the peer's receiverLoopback reply (or by
           // teardown, which clears _embargoes outright) — nothing to do.
-          if (_embargoes.remove(embargoId) != completer) return;
+          if (_embargoes.remove(embargoId) != entry) return;
           if (!completer.isCompleted) {
             completer.completeError(
               RpcException(
@@ -1115,8 +1130,9 @@ class TwoPartyRpcConnection implements RpcConnection {
   void _handleDisembargo(RpcMessage msg) {
     if (msg.disembargoContextDisc == 1) {
       final embargo = _embargoes.remove(msg.disembargoContextId);
-      if (embargo != null && !embargo.isCompleted) {
-        embargo.complete();
+      embargo?.timer?.cancel();
+      if (embargo != null && !embargo.completer.isCompleted) {
+        embargo.completer.complete();
       }
       return;
     }
@@ -1453,8 +1469,9 @@ class TwoPartyRpcConnection implements RpcConnection {
     _imports.clear();
     _brokenImports.clear();
     for (final embargo in _embargoes.values) {
-      if (!embargo.isCompleted) {
-        embargo.completeError(err);
+      embargo.timer?.cancel();
+      if (!embargo.completer.isCompleted) {
+        embargo.completer.completeError(err);
       }
     }
     _embargoes.clear();
@@ -2084,6 +2101,13 @@ class _ErrorCapCall implements CapCall {
 /// maps to which cap table index via a [CapabilityPointer], so the lookup must
 /// parse the pointer rather than using the pointer-slot number as a cap table
 /// index directly.
+class _EmbargoEntry {
+  final Completer<void> completer;
+  Timer? timer;
+
+  _EmbargoEntry(this.completer);
+}
+
 class _ResolvedAnswer {
   final Uint8List resultBytes;
   final List<Capability> caps;

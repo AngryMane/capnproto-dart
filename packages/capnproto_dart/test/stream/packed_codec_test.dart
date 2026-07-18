@@ -15,8 +15,11 @@ Uint8List bytes(List<int> values) => Uint8List.fromList(values);
 void _roundTrip(Uint8List input) {
   final packed = packBytes(input);
   final recovered = unpackBytes(packed);
-  expect(recovered, equals(input),
-      reason: 'round-trip failed for ${input.length}-byte input');
+  expect(
+    recovered,
+    equals(input),
+    reason: 'round-trip failed for ${input.length}-byte input',
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -67,7 +70,9 @@ void main() {
       // tag 0xFF, 8 literal bytes, count 0 (no additional literal words)
       expect(packed.length, equals(10));
       expect(packed[0], equals(0xFF));
-      for (int i = 1; i <= 8; i++) { expect(packed[i], equals(0xFF)); }
+      for (int i = 1; i <= 8; i++) {
+        expect(packed[i], equals(0xFF));
+      }
       expect(packed[9], equals(0x00));
       _roundTrip(input);
     });
@@ -124,7 +129,9 @@ void main() {
 
     test('incrementing byte pattern', () {
       final data = Uint8List(8 * 8);
-      for (int i = 0; i < data.length; i++) { data[i] = i & 0xFF; }
+      for (int i = 0; i < data.length; i++) {
+        data[i] = i & 0xFF;
+      }
       _roundTrip(data);
     });
   });
@@ -160,7 +167,10 @@ void main() {
       final unpacked = unpackBytes(wire);
       expect(unpacked.length, equals(16));
       expect(unpacked.sublist(0, 8), equals(bytes([1, 2, 3, 4, 5, 6, 7, 8])));
-      expect(unpacked.sublist(8), equals(bytes([10, 20, 30, 40, 50, 60, 70, 80])));
+      expect(
+        unpacked.sublist(8),
+        equals(bytes([10, 20, 30, 40, 50, 60, 70, 80])),
+      );
     });
 
     test('two packed words back-to-back', () {
@@ -172,6 +182,67 @@ void main() {
       expect(unpacked[0], equals(0xAA));
       expect(unpacked.sublist(1, 8), equals(bytes([0, 0, 0, 0, 0, 0, 0])));
       expect(unpacked[15], equals(0xBB));
+    });
+  });
+
+  group('unpackBytes — maxOutputBytes', () {
+    test('rejects a negative limit', () {
+      expect(
+        () => unpackBytes(bytes([]), maxOutputBytes: -1),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test('accepts output exactly at the limit', () {
+      expect(unpackBytes(bytes([0x00, 0x00]), maxOutputBytes: 8), hasLength(8));
+    });
+
+    test('rejects the first word before appending past a small limit', () {
+      expect(
+        () => unpackBytes(bytes([0x00, 0x00]), maxOutputBytes: 1),
+        throwsA(isA<DecodeException>()),
+      );
+    });
+
+    test('rejects a zero run that would exceed the limit', () {
+      expect(
+        () => unpackBytes(bytes([0x00, 0x01]), maxOutputBytes: 8),
+        throwsA(isA<DecodeException>()),
+      );
+    });
+
+    test('rejects a verbatim run that would exceed the limit', () {
+      final wire = bytes([
+        0xFF,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        1,
+        10,
+        20,
+        30,
+        40,
+        50,
+        60,
+        70,
+        80,
+      ]);
+      expect(
+        () => unpackBytes(wire, maxOutputBytes: 8),
+        throwsA(isA<DecodeException>()),
+      );
+    });
+
+    test('malformed input remains a malformed-input error below the cap', () {
+      expect(
+        () => unpackBytes(bytes([0x01]), maxOutputBytes: 8),
+        throwsA(isA<DecodeException>()),
+      );
     });
   });
 
@@ -195,10 +266,7 @@ void main() {
     });
 
     test('tag 0x00 count byte itself is missing', () {
-      expect(
-        () => unpackBytes(bytes([0x00])),
-        throwsA(isA<DecodeException>()),
-      );
+      expect(() => unpackBytes(bytes([0x00])), throwsA(isA<DecodeException>()));
     });
 
     test('tag 0xFF verbatim run count claims more words than remain', () {
@@ -217,7 +285,9 @@ void main() {
       // and verify pack → unpack recovers it.
       // We do not need MessageBuilder here; just verify the codec is symmetric.
       final input = Uint8List(64);
-      for (int i = 0; i < 64; i++) { input[i] = (i * 13 + 7) & 0xFF; }
+      for (int i = 0; i < 64; i++) {
+        input[i] = (i * 13 + 7) & 0xFF;
+      }
       _roundTrip(input);
     });
   });

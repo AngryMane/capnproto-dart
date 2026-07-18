@@ -86,6 +86,13 @@ class RpcSystem {
     int? maxConnections = 1024,
     SecurityContext? securityContext,
   }) async {
+    if (maxConnections != null && maxConnections < 0) {
+      throw ArgumentError.value(
+        maxConnections,
+        'maxConnections',
+        'must be non-negative or null',
+      );
+    }
     final host =
         InternetAddress.tryParse(address.host) ?? InternetAddress.loopbackIPv4;
     final connections = <TwoPartyRpcConnection>{};
@@ -115,13 +122,15 @@ class RpcSystem {
             socket.destroy();
             return;
           }
-          track(TwoPartyRpcConnection.server(
-            incoming: socket.cast<Uint8List>(),
-            outgoing: _SocketSink(socket),
-            bootstrap: bootstrap,
-            onDisposeError: onDisposeError,
-            streamWindowSize: streamWindowSize,
-          ));
+          track(
+            TwoPartyRpcConnection.server(
+              incoming: socket.cast<Uint8List>(),
+              outgoing: _SocketSink(socket),
+              bootstrap: bootstrap,
+              onDisposeError: onDisposeError,
+              streamWindowSize: streamWindowSize,
+            ),
+          );
         });
         // Tracked so close() can tear down already-accepted connections, not
         // just stop accepting new ones — closing only the listening socket
@@ -140,9 +149,14 @@ class RpcSystem {
             'wss:// server requires a securityContext (see RpcSystem.serve)',
           );
         }
-        final httpServer = address.scheme == 'wss'
-            ? await HttpServer.bindSecure(host, address.port, securityContext!)
-            : await HttpServer.bind(host, address.port);
+        final httpServer =
+            address.scheme == 'wss'
+                ? await HttpServer.bindSecure(
+                  host,
+                  address.port,
+                  securityContext!,
+                )
+                : await HttpServer.bind(host, address.port);
         httpServer.listen((request) async {
           if (!WebSocketTransformer.isUpgradeRequest(request)) {
             request.response.statusCode = HttpStatus.badRequest;
@@ -155,13 +169,15 @@ class RpcSystem {
             return;
           }
           final ws = await WebSocketTransformer.upgrade(request);
-          track(TwoPartyRpcConnection.server(
-            incoming: _webSocketIncoming(ws),
-            outgoing: _WebSocketSink(ws),
-            bootstrap: bootstrap,
-            onDisposeError: onDisposeError,
-            streamWindowSize: streamWindowSize,
-          ));
+          track(
+            TwoPartyRpcConnection.server(
+              incoming: _webSocketIncoming(ws),
+              outgoing: _WebSocketSink(ws),
+              bootstrap: bootstrap,
+              onDisposeError: onDisposeError,
+              streamWindowSize: streamWindowSize,
+            ),
+          );
         });
         return _ListenerRpcServer(
           () => httpServer.port,
@@ -183,12 +199,12 @@ class RpcSystem {
 /// transport is binary-only) and is surfaced as a stream error, tearing the
 /// connection down the same way a malformed byte frame would.
 Stream<Uint8List> _webSocketIncoming(WebSocket ws) => ws.map((data) {
-      if (data is Uint8List) return data;
-      if (data is List<int>) return Uint8List.fromList(data);
-      throw RpcException(
-        'expected a binary WebSocket frame, got ${data.runtimeType}',
-      );
-    });
+  if (data is Uint8List) return data;
+  if (data is List<int>) return Uint8List.fromList(data);
+  throw RpcException(
+    'expected a binary WebSocket frame, got ${data.runtimeType}',
+  );
+});
 
 /// Adapts a [WebSocket] to [StreamSink<Uint8List>] for use with
 /// [TwoPartyRpcConnection]. [WebSocket.add] sends its argument as a binary

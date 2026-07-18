@@ -1,5 +1,7 @@
 import 'package:capnproto_dart/src/arena/arena_builder.dart';
-import 'package:capnproto_dart/src/arena/arena_reader.dart' show RawStructReader;
+import 'package:capnproto_dart/src/arena/arena_reader.dart'
+    show RawStructReader;
+import 'package:capnproto_dart/src/arena/segment_builder.dart';
 import 'package:capnproto_dart/src/layout/list_builder.dart';
 import 'package:capnproto_dart/src/layout/list_reader.dart';
 import 'package:capnproto_dart/src/layout/orphan.dart';
@@ -71,8 +73,13 @@ class OuterBuilder extends StructBuilder {
       initStructFieldWith(_outerBPtr, (r) => InnerBuilder(r), 1, 0);
   ListBuilder<int> initValues(int count) =>
       initInt32ListField(_outerValuesPtr, count);
-  ListBuilder<InnerBuilder> initItems(int count) =>
-      initStructListFieldWith(_outerItemsPtr, count, (r) => InnerBuilder(r), 1, 0);
+  ListBuilder<InnerBuilder> initItems(int count) => initStructListFieldWith(
+    _outerItemsPtr,
+    count,
+    (r) => InnerBuilder(r),
+    1,
+    0,
+  );
 
   @override
   OuterReader asReader() => OuterReader(rawToReader());
@@ -90,6 +97,16 @@ class _OuterFactory extends StructFactory<OuterReader, OuterBuilder> {
 }
 
 final outerFactory = _OuterFactory();
+
+class _FailingAllocationArena extends ArenaBuilder {
+  bool failAllocations = false;
+
+  @override
+  (SegmentBuilder, int) allocate(int words) {
+    if (failAllocations) throw StateError('injected allocation failure');
+    return super.allocate(words);
+  }
+}
 
 void main() {
   group('StructBuilder.disownPointerField / adoptPointerField — struct', () {
@@ -202,6 +219,31 @@ void main() {
         () => outer.disownPointerField(_outerAPtr),
         throwsUnsupportedError,
       );
+    });
+
+    test('failed pointer construction leaves the Orphan reusable', () {
+      final arena = _FailingAllocationArena();
+      final (rootSeg, rootPtrOffset) = arena.allocate(1);
+      final raw = arena.allocateStruct(
+        ptrSeg: rootSeg,
+        ptrWordOffset: rootPtrOffset,
+        dataWords: 0,
+        ptrWords: 4,
+      );
+      final outer = OuterBuilder(raw);
+      arena.allocate(2000);
+      outer.initA().value = 77;
+      final orphan = outer.disownPointerField(_outerAPtr);
+
+      arena.failAllocations = true;
+      expect(
+        () => outer.adoptPointerField(_outerBPtr, orphan),
+        throwsStateError,
+      );
+
+      arena.failAllocations = false;
+      outer.adoptPointerField(_outerBPtr, orphan);
+      expect(outer.asReader().b?.value, equals(77));
     });
   });
 

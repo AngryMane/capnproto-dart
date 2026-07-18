@@ -4170,6 +4170,7 @@ void main() {
         );
         expect(disembargo.disembargoContextDisc, 0);
         expect(disembargo.disembargoTargetImportId, 10);
+        expect(client.debugEmbargoCount, equals(1));
 
         final afterCall = stub.echo('after');
         var afterCompleted = false;
@@ -4185,11 +4186,103 @@ void main() {
           ),
         );
         expect(await afterCall, 'echo: after');
+        expect(client.debugEmbargoCount, equals(0));
 
         await client.close();
         await interceptSink.close();
       },
     );
+
+    test(
+      'missing receiverLoopback fails the waiting call at timeout',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        final captured = <Uint8List>[];
+        final interceptSink =
+            StreamController<Uint8List>()
+              ..stream.listen((bytes) {
+                captured.add(bytes);
+                clientToServer.add(bytes);
+              });
+        clientToServer.stream.listen((_) {});
+
+        final client = TwoPartyRpcConnection.client(
+          incoming: serverToClient.stream,
+          outgoing: interceptSink.sink,
+          disembargoTimeout: const Duration(milliseconds: 20),
+        );
+        final stub = client.bootstrap(EchoClientFactory());
+        serverToClient.add(
+          buildReturnResultsWithCapDescriptorsMessage(
+            answerId: 0,
+            resultsBytes: _buildEchoParams(''),
+            descriptors: const [RpcCapDescriptor.senderPromise(10)],
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        captured.clear();
+        final firstCall = stub.cap.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          _buildEchoParams('before'),
+          paramsCapabilities: [EchoServer()],
+        );
+        firstCall.ignore();
+        await _waitForMessageType(captured, RpcMessageType.call);
+
+        captured.clear();
+        serverToClient.add(
+          buildResolveCapMessage(promiseId: 10, capDisc: 3, capId: 1),
+        );
+        await _waitForMessageType(captured, RpcMessageType.disembargo);
+        expect(client.debugEmbargoCount, equals(1));
+
+        await expectLater(
+          stub.echo('after'),
+          throwsA(
+            isA<RpcException>().having(
+              (error) => error.kind,
+              'kind',
+              ErrorKind.overloaded,
+            ),
+          ),
+        );
+        expect(client.debugEmbargoCount, equals(0));
+
+        await client.close();
+        await serverToClient.close();
+        await interceptSink.close();
+        await clientToServer.close();
+      },
+    );
+  });
+
+  group('TwoPartyRpcConnection resource-limit validation', () {
+    test('negative disembargoTimeout is rejected by both factories', () {
+      const incoming = Stream<Uint8List>.empty();
+      final outgoing = StreamController<Uint8List>()..stream.listen((_) {});
+      addTearDown(outgoing.close);
+
+      expect(
+        () => TwoPartyRpcConnection.client(
+          incoming: incoming,
+          outgoing: outgoing.sink,
+          disembargoTimeout: const Duration(microseconds: -1),
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+      expect(
+        () => TwoPartyRpcConnection.server(
+          incoming: incoming,
+          outgoing: outgoing.sink,
+          bootstrap: EchoServer(),
+          disembargoTimeout: const Duration(microseconds: -1),
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
   });
 
   group('TwoPartyRpcConnection — in-memory', () {
