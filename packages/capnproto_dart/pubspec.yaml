@@ -1,14 +1,18 @@
 name: capnproto_dart
 description: A pure Dart implementation of Cap'n Proto serialization and streaming.
 version: 0.1.0
-# repository: https://github.com/my_org/capnproto-dart
+publish_to: none # Remove only after a project license has been selected.
+repository: https://github.com/AngryMane/capnproto-dart
+issue_tracker: https://github.com/AngryMane/capnproto-dart/issues
+documentation: https://angrymane.github.io/capnproto-dart/
+topics: [capnproto, serialization, binary-format]
+
+resolution: workspace
 
 environment:
   sdk: ^3.7.2
 
-# Add regular dependencies here.
 dependencies:
-  # path: ^1.8.0
 
 dev_dependencies:
   lints: ^5.0.0

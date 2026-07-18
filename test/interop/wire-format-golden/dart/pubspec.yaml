@@ -3,7 +3,9 @@ description: Dart side of the wire-format golden test against the official capnp
 publish_to: 'none'
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: ^3.7.2
+
+resolution:
 
 dependencies:
   capnproto_dart:

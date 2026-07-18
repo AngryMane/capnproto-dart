@@ -3,8 +3,14 @@ description: Sample Dart client demonstrating Dart↔Rust Cap'n Proto RPC intero
 publish_to: 'none'
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: ^3.7.2
+
+resolution:
 
 dependencies:
   capnproto_dart_rpc:
     path: ../../../packages/capnproto_dart_rpc
+
+dependency_overrides:
+  capnproto_dart:
+    path: ../../../packages/capnproto_dart

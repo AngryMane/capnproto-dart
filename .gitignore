@@ -17,6 +17,7 @@ build/
 # Sample application packages (sample/**/client/) intentionally commit their
 # lock files for reproducible builds, so we only ignore the tool here.
 tools/*/pubspec.lock
+/pubspec.lock
 
 # ── Rust ──────────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,9 @@ target/
 # Emacs
 \#*\#
 .\#*
+
+# Skills
+ai/*
 
 # ── OS ────────────────────────────────────────────────────────────────────────
 
