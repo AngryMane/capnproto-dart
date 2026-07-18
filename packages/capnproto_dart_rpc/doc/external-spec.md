@@ -79,6 +79,43 @@ final barResult = await client.getFoo().then((foo) => foo.getBar());
 The runtime sends both calls to the server in a single round-trip when the intermediate
 result is a capability.
 
+## Tail Calls
+
+A server-side capability can answer a call by forwarding it to another capability's
+method, instead of running its own logic — this is the Cap'n Proto RPC "tail call"
+mechanism (`Call.sendResultsTo=yourself` / `Return.takeFromOtherQuestion`, both Level 1).
+Override `Capability.tryTailCall` to opt in:
+
+```dart
+class MyCap extends Capability {
+  @override
+  TailCall? tryTailCall(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) {
+    if (methodId != forwardMethodId) return null;
+    return TailCall(someOtherCap, targetInterfaceId, targetMethodId, targetParams);
+  }
+}
+```
+
+Returning non-null skips `dispatchWithContext` entirely for that call: the whole result
+becomes whatever `TailCall.target`'s method returns. When `target` is a capability
+imported from the same peer connection that sent the original call, the runtime applies
+the real wire optimization — the peer resolves the answer itself, without an extra round
+trip through this vat. For any other target, the call still completes correctly, just as
+a normal (non-optimized) proxy.
+
+**Known limitations:**
+- Pipelining a further call onto an answer that was itself resolved via
+  `takeFromOtherQuestion` is not supported — the pipelined call fails with a clear
+  `RpcException` rather than hanging or returning a wrong answer.
+- A call already flagged `sendResultsTo=yourself` (i.e. this vat is itself the target of
+  a peer's tail call) never consults `tryTailCall` again — chained/nested tail calls
+  aren't supported; the call just dispatches normally.
+
 ## Error Handling
 
 RPC errors extend `CapnpException` (defined in the Serialization Runtime, `capnproto_dart`).

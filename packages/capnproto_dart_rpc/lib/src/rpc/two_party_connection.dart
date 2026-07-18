@@ -11,6 +11,7 @@ import '../capability/capability.dart'
         DispatchCancellationController,
         DispatchResult,
         NullCapability,
+        TailCall,
         capabilityFromResult,
         requireCapabilityFromResult;
 import '../capability/capability_factory.dart';
@@ -268,6 +269,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     required int methodId,
     required Uint8List paramsBytes,
     required List<Capability> paramsCapabilities,
+    bool sendResultsToYourself = false,
   }) async {
     // For promisedAnswer targets, wait until the parent Call is on the wire so
     // the server always receives the parent before the pipelined call.
@@ -308,6 +310,7 @@ class TwoPartyRpcConnection implements RpcConnection {
           methodId: methodId,
           paramsBytes: paramsBytes,
           capTableDescriptors: capEntries,
+          sendResultsToYourself: sendResultsToYourself,
         ),
       );
     } else {
@@ -321,6 +324,7 @@ class TwoPartyRpcConnection implements RpcConnection {
           methodId: methodId,
           paramsBytes: paramsBytes,
           capTableDescriptors: capEntries,
+          sendResultsToYourself: sendResultsToYourself,
         ),
       );
     }
@@ -340,13 +344,24 @@ class TwoPartyRpcConnection implements RpcConnection {
     if (ret.isReturnException) {
       throw RpcException(ret.exceptionReason ?? 'remote exception');
     }
+    if (ret.isReturnTakeFromOtherQuestion) {
+      // The peer tail-called this call onward to a capability it imports
+      // from us — i.e. back to a capability WE host. The real answer is
+      // therefore already tracked, locally, under our own incoming-answer
+      // bookkeeping for that forwarded call: no extra wire round trip
+      // needed to fetch it.
+      final resolved = await _resolveLocalAnswer(ret.takeFromOtherQuestion);
+      return DispatchResult(bytes: resolved.resultBytes, caps: resolved.caps);
+    }
     if (!ret.isReturnResults) {
-      // canceled / resultsSentElsewhere / takeFromOtherQuestion /
-      // acceptFromThirdParty — none of these are implemented by this vat.
-      // Surfacing them as an explicit error is important specifically for
-      // resultsSentElsewhere: a peer that performs a tail call sends this,
-      // and treating it as an empty success would silently hand the caller
-      // a bogus empty-struct result instead of the real one.
+      // canceled / resultsSentElsewhere / acceptFromThirdParty — none of
+      // these are implemented by this vat. Surfacing them as an explicit
+      // error is important specifically for resultsSentElsewhere: it's only
+      // ever valid as the Return to a call *we* sent with
+      // sendResultsTo=yourself (see _sendTailForwardCall, which never routes
+      // through _awaitReturn), so seeing it here means a peer sent it
+      // unprompted — treating it as an empty success would silently hand
+      // the caller a bogus empty-struct result instead of the real one.
       throw RpcException(
         'unsupported Return variant: ${describeReturnDisc(ret.returnDisc)}',
       );
@@ -361,6 +376,25 @@ class TwoPartyRpcConnection implements RpcConnection {
     return DispatchResult(
       bytes: ret.resultsBytes ?? _emptyResultBytes,
       caps: caps,
+    );
+  }
+
+  /// Resolves [qid] against this vat's own incoming-answer bookkeeping, for
+  /// correlating a `Return.takeFromOtherQuestion` from the peer.
+  ///
+  /// Mirrors the `_answerCaps`-then-`_pendingCaps` lookup order
+  /// [_handlePipelinedCall] already uses, including its acceptance of the
+  /// same narrow race: if [qid]'s dispatch already failed and was fully
+  /// cleaned up before this runs, it reads as "unknown" rather than
+  /// replaying the original error — a pre-existing tradeoff, not one
+  /// introduced here.
+  Future<_ResolvedAnswer> _resolveLocalAnswer(int qid) {
+    final resolved = _answerCaps[qid];
+    if (resolved != null) return Future.value(resolved);
+    final pending = _pendingCaps[qid];
+    if (pending != null) return pending;
+    throw RpcException(
+      'takeFromOtherQuestion referenced unknown question id $qid',
     );
   }
 
@@ -590,13 +624,169 @@ class TwoPartyRpcConnection implements RpcConnection {
       paramsCapabilities.add(_capabilityFromDescriptor(descriptor));
     }
 
+    // sendResultsTo=yourself: the peer is asking us to forward this call's
+    // real answer onward ourselves (tail call). We never consult
+    // tryTailCall for such a call — that would mean chaining a tail call
+    // off another tail call, which isn't supported (see doc/rpc.md) — just
+    // dispatch normally and answer with resultsSentElsewhere instead of a
+    // real Return once it settles.
+    final sendResultsToYourself = msg.sendResultsToDisc == 1;
+    if (!sendResultsToYourself) {
+      final tailCall = cap.tryTailCall(
+        msg.interfaceId,
+        msg.methodId,
+        params,
+        paramsCapabilities: paramsCapabilities,
+      );
+      if (tailCall != null) {
+        _dispatchTailCall(qid, tailCall);
+        return;
+      }
+    }
+
+    _runDispatch(
+      qid,
+      cap,
+      msg.interfaceId,
+      msg.methodId,
+      params,
+      paramsCapabilities,
+      sendResultsToYourself: sendResultsToYourself,
+    );
+  }
+
+  /// Handles a [Capability.tryTailCall] result for the call answered by
+  /// [qid]. When [tailCall]'s target is a capability imported from this
+  /// same peer connection, applies the Level 1 wire optimization: forwards
+  /// a new Call (flagged `sendResultsTo=yourself`) to that peer and answers
+  /// [qid] immediately with `takeFromOtherQuestion`, without waiting for the
+  /// forwarded call to complete. Otherwise, falls back to a transparent
+  /// proxy — dispatching the tail-called method directly and answering
+  /// [qid] normally, with no wire-level difference from an ordinary call.
+  void _dispatchTailCall(int qid, TailCall tailCall) {
+    final target = tailCall.target;
+    if (target is _ImportedCapability && target._conn == this) {
+      final (forwardQid, sent) = _sendTailForwardCall(target, tailCall);
+      // Must wait for the forwarded Call to actually be on the wire before
+      // answering qid with takeFromOtherQuestion — otherwise the peer could
+      // see the redirect before the call it points at, and fail to
+      // correlate it (see _resolveLocalAnswer).
+      sent
+          .then((_) {
+            if (_closedError != null) return;
+            _sendRaw(
+              buildReturnTakeFromOtherQuestionMessage(
+                answerId: qid,
+                questionId: forwardQid,
+              ),
+            );
+            // Nothing was exported directly for this answer — the real
+            // result (and any capabilities in it) live under forwardQid's
+            // own answer bookkeeping, released independently when the peer
+            // finishes that call. Pipelining further off qid itself is not
+            // supported: a pipelined call targeting qid will fail with
+            // "unknown promisedAnswer questionId", since
+            // _answerCaps[qid]/_pendingCaps[qid] are deliberately never
+            // populated here.
+            _answers[qid] = const [];
+          })
+          .catchError((Object err) {
+            if (_closedError != null) return;
+            _answers[qid] = const [];
+            _sendRaw(
+              buildReturnExceptionMessage(
+                answerId: qid,
+                reason: err is RpcException ? err.message : err.toString(),
+              ),
+            );
+          });
+      return;
+    }
+    // Not a same-connection import: no wire optimization possible, just
+    // dispatch the tail-called method directly and answer qid normally.
+    _runDispatch(
+      qid,
+      target,
+      tailCall.interfaceId,
+      tailCall.methodId,
+      tailCall.paramsBytes,
+      tailCall.paramsCapabilities,
+    );
+  }
+
+  /// Sends a forwarded Call (flagged `sendResultsTo=yourself`) to [target]'s
+  /// peer, as part of applying the tail-call wire optimization in
+  /// [_dispatchTailCall]. Returns `(questionId, sent)`, where [sent]
+  /// completes once the Call has actually been written to the outgoing
+  /// sink — callers must wait for it before answering the original call
+  /// with takeFromOtherQuestion, so the peer never observes the redirect
+  /// before the call it references.
+  ///
+  /// The forwarded call's actual outcome is irrelevant to this vat — it's
+  /// delivered to whichever of this vat's own outgoing calls the peer
+  /// correlates via `takeFromOtherQuestion` (see [_resolveLocalAnswer]),
+  /// not to us. This just needs to send Finish once any Return arrives, so
+  /// it talks to the wire directly rather than going through
+  /// [_startCall]/[_awaitReturn] (which expects a real result).
+  (int, Future<void>) _sendTailForwardCall(
+    _ImportedCapability target,
+    TailCall tailCall,
+  ) {
+    final qid = _nextQuestionId++;
+    final completer = Completer<RpcMessage>();
+    _questions[qid] = completer;
+    final sentCompleter = Completer<void>();
+    _questionSent[qid] = sentCompleter;
+
+    _buildAndSendCall(
+          qid: qid,
+          sentCompleter: sentCompleter,
+          importIdFuture: target._importIdFuture,
+          targetPromisedAnswerQid: null,
+          targetPtrIndex: 0,
+          interfaceId: tailCall.interfaceId,
+          methodId: tailCall.methodId,
+          paramsBytes: tailCall.paramsBytes,
+          paramsCapabilities: tailCall.paramsCapabilities,
+          sendResultsToYourself: true,
+        )
+        .catchError((Object e, StackTrace st) {
+          _questions.remove(qid);
+          _questionSent.remove(qid);
+          if (!sentCompleter.isCompleted) sentCompleter.completeError(e, st);
+          if (!completer.isCompleted) completer.completeError(e, st);
+        });
+
+    completer.future
+        .then(
+          (_) => _sendRaw(buildFinishMessage(qid, releaseResultCaps: false)),
+        )
+        .ignore();
+
+    return (qid, sentCompleter.future);
+  }
+
+  /// Runs [cap]'s dispatch for [interfaceId]/[methodId] and answers [qid]
+  /// once it settles. This is [_dispatchToCapability]'s original body,
+  /// generalized so it also serves [_dispatchTailCall]'s fallback path and
+  /// calls received with `sendResultsTo=yourself` — [sendResultsToYourself]
+  /// only changes which kind of Return is sent on completion.
+  void _runDispatch(
+    int qid,
+    Capability cap,
+    int interfaceId,
+    int methodId,
+    Uint8List params,
+    List<Capability> paramsCapabilities, {
+    bool sendResultsToYourself = false,
+  }) {
     final cancellation = DispatchCancellationController();
     _dispatchCancellations[qid] = cancellation;
 
     final dispatchFuture = Future.sync(
       () => cap.dispatchWithContext(
-        msg.interfaceId,
-        msg.methodId,
+        interfaceId,
+        methodId,
         params,
         paramsCapabilities: paramsCapabilities,
         context: cancellation.context,
@@ -635,6 +825,15 @@ class TwoPartyRpcConnection implements RpcConnection {
           }
           _answerCaps[qid] = _ResolvedAnswer(result.bytes, result.caps);
 
+          if (sendResultsToYourself) {
+            // Results are consumed locally by whichever of the peer's own
+            // outgoing calls receives Return.takeFromOtherQuestion=qid —
+            // nothing is put on the wire for this Return.
+            _sendRaw(buildReturnResultsSentElsewhereMessage(answerId: qid));
+            _answers[qid] = const [];
+            return;
+          }
+
           final resultDescriptors = <RpcCapDescriptor>[];
           if (result.caps.isEmpty) {
             _sendRaw(
@@ -671,6 +870,10 @@ class TwoPartyRpcConnection implements RpcConnection {
             return;
           }
           _answers[qid] = const [];
+          if (sendResultsToYourself) {
+            _sendRaw(buildReturnResultsSentElsewhereMessage(answerId: qid));
+            return;
+          }
           _sendRaw(
             buildReturnExceptionMessage(
               answerId: qid,

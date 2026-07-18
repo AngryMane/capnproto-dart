@@ -49,6 +49,20 @@ These are not separate classes — they are private state (e.g. `_ExportEntry`,
 Cap'n Proto Level 1 RPC specification (two-party subset; Resolve/Disembargo sending is
 not implemented).
 
+### Tail Calls
+`Capability.tryTailCall` is checked in `_dispatchToCapability` before running a normal
+dispatch. When the target is a same-connection `_ImportedCapability` (i.e. it lives back
+on the very peer that sent the call being answered), the connection forwards a new `Call`
+to that peer (flagged `sendResultsTo=yourself`) and immediately answers the original
+question with `Return.takeFromOtherQuestion`, without registering it in the Answers
+table (`_answerCaps`/`_pendingCaps`) — so pipelining further on that original question is
+deliberately unsupported (see `doc/external-spec.md`). The peer correlates the redirect
+entirely from its own Answers table: `_awaitReturn` resolves `takeFromOtherQuestion` by
+looking up its own `_answerCaps`/`_pendingCaps` for the forwarded call's question id — no
+extra wire round trip. When the target isn't a same-connection import, the runtime falls
+back to a normal dispatch against it (`_runDispatch`), answering the original question the
+usual way.
+
 ### Promise Pipelining via Dart Futures
 When a client sends a `Call` whose return value is a `Capability`,
 the runtime immediately creates a pipelined `Capability` stub backed by the pending `Future`.

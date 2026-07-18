@@ -31,6 +31,32 @@ class DispatchResult {
   );
 }
 
+/// Describes a tail call: the entire result of the current dispatch should
+/// be exactly the result of calling [target]'s [interfaceId]/[methodId]
+/// method with [paramsBytes]/[paramsCapabilities].
+///
+/// Returned by [Capability.tryTailCall]. When [target] is a capability
+/// imported from the same peer connection that is asking for the current
+/// dispatch, RPC-connected capabilities apply the Cap'n Proto Level 1 tail
+/// call wire optimization (`Call.sendResultsTo=yourself` /
+/// `Return.takeFromOtherQuestion`), avoiding an extra network round trip.
+/// Otherwise this is a transparent pass-through with no special wire
+/// behavior — semantically identical, just without the optimization.
+class TailCall {
+  final Capability target;
+  final int interfaceId;
+  final int methodId;
+  final Uint8List paramsBytes;
+  final List<Capability> paramsCapabilities;
+  const TailCall(
+    this.target,
+    this.interfaceId,
+    this.methodId,
+    this.paramsBytes, {
+    this.paramsCapabilities = const [],
+  });
+}
+
 /// Cooperative cancellation state for an incoming dispatch.
 ///
 /// Server implementations can check [isCanceled], await [canceled], or call
@@ -150,6 +176,20 @@ abstract class Capability {
     params,
     paramsCapabilities: paramsCapabilities,
   );
+
+  /// Optional hook for the tail-call wire optimization (see [TailCall]).
+  ///
+  /// Called before [dispatchWithContext] with the same arguments a normal
+  /// dispatch would receive. Returning non-null means "don't run this
+  /// dispatch at all — forward to [TailCall.target] instead". The default
+  /// implementation returns null (never tail-calls), so existing
+  /// implementations are unaffected.
+  TailCall? tryTailCall(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) => null;
 
   /// Starts a dispatch call and returns a [CapCall] that allows creating
   /// pipelined sub-capabilities before the round-trip completes.

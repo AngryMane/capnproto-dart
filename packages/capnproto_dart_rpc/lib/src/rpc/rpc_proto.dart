@@ -93,6 +93,7 @@ const int _opGetPtrField = 2;
 //   ptr 0: union ptr slot (Payload for results / Exception for exception)
 const int _returnAnswerId = 0;
 const int _returnDisc = 6;
+const int _returnTakeFromOtherQuestionOff = 8;
 
 const int _retResults = 0;
 const int _retException = 1;
@@ -228,6 +229,7 @@ class _CallReader extends StructReader {
   _MessageTargetReader? get target =>
       getStructFieldWith(0, _MessageTargetReader.new);
   _PayloadReader? get params => getStructFieldWith(1, _PayloadReader.new);
+  int get sendResultsToDisc => getUint16Field(_callSendResultsDisc);
 }
 
 class _CallBuilder extends StructBuilder {
@@ -238,6 +240,7 @@ class _CallBuilder extends StructBuilder {
   void setInterfaceId(int v) => setUint64Field(_callIfaceId, v);
   void setMethodId(int v) => setUint16Field(_callMethodId, v);
   void setSendResultsToCaller() => setUint16Field(_callSendResultsDisc, 0);
+  void setSendResultsToYourself() => setUint16Field(_callSendResultsDisc, 1);
   _MessageTargetBuilder initTarget() =>
       initStructFieldWith(0, _MessageTargetBuilder.new, 1, 1);
   _PayloadBuilder initParams() =>
@@ -368,6 +371,8 @@ class _ReturnReader extends StructReader {
   _PayloadReader? get results => getStructFieldWith(0, _PayloadReader.new);
   _ExceptionReader? get exception =>
       getStructFieldWith(0, _ExceptionReader.new);
+  int get takeFromOtherQuestion =>
+      getUint32Field(_returnTakeFromOtherQuestionOff);
 }
 
 class _ReturnBuilder extends StructBuilder {
@@ -378,6 +383,11 @@ class _ReturnBuilder extends StructBuilder {
   void setDiscResults() => setUint16Field(_returnDisc, _retResults);
   void setDiscException() => setUint16Field(_returnDisc, _retException);
   void setDiscRaw(int disc) => setUint16Field(_returnDisc, disc);
+  void setTakeFromOtherQuestion(int questionId) {
+    setDiscRaw(_retTakeFromOtherQuestion);
+    setUint32Field(_returnTakeFromOtherQuestionOff, questionId);
+  }
+
   _PayloadBuilder initResults() =>
       initStructFieldWith(0, _PayloadBuilder.new, 0, 2);
   _ExceptionBuilder initException() =>
@@ -564,6 +574,11 @@ final class RpcMessage {
   // (disc, id) pairs from the Call's capTable, in order.
   // disc: 1=senderHosted, 3=receiverHosted
   final List<(int, int)> paramsCapTable;
+  // Call.sendResultsTo union disc (0=caller, 1=yourself, 2=thirdParty).
+  // Only 0 (caller, the default for every normal call) and 1 (yourself, the
+  // Level 1 tail-call mechanism) are meaningful here; thirdParty is Level 3
+  // and out of scope.
+  final int sendResultsToDisc;
 
   // return
   final int answerId;
@@ -576,6 +591,8 @@ final class RpcMessage {
   // an actual empty-results success (neither isReturnResults nor
   // isReturnException is true for either) must check this.
   final int returnDisc;
+  final bool isReturnTakeFromOtherQuestion;
+  final int takeFromOtherQuestion;
   final Uint8List? resultsBytes;
   final String? exceptionReason;
   // senderHosted export IDs from the return payload's capTable, in order.
@@ -618,10 +635,13 @@ final class RpcMessage {
     this.targetPtrIndex = 0,
     this.paramsBytes,
     this.paramsCapTable = const [],
+    this.sendResultsToDisc = 0,
     this.answerId = 0,
     this.isReturnResults = false,
     this.isReturnException = false,
     this.returnDisc = _retResults,
+    this.isReturnTakeFromOtherQuestion = false,
+    this.takeFromOtherQuestion = 0,
     this.resultsBytes,
     this.exceptionReason,
     this.capTableExportIds = const [],
@@ -677,6 +697,7 @@ Uint8List buildCallMessage({
   required Uint8List paramsBytes,
   List<(int, int)> capTableEntries = const [],
   List<RpcCapDescriptor>? capTableDescriptors,
+  bool sendResultsToYourself = false,
 }) {
   final mb = MessageBuilder();
   final msg = mb.initRoot(_msgFactory);
@@ -685,7 +706,11 @@ Uint8List buildCallMessage({
   call.setQuestionId(questionId);
   call.setInterfaceId(interfaceId);
   call.setMethodId(methodId);
-  call.setSendResultsToCaller();
+  if (sendResultsToYourself) {
+    call.setSendResultsToYourself();
+  } else {
+    call.setSendResultsToCaller();
+  }
   if (targetPromisedAnswerQid != null) {
     call.initTarget().setPromisedAnswer(
       targetPromisedAnswerQid,
@@ -876,6 +901,40 @@ Uint8List buildReturnExceptionMessage({
   return mb.serialize();
 }
 
+/// Serializes a Return with `takeFromOtherQuestion` set.
+///
+/// Used when this vat, after receiving a Call, forwards it as a tail call to
+/// another capability on the SAME peer connection: the real answer will
+/// arrive via that forwarded call's own answer, tracked under [questionId].
+Uint8List buildReturnTakeFromOtherQuestionMessage({
+  required int answerId,
+  required int questionId,
+}) {
+  final mb = MessageBuilder();
+  final msg = mb.initRoot(_msgFactory);
+  msg.setDisc(_msgReturn);
+  final ret = msg.initReturn();
+  ret.setAnswerId(answerId);
+  ret.setTakeFromOtherQuestion(questionId);
+  return mb.serialize();
+}
+
+/// Serializes a Return with `resultsSentElsewhere` set.
+///
+/// Sent in response to an incoming Call whose `sendResultsTo` was
+/// `yourself`: the real results were/are being delivered to whichever of
+/// this vat's own outgoing calls the peer correlates via
+/// `takeFromOtherQuestion`, not via this Return.
+Uint8List buildReturnResultsSentElsewhereMessage({required int answerId}) {
+  final mb = MessageBuilder();
+  final msg = mb.initRoot(_msgFactory);
+  msg.setDisc(_msgReturn);
+  final ret = msg.initReturn();
+  ret.setAnswerId(answerId);
+  ret.setDiscRaw(_retResultsSentElsewhere);
+  return mb.serialize();
+}
+
 /// Serializes a Finish message.
 Uint8List buildFinishMessage(int questionId, {bool releaseResultCaps = true}) {
   final mb = MessageBuilder();
@@ -1027,6 +1086,7 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
         paramsBytes: params?.contentBytes,
         paramsCapTable: capTablePairs,
         capTableDescriptors: capTableDescriptors,
+        sendResultsToDisc: call?.sendResultsToDisc ?? 0,
       );
 
     case _msgReturn:
@@ -1069,11 +1129,19 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
           returnDisc: retDisc,
           exceptionReason: exc?.reason ?? 'unknown error',
         );
+      } else if (retDisc == _retTakeFromOtherQuestion) {
+        return RpcMessage._(
+          type: RpcMessageType.return_,
+          answerId: ret?.answerId ?? 0,
+          returnDisc: retDisc,
+          isReturnTakeFromOtherQuestion: true,
+          takeFromOtherQuestion: ret?.takeFromOtherQuestion ?? 0,
+        );
       } else {
-        // canceled(2) / resultsSentElsewhere(3) / takeFromOtherQuestion(4) /
-        // acceptFromThirdParty(5) — none of these are implemented (see
-        // _awaitReturn), but the disc is still preserved here rather than
-        // silently discarded, so callers can report exactly what happened.
+        // canceled(2) / resultsSentElsewhere(3) / acceptFromThirdParty(5) —
+        // none of these are implemented (see _awaitReturn), but the disc is
+        // still preserved here rather than silently discarded, so callers
+        // can report exactly what happened.
         return RpcMessage._(
           type: RpcMessageType.return_,
           answerId: ret?.answerId ?? 0,

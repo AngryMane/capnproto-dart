@@ -109,6 +109,7 @@ This library implements a **Cap'n Proto RPC Level 1 subset** for two-party conne
 | Object-capability references | Supported |
 | Promise pipelining | Supported |
 | Bidirectional RPC (callbacks) | Supported |
+| Tail calls (`Capability.tryTailCall`) | Supported |
 | Receiving `Resolve` / `Disembargo` from peer | Supported |
 | Sending `Resolve` / `Disembargo` from Dart vat | **Not implemented** |
 | Three-party handoff (Level 1 full) | **Not in scope** |

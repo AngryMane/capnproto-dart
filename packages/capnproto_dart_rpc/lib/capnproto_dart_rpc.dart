@@ -18,6 +18,7 @@ export 'src/capability/capability.dart'
         DispatchResult,
         NullCapability,
         PipelinedCapability,
+        TailCall,
         requireCapabilityFromResult,
         vendCapabilityHandle;
 export 'src/capability/capability_any_pointer_codec.dart';

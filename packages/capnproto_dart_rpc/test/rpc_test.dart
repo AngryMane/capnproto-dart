@@ -598,6 +598,88 @@ class CapReceivingServer extends Capability {
   Future<void> dispose() async {}
 }
 
+// #53: tail calls. On _tailCallMethodId, redirects the entire dispatch to
+// paramsCapabilities[0]'s echo method instead of running its own dispatch.
+const int _tailCallMethodId = 8;
+
+class TailCallServer extends Capability {
+  @override
+  TailCall? tryTailCall(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) {
+    if (methodId != _tailCallMethodId) return null;
+    return TailCall(
+      paramsCapabilities[0],
+      _echoInterfaceId,
+      _echoMethodId,
+      _buildEchoParams('via tail call'),
+    );
+  }
+
+  // Used only for the bootstrap "warmup" call (methodId == _echoMethodId);
+  // _tailCallMethodId is always intercepted by tryTailCall above and never
+  // reaches here.
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) async {
+    if (methodId == _echoMethodId) {
+      final mr = MessageReader.deserialize(params);
+      final message = mr.getRoot(_TextParamFactory()).getTextField(0) ?? '';
+      return DispatchResult(bytes: _buildEchoParams('echo: $message'));
+    }
+    throw RpcException('method $methodId should have been tail-called');
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
+// #53: tail calls, fallback path. On _tailCallLocalMethodId, redirects to a
+// capability that is NOT a same-connection import (a plain local instance),
+// exercising the transparent-proxy fallback rather than the wire optimization.
+const int _tailCallLocalMethodId = 9;
+
+class TailCallLocalServer extends Capability {
+  final Capability local;
+  TailCallLocalServer(this.local);
+
+  @override
+  TailCall? tryTailCall(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) {
+    if (methodId != _tailCallLocalMethodId) return null;
+    return TailCall(
+      local,
+      _echoInterfaceId,
+      _echoMethodId,
+      _buildEchoParams('local tail call'),
+    );
+  }
+
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) => Future.error(
+    RpcException('method $methodId should have been tail-called'),
+  );
+
+  @override
+  Future<void> dispose() async {}
+}
+
 class SlowEchoServer extends Capability {
   final Completer<void> started = Completer<void>();
   final Completer<void> canceled = Completer<void>();
@@ -798,6 +880,259 @@ void main() {
       expect(msg.targetIsPromisedAnswer, isFalse);
       expect(msg.targetImportId, 42);
     });
+  });
+
+  group('rpc_proto — #53 tail call (Level 1) wire encoding', () {
+    test('buildCallMessage(sendResultsToYourself: true) round-trips', () {
+      final bytes = buildCallMessage(
+        questionId: 9,
+        targetImportId: 1,
+        interfaceId: _echoInterfaceId,
+        methodId: _echoMethodId,
+        paramsBytes: _buildEchoParams('x'),
+        sendResultsToYourself: true,
+      );
+      final msg = parseRpcMessage(bytes);
+      expect(msg.type, RpcMessageType.call);
+      expect(msg.sendResultsToDisc, 1);
+    });
+
+    test('buildCallMessage default (no sendResultsToYourself) still encodes '
+        'disc=0 (caller)', () {
+      final bytes = buildCallMessage(
+        questionId: 9,
+        targetImportId: 1,
+        interfaceId: _echoInterfaceId,
+        methodId: _echoMethodId,
+        paramsBytes: _buildEchoParams('x'),
+      );
+      final msg = parseRpcMessage(bytes);
+      expect(msg.sendResultsToDisc, 0);
+    });
+
+    test('buildReturnTakeFromOtherQuestionMessage round-trips the redirect '
+        'question id', () {
+      final bytes = buildReturnTakeFromOtherQuestionMessage(
+        answerId: 7,
+        questionId: 0x12345678,
+      );
+      final msg = parseRpcMessage(bytes);
+      expect(msg.type, RpcMessageType.return_);
+      expect(msg.answerId, 7);
+      expect(msg.isReturnTakeFromOtherQuestion, isTrue);
+      expect(msg.takeFromOtherQuestion, 0x12345678);
+      expect(msg.isReturnResults, isFalse);
+      expect(msg.isReturnException, isFalse);
+      // Byte-offset placement (union disc=4, UInt32 payload at data-section
+      // offset 8) was independently verified against the real `capnp` CLI
+      // during development:
+      //   echo '(answerId = 7, takeFromOtherQuestion = 305419896)' |
+      //     capnp encode rpc.capnp Return | od -An -tx1
+      // which confirmed the payload lands at byte offset 8 — matching the
+      // `_returnTakeFromOtherQuestionOff` constant these builders use.
+    });
+
+    test('buildReturnResultsSentElsewhereMessage round-trips with no '
+        'payload', () {
+      final bytes = buildReturnResultsSentElsewhereMessage(answerId: 11);
+      final msg = parseRpcMessage(bytes);
+      expect(msg.type, RpcMessageType.return_);
+      expect(msg.answerId, 11);
+      expect(msg.isReturnResults, isFalse);
+      expect(msg.isReturnException, isFalse);
+      expect(msg.isReturnTakeFromOtherQuestion, isFalse);
+      expect(describeReturnDisc(msg.returnDisc), 'resultsSentElsewhere');
+    });
+  });
+
+  group('TwoPartyRpcConnection — #53 tail calls (Level 1 wire optimization)', () {
+    test(
+      'tail call to a same-connection import avoids a second results '
+      'round trip',
+      () async {
+        // target is hosted on the CLIENT; TailCallServer (on the server)
+        // receives it as an import and tail-calls into it.
+        final target = EchoServer();
+
+        final s2c = StreamController<Uint8List>();
+        final c2s = StreamController<Uint8List>();
+        final serverCaptured = <RpcMessage>[];
+        final clientCaptured = <RpcMessage>[];
+        final serverOutgoing =
+            StreamController<Uint8List>()
+              ..stream.listen((b) {
+                serverCaptured.add(parseRpcMessage(b));
+                s2c.add(b);
+              });
+        final clientOutgoing =
+            StreamController<Uint8List>()
+              ..stream.listen((b) {
+                clientCaptured.add(parseRpcMessage(b));
+                c2s.add(b);
+              });
+
+        TwoPartyRpcConnection.server(
+          incoming: c2s.stream,
+          outgoing: serverOutgoing.sink,
+          bootstrap: TailCallServer(),
+        );
+        final client = TwoPartyRpcConnection.client(
+          incoming: s2c.stream,
+          outgoing: clientOutgoing.sink,
+        );
+
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        await bootstrapCap.echo('warmup');
+
+        serverCaptured.clear();
+        clientCaptured.clear();
+
+        final result = await bootstrapCap.cap.dispatch(
+          _echoInterfaceId,
+          _tailCallMethodId,
+          _buildEchoParams(''),
+          paramsCapabilities: [target],
+        );
+        expect(_parseEchoResult(result.bytes), 'echo: via tail call');
+
+        // The server answered the original call with takeFromOtherQuestion,
+        // not a full results payload — exactly one Return, redirecting.
+        final serverReturns =
+            serverCaptured
+                .where((m) => m.type == RpcMessageType.return_)
+                .toList();
+        expect(serverReturns.length, 1);
+        expect(serverReturns.single.isReturnTakeFromOtherQuestion, isTrue);
+
+        // The server forwarded a new Call, flagged sendResultsTo=yourself,
+        // targeting the import id it was given for `target` — and its
+        // question id is exactly what the takeFromOtherQuestion Return
+        // pointed at.
+        final serverCalls =
+            serverCaptured.where((m) => m.type == RpcMessageType.call).toList();
+        expect(serverCalls.length, 1);
+        expect(serverCalls.single.sendResultsToDisc, 1);
+        expect(
+          serverCalls.single.questionId,
+          serverReturns.single.takeFromOtherQuestion,
+        );
+
+        // The client (as the forwarded call's dispatcher) answered it with
+        // resultsSentElsewhere, not a normal results Return.
+        final clientReturns =
+            clientCaptured
+                .where((m) => m.type == RpcMessageType.return_)
+                .toList();
+        expect(clientReturns.length, 1);
+        expect(
+          describeReturnDisc(clientReturns.single.returnDisc),
+          'resultsSentElsewhere',
+        );
+
+        await client.close();
+      },
+    );
+
+    test(
+      'tryTailCall target that is not a same-connection import falls back '
+      'to a transparent proxy dispatch',
+      () async {
+        final (client, serverConn) = _makePipe(
+          TailCallLocalServer(EchoServer()),
+        );
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+
+        final result = await bootstrapCap.cap.dispatch(
+          _echoInterfaceId,
+          _tailCallLocalMethodId,
+          _buildEchoParams(''),
+        );
+        expect(_parseEchoResult(result.bytes), 'echo: local tail call');
+
+        await client.close();
+      },
+    );
+
+    test(
+      'an incoming Call flagged sendResultsTo=yourself is answered with '
+      'resultsSentElsewhere, independent of tryTailCall',
+      () async {
+        // Raw wire injection (no tryTailCall involved on either side) —
+        // proves the *receiving* half of the mechanism, which matters for
+        // interop with a peer (e.g. a real capnp implementation) that
+        // tail-calls into this vat.
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        final captured = <RpcMessage>[];
+        serverToClient.stream.listen(
+          (bytes) => captured.add(parseRpcMessage(bytes)),
+        );
+
+        TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: EchoServer(),
+        );
+
+        clientToServer.add(
+          buildCallMessage(
+            questionId: 1,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _echoMethodId,
+            paramsBytes: _buildEchoParams('hi'),
+            sendResultsToYourself: true,
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        final returns =
+            captured.where((m) => m.type == RpcMessageType.return_).toList();
+        expect(returns.length, 1);
+        expect(
+          describeReturnDisc(returns.single.returnDisc),
+          'resultsSentElsewhere',
+        );
+        expect(returns.single.resultsBytes, isNull);
+
+        await clientToServer.close();
+      },
+    );
+
+    test(
+      'pipelining onto an answer resolved via takeFromOtherQuestion fails '
+      'clearly, not silently — a documented limitation',
+      () async {
+        final target = EchoServer();
+        final (client, serverConn) = _makePipe(TailCallServer());
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        await bootstrapCap.echo('warmup');
+
+        final call = bootstrapCap.cap.beginDispatch(
+          _echoInterfaceId,
+          _tailCallMethodId,
+          _buildEchoParams(''),
+          paramsCapabilities: [target],
+        );
+        final pipelinedCap = call.pipelineResult(0);
+
+        await expectLater(
+          pipelinedCap.dispatch(
+            _echoInterfaceId,
+            _echoMethodId,
+            _buildEchoParams('x'),
+          ),
+          throwsA(isA<RpcException>()),
+        );
+
+        // The original tail call itself must still complete correctly —
+        // the failed pipeline attempt must not have corrupted it.
+        final result = await call.result;
+        expect(_parseEchoResult(result.bytes), 'echo: via tail call');
+
+        await client.close();
+      },
+    );
   });
 
   group('TwoPartyRpcConnection — RPC-001 wire-level promise pipelining', () {
