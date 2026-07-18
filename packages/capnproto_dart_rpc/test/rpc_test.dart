@@ -127,6 +127,23 @@ class EchoServer extends Capability {
 }
 
 // Throws synchronously inside dispatchWithContext (before returning a Future).
+// #50: throws an RpcException carrying a specific ErrorKind, to verify it
+// round-trips end to end (dispatch -> wire Exception.type -> caller).
+class _KindThrowingCapability extends Capability {
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) => Future.error(
+    const RpcException('peer is gone', kind: ErrorKind.disconnected),
+  );
+
+  @override
+  Future<void> dispose() async {}
+}
+
 class _SyncThrowingCapability extends Capability {
   @override
   Future<DispatchResult> dispatchWithContext(
@@ -3297,6 +3314,17 @@ void main() {
       expect(msg.answerId, 5);
       expect(msg.isReturnException, isTrue);
       expect(msg.exceptionReason, 'something broke');
+      expect(msg.exceptionKind, ErrorKind.failed);
+    });
+
+    test('return exception round-trip preserves a non-default kind (#50)', () {
+      final bytes = buildReturnExceptionMessage(
+        answerId: 5,
+        reason: 'peer gone',
+        kind: ErrorKind.disconnected,
+      );
+      final msg = parseRpcMessage(bytes);
+      expect(msg.exceptionKind, ErrorKind.disconnected);
     });
 
     test('bootstrap return round-trip (capTable)', () {
@@ -3332,6 +3360,17 @@ void main() {
       expect(msg.promiseId, 11);
       expect(msg.isResolveException, isTrue);
       expect(msg.exceptionReason, 'promise failed');
+      expect(msg.exceptionKind, ErrorKind.failed);
+    });
+
+    test('resolve exception round-trip preserves a non-default kind (#50)', () {
+      final bytes = buildResolveExceptionMessage(
+        promiseId: 11,
+        reason: 'overloaded',
+        kind: ErrorKind.overloaded,
+      );
+      final msg = parseRpcMessage(bytes);
+      expect(msg.exceptionKind, ErrorKind.overloaded);
     });
 
     test('disembargo senderLoopback round-trip', () {
@@ -3371,7 +3410,52 @@ void main() {
       final msg = parseRpcMessage(bytes);
       expect(msg.type, RpcMessageType.abort);
       expect(msg.exceptionReason, 'fatal error');
+      expect(msg.exceptionKind, ErrorKind.failed);
     });
+
+    test('abort round-trip preserves a non-default kind (#50)', () {
+      final bytes = buildAbortMessage(
+        'unimplemented feature',
+        kind: ErrorKind.unimplemented,
+      );
+      final msg = parseRpcMessage(bytes);
+      expect(msg.exceptionKind, ErrorKind.unimplemented);
+    });
+
+    test(
+      'an out-of-range wire Exception.type decodes to a safe fallback '
+      'instead of throwing (#50)',
+      () {
+        // A future peer-side ErrorKind variant this vat doesn't know about
+        // yet. No builder exposes an out-of-range type directly, so mangle
+        // the byte for it instead (same technique as the "unknown disc"
+        // test above) — found empirically by diffing two otherwise-
+        // identical messages that only differ in `kind`, rather than
+        // hardcoding an offset derived by hand.
+        final withDefaultKind = buildReturnExceptionMessage(
+          answerId: 9,
+          reason: 'mystery error',
+        );
+        final withOtherKind = buildReturnExceptionMessage(
+          answerId: 9,
+          reason: 'mystery error',
+          kind: ErrorKind.unimplemented,
+        );
+        expect(withDefaultKind.length, withOtherKind.length);
+        var typeByteOffset = -1;
+        for (var i = 0; i < withDefaultKind.length; i++) {
+          if (withDefaultKind[i] != withOtherKind[i]) {
+            typeByteOffset = i;
+            break;
+          }
+        }
+        expect(typeByteOffset, greaterThanOrEqualTo(0));
+
+        final mangled = Uint8List.fromList(withDefaultKind);
+        mangled[typeByteOffset] = 99; // out of ErrorKind.values range
+        expect(parseRpcMessage(mangled).exceptionKind, ErrorKind.failed);
+      },
+    );
   });
 
   group('rpc_proto — RPC-003 receiverHosted encoding', () {
@@ -4034,6 +4118,24 @@ void main() {
       expect(client.debugPendingQuestionCount, equals(0));
       expect(server.debugPendingQuestionCount, equals(0));
     });
+
+    test(
+      "a dispatch's RpcException.kind round-trips to the caller over the "
+      'wire (#50)',
+      () async {
+        final (client, server) = _makePipe(_KindThrowingCapability());
+        final stub = client.bootstrap(EchoClientFactory());
+        try {
+          await stub.echo('x');
+          fail('expected an RpcException');
+        } on RpcException catch (e) {
+          expect(e.kind, ErrorKind.disconnected);
+          expect(e.message, 'peer is gone');
+        }
+        await client.close();
+        await server.close();
+      },
+    );
   });
 
   group('TwoPartyRpcConnection — List(Interface) over RPC', () {

@@ -128,6 +128,7 @@ abstract class Capability {
   }) => Future.error(
     RpcException(
       'capability does not implement interface $interfaceId method $methodId',
+      kind: ErrorKind.unimplemented,
     ),
   );
 
@@ -427,12 +428,12 @@ class DeferredCapability extends Capability {
 
   Future<Capability> _resolveForCall() async {
     if (_disposed) {
-      throw const RpcException('capability is disposed');
+      throw const RpcException('capability is disposed', kind: ErrorKind.disconnected);
     }
     final cap = await _future;
     if (_disposed) {
       await cap.dispose();
-      throw const RpcException('capability is disposed');
+      throw const RpcException('capability is disposed', kind: ErrorKind.disconnected);
     }
     return cap;
   }
@@ -481,7 +482,7 @@ class DeferredCapability extends Capability {
     if (_disposed) {
       return _DeferredCapCall(
         Future<DispatchResult>.error(
-          const RpcException('capability is disposed'),
+          const RpcException('capability is disposed', kind: ErrorKind.disconnected),
         ),
       );
     }

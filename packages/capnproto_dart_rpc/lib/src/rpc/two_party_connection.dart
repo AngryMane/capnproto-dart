@@ -178,7 +178,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   @override
   T bootstrap<T extends Capability>(CapabilityFactory<T> factory) {
     if (_closedError != null) {
-      throw RpcException('connection is closed');
+      throw RpcException('connection is closed', kind: ErrorKind.disconnected);
     }
     if (!_isClient) {
       throw RpcException('bootstrap() must be called on the client side');
@@ -228,7 +228,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     int? targetPromisedAnswerQid,
     int targetPtrIndex = 0,
   }) {
-    if (_closedError != null) throw RpcException('connection is closed');
+    if (_closedError != null) throw RpcException('connection is closed', kind: ErrorKind.disconnected);
 
     final qid = _nextQuestionId++;
     final completer = Completer<RpcMessage>();
@@ -342,7 +342,10 @@ class TwoPartyRpcConnection implements RpcConnection {
     _sendRaw(buildFinishMessage(qid, releaseResultCaps: false));
 
     if (ret.isReturnException) {
-      throw RpcException(ret.exceptionReason ?? 'remote exception');
+      throw RpcException(
+        ret.exceptionReason ?? 'remote exception',
+        kind: ret.exceptionKind,
+      );
     }
     if (ret.isReturnTakeFromOtherQuestion) {
       // The peer tail-called this call onward to a capability it imports
@@ -491,7 +494,12 @@ class TwoPartyRpcConnection implements RpcConnection {
       case RpcMessageType.disembargo:
         _handleDisembargo(msg);
       case RpcMessageType.abort:
-        _tearDown(RpcException(msg.exceptionReason ?? 'peer aborted'));
+        _tearDown(
+          RpcException(
+            msg.exceptionReason ?? 'peer aborted',
+            kind: msg.exceptionKind,
+          ),
+        );
       case RpcMessageType.unimplemented:
         // The peer couldn't handle a message we sent; no action needed.
         break;
@@ -877,7 +885,8 @@ class TwoPartyRpcConnection implements RpcConnection {
           _sendRaw(
             buildReturnExceptionMessage(
               answerId: qid,
-              reason: err is RpcException ? err.message : err.toString(),
+              reason: err is CapnpException ? err.message : err.toString(),
+              kind: err is CapnpException ? err.kind : ErrorKind.failed,
             ),
           );
         });
@@ -925,7 +934,10 @@ class TwoPartyRpcConnection implements RpcConnection {
       } else if (msg.isReturnException) {
         if (_bootstrapCompleter != null && !_bootstrapCompleter!.isCompleted) {
           _bootstrapCompleter!.completeError(
-            RpcException(msg.exceptionReason ?? 'bootstrap failed'),
+            RpcException(
+              msg.exceptionReason ?? 'bootstrap failed',
+              kind: msg.exceptionKind,
+            ),
           );
         }
       } else {
@@ -997,6 +1009,7 @@ class TwoPartyRpcConnection implements RpcConnection {
       final state = _imports[msg.promiseId] ?? _importStateForId(msg.promiseId);
       final error = RpcException(
         msg.exceptionReason ?? 'promise resolved to exception',
+        kind: msg.exceptionKind,
       );
       _brokenImports[msg.promiseId] = error;
       state.resolveError(error);
@@ -1325,8 +1338,15 @@ class TwoPartyRpcConnection implements RpcConnection {
 
     final err =
         error != null
-            ? RpcException(error.toString())
-            : const RpcException('connection closed');
+            ? RpcException(
+              'connection torn down: $error',
+              kind: ErrorKind.disconnected,
+              cause: error,
+            )
+            : const RpcException(
+              'connection closed',
+              kind: ErrorKind.disconnected,
+            );
 
     // Fail all pending questions.
     for (final c in _questions.values) {
@@ -1516,11 +1536,11 @@ class _ImportedCapability extends Capability {
     List<Capability> paramsCapabilities = const [],
   }) async {
     if (_disposed) {
-      throw const RpcException('capability is disposed');
+      throw const RpcException('capability is disposed', kind: ErrorKind.disconnected);
     }
     final state = await _state;
     if (_disposed) {
-      throw const RpcException('capability is disposed');
+      throw const RpcException('capability is disposed', kind: ErrorKind.disconnected);
     }
     final replacement = state.replacement;
     if (replacement != null) {
@@ -1554,11 +1574,11 @@ class _ImportedCapability extends Capability {
     List<Capability> paramsCapabilities = const [],
   }) async {
     if (_disposed) {
-      throw const RpcException('capability is disposed');
+      throw const RpcException('capability is disposed', kind: ErrorKind.disconnected);
     }
     final state = await _state;
     if (_disposed) {
-      throw const RpcException('capability is disposed');
+      throw const RpcException('capability is disposed', kind: ErrorKind.disconnected);
     }
     final replacement = state.replacement;
     if (replacement != null) {
@@ -1599,7 +1619,7 @@ class _ImportedCapability extends Capability {
     List<Capability> paramsCapabilities = const [],
   }) {
     if (_disposed) {
-      return _ErrorCapCall(const RpcException('capability is disposed'));
+      return _ErrorCapCall(const RpcException('capability is disposed', kind: ErrorKind.disconnected));
     }
     final cached = _cachedState;
     if (cached != null) {
@@ -1631,7 +1651,7 @@ class _ImportedCapability extends Capability {
     final result = stateFuture
         .then((state) {
           if (_disposed) {
-            throw const RpcException('capability is disposed');
+            throw const RpcException('capability is disposed', kind: ErrorKind.disconnected);
           }
           final replacement = state.replacement;
           if (replacement != null) {
@@ -1786,7 +1806,7 @@ class _WirePipelinedCapability extends Capability {
     List<Capability> paramsCapabilities = const [],
   }) {
     if (_disposed) {
-      return Future.error(const RpcException('capability is disposed'));
+      return Future.error(const RpcException('capability is disposed', kind: ErrorKind.disconnected));
     }
     final r = _resolved;
     if (r != null) {
@@ -1821,7 +1841,7 @@ class _WirePipelinedCapability extends Capability {
     List<Capability> paramsCapabilities = const [],
   }) {
     if (_disposed) {
-      return _ErrorCapCall(const RpcException('capability is disposed'));
+      return _ErrorCapCall(const RpcException('capability is disposed', kind: ErrorKind.disconnected));
     }
     final r = _resolved;
     if (r != null) {
@@ -1865,7 +1885,7 @@ class _ReceiverAnswerCapability extends Capability {
 
   Future<Capability> _resolve() async {
     if (_disposed) {
-      throw const RpcException('capability is disposed');
+      throw const RpcException('capability is disposed', kind: ErrorKind.disconnected);
     }
     final resolved = _conn._answerCaps[_questionId];
     if (resolved != null) {

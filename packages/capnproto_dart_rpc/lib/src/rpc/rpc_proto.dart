@@ -103,6 +103,16 @@ const int _retResultsSentElsewhere = 3;
 const int _retTakeFromOtherQuestion = 4;
 const int _retAcceptFromThirdParty = 5;
 
+/// Maps a wire `Exception.type` value to [ErrorKind]. Out-of-range values
+/// (e.g. a future peer-side enumerant this vat doesn't know about yet) fall
+/// back to [ErrorKind.failed] rather than throwing — matches this file's
+/// existing "never crash on a value from an untrusted peer" pattern (see
+/// [describeReturnDisc]'s `unknown($disc)` fallback).
+ErrorKind _errorKindFromWire(int wireType) =>
+    wireType >= 0 && wireType < ErrorKind.values.length
+        ? ErrorKind.values[wireType]
+        : ErrorKind.failed;
+
 /// Human-readable name for a [RpcMessage.returnDisc] value, for diagnostics
 /// when a peer sends a `Return` variant this vat doesn't implement.
 String describeReturnDisc(int disc) => switch (disc) {
@@ -595,6 +605,11 @@ final class RpcMessage {
   final int takeFromOtherQuestion;
   final Uint8List? resultsBytes;
   final String? exceptionReason;
+  // Populated wherever exceptionReason is (Return-exception, Resolve-
+  // exception, Abort) from the wire Exception.type field, which is defined
+  // (rpc.capnp) with the same 4 values, in the same order, as ErrorKind —
+  // see rpc_proto.dart's build*ExceptionMessage/buildAbortMessage.
+  final ErrorKind exceptionKind;
   // senderHosted export IDs from the return payload's capTable, in order.
   final List<int> capTableExportIds;
   // Raw (disc, id) descriptors from the return payload's capTable, in order.
@@ -644,6 +659,7 @@ final class RpcMessage {
     this.takeFromOtherQuestion = 0,
     this.resultsBytes,
     this.exceptionReason,
+    this.exceptionKind = ErrorKind.failed,
     this.capTableExportIds = const [],
     this.capTableEntries = const [],
     this.capTableDescriptors = const [],
@@ -825,6 +841,7 @@ Uint8List buildResolveCapMessage({
 Uint8List buildResolveExceptionMessage({
   required int promiseId,
   required String reason,
+  ErrorKind kind = ErrorKind.failed,
 }) {
   final mb = MessageBuilder();
   final msg = mb.initRoot(_msgFactory);
@@ -833,7 +850,7 @@ Uint8List buildResolveExceptionMessage({
   resolve.setPromiseId(promiseId);
   resolve.setDiscException();
   final exc = resolve.initException();
-  exc.setType(0);
+  exc.setType(kind.index);
   exc.setReason(reason);
   return mb.serialize();
 }
@@ -888,6 +905,7 @@ Uint8List buildBootstrapReturnMessage({
 Uint8List buildReturnExceptionMessage({
   required int answerId,
   required String reason,
+  ErrorKind kind = ErrorKind.failed,
 }) {
   final mb = MessageBuilder();
   final msg = mb.initRoot(_msgFactory);
@@ -896,7 +914,7 @@ Uint8List buildReturnExceptionMessage({
   ret.setAnswerId(answerId);
   ret.setDiscException();
   final exc = ret.initException();
-  exc.setType(0); // failed
+  exc.setType(kind.index);
   exc.setReason(reason);
   return mb.serialize();
 }
@@ -971,12 +989,12 @@ Uint8List buildUnimplementedMessage(Uint8List originalMessageBytes) {
 }
 
 /// Serializes an Abort message.
-Uint8List buildAbortMessage(String reason) {
+Uint8List buildAbortMessage(String reason, {ErrorKind kind = ErrorKind.failed}) {
   final mb = MessageBuilder();
   final msg = mb.initRoot(_msgFactory);
   msg.setDisc(_msgAbort);
   final exc = msg.initAbort();
-  exc.setType(0);
+  exc.setType(kind.index);
   exc.setReason(reason);
   return mb.serialize();
 }
@@ -1128,6 +1146,7 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
           isReturnException: true,
           returnDisc: retDisc,
           exceptionReason: exc?.reason ?? 'unknown error',
+          exceptionKind: _errorKindFromWire(exc?.type ?? 0),
         );
       } else if (retDisc == _retTakeFromOtherQuestion) {
         return RpcMessage._(
@@ -1153,12 +1172,13 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
       final resolve = msg.asResolve;
       final resolveDisc = resolve?.disc ?? _resolveCap;
       if (resolveDisc == _resolveException) {
+        final exc = resolve?.exception;
         return RpcMessage._(
           type: RpcMessageType.resolve,
           promiseId: resolve?.promiseId ?? 0,
           isResolveException: true,
-          exceptionReason:
-              resolve?.exception?.reason ?? 'promise resolved to exception',
+          exceptionReason: exc?.reason ?? 'promise resolved to exception',
+          exceptionKind: _errorKindFromWire(exc?.type ?? 0),
         );
       }
       final cap = resolve?.cap;
@@ -1215,6 +1235,7 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
       return RpcMessage._(
         type: RpcMessageType.abort,
         exceptionReason: msg.asAbort?.reason ?? 'peer aborted',
+        exceptionKind: _errorKindFromWire(msg.asAbort?.type ?? 0),
       );
 
     case _msgUnimplemented:

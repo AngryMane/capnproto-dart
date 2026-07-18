@@ -237,10 +237,15 @@ final class DynamicListBuilder {}
 All errors thrown by this library are subclasses of `CapnpException`.
 
 ```dart
+/// Broad classification of why an operation failed — mirrors capnp::ErrorKind.
+enum ErrorKind { failed, overloaded, disconnected, unimplemented }
+
 /// Base class for all Cap'n Proto exceptions.
 class CapnpException implements Exception {
   final String message;
-  const CapnpException(this.message);
+  final ErrorKind kind;          // defaults to ErrorKind.failed
+  final Object? cause;           // the lower-level error this one wraps, if any
+  const CapnpException(this.message, {this.kind = ErrorKind.failed, this.cause});
 }
 
 /// Thrown when binary data cannot be decoded (e.g., malformed framing, traversal limit exceeded).
@@ -249,3 +254,21 @@ class DecodeException extends CapnpException {}
 /// Thrown when a schema violation is detected (e.g., required field missing, type mismatch).
 class SchemaException extends CapnpException {}
 ```
+
+`kind` lets callers make semantic decisions (retry? reconnect? give up?) instead of
+only having a message string — `overloaded` means retrying later may help,
+`disconnected` means the peer/connection is gone, `unimplemented` means the operation
+was never supported. It defaults to `failed` everywhere, so existing code that never
+passes `kind` is unaffected.
+
+`cause` is the Rust-`.context()` equivalent: when one layer catches a lower-level
+error and re-throws with higher-level meaning, it can attach the original via `cause`
+instead of discarding it (`toString()` includes it as `... (caused by: ...)` when
+present).
+
+In `capnproto_dart_rpc`, `RpcException` (which extends `CapnpException`) round-trips
+`kind` over the wire with real Cap'n Proto peers: `rpc.capnp`'s own `Exception.type`
+field uses the same 4-value enum in the same order, so a Rust/C++ peer's
+`disconnected`/`overloaded`/`unimplemented` classification survives a network hop
+intact, and this vat's own `RpcException.kind` (e.g. from a capability's `dispatch`)
+is reported back to the peer the same way — not just always "failed".

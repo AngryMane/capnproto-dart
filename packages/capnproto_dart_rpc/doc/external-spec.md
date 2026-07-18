@@ -118,9 +118,19 @@ a normal (non-optimized) proxy.
 
 ## Error Handling
 
-RPC errors extend `CapnpException` (defined in the Serialization Runtime, `capnproto_dart`).
+RPC errors extend `CapnpException` (defined in the Serialization Runtime, `capnproto_dart`
+— see its `external-spec.md` for the full `ErrorKind`/`cause` shape).
 
 ```dart
 /// Thrown when an RPC call fails (e.g., connection lost, remote exception).
 class RpcException extends CapnpException {}
 ```
+
+`RpcException.kind` round-trips over the wire with real Cap'n Proto peers via
+`rpc.capnp`'s `Exception.type` field (same 4 values, same order as `ErrorKind`) —
+a peer's own `disconnected`/`overloaded`/`unimplemented` classification survives the
+network hop, and a local `dispatch` that throws `RpcException(..., kind: ...)` reports
+that same kind back to the caller instead of always appearing as generic `failed`.
+Locally, `disconnected` is used for connection-closed/capability-disposed errors, and
+`unimplemented` for `Capability.dispatch`'s default "not implemented" error; everything
+else defaults to `failed`.
