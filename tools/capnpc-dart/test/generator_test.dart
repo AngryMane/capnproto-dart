@@ -775,6 +775,67 @@ void main() {
         );
       },
     );
+
+    test(
+      'List(Int32) field with explicit default emits defaultValue: as a '
+      'Uint8List.fromList(...) literal',
+      () {
+        // The default is captured as standalone serialized message bytes
+        // (see schema_reader.dart's _ValueReader.listValue) — the generator
+        // just needs to emit it as a byte-array literal, same mechanism as
+        // Data field defaults.
+        final sNode = structNode(20, 'S', 0, 1, [
+          defaultedField(
+            'nums',
+            0,
+            0,
+            const ListType(Int32Type()),
+            Uint8List.fromList([1, 2, 3]),
+          ),
+        ]);
+        final file = fileNode(1, [SchemaNestedNode(name: 'S', id: 20)]);
+        final src = generateDartFile(file, [file, sNode]);
+
+        expect(
+          src,
+          contains(
+            'getInt32ListField(0, defaultValue: Uint8List.fromList([1, 2, 3]))',
+          ),
+        );
+      },
+    );
+
+    test(
+      'struct-typed field with explicit default emits defaultValue: as a '
+      'Uint8List.fromList(...) literal',
+      () {
+        const innerId = 30;
+        final innerNode = structNode(innerId, 'Inner', 1, 0, [
+          dataField('x', 0, 0, const Int32Type()),
+        ]);
+        final sNode = structNode(20, 'S', 0, 1, [
+          defaultedField(
+            'inner',
+            0,
+            0,
+            StructRefType(innerId),
+            Uint8List.fromList([9, 9]),
+          ),
+        ]);
+        final file = fileNode(1, [
+          SchemaNestedNode(name: 'S', id: 20),
+          SchemaNestedNode(name: 'Inner', id: innerId),
+        ]);
+        final src = generateDartFile(file, [file, sNode, innerNode]);
+
+        expect(
+          src,
+          contains(
+            'getStructFieldWith(0, (r) => InnerReader(r, capabilities: capabilityTable), defaultValue: Uint8List.fromList([9, 9]))',
+          ),
+        );
+      },
+    );
   });
 
   group('generateDartFile — generic structs (GEN-008)', () {

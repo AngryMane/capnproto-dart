@@ -266,6 +266,15 @@ class _ValueReader extends StructReader {
   // pointer slot 0 (only one of them is ever set at a time).
   String? get textValue => getTextField(0);
   Uint8List? get dataValue => getDataField(0);
+
+  // list/struct defaults aren't representable as a simple Dart literal (they
+  // can be arbitrarily large/nested), so they're captured as a standalone
+  // single-message byte buffer instead — the same representation
+  // capnproto_dart's StructReader.getStructFieldWith/list getters accept as
+  // their own `defaultValue` parameter (see struct_reader.dart), letting the
+  // generator embed them as a plain `Uint8List.fromList([...])` literal.
+  Uint8List? get listValue => getAnyPointerAsMessageBytes(0);
+  Uint8List? get structValue => getAnyPointerAsMessageBytes(0);
 }
 
 // ---- Method @0x9500cce23b334d80 (dataWords=3, ptrWords=5) ----
@@ -499,7 +508,9 @@ SchemaField _buildField(_FieldReader r) {
         11 => dv.float64Value,
         12 => dv.textValue,
         13 => dv.dataValue,
+        14 => dv.listValue,
         15 => dv.uint16Value, // enum stored as uint16
+        16 => dv.structValue,
         _ => null,
       };
     }

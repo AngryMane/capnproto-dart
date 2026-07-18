@@ -66,6 +66,12 @@ class ContainerReader extends StructReader {
 
   ListReader<bool>? get bools => getBoolListField(0);
   ListReader<int>? get int32s => getInt32ListField(1);
+  // Mirrors what capnpc-dart generates for a List-typed field with an
+  // explicit schema-declared default: the default is captured as standalone
+  // message bytes at codegen time (see schema_reader.dart's
+  // `_ValueReader.listValue`) and passed through as `defaultValue`.
+  ListReader<int>? get int32sWithDefault =>
+      getInt32ListField(1, defaultValue: _int32sDefaultBytes());
   ListReader<int>? get uint64s => getUint64ListField(2);
   ListReader<double>? get floats => getFloat64ListField(3);
   ListReader<String?>? get texts => getTextListField(4);
@@ -73,6 +79,18 @@ class ContainerReader extends StructReader {
   ListReader<ItemReader>? get items =>
       getStructListFieldWith(6, (r) => ItemReader(r));
   ListReader<Null>? get voids => getVoidListField(7);
+}
+
+Uint8List _int32sDefaultBytes() {
+  final mb = MessageBuilder();
+  final list = mb.initRoot(containerFactory).initInt32s(3);
+  list[0] = 100;
+  list[1] = 200;
+  list[2] = 300;
+  final reader = MessageReader.deserialize(
+    mb.serialize(),
+  ).getRoot(containerFactory);
+  return reader.getAnyPointerAsMessageBytes(1)!;
 }
 
 class ContainerBuilder extends StructBuilder {
@@ -380,6 +398,30 @@ void main() {
         }
       }, (r) => r.int32s!.fold<int>(0, (acc, v) => acc + v));
       expect(sum, equals(15));
+    });
+
+    test(
+      'unset list field with an explicit default returns the default, '
+      'not null',
+      () {
+        // Regression test: list getters' defaultValue param — an unset
+        // List-typed field with a schema-declared default used to always
+        // read back as null, same as "no default at all".
+        expect(
+          _rt((_) {}, (r) => r.int32sWithDefault?.toList()),
+          equals([100, 200, 300]),
+        );
+      },
+    );
+
+    test('an explicitly initialized list field overrides the default', () {
+      expect(
+        _rt(
+          (b) => b.initInt32s(1)[0] = 7,
+          (r) => r.int32sWithDefault?.toList(),
+        ),
+        equals([7]),
+      );
     });
   });
 

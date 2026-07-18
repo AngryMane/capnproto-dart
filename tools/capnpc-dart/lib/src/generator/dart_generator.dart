@@ -1352,11 +1352,13 @@ String _dartBytesLiteral(Uint8List bytes) =>
       typeId,
       offset,
       nodeMap,
+      fieldDefault is Uint8List ? fieldDefault : null,
     ),
     ListType(:final elementType) => _listReaderGetter(
       elementType,
       offset,
       nodeMap,
+      fieldDefault is Uint8List ? fieldDefault : null,
     ),
     InterfaceRefType() => ('int', 'getCapabilityField($offset)'),
     _ => ('dynamic', 'null /* unsupported type */'),
@@ -1382,22 +1384,27 @@ String _dartBytesLiteral(Uint8List bytes) =>
 (String, String) _structReaderGetter(
   int typeId,
   int ptrIndex,
-  Map<int, SchemaNode> nodeMap,
-) {
+  Map<int, SchemaNode> nodeMap, [
+  Uint8List? fieldDefault,
+]) {
   final node = nodeMap[typeId];
   final name = _dartClassName(node?.displayName ?? 'UnknownStruct');
+  final ds = _dataDefaultSuffix(fieldDefault);
   return (
     '${name}Reader?',
-    'getStructFieldWith($ptrIndex, (r) => ${name}Reader(r, capabilities: capabilityTable))',
+    'getStructFieldWith($ptrIndex, (r) => ${name}Reader(r, capabilities: capabilityTable)$ds)',
   );
 }
 
 (String, String) _listReaderGetter(
   SchemaType elem,
   int ptrIndex,
-  Map<int, SchemaNode> nodeMap,
-) {
+  Map<int, SchemaNode> nodeMap, [
+  Uint8List? fieldDefault,
+]) {
   // Concrete generic instantiation: use the specialized reader name.
+  // (Explicit defaults for generic-instantiated struct lists aren't
+  // supported yet — fieldDefault is intentionally not applied here.)
   if (elem is StructRefType && _allConcrete(elem.typeArgs)) {
     final specName = _specializedName(elem.typeId, elem.typeArgs, nodeMap);
     return (
@@ -1405,31 +1412,46 @@ String _dartBytesLiteral(Uint8List bytes) =>
       'getStructListFieldWith($ptrIndex, (r) => ${specName}Reader(r, capabilities: capabilityTable))',
     );
   }
+  final ds = _dataDefaultSuffix(fieldDefault);
   return switch (elem) {
-    BoolType() => ('ListReader<bool>?', 'getBoolListField($ptrIndex)'),
-    Int8Type() => ('ListReader<int>?', 'getInt8ListField($ptrIndex)'),
-    Int16Type() => ('ListReader<int>?', 'getInt16ListField($ptrIndex)'),
-    Int32Type() => ('ListReader<int>?', 'getInt32ListField($ptrIndex)'),
-    Int64Type() => ('ListReader<int>?', 'getInt64ListField($ptrIndex)'),
-    UInt8Type() => ('ListReader<int>?', 'getUint8ListField($ptrIndex)'),
-    UInt16Type() => ('ListReader<int>?', 'getUint16ListField($ptrIndex)'),
-    UInt32Type() => ('ListReader<int>?', 'getUint32ListField($ptrIndex)'),
-    UInt64Type() => ('ListReader<int>?', 'getUint64ListField($ptrIndex)'),
-    Float32Type() => ('ListReader<double>?', 'getFloat32ListField($ptrIndex)'),
-    Float64Type() => ('ListReader<double>?', 'getFloat64ListField($ptrIndex)'),
-    TextType() => ('ListReader<String?>?', 'getTextListField($ptrIndex)'),
-    DataType() => ('ListReader<Uint8List?>?', 'getDataListField($ptrIndex)'),
+    BoolType() => ('ListReader<bool>?', 'getBoolListField($ptrIndex$ds)'),
+    Int8Type() => ('ListReader<int>?', 'getInt8ListField($ptrIndex$ds)'),
+    Int16Type() => ('ListReader<int>?', 'getInt16ListField($ptrIndex$ds)'),
+    Int32Type() => ('ListReader<int>?', 'getInt32ListField($ptrIndex$ds)'),
+    Int64Type() => ('ListReader<int>?', 'getInt64ListField($ptrIndex$ds)'),
+    UInt8Type() => ('ListReader<int>?', 'getUint8ListField($ptrIndex$ds)'),
+    UInt16Type() => ('ListReader<int>?', 'getUint16ListField($ptrIndex$ds)'),
+    UInt32Type() => ('ListReader<int>?', 'getUint32ListField($ptrIndex$ds)'),
+    UInt64Type() => ('ListReader<int>?', 'getUint64ListField($ptrIndex$ds)'),
+    Float32Type() => (
+      'ListReader<double>?',
+      'getFloat32ListField($ptrIndex$ds)',
+    ),
+    Float64Type() => (
+      'ListReader<double>?',
+      'getFloat64ListField($ptrIndex$ds)',
+    ),
+    TextType() => ('ListReader<String?>?', 'getTextListField($ptrIndex$ds)'),
+    DataType() => (
+      'ListReader<Uint8List?>?',
+      'getDataListField($ptrIndex$ds)',
+    ),
     StructRefType(:final typeId) => _structListReaderGetter(
       typeId,
       ptrIndex,
       nodeMap,
+      fieldDefault,
     ),
-    VoidType() => ('ListReader<Null>?', 'getVoidListField($ptrIndex)'),
+    VoidType() => ('ListReader<Null>?', 'getVoidListField($ptrIndex$ds)'),
     EnumRefType(:final typeId) => _enumListReaderGetter(
       typeId,
       ptrIndex,
       nodeMap,
+      fieldDefault,
     ),
+    // List(Interface) and List(List(T)) defaults aren't supported yet —
+    // capabilities can't have constant defaults in a schema anyway, and
+    // nested-list defaults would need recursive default-bytes handling.
     InterfaceRefType(:final typeId) => _capabilityListReaderGetter(
       typeId,
       ptrIndex,
@@ -1447,13 +1469,15 @@ String _dartBytesLiteral(Uint8List bytes) =>
 (String, String) _enumListReaderGetter(
   int typeId,
   int ptrIndex,
-  Map<int, SchemaNode> nodeMap,
-) {
+  Map<int, SchemaNode> nodeMap, [
+  Uint8List? fieldDefault,
+]) {
   final node = nodeMap[typeId];
   final name = _dartClassName(node?.displayName ?? 'UnknownEnum');
+  final ds = _dataDefaultSuffix(fieldDefault);
   return (
     'ListReader<$name?>?',
-    'getEnumListField($ptrIndex, ${_lcfirst(name)}FromUint16)',
+    'getEnumListField($ptrIndex, ${_lcfirst(name)}FromUint16$ds)',
   );
 }
 
@@ -1555,13 +1579,15 @@ String _dartBytesLiteral(Uint8List bytes) =>
 (String, String) _structListReaderGetter(
   int typeId,
   int ptrIndex,
-  Map<int, SchemaNode> nodeMap,
-) {
+  Map<int, SchemaNode> nodeMap, [
+  Uint8List? fieldDefault,
+]) {
   final node = nodeMap[typeId];
   final name = _dartClassName(node?.displayName ?? 'UnknownStruct');
+  final ds = _dataDefaultSuffix(fieldDefault);
   return (
     'ListReader<${name}Reader>?',
-    'getStructListFieldWith($ptrIndex, (r) => ${name}Reader(r, capabilities: capabilityTable))',
+    'getStructListFieldWith($ptrIndex, (r) => ${name}Reader(r, capabilities: capabilityTable)$ds)',
   );
 }
 

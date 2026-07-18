@@ -165,6 +165,22 @@ class OuterReader extends StructReader {
 
   InnerReader? get inner =>
       getStructFieldWith(0, (raw) => InnerReader(raw));
+
+  // Mirrors what capnpc-dart generates for a struct-typed field with an
+  // explicit schema-declared default: the default is captured as standalone
+  // message bytes at codegen time (see schema_reader.dart's
+  // `_ValueReader.structValue`) and passed through as `defaultValue`.
+  InnerReader? get innerWithDefault => getStructFieldWith(
+        0,
+        (raw) => InnerReader(raw),
+        defaultValue: _innerDefaultBytes(),
+      );
+}
+
+Uint8List _innerDefaultBytes() {
+  final mb = MessageBuilder();
+  mb.initRoot(innerFactory).value = 42;
+  return mb.serialize();
 }
 
 class OuterBuilder extends StructBuilder {
@@ -489,6 +505,31 @@ void main() {
           (r) => r.inner?.value,
         ),
         equals(99),
+      );
+    });
+
+    test(
+      'unset struct field with an explicit default returns the default, '
+      'not null',
+      () {
+        // Regression test: getStructFieldWith's defaultValue param — an
+        // unset struct-typed field with a schema-declared default used to
+        // always read back as null, same as "no default at all".
+        expect(
+          _roundTrip(outerFactory, (_) {}, (r) => r.innerWithDefault?.value),
+          equals(42),
+        );
+      },
+    );
+
+    test('an explicitly initialized struct field overrides the default', () {
+      expect(
+        _roundTrip(
+          outerFactory,
+          (b) => b.initInner().value = 7,
+          (r) => r.innerWithDefault?.value,
+        ),
+        equals(7),
       );
     });
 

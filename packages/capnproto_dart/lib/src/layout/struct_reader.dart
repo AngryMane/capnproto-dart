@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import '../arena/arena_reader.dart';
 import '../exception/decode_exception.dart';
 import '../message/message_copy.dart';
+import '../message/message_reader_options.dart';
 import '../wire/pointer.dart';
 import '../wire/wire_helpers.dart';
 import 'any_pointer.dart';
@@ -231,122 +232,177 @@ abstract class StructReader {
     return AnyPointerReader(_raw, ptrIndex, capabilities: _capabilities);
   }
 
-  /// Reads a nested struct from the pointer at [ptrIndex].
-  /// Returns null if the pointer is null.
+  /// Reads a nested struct from the pointer at [ptrIndex]. Returns the
+  /// struct decoded from [defaultValue] if the pointer is null and
+  /// [defaultValue] is given (see [getTextField] for how this default
+  /// mechanism relates to the plain "field absent" case); returns null
+  /// otherwise.
+  ///
+  /// [defaultValue], when supplied, is a standalone single-message byte
+  /// buffer (as produced by [getAnyPointerAsMessageBytes] on the schema's
+  /// own default value at codegen time) whose root pointer is the default
+  /// struct — matching how capnpc-dart embeds struct-typed field defaults
+  /// as raw bytes rather than a Dart literal.
   ///
   /// Uses a callback instead of [StructFactory] to avoid an import cycle
   /// between the layout and arena layers.
   R? getStructFieldWith<R extends StructReader>(
     int ptrIndex,
-    R Function(RawStructReader) fromRaw,
-  ) {
-    if (ptrIndex >= _raw.ptrWords) return null;
-    final wordOffset = _raw.ptrWordOffset + ptrIndex;
-    final raw = _raw.arena.resolveOptionalStructAt(
-      _raw.segment,
-      wordOffset,
-      _raw.nestingLimit,
-    );
-    return raw == null ? null : fromRaw(raw);
+    R Function(RawStructReader) fromRaw, {
+    Uint8List? defaultValue,
+  }) {
+    if (ptrIndex < _raw.ptrWords) {
+      final wordOffset = _raw.ptrWordOffset + ptrIndex;
+      final raw = _raw.arena.resolveOptionalStructAt(
+        _raw.segment,
+        wordOffset,
+        _raw.nestingLimit,
+      );
+      if (raw != null) return fromRaw(raw);
+    }
+    if (defaultValue == null) return null;
+    return fromRaw(_defaultMessageArena(defaultValue).getRootRaw());
   }
 
   // ---- List field helpers ----
 
-  RawListReader? _resolveListField(int ptrIndex) {
-    if (ptrIndex >= _raw.ptrWords) return null;
-    return _raw.arena.resolveListAt(
-      _raw.segment,
-      _raw.ptrWordOffset + ptrIndex,
-      _raw.nestingLimit,
-    );
+  /// Parses [bytes] — a standalone single-message buffer holding a
+  /// schema-declared field default — as its own tiny [ArenaReader]. Schema
+  /// defaults are part of the trusted schema itself (not untrusted network
+  /// input), so the default [MessageReaderOptions] are used unconditionally.
+  ArenaReader _defaultMessageArena(Uint8List bytes) =>
+      ArenaReader.fromBytes(bytes, const MessageReaderOptions());
+
+  RawListReader? _resolveListField(int ptrIndex, {Uint8List? defaultValue}) {
+    if (ptrIndex < _raw.ptrWords) {
+      final raw = _raw.arena.resolveListAt(
+        _raw.segment,
+        _raw.ptrWordOffset + ptrIndex,
+        _raw.nestingLimit,
+      );
+      if (raw != null) return raw;
+    }
+    if (defaultValue == null) return null;
+    final arena = _defaultMessageArena(defaultValue);
+    return arena.resolveListAt(arena.getSegment(0), 0, arena.nestingLimit);
   }
 
-  ListReader<bool>? getBoolListField(int ptrIndex) {
-    final raw = _resolveListField(ptrIndex);
+  // [defaultValue] (see getStructFieldWith's doc comment for the shared
+  // mechanism) supplies the list read back when the field is unset and the
+  // schema declares an explicit default for it.
+
+  ListReader<bool>? getBoolListField(int ptrIndex, {Uint8List? defaultValue}) {
+    final raw = _resolveListField(ptrIndex, defaultValue: defaultValue);
     return raw == null ? null : BoolListReader(raw);
   }
 
-  ListReader<int>? getInt8ListField(int ptrIndex) {
-    final raw = _resolveListField(ptrIndex);
+  ListReader<int>? getInt8ListField(int ptrIndex, {Uint8List? defaultValue}) {
+    final raw = _resolveListField(ptrIndex, defaultValue: defaultValue);
     return raw == null ? null : PrimitiveIntListReader(raw, readInt8, 1);
   }
 
-  ListReader<int>? getUint8ListField(int ptrIndex) {
-    final raw = _resolveListField(ptrIndex);
+  ListReader<int>? getUint8ListField(int ptrIndex, {Uint8List? defaultValue}) {
+    final raw = _resolveListField(ptrIndex, defaultValue: defaultValue);
     return raw == null ? null : PrimitiveIntListReader(raw, readUint8, 1);
   }
 
-  ListReader<int>? getInt16ListField(int ptrIndex) {
-    final raw = _resolveListField(ptrIndex);
+  ListReader<int>? getInt16ListField(int ptrIndex, {Uint8List? defaultValue}) {
+    final raw = _resolveListField(ptrIndex, defaultValue: defaultValue);
     return raw == null ? null : PrimitiveIntListReader(raw, readInt16, 2);
   }
 
-  ListReader<int>? getUint16ListField(int ptrIndex) {
-    final raw = _resolveListField(ptrIndex);
+  ListReader<int>? getUint16ListField(
+    int ptrIndex, {
+    Uint8List? defaultValue,
+  }) {
+    final raw = _resolveListField(ptrIndex, defaultValue: defaultValue);
     return raw == null ? null : PrimitiveIntListReader(raw, readUint16, 2);
   }
 
-  ListReader<int>? getInt32ListField(int ptrIndex) {
-    final raw = _resolveListField(ptrIndex);
+  ListReader<int>? getInt32ListField(int ptrIndex, {Uint8List? defaultValue}) {
+    final raw = _resolveListField(ptrIndex, defaultValue: defaultValue);
     return raw == null ? null : PrimitiveIntListReader(raw, readInt32, 4);
   }
 
-  ListReader<int>? getUint32ListField(int ptrIndex) {
-    final raw = _resolveListField(ptrIndex);
+  ListReader<int>? getUint32ListField(
+    int ptrIndex, {
+    Uint8List? defaultValue,
+  }) {
+    final raw = _resolveListField(ptrIndex, defaultValue: defaultValue);
     return raw == null ? null : PrimitiveIntListReader(raw, readUint32, 4);
   }
 
-  ListReader<int>? getInt64ListField(int ptrIndex) {
-    final raw = _resolveListField(ptrIndex);
+  ListReader<int>? getInt64ListField(int ptrIndex, {Uint8List? defaultValue}) {
+    final raw = _resolveListField(ptrIndex, defaultValue: defaultValue);
     return raw == null ? null : PrimitiveIntListReader(raw, readInt64, 8);
   }
 
-  ListReader<int>? getUint64ListField(int ptrIndex) {
-    final raw = _resolveListField(ptrIndex);
+  ListReader<int>? getUint64ListField(
+    int ptrIndex, {
+    Uint8List? defaultValue,
+  }) {
+    final raw = _resolveListField(ptrIndex, defaultValue: defaultValue);
     return raw == null ? null : PrimitiveIntListReader(raw, readUint64, 8);
   }
 
-  ListReader<double>? getFloat32ListField(int ptrIndex) {
-    final raw = _resolveListField(ptrIndex);
+  ListReader<double>? getFloat32ListField(
+    int ptrIndex, {
+    Uint8List? defaultValue,
+  }) {
+    final raw = _resolveListField(ptrIndex, defaultValue: defaultValue);
     return raw == null ? null : PrimitiveDoubleListReader(raw, readFloat32, 4);
   }
 
-  ListReader<double>? getFloat64ListField(int ptrIndex) {
-    final raw = _resolveListField(ptrIndex);
+  ListReader<double>? getFloat64ListField(
+    int ptrIndex, {
+    Uint8List? defaultValue,
+  }) {
+    final raw = _resolveListField(ptrIndex, defaultValue: defaultValue);
     return raw == null ? null : PrimitiveDoubleListReader(raw, readFloat64, 8);
   }
 
-  ListReader<String?>? getTextListField(int ptrIndex) {
-    final raw = _resolveListField(ptrIndex);
+  ListReader<String?>? getTextListField(
+    int ptrIndex, {
+    Uint8List? defaultValue,
+  }) {
+    final raw = _resolveListField(ptrIndex, defaultValue: defaultValue);
     return raw == null ? null : TextListReader(raw);
   }
 
-  ListReader<Uint8List?>? getDataListField(int ptrIndex) {
-    final raw = _resolveListField(ptrIndex);
+  ListReader<Uint8List?>? getDataListField(
+    int ptrIndex, {
+    Uint8List? defaultValue,
+  }) {
+    final raw = _resolveListField(ptrIndex, defaultValue: defaultValue);
     return raw == null ? null : DataListReader(raw);
   }
 
   /// Reads a composite struct list from the pointer at [ptrIndex].
-  /// Returns null if the pointer is null.
+  /// Returns null if the pointer is null and no [defaultValue] is given.
   ListReader<R>? getStructListFieldWith<R>(
     int ptrIndex,
-    R Function(RawStructReader) fromRaw,
-  ) {
-    final raw = _resolveListField(ptrIndex);
+    R Function(RawStructReader) fromRaw, {
+    Uint8List? defaultValue,
+  }) {
+    final raw = _resolveListField(ptrIndex, defaultValue: defaultValue);
     return raw == null ? null : StructListReader<R>(raw, fromRaw);
   }
 
   /// Reads a `List(Void)` from the pointer at [ptrIndex].
-  /// Returns null if the pointer is null.
-  ListReader<Null>? getVoidListField(int ptrIndex) {
-    final raw = _resolveListField(ptrIndex);
+  /// Returns null if the pointer is null and no [defaultValue] is given.
+  ListReader<Null>? getVoidListField(int ptrIndex, {Uint8List? defaultValue}) {
+    final raw = _resolveListField(ptrIndex, defaultValue: defaultValue);
     return raw == null ? null : VoidListReader(raw);
   }
 
   /// Reads a list of enum values (stored as uint16) from [ptrIndex].
   /// [fromInt] maps the raw integer to [E?] (null = unknown discriminant).
-  ListReader<E?>? getEnumListField<E>(int ptrIndex, E? Function(int) fromInt) {
-    final raw = _resolveListField(ptrIndex);
+  ListReader<E?>? getEnumListField<E>(
+    int ptrIndex,
+    E? Function(int) fromInt, {
+    Uint8List? defaultValue,
+  }) {
+    final raw = _resolveListField(ptrIndex, defaultValue: defaultValue);
     return raw == null ? null : EnumListReader<E>(raw, fromInt);
   }
 
