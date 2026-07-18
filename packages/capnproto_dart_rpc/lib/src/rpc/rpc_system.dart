@@ -45,12 +45,22 @@ class RpcSystem {
   ///
   /// Supports `tcp://host:port` URIs.
   ///
+  /// [maxConnections] caps how many clients may be connected at once. Once
+  /// the cap is reached, additional incoming sockets are closed immediately
+  /// (before any [TwoPartyRpcConnection] is created for them) rather than
+  /// accepted — without this, a remote peer able to reach the listening
+  /// port could open unbounded connections and exhaust memory/file
+  /// descriptors, since each accepted connection allocates its own
+  /// message loop and question/answer/export/import tables. Defaults to
+  /// 1024; pass `null` for no limit.
+  ///
   /// See [connect] for [onDisposeError] and [streamWindowSize].
   static Future<RpcServer> serve(
     Uri address,
     Capability bootstrap, {
     void Function(Object error, StackTrace stackTrace)? onDisposeError,
     int streamWindowSize = FlowController.defaultWindowSize,
+    int? maxConnections = 1024,
   }) async {
     if (address.scheme != 'tcp') {
       throw RpcException('unsupported scheme: ${address.scheme}');
@@ -66,6 +76,10 @@ class RpcSystem {
     final connections = <TwoPartyRpcConnection>{};
 
     serverSocket.listen((socket) {
+      if (maxConnections != null && connections.length >= maxConnections) {
+        socket.destroy();
+        return;
+      }
       final conn = TwoPartyRpcConnection.server(
         incoming: socket.cast<Uint8List>(),
         outgoing: _SocketSink(socket),

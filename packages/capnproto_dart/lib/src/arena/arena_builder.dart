@@ -120,6 +120,12 @@ class ArenaBuilder {
         8; // for single segment: [numSegs-1, seg0Words] = 2 words
     final seg0Words = readUint32(ByteData.sublistView(messageBytes, 4, 8), 0);
     final seg0ByteCount = seg0Words * bytesPerWord;
+    if (headerBytes + seg0ByteCount > messageBytes.lengthInBytes) {
+      throw ArgumentError(
+        'message declares $seg0Words words for segment 0 but only '
+        '${messageBytes.lengthInBytes - headerBytes} bytes are available',
+      );
+    }
     final seg0Data = messageBytes.buffer.asUint8List(
       messageBytes.offsetInBytes + headerBytes,
       seg0ByteCount,

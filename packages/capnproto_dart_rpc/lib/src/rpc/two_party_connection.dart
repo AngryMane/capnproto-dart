@@ -47,6 +47,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   final bool _isClient;
   final void Function(Object error, StackTrace stackTrace)? _onDisposeError;
   final int _streamWindowSize;
+  final Duration? _disembargoTimeout;
 
   // Exports: capabilities we have sent to the peer.
   // Key = export ID; value tracks the remote reference count so we know
@@ -115,9 +116,15 @@ class TwoPartyRpcConnection implements RpcConnection {
     this._isClient,
     this._onDisposeError,
     this._streamWindowSize,
+    this._disembargoTimeout,
   ) {
     _runMessageLoop(incoming);
   }
+
+  /// Default value for [TwoPartyRpcConnection.client]/`.server`'s
+  /// [disembargoTimeout] parameter — matches this connection's other
+  /// defaults in being generous but finite.
+  static const Duration defaultDisembargoTimeout = Duration(seconds: 30);
 
   /// Creates a client-side connection.
   ///
@@ -130,29 +137,38 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// [streamWindowSize] sets the flow-control window (in bytes) used by
   /// `-> stream` method calls made through capabilities on this connection —
   /// see [FlowController].
+  ///
+  /// [disembargoTimeout] bounds how long this vat waits for the peer's
+  /// receiverLoopback reply to a Disembargo it sent (see [_handleResolve]).
+  /// Without a bound, a peer that never replies leaves the pipelined call
+  /// waiting on that embargo blocked forever. Pass `null` to wait
+  /// indefinitely (the previous, unbounded behavior).
   factory TwoPartyRpcConnection.client({
     required Stream<Uint8List> incoming,
     required StreamSink<Uint8List> outgoing,
     void Function(Object error, StackTrace stackTrace)? onDisposeError,
     int streamWindowSize = FlowController.defaultWindowSize,
+    Duration? disembargoTimeout = defaultDisembargoTimeout,
   }) => TwoPartyRpcConnection._(
     incoming,
     outgoing,
     true,
     onDisposeError,
     streamWindowSize,
+    disembargoTimeout,
   );
 
   /// Creates a server-side connection.
   ///
-  /// See [TwoPartyRpcConnection.client] for [onDisposeError] and
-  /// [streamWindowSize].
+  /// See [TwoPartyRpcConnection.client] for [onDisposeError],
+  /// [streamWindowSize], and [disembargoTimeout].
   factory TwoPartyRpcConnection.server({
     required Stream<Uint8List> incoming,
     required StreamSink<Uint8List> outgoing,
     required Capability bootstrap,
     void Function(Object error, StackTrace stackTrace)? onDisposeError,
     int streamWindowSize = FlowController.defaultWindowSize,
+    Duration? disembargoTimeout = defaultDisembargoTimeout,
   }) {
     final conn = TwoPartyRpcConnection._(
       incoming,
@@ -160,6 +176,7 @@ class TwoPartyRpcConnection implements RpcConnection {
       false,
       onDisposeError,
       streamWindowSize,
+      disembargoTimeout,
     );
     // Register bootstrap as export 0. Its remoteRefCount starts at 0 (not 1,
     // unlike the _ExportEntry constructor's default for _getOrCreateExportId
@@ -1063,6 +1080,23 @@ class TwoPartyRpcConnection implements RpcConnection {
       final embargoId = _nextEmbargoId++;
       final completer = Completer<void>();
       _embargoes[embargoId] = completer;
+      final timeout = _disembargoTimeout;
+      if (timeout != null) {
+        Timer(timeout, () {
+          // Already resolved by the peer's receiverLoopback reply (or by
+          // teardown, which clears _embargoes outright) — nothing to do.
+          if (_embargoes.remove(embargoId) != completer) return;
+          if (!completer.isCompleted) {
+            completer.completeError(
+              RpcException(
+                'Disembargo(id=$embargoId) timed out waiting for the peer\'s '
+                'receiverLoopback reply after $timeout',
+                kind: ErrorKind.overloaded,
+              ),
+            );
+          }
+        });
+      }
       _sendRaw(
         buildDisembargoMessage(
           targetImportId: msg.promiseId,
