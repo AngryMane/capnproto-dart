@@ -21,8 +21,10 @@ class MessageBuilder {
 ## Orphan/Adopt
 
 Detach a pointer-typed field's value from its parent (`disown`) and re-attach it
-elsewhere (`adopt`) without deep-copying the bytes — useful for rearranging content
-while building a message, or promoting a nested value to become the root.
+elsewhere (`adopt`) without deep-copying the object content — useful for rearranging
+content while building a message, or promoting a nested value to become the root.
+When source and destination are in different segments, adoption allocates a two-word
+double-far landing pad; the detached object's content bytes are still not copied.
 
 ```dart
 /// A detached Cap'n Proto object: still allocated in its arena, but nothing
@@ -61,7 +63,15 @@ Capability pointers can't be orphaned (`disownPointerField` throws `UnsupportedE
 — a capability index is only meaningful together with its message's capability table,
 which this serialization-only package has no concept of.
 
-Adopting the same `Orphan` twice throws `StateError`.
+Adopting the same `Orphan` twice throws `StateError`. An Orphan is marked consumed
+only after its destination pointer has been installed; if allocation or pointer
+encoding throws, it remains available for another adoption attempt.
+
+**Live aliases.** Disowning does not invalidate builders or readers obtained before
+the call. `StructOrphan.raw` and `ListOrphan.raw` are also live arena views. Builders
+returned after adoption refer to the same memory. Mutating through any such alias
+changes what all the others observe. Callers must stop using old aliases when they
+want exclusive-ownership semantics; Dart cannot enforce this contract.
 
 ## Message Decoding
 

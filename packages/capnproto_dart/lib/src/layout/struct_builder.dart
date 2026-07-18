@@ -212,13 +212,16 @@ abstract class StructBuilder {
 
   /// Detaches the pointer at [ptrIndex] as an [Orphan] (zero-copy — see
   /// orphan.dart), leaving the field unset. Returns null if the field was
-  /// already unset.
+  /// already unset. Existing builders and readers are not invalidated; they
+  /// remain live aliases of the detached object's arena memory.
   Orphan? disownPointerField(int ptrIndex) =>
       disownPointer(_raw.arena, _raw.segment, _raw.ptrWordOffset + ptrIndex);
 
   /// Adopts [orphan] into the pointer at [ptrIndex] (zero-copy — see
   /// orphan.dart), replacing whatever was there. Passing null clears the
-  /// field.
+  /// field. Object content is never copied, although cross-segment adoption
+  /// allocates a two-word double-far landing pad. On failure, [orphan] remains
+  /// available for another adoption attempt.
   void adoptPointerField(int ptrIndex, Orphan? orphan) => adoptPointer(
     _raw.arena,
     _raw.segment,

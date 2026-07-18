@@ -28,7 +28,8 @@ class MessageBuilder {
 
   /// Adopts [orphan] as this message's root, replacing whatever's there.
   /// Zero-copy — see [StructBuilder.adoptPointerField]. [orphan] must have
-  /// been disowned from this same message.
+  /// been disowned from this same message. On failure, [orphan] remains
+  /// available for another adoption attempt.
   ///
   /// The root pointer always lives at word 0 of segment 0. If nothing has
   /// been built in this message yet, that slot is reserved first (exactly

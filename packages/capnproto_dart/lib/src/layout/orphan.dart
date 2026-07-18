@@ -5,8 +5,9 @@
 // points to it. Disowning a pointer field zeroes that field and hands back
 // an Orphan referencing the same, unmoved content; adopting an Orphan into a
 // different pointer field (or the message root) writes a pointer to that
-// same location. Neither operation ever touches the content's own bytes —
-// only the pointer word(s) at the disown/adopt sites change.
+// same location. Neither operation ever touches the content's own bytes.
+// A cross-segment adopt additionally allocates and writes a two-word
+// double-far landing pad.
 //
 // Scoped to moves within a single arena (one MessageBuilder). Cap'n Proto's
 // pointers are segment-relative within one arena's segment table, so a true
@@ -92,7 +93,11 @@ _PointerKind _peekKind(ArenaReader arena, SegmentReader seg, int wordOffset) {
 ///
 /// Throws [UnsupportedError] if the slot holds a capability pointer (see the
 /// file-level doc comment).
-Orphan? disownPointer(ArenaBuilder arena, SegmentBuilder ptrSeg, int ptrWordOffset) {
+Orphan? disownPointer(
+  ArenaBuilder arena,
+  SegmentBuilder ptrSeg,
+  int ptrWordOffset,
+) {
   final peeked = WirePointer.decode(ptrSeg.data, ptrWordOffset);
   if (peeked is NullPointer) return null;
   if (peeked is CapabilityPointer) {
@@ -109,7 +114,11 @@ Orphan? disownPointer(ArenaBuilder arena, SegmentBuilder ptrSeg, int ptrWordOffs
 
   final Orphan orphan;
   if (kind == _PointerKind.struct) {
-    final resolved = readerArena.resolveStructAt(srcSegReader, ptrWordOffset, 64);
+    final resolved = readerArena.resolveStructAt(
+      srcSegReader,
+      ptrWordOffset,
+      64,
+    );
     orphan = StructOrphan._(
       arena,
       RawStructBuilder(
@@ -122,7 +131,8 @@ Orphan? disownPointer(ArenaBuilder arena, SegmentBuilder ptrSeg, int ptrWordOffs
       ),
     );
   } else {
-    final resolved = readerArena.resolveListAt(srcSegReader, ptrWordOffset, 64)!;
+    final resolved =
+        readerArena.resolveListAt(srcSegReader, ptrWordOffset, 64)!;
     orphan = ListOrphan._(
       arena,
       RawListBuilder(
@@ -168,8 +178,6 @@ void adoptPointer(
   if (orphan._consumed) {
     throw StateError('this Orphan has already been adopted');
   }
-  orphan._consumed = true;
-
   switch (orphan) {
     case StructOrphan(:final raw):
       arena.writePointerToExisting(
@@ -177,11 +185,12 @@ void adoptPointer(
         ptrWordOffset: ptrWordOffset,
         targetSeg: raw.segment,
         targetWordOffset: raw.dataWordOffset,
-        makePointer: (offset) => StructPointer(
-          offset: offset,
-          dataWords: raw.dataWords,
-          ptrWords: raw.ptrWords,
-        ),
+        makePointer:
+            (offset) => StructPointer(
+              offset: offset,
+              dataWords: raw.dataWords,
+              ptrWords: raw.ptrWords,
+            ),
       );
     case ListOrphan(:final raw):
       final isComposite = raw.elementSize == ListElementSize.composite;
@@ -189,19 +198,25 @@ void adoptPointer(
       // element data — matches ArenaBuilder.allocateList's own encoding.
       final targetWordOffset =
           raw.dataByteOffset ~/ bytesPerWord - (isComposite ? 1 : 0);
-      final elementCountOrWordCount = isComposite
-          ? raw.elementCount * (raw.structDataWords + raw.structPtrWords)
-          : raw.elementCount;
+      final elementCountOrWordCount =
+          isComposite
+              ? raw.elementCount * (raw.structDataWords + raw.structPtrWords)
+              : raw.elementCount;
       arena.writePointerToExisting(
         ptrSeg: ptrSeg,
         ptrWordOffset: ptrWordOffset,
         targetSeg: raw.segment,
         targetWordOffset: targetWordOffset,
-        makePointer: (offset) => ListPointer(
-          offset: offset,
-          elementSize: raw.elementSize,
-          elementCountOrWordCount: elementCountOrWordCount,
-        ),
+        makePointer:
+            (offset) => ListPointer(
+              offset: offset,
+              elementSize: raw.elementSize,
+              elementCountOrWordCount: elementCountOrWordCount,
+            ),
       );
   }
+
+  // Pointer construction is the commit point. Keep the Orphan reusable if
+  // allocation or encoding above throws before the destination is installed.
+  orphan._consumed = true;
 }
