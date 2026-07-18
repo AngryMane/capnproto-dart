@@ -460,16 +460,26 @@ if [[ -z "${goto_summary5:-}" ]]; then
 
   LITERAL_SCALARS='(boolean = true, int8Value = -8, int16Value = -1600, int32Value = -320000, int64Value = -6400000000, uint8Value = 8, uint16Value = 1600, uint32Value = 320000, uint64Value = 6400000000, float32Value = 1.25, float64Value = -2.5, textValue = "hello \"world\"", dataValue = 0x"00 01 02 03 7f 80 fe ff", color = green)'
   LITERAL_NESTED='(label = "root", values = [1, 2, 3], tags = ["a", "b"], children = [(label = "child1", values = [4], tags = [], children = []), (label = "child2", values = [], tags = ["x"], children = [])])'
+  LITERAL_SCALAR_EDGES='(boolean = false, int8Value = -128, int16Value = -32768, int32Value = -2147483648, int64Value = -9223372036854775808, uint8Value = 255, uint16Value = 65535, uint32Value = 4294967295, uint64Value = 18446744073709551615, float32Value = -0.0, float64Value = inf, textValue = "hello 🌍\\nquote=\\" backslash=\\\\ nul=\\0", dataValue = 0x"00 0a 0d 22 5c f0 9f 92 a9 ff", color = blue)'
 
   # Direction 1: Dart encode -> capnp decode, compared to capnp's own round-trip.
   scalar_golden=$(echo "$LITERAL_SCALARS" | capnp encode "$WFG_SCHEMA" AllScalars | capnp decode "$WFG_SCHEMA" AllScalars --short)
   nested_golden=$(echo "$LITERAL_NESTED" | capnp encode "$WFG_SCHEMA" Nested | capnp decode "$WFG_SCHEMA" Nested --short)
+  scalar_edges_golden=$(echo "$LITERAL_SCALAR_EDGES" | capnp encode "$WFG_SCHEMA" AllScalars | capnp decode "$WFG_SCHEMA" AllScalars --short)
   wfg_dart encode-scalars "$WFG_TMP/scalars_dart.bin"
   dart_text=$(capnp decode "$WFG_SCHEMA" AllScalars --short < "$WFG_TMP/scalars_dart.bin")
   if [[ "$scalar_golden" == "$dart_text" ]]; then
     pass "wire-format golden: Dart-encoded AllScalars matches capnp decode text"
   else
     fail "wire-format golden: Dart-encoded AllScalars matches capnp decode text (got: $dart_text)"
+  fi
+
+  wfg_dart encode-scalar-edges "$WFG_TMP/scalar_edges_dart.bin"
+  dart_text=$(capnp decode "$WFG_SCHEMA" AllScalars --short < "$WFG_TMP/scalar_edges_dart.bin")
+  if [[ "$scalar_edges_golden" == "$dart_text" ]]; then
+    pass "wire-format golden: Dart-encoded scalar edge cases match capnp decode text"
+  else
+    fail "wire-format golden: Dart-encoded scalar edge cases match capnp decode text (got: $dart_text)"
   fi
 
   wfg_dart encode-nested "$WFG_TMP/nested_dart.bin"
@@ -486,6 +496,13 @@ if [[ -z "${goto_summary5:-}" ]]; then
     pass "wire-format golden: Dart decodes capnp-encoded AllScalars"
   else
     fail "wire-format golden: Dart decodes capnp-encoded AllScalars"
+  fi
+
+  echo "$LITERAL_SCALAR_EDGES" | capnp encode "$WFG_SCHEMA" AllScalars > "$WFG_TMP/scalar_edges_capnp.bin"
+  if wfg_dart decode-scalar-edges "$WFG_TMP/scalar_edges_capnp.bin"; then
+    pass "wire-format golden: Dart decodes capnp-encoded scalar edge cases"
+  else
+    fail "wire-format golden: Dart decodes capnp-encoded scalar edge cases"
   fi
 
   echo "$LITERAL_NESTED" | capnp encode "$WFG_SCHEMA" Nested > "$WFG_TMP/nested_capnp.bin"
@@ -508,6 +525,15 @@ if [[ -z "${goto_summary5:-}" ]]; then
     fail "text-format golden: Dart encodeText differs from capnp semantics (scalars)"
   fi
 
+  dart_text=$(wfg_dart encode-text-scalar-edges)
+  echo "$dart_text" | capnp encode "$WFG_SCHEMA" AllScalars > "$WFG_TMP/text_scalar_edges_capnp.bin"
+  roundtrip_text=$(capnp decode "$WFG_SCHEMA" AllScalars --short < "$WFG_TMP/text_scalar_edges_capnp.bin")
+  if [[ "$roundtrip_text" == "$scalar_edges_golden" ]]; then
+    pass "text-format golden: Dart encodeText is accepted by capnp encode (scalar edge cases)"
+  else
+    fail "text-format golden: Dart encodeText differs from capnp semantics (scalar edge cases)"
+  fi
+
   dart_text=$(wfg_dart encode-text-nested)
   echo "$dart_text" | capnp encode "$WFG_SCHEMA" Nested > "$WFG_TMP/text_nested_capnp.bin"
   roundtrip_text=$(capnp decode "$WFG_SCHEMA" Nested --short < "$WFG_TMP/text_nested_capnp.bin")
@@ -523,6 +549,14 @@ if [[ -z "${goto_summary5:-}" ]]; then
     pass "text-format golden: Dart decodeText accepts capnp decode output (scalars)"
   else
     fail "text-format golden: Dart decodeText differs from capnp semantics (scalars)"
+  fi
+
+  echo "$scalar_edges_golden" | wfg_dart decode-text-scalars "$WFG_TMP/text_scalar_edges_dart.bin"
+  roundtrip_text=$(capnp decode "$WFG_SCHEMA" AllScalars --short < "$WFG_TMP/text_scalar_edges_dart.bin")
+  if [[ "$roundtrip_text" == "$scalar_edges_golden" ]]; then
+    pass "text-format golden: Dart decodeText accepts capnp decode output (scalar edge cases)"
+  else
+    fail "text-format golden: Dart decodeText differs from capnp semantics (scalar edge cases)"
   fi
 
   echo "$nested_golden" | wfg_dart decode-text-nested "$WFG_TMP/text_nested_dart.bin"

@@ -29,8 +29,11 @@
 // Usage:
 //   dart run bin/main.dart encode-scalars <path>
 //   dart run bin/main.dart decode-scalars <path>
+//   dart run bin/main.dart encode-scalar-edges <path>
+//   dart run bin/main.dart decode-scalar-edges <path>
 //   dart run bin/main.dart encode-nested  <path>
 //   dart run bin/main.dart decode-nested  <path>
+//   dart run bin/main.dart encode-text-scalar-edges
 //   dart run bin/main.dart encode-scalars-sparse <path>
 //   dart run bin/main.dart encode-sparse  <path>
 //   dart run bin/main.dart encode-children <path>
@@ -68,6 +71,32 @@ final expectedData = Uint8List.fromList([
 ]);
 const expectedColor = Color.green;
 
+const edgeBoolean = false;
+const edgeInt8 = -128;
+const edgeInt16 = -32768;
+const edgeInt32 = -2147483648;
+const edgeInt64 = -9223372036854775808;
+const edgeUint8 = 255;
+const edgeUint16 = 65535;
+const edgeUint32 = 4294967295;
+const edgeUint64 = 18446744073709551615;
+const edgeFloat32 = -0.0;
+const edgeFloat64 = double.infinity;
+const edgeText = 'hello 🌍\nquote=\" backslash=\\ nul=\u0000';
+final edgeData = Uint8List.fromList([
+  0x00,
+  0x0a,
+  0x0d,
+  0x22,
+  0x5c,
+  0xf0,
+  0x9f,
+  0x92,
+  0xa9,
+  0xff,
+]);
+const edgeColor = Color.blue;
+
 void _check(String label, Object? got, Object? expected) {
   if (got != expected) {
     stderr.writeln('MISMATCH $label: got=$got expected=$expected');
@@ -102,23 +131,92 @@ void _checkList<T>(String label, List<T>? got, List<T> expected) {
   print('  ok: $label = $got');
 }
 
+void _writeScalars(
+  AllScalarsBuilder s, {
+  required bool boolean,
+  required int int8Value,
+  required int int16Value,
+  required int int32Value,
+  required int int64Value,
+  required int uint8Value,
+  required int uint16Value,
+  required int uint32Value,
+  required int uint64Value,
+  required double float32Value,
+  required double float64Value,
+  required String textValue,
+  required Uint8List dataValue,
+  required Color color,
+}) {
+  s.boolean = boolean;
+  s.int8Value = int8Value;
+  s.int16Value = int16Value;
+  s.int32Value = int32Value;
+  s.int64Value = int64Value;
+  s.uint8Value = uint8Value;
+  s.uint16Value = uint16Value;
+  s.uint32Value = uint32Value;
+  s.uint64Value = uint64Value;
+  s.float32Value = float32Value;
+  s.float64Value = float64Value;
+  s.textValue = textValue;
+  s.dataValue = dataValue;
+  s.color = color;
+}
+
+void _checkScalars(
+  AllScalarsReader r, {
+  required bool boolean,
+  required int int8Value,
+  required int int16Value,
+  required int int32Value,
+  required int int64Value,
+  required int uint8Value,
+  required int uint16Value,
+  required int uint32Value,
+  required int uint64Value,
+  required double float32Value,
+  required double float64Value,
+  required String textValue,
+  required Uint8List dataValue,
+  required Color color,
+}) {
+  _check('boolean', r.boolean, boolean);
+  _check('int8Value', r.int8Value, int8Value);
+  _check('int16Value', r.int16Value, int16Value);
+  _check('int32Value', r.int32Value, int32Value);
+  _check('int64Value', r.int64Value, int64Value);
+  _check('uint8Value', r.uint8Value, uint8Value);
+  _check('uint16Value', r.uint16Value, uint16Value);
+  _check('uint32Value', r.uint32Value, uint32Value);
+  _check('uint64Value', r.uint64Value, uint64Value);
+  _check('float32Value', r.float32Value, float32Value);
+  _check('float64Value', r.float64Value, float64Value);
+  _check('textValue', r.textValue, textValue);
+  _checkBytes('dataValue', r.dataValue, dataValue);
+  _check('color', r.color, color);
+}
+
 void encodeScalars(String path) {
   final mb = MessageBuilder();
   final s = mb.initRoot(allScalarsFactory);
-  s.boolean = expectedBoolean;
-  s.int8Value = expectedInt8;
-  s.int16Value = expectedInt16;
-  s.int32Value = expectedInt32;
-  s.int64Value = expectedInt64;
-  s.uint8Value = expectedUint8;
-  s.uint16Value = expectedUint16;
-  s.uint32Value = expectedUint32;
-  s.uint64Value = expectedUint64;
-  s.float32Value = expectedFloat32;
-  s.float64Value = expectedFloat64;
-  s.textValue = expectedText;
-  s.dataValue = expectedData;
-  s.color = expectedColor;
+  _writeScalars(
+    s,
+    boolean: expectedBoolean,
+    int8Value: expectedInt8,
+    int16Value: expectedInt16,
+    int32Value: expectedInt32,
+    int64Value: expectedInt64,
+    uint8Value: expectedUint8,
+    uint16Value: expectedUint16,
+    uint32Value: expectedUint32,
+    uint64Value: expectedUint64,
+    float32Value: expectedFloat32,
+    float64Value: expectedFloat64,
+    textValue: expectedText,
+    dataValue: expectedData,
+    color: expectedColor,
+  );
   File(path).writeAsBytesSync(mb.serialize());
   print('dart encode-scalars -> $path');
 }
@@ -127,20 +225,70 @@ void decodeScalars(String path) {
   final bytes = File(path).readAsBytesSync();
   final r = MessageReader.deserialize(bytes).getRoot(allScalarsFactory);
   print('dart decode-scalars <- $path (encoded by capnp CLI)');
-  _check('boolean', r.boolean, expectedBoolean);
-  _check('int8Value', r.int8Value, expectedInt8);
-  _check('int16Value', r.int16Value, expectedInt16);
-  _check('int32Value', r.int32Value, expectedInt32);
-  _check('int64Value', r.int64Value, expectedInt64);
-  _check('uint8Value', r.uint8Value, expectedUint8);
-  _check('uint16Value', r.uint16Value, expectedUint16);
-  _check('uint32Value', r.uint32Value, expectedUint32);
-  _check('uint64Value', r.uint64Value, expectedUint64);
-  _check('float32Value', r.float32Value, expectedFloat32);
-  _check('float64Value', r.float64Value, expectedFloat64);
-  _check('textValue', r.textValue, expectedText);
-  _checkBytes('dataValue', r.dataValue, expectedData);
-  _check('color', r.color, expectedColor);
+  _checkScalars(
+    r,
+    boolean: expectedBoolean,
+    int8Value: expectedInt8,
+    int16Value: expectedInt16,
+    int32Value: expectedInt32,
+    int64Value: expectedInt64,
+    uint8Value: expectedUint8,
+    uint16Value: expectedUint16,
+    uint32Value: expectedUint32,
+    uint64Value: expectedUint64,
+    float32Value: expectedFloat32,
+    float64Value: expectedFloat64,
+    textValue: expectedText,
+    dataValue: expectedData,
+    color: expectedColor,
+  );
+}
+
+void encodeScalarEdges(String path) {
+  final mb = MessageBuilder();
+  final s = mb.initRoot(allScalarsFactory);
+  _writeScalars(
+    s,
+    boolean: edgeBoolean,
+    int8Value: edgeInt8,
+    int16Value: edgeInt16,
+    int32Value: edgeInt32,
+    int64Value: edgeInt64,
+    uint8Value: edgeUint8,
+    uint16Value: edgeUint16,
+    uint32Value: edgeUint32,
+    uint64Value: edgeUint64,
+    float32Value: edgeFloat32,
+    float64Value: edgeFloat64,
+    textValue: edgeText,
+    dataValue: edgeData,
+    color: edgeColor,
+  );
+  File(path).writeAsBytesSync(mb.serialize());
+  print('dart encode-scalar-edges -> $path');
+}
+
+void decodeScalarEdges(String path) {
+  final bytes = File(path).readAsBytesSync();
+  final r = MessageReader.deserialize(bytes).getRoot(allScalarsFactory);
+  print('dart decode-scalar-edges <- $path (encoded by capnp CLI)');
+  _checkScalars(
+    r,
+    boolean: edgeBoolean,
+    int8Value: edgeInt8,
+    int16Value: edgeInt16,
+    int32Value: edgeInt32,
+    int64Value: edgeInt64,
+    uint8Value: edgeUint8,
+    uint16Value: edgeUint16,
+    uint32Value: edgeUint32,
+    uint64Value: edgeUint64,
+    float32Value: edgeFloat32,
+    float64Value: edgeFloat64,
+    textValue: edgeText,
+    dataValue: edgeData,
+    color: edgeColor,
+  );
 }
 
 void encodeNested(String path) {
@@ -243,20 +391,49 @@ final _textRegistry = schemaRegistryOf([
 void encodeTextScalars() {
   final mb = MessageBuilder();
   final s = mb.initRoot(allScalarsFactory);
-  s.boolean = expectedBoolean;
-  s.int8Value = expectedInt8;
-  s.int16Value = expectedInt16;
-  s.int32Value = expectedInt32;
-  s.int64Value = expectedInt64;
-  s.uint8Value = expectedUint8;
-  s.uint16Value = expectedUint16;
-  s.uint32Value = expectedUint32;
-  s.uint64Value = expectedUint64;
-  s.float32Value = expectedFloat32;
-  s.float64Value = expectedFloat64;
-  s.textValue = expectedText;
-  s.dataValue = expectedData;
-  s.color = expectedColor;
+  _writeScalars(
+    s,
+    boolean: expectedBoolean,
+    int8Value: expectedInt8,
+    int16Value: expectedInt16,
+    int32Value: expectedInt32,
+    int64Value: expectedInt64,
+    uint8Value: expectedUint8,
+    uint16Value: expectedUint16,
+    uint32Value: expectedUint32,
+    uint64Value: expectedUint64,
+    float32Value: expectedFloat32,
+    float64Value: expectedFloat64,
+    textValue: expectedText,
+    dataValue: expectedData,
+    color: expectedColor,
+  );
+  final reader = MessageReader.deserialize(
+    mb.serialize(),
+  ).getRoot(allScalarsFactory);
+  stdout.write(encodeText(reader, allScalarsSchema, _textRegistry));
+}
+
+void encodeTextScalarEdges() {
+  final mb = MessageBuilder();
+  final s = mb.initRoot(allScalarsFactory);
+  _writeScalars(
+    s,
+    boolean: edgeBoolean,
+    int8Value: edgeInt8,
+    int16Value: edgeInt16,
+    int32Value: edgeInt32,
+    int64Value: edgeInt64,
+    uint8Value: edgeUint8,
+    uint16Value: edgeUint16,
+    uint32Value: edgeUint32,
+    uint64Value: edgeUint64,
+    float32Value: edgeFloat32,
+    float64Value: edgeFloat64,
+    textValue: edgeText,
+    dataValue: edgeData,
+    color: edgeColor,
+  );
   final reader = MessageReader.deserialize(
     mb.serialize(),
   ).getRoot(allScalarsFactory);
@@ -311,6 +488,9 @@ void main(List<String> args) {
     case 'encode-text-nested':
       encodeTextNested();
       break;
+    case 'encode-text-scalar-edges':
+      encodeTextScalarEdges();
+      break;
     case 'decode-text-scalars':
       decodeTextToFile(args[1], allScalarsSchema);
       break;
@@ -322,6 +502,12 @@ void main(List<String> args) {
       break;
     case 'decode-scalars':
       decodeScalars(args[1]);
+      break;
+    case 'encode-scalar-edges':
+      encodeScalarEdges(args[1]);
+      break;
+    case 'decode-scalar-edges':
+      decodeScalarEdges(args[1]);
       break;
     case 'encode-nested':
       encodeNested(args[1]);
