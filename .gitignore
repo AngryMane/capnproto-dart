@@ -33,7 +33,7 @@ target/
 
 # VS Code workspace settings.
 # Uncomment if your team does not share launch / extension configs:
-# .vscode/
+.vscode/
 
 # Vim / Neovim
 *.swp
