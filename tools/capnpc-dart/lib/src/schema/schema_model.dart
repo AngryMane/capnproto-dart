@@ -91,7 +91,16 @@ class InterfaceBody extends SchemaNodeBody {
 }
 
 class ConstBody extends SchemaNodeBody {
-  const ConstBody();
+  final SchemaType type;
+
+  /// Same representation as [SlotField.defaultValue]: `bool`/`int`/`double`
+  /// for scalars, `String` for Text, `Uint8List` for Data, a standalone
+  /// single-message byte buffer (`Uint8List`) for List/Struct, `int` for an
+  /// enum's raw ordinal. Null if the value's kind isn't representable this
+  /// way (e.g. Void).
+  final Object? value;
+
+  const ConstBody({required this.type, required this.value});
 }
 
 class AnnotationBody extends SchemaNodeBody {

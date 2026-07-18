@@ -308,6 +308,112 @@ fi
 rm -rf "$F08_TMP"
 trap - EXIT
 
+# ── 5c. #46: cross-file `using` imports + `const` declaration codegen ───────
+#
+# Both generate actual .capnp.dart *code* (unlike F-08's check-mode-only
+# fixtures above), so the real proof is that `dart analyze` accepts the
+# output — a passing string-matching unit test alone wouldn't catch e.g. a
+# missing import that only breaks compilation, which is exactly the bug this
+# regression test exists to catch.
+
+run_section "#46: cross-file imports + const codegen — fixtures"
+GEN46_TMP="$(mktemp -d)"
+trap 'rm -rf "$GEN46_TMP"' EXIT
+
+cat > "$GEN46_TMP/bar.capnp" <<'EOF'
+@0xb1b2b3b4b5b6b7b1;
+struct Bar {
+  value @0 :UInt32;
+}
+EOF
+cat > "$GEN46_TMP/foo.capnp" <<'EOF'
+@0xf1f2f3f4f5f6f7f1;
+using import "bar.capnp".Bar;
+struct Foo {
+  bar @0 :Bar;
+}
+EOF
+cat > "$GEN46_TMP/consts.capnp" <<'EOF'
+@0xc1c2c3c4c5c6c7c1;
+struct Point {
+  x @0 :Int32;
+  y @1 :Int32;
+}
+enum Color {
+  red @0;
+  green @1;
+  blue @2;
+}
+const maxSize :UInt32 = 100;
+const ratio :Float64 = 1.5;
+const greeting :Text = "hello";
+const defaultColor :Color = blue;
+const origin :Point = (x = 3, y = 4);
+EOF
+cat > "$GEN46_TMP/pubspec.yaml" <<EOF
+name: gen46_check
+environment:
+  sdk: ^3.7.2
+dependencies:
+  capnproto_dart:
+    path: $REPO_ROOT/packages/capnproto_dart
+EOF
+cat > "$GEN46_TMP/check_consts.dart" <<'EOF'
+import 'consts.capnp.dart';
+
+void main() {
+  if (maxSize != 100) throw StateError('maxSize wrong: $maxSize');
+  print('ok: maxSize = $maxSize');
+  if (ratio != 1.5) throw StateError('ratio wrong: $ratio');
+  print('ok: ratio = $ratio');
+  if (greeting != 'hello') throw StateError('greeting wrong: $greeting');
+  print('ok: greeting = $greeting');
+  if (defaultColor != Color.blue) {
+    throw StateError('defaultColor wrong: $defaultColor');
+  }
+  print('ok: defaultColor = $defaultColor');
+  if (origin.x != 3 || origin.y != 4) {
+    throw StateError('origin wrong: (${origin.x}, ${origin.y})');
+  }
+  print('ok: origin = (${origin.x}, ${origin.y})');
+}
+EOF
+
+(
+  cd "$GEN46_TMP"
+  capnp compile -o- foo.capnp bar.capnp consts.capnp \
+    | dart run "$REPO_ROOT/tools/capnpc-dart/bin/capnpc_dart.dart"
+)
+
+run_section "#46: cross-file using — generated code compiles"
+# --no-fatal-warnings: this check is specifically about compile *errors*
+# (does the generated code even build) — an unrelated lint warning on these
+# deliberately minimal fixture schemas (e.g. an unused dart:typed_data
+# import on a struct with no Data/List fields, a pre-existing generator
+# quirk unrelated to #46) shouldn't fail a regression test that isn't about
+# lint cleanliness.
+if (cd "$GEN46_TMP" && dart pub get \
+    && dart analyze --no-fatal-warnings foo.capnp.dart bar.capnp.dart); then
+  pass "#46: foo.capnp.dart (using bar.capnp's Bar) analyzes cleanly"
+else
+  fail "#46: foo.capnp.dart (using bar.capnp's Bar) analyzes cleanly"
+fi
+if grep -q "import 'bar.capnp.dart';" "$GEN46_TMP/foo.capnp.dart"; then
+  pass "#46: foo.capnp.dart imports bar.capnp.dart"
+else
+  fail "#46: foo.capnp.dart imports bar.capnp.dart"
+fi
+
+run_section "#46: const declarations — generated values match the schema"
+if (cd "$GEN46_TMP" && dart run check_consts.dart); then
+  pass "#46: generated const declarations have the correct runtime values"
+else
+  fail "#46: generated const declarations have the correct runtime values"
+fi
+
+rm -rf "$GEN46_TMP"
+trap - EXIT
+
 # ── 6. Wire-format golden test: official capnp CLI as oracle ────────────────
 #
 # Independent of RPC: proves this library's serializer/deserializer produce

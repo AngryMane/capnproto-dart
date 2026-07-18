@@ -1546,6 +1546,250 @@ void main() {
     });
   });
 
+  group('generateDartFile — cross-file imports (#46)', () {
+    // Builds a minimal (file, struct) pair standing in for a whole separate
+    // `.capnp` file, since the shared `fileNode`/`structNode` helpers above
+    // hardcode a single shared file (id=1, "test.capnp") that every other
+    // test in this file deliberately reuses.
+    (SchemaNode, SchemaNode) otherFile(
+      int fileId,
+      String capnpPath,
+      int structId,
+      String structName,
+    ) {
+      final file = SchemaNode(
+        id: fileId,
+        displayName: capnpPath,
+        displayNamePrefixLength: 0,
+        scopeId: 0,
+        nestedNodes: [SchemaNestedNode(name: structName, id: structId)],
+        body: const FileBody(),
+      );
+      final struct = SchemaNode(
+        id: structId,
+        displayName: '$capnpPath:$structName',
+        displayNamePrefixLength: '$capnpPath:'.length,
+        scopeId: fileId,
+        nestedNodes: const [],
+        body: const StructBody(
+          dataWordCount: 1,
+          pointerCount: 0,
+          isGroup: false,
+          discriminantCount: 0,
+          discriminantOffset: 0,
+          fields: [],
+        ),
+      );
+      return (file, struct);
+    }
+
+    test('a field referencing a type from another file emits an import', () {
+      final (barFile, barStruct) = otherFile(900, 'bar.capnp', 901, 'Bar');
+      final fooStruct = SchemaNode(
+        id: 902,
+        displayName: 'foo.capnp:Foo',
+        displayNamePrefixLength: 'foo.capnp:'.length,
+        scopeId: 903,
+        nestedNodes: const [],
+        body: StructBody(
+          dataWordCount: 0,
+          pointerCount: 1,
+          isGroup: false,
+          discriminantCount: 0,
+          discriminantOffset: 0,
+          fields: [ptrField('bar', 0, 0, const StructRefType(901))],
+        ),
+      );
+      final fooFile = SchemaNode(
+        id: 903,
+        displayName: 'foo.capnp',
+        displayNamePrefixLength: 0,
+        scopeId: 0,
+        nestedNodes: [const SchemaNestedNode(name: 'Foo', id: 902)],
+        body: const FileBody(),
+      );
+
+      final src = generateDartFile(fooFile, [
+        fooFile,
+        fooStruct,
+        barFile,
+        barStruct,
+      ]);
+      expect(src, contains("import 'bar.capnp.dart';"));
+      expect(src, contains('BarReader? get bar'));
+    });
+
+    test('a field referencing a type in the same file emits no extra import', () {
+      const addrId = 950;
+      final addrNode = structNode(addrId, 'Address', 1, 0, []);
+      final sNode = structNode(940, 'Person', 1, 1, [
+        ptrField('address', 0, 0, const StructRefType(addrId)),
+      ]);
+      final file = fileNode(1, [
+        SchemaNestedNode(name: 'Person', id: 940),
+        SchemaNestedNode(name: 'Address', id: addrId),
+      ]);
+      final src = generateDartFile(file, [file, sNode, addrNode]);
+
+      expect(src, isNot(contains('.capnp.dart')));
+    });
+
+    test(
+      'a cross-file reference in a different directory computes a '
+      'relative import path',
+      () {
+        final (barFile, barStruct) = otherFile(
+          910,
+          'shared/bar.capnp',
+          911,
+          'Bar',
+        );
+        final fooStruct = SchemaNode(
+          id: 912,
+          displayName: 'app/foo.capnp:Foo',
+          displayNamePrefixLength: 'app/foo.capnp:'.length,
+          scopeId: 913,
+          nestedNodes: const [],
+          body: StructBody(
+            dataWordCount: 0,
+            pointerCount: 1,
+            isGroup: false,
+            discriminantCount: 0,
+            discriminantOffset: 0,
+            fields: [ptrField('bar', 0, 0, const StructRefType(911))],
+          ),
+        );
+        final fooFile = SchemaNode(
+          id: 913,
+          displayName: 'app/foo.capnp',
+          displayNamePrefixLength: 0,
+          scopeId: 0,
+          nestedNodes: [const SchemaNestedNode(name: 'Foo', id: 912)],
+          body: const FileBody(),
+        );
+
+        final src = generateDartFile(fooFile, [
+          fooFile,
+          fooStruct,
+          barFile,
+          barStruct,
+        ]);
+        expect(src, contains("import '../shared/bar.capnp.dart';"));
+      },
+    );
+  });
+
+  group('generateDartFile — const declarations (#46)', () {
+    SchemaNode constNode(int id, String name, SchemaType type, Object? value) =>
+        SchemaNode(
+          id: id,
+          displayName: 'test.capnp:$name',
+          displayNamePrefixLength: 'test.capnp:'.length,
+          scopeId: 1,
+          nestedNodes: const [],
+          body: ConstBody(type: type, value: value),
+        );
+
+    test('bool const', () {
+      final c = constNode(20, 'flag', const BoolType(), true);
+      final file = fileNode(1, [const SchemaNestedNode(name: 'flag', id: 20)]);
+      final src = generateDartFile(file, [file, c]);
+      expect(src, contains('const bool flag = true;'));
+    });
+
+    test('integer const', () {
+      final c = constNode(20, 'maxSize', const UInt32Type(), 100);
+      final file = fileNode(1, [
+        const SchemaNestedNode(name: 'maxSize', id: 20),
+      ]);
+      final src = generateDartFile(file, [file, c]);
+      expect(src, contains('const int maxSize = 100;'));
+    });
+
+    test('float const', () {
+      final c = constNode(20, 'ratio', const Float64Type(), 1.5);
+      final file = fileNode(1, [const SchemaNestedNode(name: 'ratio', id: 20)]);
+      final src = generateDartFile(file, [file, c]);
+      expect(src, contains('const double ratio = 1.5;'));
+    });
+
+    test('text const', () {
+      final c = constNode(20, 'greeting', const TextType(), 'hello');
+      final file = fileNode(1, [
+        const SchemaNestedNode(name: 'greeting', id: 20),
+      ]);
+      final src = generateDartFile(file, [file, c]);
+      expect(src, contains("const String greeting = 'hello';"));
+    });
+
+    test('data const', () {
+      final c = constNode(
+        20,
+        'magic',
+        const DataType(),
+        Uint8List.fromList([1, 2, 3]),
+      );
+      final file = fileNode(1, [const SchemaNestedNode(name: 'magic', id: 20)]);
+      final src = generateDartFile(file, [file, c]);
+      expect(
+        src,
+        contains('final Uint8List magic = Uint8List.fromList([1, 2, 3]);'),
+      );
+    });
+
+    test('enum const', () {
+      final eNode = enumNode(30, 'Color', [
+        const SchemaEnumerant(name: 'red', codeOrder: 0),
+        const SchemaEnumerant(name: 'blue', codeOrder: 1),
+      ]);
+      final c = constNode(20, 'defaultColor', const EnumRefType(30), 1);
+      final file = fileNode(1, [
+        const SchemaNestedNode(name: 'Color', id: 30),
+        const SchemaNestedNode(name: 'defaultColor', id: 20),
+      ]);
+      final src = generateDartFile(file, [file, eNode, c]);
+      expect(
+        src,
+        contains(
+          'final Color defaultColor = colorFromUint16(1)!;',
+        ),
+      );
+    });
+
+    test('struct const', () {
+      final sNode = structNode(30, 'Point', 1, 0, []);
+      // Standalone single-message bytes: 1 segment (1 word), null root
+      // pointer — the same representation capnpc-dart already produces for
+      // struct-typed field defaults (#54).
+      final bytes = Uint8List.fromList([0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+      final c = constNode(20, 'origin', const StructRefType(30), bytes);
+      final file = fileNode(1, [
+        const SchemaNestedNode(name: 'Point', id: 30),
+        const SchemaNestedNode(name: 'origin', id: 20),
+      ]);
+      final src = generateDartFile(file, [file, sNode, c]);
+      expect(
+        src,
+        contains(
+          'final PointReader origin = MessageReader.deserialize('
+          'Uint8List.fromList([0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]))'
+          '.getRoot(pointFactory);',
+        ),
+      );
+    });
+
+    test('list-typed const is skipped with a comment, not emitted as broken code', () {
+      final c = constNode(20, 'primes', const ListType(UInt32Type()), null);
+      final file = fileNode(1, [
+        const SchemaNestedNode(name: 'primes', id: 20),
+      ]);
+      final src = generateDartFile(file, [file, c]);
+      expect(src, isNot(contains('List<int> primes')));
+      expect(src, contains('// const primes:'));
+      expect(src, contains('not yet supported'));
+    });
+  });
+
   group('generateDartFiles — codegen entrypoint', () {
     test('maps .capnp filename to .capnp.dart', () {
       final sNode = structNode(20, 'Msg', 1, 0, [

@@ -43,17 +43,9 @@ Map<String, String> generateDartFiles(CodeGeneratorRequest request) {
     if (fileNode == null) continue;
 
     final inputPath = rf.filename;
-    final outputPath = _outputPath(inputPath);
+    final outputPath = capnpToDartOutputPath(inputPath);
     result[outputPath] = generateDartFile(fileNode, request.nodes);
   }
 
   return result;
-}
-
-/// Converts a `.capnp` input path to a `.capnp.dart` output path.
-String _outputPath(String input) {
-  if (input.endsWith('.capnp')) {
-    return '${input.substring(0, input.length - 6)}.capnp.dart';
-  }
-  return '$input.dart';
 }

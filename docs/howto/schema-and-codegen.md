@@ -45,6 +45,55 @@ for the full CLI contract.
 If the schema contains syntax errors, `capnp` reports them and exits without invoking code
 generation at all.
 
+## Cross-file references (`using`/`import`)
+
+A schema can reference types declared in another `.capnp` file:
+
+```capnp
+# bar.capnp
+struct Bar {
+  value @0 :UInt32;
+}
+```
+
+```capnp
+# foo.capnp
+using import "bar.capnp".Bar;
+
+struct Foo {
+  bar @0 :Bar;
+}
+```
+
+Compile every file that needs Dart output explicitly — `capnp compile` (like every
+other language's plugin) only generates code for files listed on the command line, not
+their transitive imports:
+
+```sh
+capnp compile -o dart:<output-dir> foo.capnp bar.capnp
+```
+
+The generated `foo.capnp.dart` automatically imports `bar.capnp.dart` (a relative import,
+mirroring the same relative path the two `.capnp` files have to each other) for any type
+it references from another file.
+
+## `const` declarations
+
+```capnp
+const maxSize :UInt32 = 100;
+const greeting :Text = "hello";
+const origin :Point = (x = 0, y = 0);
+```
+
+generates a top-level Dart declaration per const — `const int maxSize = 100;`,
+`const String greeting = 'hello';`, `final PointReader origin = ...;` (struct/enum
+consts can't be Dart `const` since building them involves a function call, so they're
+`final` instead).
+
+**List-typed consts are not supported** (e.g. `const primes :List(UInt32) = [2, 3, 5];`)
+— they're skipped with a comment in the generated file rather than emitting broken code.
+Every other const kind (scalars, `Text`, `Data`, enum, struct) is supported.
+
 ## Checking backward/forward compatibility
 
 When a schema evolves, you can ask `capnpc-dart` to diff the new schema against a

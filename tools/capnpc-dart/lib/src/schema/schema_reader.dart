@@ -92,6 +92,13 @@ class _NodeReader extends StructReader {
   // parameters @32 at ptr slot 5 — non-empty for generic nodes
   ListReader<_ParameterReader>? get parameters =>
       getStructListFieldWith(5, (r) => _ParameterReader(r));
+
+  // union = const
+  // const.type @16 shares ptr slot 3 with struct.fields/enum.enumerants/
+  // interface.methods; const.value @17 shares ptr slot 4 with
+  // interface.superclasses.
+  _TypeReader? get constType => getStructFieldWith(3, (r) => _TypeReader(r));
+  _ValueReader? get constValue => getStructFieldWith(4, (r) => _ValueReader(r));
 }
 
 // ---- Node.NestedNode @0xdebb25476f7ebf4d (dataWords=1, ptrWords=1) ----
@@ -481,7 +488,10 @@ SchemaNodeBody _buildNodeBody(_NodeReader r) {
       }
       return InterfaceBody(methods: methods, superclassIds: superclassIds);
     case 4: // const
-      return const ConstBody();
+      return ConstBody(
+        type: _buildType(r.constType),
+        value: _parseValue(r.constValue),
+      );
     case 5: // annotation
       return const AnnotationBody();
     default:
@@ -489,32 +499,34 @@ SchemaNodeBody _buildNodeBody(_NodeReader r) {
   }
 }
 
+/// Extracts a `Value` union's payload into the shared [Object?] const/default
+/// representation (see [ConstBody.value] / [SlotField.defaultValue]).
+Object? _parseValue(_ValueReader? dv) {
+  if (dv == null) return null;
+  return switch (dv.disc) {
+    1 => dv.boolValue,
+    2 => dv.int8Value,
+    3 => dv.int16Value,
+    4 => dv.int32Value,
+    5 => dv.int64Value,
+    6 => dv.uint8Value,
+    7 => dv.uint16Value,
+    8 => dv.uint32Value,
+    9 => dv.uint64Value,
+    10 => dv.float32Value,
+    11 => dv.float64Value,
+    12 => dv.textValue,
+    13 => dv.dataValue,
+    14 => dv.listValue,
+    15 => dv.uint16Value, // enum stored as uint16
+    16 => dv.structValue,
+    _ => null,
+  };
+}
+
 SchemaField _buildField(_FieldReader r) {
-  Object? defaultValue;
-  if (r.slotHadExplicitDefault) {
-    final dv = r.slotDefaultValue;
-    if (dv != null) {
-      defaultValue = switch (dv.disc) {
-        1 => dv.boolValue,
-        2 => dv.int8Value,
-        3 => dv.int16Value,
-        4 => dv.int32Value,
-        5 => dv.int64Value,
-        6 => dv.uint8Value,
-        7 => dv.uint16Value,
-        8 => dv.uint32Value,
-        9 => dv.uint64Value,
-        10 => dv.float32Value,
-        11 => dv.float64Value,
-        12 => dv.textValue,
-        13 => dv.dataValue,
-        14 => dv.listValue,
-        15 => dv.uint16Value, // enum stored as uint16
-        16 => dv.structValue,
-        _ => null,
-      };
-    }
-  }
+  final defaultValue =
+      r.slotHadExplicitDefault ? _parseValue(r.slotDefaultValue) : null;
 
   final body = r.isSlot
       ? SlotField(
