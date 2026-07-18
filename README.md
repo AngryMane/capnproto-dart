@@ -121,7 +121,7 @@ handoff (including the remaining Level 1 and Level 2+ flows) are not implemented
 and high capability churn should release capabilities promptly and should validate
 their workload against the lifecycle/stress tests in this repository.
 
-The RPC layer is tested for interoperability with Rust servers/clients using the [`capnp`](https://crates.io/crates/capnp) crate (versions 0.20–0.26).
+The RPC layer is tested for interoperability with Rust servers/clients using the [`capnp`](https://crates.io/crates/capnp) crate (versions 0.23–0.26).
 
 ## Samples
 
@@ -193,7 +193,7 @@ ci/run-tests.sh
 
 ### CI
 
-The GitHub Actions workflow (`.github/workflows/compat.yml`) runs analysis and tests with both the minimum supported Dart SDK (3.7.2) and the latest stable SDK. It also runs the full interoperability suite against capnp crate versions 0.20 through 0.26 on every push to `main`.
+The GitHub Actions workflow (`.github/workflows/compat.yml`) runs analysis and tests with both the minimum supported Dart SDK (3.7.2) and the latest stable SDK. It also runs the full interoperability suite against capnp crate versions 0.23 through 0.26 on every push to `main`.
 
 ## Documentation
 

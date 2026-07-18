@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       capnp_version:
-        description: 'capnp crate minor version (e.g. 0.20)'
+        description: 'capnp crate minor version (e.g. 0.23)'
         required: false
         default: ''
 
