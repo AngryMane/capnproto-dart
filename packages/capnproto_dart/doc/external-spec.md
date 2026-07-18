@@ -242,6 +242,16 @@ final class DynamicStructBuilder extends StructBuilder {}
 final class DynamicListBuilder {}
 ```
 
+Note what this deliberately isn't: a unified, name-based `DynamicValue` API (matching
+capnp-rust's `dynamic_value`/`dynamic_struct` or capnp-c++'s `DynamicValue`) for
+building schema-agnostic tooling (generic RPC proxies, capnp-to-JSON converters,
+scripting-language bindings). That's out of scope for this repository — see
+`docs/scope.md` — since it serves tool/library authors rather than the
+application-level IPC use case this library targets, and mature implementations
+already exist in C++ and Rust. The offset-indexed API above, plus `encodeText`/
+`decodeText` below, cover the debugging/introspection needs application code
+actually runs into.
+
 ## Text Format
 
 Renders/parses the human-readable representation used by the reference `capnp`

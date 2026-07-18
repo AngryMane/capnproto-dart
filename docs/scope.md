@@ -50,3 +50,14 @@ add a separate runtime component or FFI dependency.
 
 - Bindings to existing C++ or Rust Cap'n Proto libraries via FFI
 - Schema IDE integration (e.g., language server, syntax highlighting)
+- A full `DynamicValue`-style API (schema-driven, name-based get/set for a struct of
+  unknown-at-compile-time type, matching capnp-rust's `dynamic_value`/`dynamic_struct`
+  or capnp-c++'s `DynamicValue`). This serves building schema-agnostic tooling (generic
+  RPC proxies, capnp-to-JSON converters, scripting-language bindings, `capnp eval`-style
+  CLIs) — not the application-level IPC use case this repository targets (Component 2/3)
+  — and mature implementations already exist in C++ and Rust for anyone who needs it.
+  `capnproto_dart` still ships the lower-level building blocks this would sit on top of
+  (`DynamicStructReader`/`DynamicListReader`/`AnyPointerReader`, offset-indexed; see
+  external-spec.md's "Dynamic Access and Schema Reflection"), plus `encodeText`/
+  `decodeText` for the debugging/introspection use case, so adding a full `DynamicValue`
+  later remains possible without disrupting existing code — it just isn't planned.
