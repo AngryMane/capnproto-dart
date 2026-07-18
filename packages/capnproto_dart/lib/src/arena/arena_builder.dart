@@ -386,6 +386,50 @@ class ArenaBuilder {
     ).encode(data, wordOffset);
   }
 
+  // ---- Orphan re-attachment (used by orphan.dart) ----
+
+  /// Writes a pointer at [ptrSeg]/[ptrWordOffset] referring to *already
+  /// allocated* content at word [targetWordOffset] of [targetSeg] — used to
+  /// re-attach an Orphan without copying its bytes. [makePointer] builds the
+  /// content-describing pointer (a [StructPointer] or [ListPointer]) given
+  /// the relative `offset` field value to encode.
+  ///
+  /// Always writes a double-far pointer when crossing segments, rather than
+  /// first trying to land a single-far landing pad in the target segment —
+  /// simpler, and this is already off the hot allocation path (costs at
+  /// most one extra word versus the theoretical optimum).
+  void writePointerToExisting({
+    required SegmentBuilder ptrSeg,
+    required int ptrWordOffset,
+    required SegmentBuilder targetSeg,
+    required int targetWordOffset,
+    required WirePointer Function(int offset) makePointer,
+  }) {
+    if (ptrSeg.id == targetSeg.id) {
+      makePointer(
+        targetWordOffset - ptrWordOffset - 1,
+      ).encode(ptrSeg.data, ptrWordOffset);
+      return;
+    }
+
+    // Cross-segment: double-far landing pad — word 0 is a single-far
+    // pointer to the real target, word 1 is a tag carrying the target's
+    // shape (offset field unused/0). Mirrors the double-far landing pad
+    // shape message_copy.dart's _copyPointer already knows how to read.
+    final (tagSeg, tagWordOffset) = allocate(2);
+    FarPointer(
+      isDoubleFar: false,
+      landingPadOffset: targetWordOffset,
+      segmentId: targetSeg.id,
+    ).encode(tagSeg.data, tagWordOffset);
+    makePointer(0).encode(tagSeg.data, tagWordOffset + 1);
+    FarPointer(
+      isDoubleFar: true,
+      landingPadOffset: tagWordOffset,
+      segmentId: tagSeg.id,
+    ).encode(ptrSeg.data, ptrWordOffset);
+  }
+
   // ---- Pointer field write helpers used by StructBuilder ----
 
   /// Writes a Text (UTF-8 string) list pointer at [ptrWordOffset] in [ptrSeg].

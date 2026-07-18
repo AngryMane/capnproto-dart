@@ -59,6 +59,7 @@ export 'src/message/message_builder.dart';
 export 'src/schema/reflection.dart';
 export 'src/stream/message_stream.dart';
 export 'src/layout/any_pointer.dart';
+export 'src/layout/orphan.dart' show Orphan, StructOrphan, ListOrphan;
 
 // ---------------------------------------------------------------------------
 // For use by capnpc-dart generated code

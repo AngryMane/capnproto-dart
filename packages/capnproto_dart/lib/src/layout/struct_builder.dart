@@ -7,6 +7,7 @@ import '../wire/pointer.dart' show ListElementSize, CapabilityPointer;
 import '../wire/wire_helpers.dart';
 import 'any_pointer.dart';
 import 'list_builder.dart';
+import 'orphan.dart';
 import 'struct_reader.dart';
 
 /// Base class for all generated struct builders.
@@ -199,6 +200,22 @@ abstract class StructBuilder {
 
   AnyPointerBuilder initAnyPointerField(int ptrIndex) =>
       AnyPointerBuilder(_raw, ptrIndex);
+
+  /// Detaches the pointer at [ptrIndex] as an [Orphan] (zero-copy — see
+  /// orphan.dart), leaving the field unset. Returns null if the field was
+  /// already unset.
+  Orphan? disownPointerField(int ptrIndex) =>
+      disownPointer(_raw.arena, _raw.segment, _raw.ptrWordOffset + ptrIndex);
+
+  /// Adopts [orphan] into the pointer at [ptrIndex] (zero-copy — see
+  /// orphan.dart), replacing whatever was there. Passing null clears the
+  /// field.
+  void adoptPointerField(int ptrIndex, Orphan? orphan) => adoptPointer(
+    _raw.arena,
+    _raw.segment,
+    _raw.ptrWordOffset + ptrIndex,
+    orphan,
+  );
 
   void setAnyPointerField(
     int ptrIndex,

@@ -18,6 +18,51 @@ class MessageBuilder {
 }
 ```
 
+## Orphan/Adopt
+
+Detach a pointer-typed field's value from its parent (`disown`) and re-attach it
+elsewhere (`adopt`) without deep-copying the bytes — useful for rearranging content
+while building a message, or promoting a nested value to become the root.
+
+```dart
+/// A detached Cap'n Proto object: still allocated in its arena, but nothing
+/// currently points to it. Consumed exactly once by an adopt call.
+sealed class Orphan {}
+final class StructOrphan extends Orphan {}
+final class ListOrphan extends Orphan {}   // also covers Text/Data
+
+abstract class StructBuilder {
+  /// Detaches the pointer at [ptrIndex] as an Orphan, leaving the field
+  /// unset. Returns null if the field was already unset.
+  Orphan? disownPointerField(int ptrIndex);
+
+  /// Adopts [orphan] into the pointer at [ptrIndex], replacing whatever was
+  /// there. Passing null clears the field.
+  void adoptPointerField(int ptrIndex, Orphan? orphan);
+}
+
+class MessageBuilder {
+  /// Adopts [orphan] as this message's root, replacing whatever's there.
+  T adoptRoot<T extends StructBuilder>(StructOrphan orphan, StructFactory<T> factory);
+}
+```
+
+**Same arena only.** An `Orphan` can only be adopted within the same `MessageBuilder`
+it was disowned from — Cap'n Proto pointers are segment-relative within one arena's
+segment table, so a true zero-copy move into an unrelated arena isn't representable
+without importing every segment the content transitively reaches and rewriting their
+segment IDs (at that point it's a different, riskier flavor of the deep copy this
+feature exists to avoid — real Cap'n Proto implementations have the same constraint).
+Adopting into a different `MessageBuilder` throws `ArgumentError`; to move content
+across independent messages, use `copyMessageRootToBuilder`/`copyAnyPointerToNewMessage`
+(deep copy, already used internally by the RPC layer).
+
+Capability pointers can't be orphaned (`disownPointerField` throws `UnsupportedError`)
+— a capability index is only meaningful together with its message's capability table,
+which this serialization-only package has no concept of.
+
+Adopting the same `Orphan` twice throws `StateError`.
+
 ## Message Decoding
 
 ```dart
