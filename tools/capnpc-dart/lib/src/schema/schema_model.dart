@@ -8,6 +8,9 @@ class SchemaNode {
   final SchemaNodeBody body;
   /// Names of generic type parameters; empty for non-generic nodes.
   final List<String> parameters;
+  /// Annotations applied directly to this node (e.g. `$myAnno(...)` right
+  /// after a `struct`/`enum`/`interface` declaration). Empty if none.
+  final List<AppliedAnnotation> annotations;
 
   const SchemaNode({
     required this.id,
@@ -17,10 +20,27 @@ class SchemaNode {
     required this.nestedNodes,
     required this.body,
     this.parameters = const [],
+    this.annotations = const [],
   });
 
   /// Short name: the portion after the prefix (e.g., "Foo" not "schema.Foo").
   String get shortName => displayName.substring(displayNamePrefixLength);
+}
+
+/// A single annotation application (e.g. `$myAnno("hello")` in the schema),
+/// as opposed to the `annotation myAnno @0x... (...) :Text;` declaration
+/// itself (which is just another [SchemaNode] with an [AnnotationBody]).
+///
+/// [id] is the declaring annotation node's id — look it up in the full node
+/// list if you need its name or declared value type. [value] uses the same
+/// representation as [ConstBody.value]/[SlotField.defaultValue]:
+/// `bool`/`int`/`double` for scalars, `String` for Text, `Uint8List` for
+/// Data/List/Struct (the latter two as a standalone single-message byte
+/// buffer), or `null` for a Void-valued annotation.
+class AppliedAnnotation {
+  final int id;
+  final Object? value;
+  const AppliedAnnotation({required this.id, this.value});
 }
 
 /// A name→id mapping for a node's nested declarations.
@@ -76,11 +96,14 @@ class SchemaMethod {
   /// Node ID of the auto-generated result struct.
   final int resultStructTypeId;
 
+  final List<AppliedAnnotation> annotations;
+
   const SchemaMethod({
     required this.name,
     required this.ordinal,
     required this.paramStructTypeId,
     required this.resultStructTypeId,
+    this.annotations = const [],
   });
 }
 
@@ -110,7 +133,12 @@ class AnnotationBody extends SchemaNodeBody {
 class SchemaEnumerant {
   final String name;
   final int codeOrder;
-  const SchemaEnumerant({required this.name, required this.codeOrder});
+  final List<AppliedAnnotation> annotations;
+  const SchemaEnumerant({
+    required this.name,
+    required this.codeOrder,
+    this.annotations = const [],
+  });
 }
 
 // ---- Field ---------------------------------------------------------------
@@ -131,6 +159,7 @@ class SchemaField {
   final int ordinal;
   final int discriminantValue; // 0xFFFF if not a union field
   final SchemaFieldBody body;
+  final List<AppliedAnnotation> annotations;
 
   const SchemaField({
     required this.name,
@@ -138,6 +167,7 @@ class SchemaField {
     required this.ordinal,
     required this.discriminantValue,
     required this.body,
+    this.annotations = const [],
   });
 
   bool get isUnionField => discriminantValue != 0xFFFF;

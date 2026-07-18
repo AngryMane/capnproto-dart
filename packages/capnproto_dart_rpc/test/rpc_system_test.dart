@@ -133,4 +133,67 @@ void main() {
       },
     );
   });
+
+  group('RpcSystem.serve / RpcSystem.connect (WebSocket)', () {
+    test('a ws:// client can reach a ws:// server and dispatch a call', () async {
+      final server = await RpcSystem.serve(
+        Uri.parse('ws://127.0.0.1:0'),
+        NullCapability(),
+      );
+      addTearDown(server.close);
+
+      final client = await RpcSystem.connect(
+        Uri.parse('ws://127.0.0.1:${server.port}'),
+      );
+      addTearDown(client.close);
+
+      // Same shape as the TCP test above: NullCapability rejects every
+      // dispatch, so a clean RpcException (not a connection-level failure)
+      // proves the message actually made the full round trip over the
+      // WebSocket transport.
+      final boot = client.bootstrap(_RawCapabilityFactory());
+      await expectLater(
+        boot.dispatch(0, 0, _emptyParams),
+        throwsA(isA<RpcException>()),
+      );
+    });
+
+    test('maxConnections rejects a ws:// connection beyond the cap', () async {
+      final server = await RpcSystem.serve(
+        Uri.parse('ws://127.0.0.1:0'),
+        NullCapability(),
+        maxConnections: 1,
+      );
+      addTearDown(server.close);
+
+      final first = await RpcSystem.connect(
+        Uri.parse('ws://127.0.0.1:${server.port}'),
+      );
+      addTearDown(first.close);
+      // Confirm the first connection is actually accepted before probing
+      // the cap.
+      await expectLater(
+        first.bootstrap(_RawCapabilityFactory()).dispatch(0, 0, _emptyParams),
+        throwsA(isA<RpcException>()),
+      );
+
+      // The second connection's WebSocket handshake itself must fail (the
+      // server responds 503 instead of upgrading), not silently connect and
+      // then hang or error at the RPC layer.
+      await expectLater(
+        RpcSystem.connect(Uri.parse('ws://127.0.0.1:${server.port}')),
+        throwsA(anything),
+      );
+    });
+
+    test('wss:// server without a securityContext is rejected', () async {
+      await expectLater(
+        RpcSystem.serve(
+          Uri.parse('wss://127.0.0.1:0'),
+          NullCapability(),
+        ),
+        throwsA(isA<RpcException>()),
+      );
+    });
+  });
 }

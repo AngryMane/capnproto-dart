@@ -1063,9 +1063,11 @@ void _writeEnumSchema(
     sb.writeln('    EnumerantSchemaInfo(');
     sb.writeln('      name: ${_dartString(e.name)},');
     sb.writeln('      codeOrder: ${e.codeOrder},');
+    sb.write(_annotationsExpr(e.annotations, '      '));
     sb.writeln('    ),');
   }
   sb.writeln('  ],');
+  sb.write(_annotationsExpr(node.annotations, '  '));
   sb.writeln(');');
 }
 
@@ -1098,6 +1100,7 @@ void _writeStructSchema(
     sb.write(_fieldSchemaExpr(field, nodeMap, indent: '    '));
   }
   sb.writeln('  ],');
+  sb.write(_annotationsExpr(node.annotations, '  '));
   sb.writeln(');');
 }
 
@@ -1129,9 +1132,11 @@ void _writeInterfaceSchema(
     sb.writeln(
       '      resultStructTypeId: ${_hexId(method.resultStructTypeId)},',
     );
+    sb.write(_annotationsExpr(method.annotations, '      '));
     sb.writeln('    ),');
   }
   sb.writeln('  ],');
+  sb.write(_annotationsExpr(node.annotations, '  '));
   sb.writeln(');');
 }
 
@@ -2163,6 +2168,23 @@ bool _isPointerType(SchemaType t) => switch (t) {
   _ => false,
 };
 
+/// Emits an `annotations: [...]` entry for [annotations], or an empty
+/// string if there are none (matching the style of every other
+/// zero/empty-valued reflection field, which is likewise omitted rather
+/// than written out as its default).
+String _annotationsExpr(List<AppliedAnnotation> annotations, String indent) {
+  if (annotations.isEmpty) return '';
+  final b = StringBuffer();
+  b.writeln('${indent}annotations: [');
+  for (final a in annotations) {
+    b.writeln(
+      '$indent  AnnotationInfo(id: ${_hexId(a.id)}, value: ${_literalExpr(a.value)}),',
+    );
+  }
+  b.writeln('$indent],');
+  return b.toString();
+}
+
 String _fieldSchemaExpr(
   SchemaField field,
   Map<int, SchemaNode> nodeMap, {
@@ -2176,6 +2198,7 @@ String _fieldSchemaExpr(
     b.writeln('$indent  discriminantValue: ${field.discriminantValue},');
   }
   b.write(_fieldBodySchemaExpr(field.body, nodeMap, indent: '$indent  '));
+  b.write(_annotationsExpr(field.annotations, '$indent  '));
   b.writeln('$indent),');
   return b.toString();
 }
@@ -2265,6 +2288,7 @@ String _stringListExpr(List<String> values) =>
 String _literalExpr(Object? value) {
   if (value == null) return 'null';
   if (value is String) return _dartString(value);
+  if (value is Uint8List) return _dartBytesLiteral(value);
   if (value is double) {
     if (value.isNaN) return 'double.nan';
     if (value == double.infinity) return 'double.infinity';

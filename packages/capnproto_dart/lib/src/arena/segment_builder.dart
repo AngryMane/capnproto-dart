@@ -22,6 +22,20 @@ class SegmentBuilder {
         .setRange(0, data.lengthInBytes, data);
   }
 
+  /// Creates a segment backed directly by externally-provided [scratch]
+  /// memory, ready for bump allocation from word 0 — unlike [fromData], this
+  /// starts empty rather than pre-filled/marked used. [scratch]'s length is
+  /// truncated down to the nearest whole word if it isn't already
+  /// word-aligned. Used by [ArenaBuilder.withScratchSpace] to avoid a fresh
+  /// heap allocation for the first segment.
+  SegmentBuilder.fromScratch(Uint8List scratch, this.id)
+      : _data = ByteData.sublistView(
+          scratch,
+          0,
+          (scratch.lengthInBytes ~/ bytesPerWord) * bytesPerWord,
+        ),
+        _usedWords = 0;
+
   int get capacity => _data.lengthInBytes ~/ bytesPerWord;
   int get usedWords => _usedWords;
 

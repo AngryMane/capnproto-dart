@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:capnproto_dart/src/arena/arena_builder.dart';
 import 'package:capnproto_dart/src/arena/arena_reader.dart';
 import 'package:capnproto_dart/src/layout/struct_builder.dart';
@@ -110,6 +112,67 @@ void main() {
 
       // Single segment: header = [numSegs-1 (uint32), seg0Size (uint32)] = 8 bytes.
       expect(bytes.lengthInBytes % bytesPerWord, equals(0));
+    });
+  });
+
+  group('MessageBuilder.withScratchSpace', () {
+    test('writes go directly into the caller\'s buffer and round-trip', () {
+      final scratch = Uint8List(16 * bytesPerWord);
+      final builder = MessageBuilder.withScratchSpace(scratch);
+      final point = builder.initRoot(pointFactory);
+      point.x = 42;
+      point.y = -7;
+
+      // Proof the write really landed in the caller's buffer: the root
+      // pointer (word 0) and the struct's data (word 1, right after it)
+      // are both non-zero somewhere in `scratch` before serialize() is
+      // ever called.
+      final view = ByteData.sublistView(scratch);
+      var sawNonZero = false;
+      for (var i = 0; i < scratch.length; i++) {
+        if (scratch[i] != 0) {
+          sawNonZero = true;
+          break;
+        }
+      }
+      expect(sawNonZero, isTrue);
+      // Word 0 holds the root struct pointer; the struct's own data word
+      // (dataWords=1, ptrWords=0) follows immediately at word 1.
+      expect(view.getInt32(bytesPerWord, Endian.little), equals(42));
+      expect(view.getInt32(bytesPerWord + 4, Endian.little), equals(-7));
+
+      final bytes = builder.serialize();
+      final read = MessageReader.deserialize(bytes).getRoot(pointFactory);
+      expect(read.x, equals(42));
+      expect(read.y, equals(-7));
+    });
+
+    test('a message larger than the scratch space still serializes correctly', () {
+      // Only 2 words: root pointer (1 word) + nothing else — Point's 1 data
+      // word can't fit alongside it, forcing an overflow into a second,
+      // heap-allocated segment (exercised via a far pointer).
+      final scratch = Uint8List(2 * bytesPerWord);
+      final builder = MessageBuilder.withScratchSpace(scratch);
+      final point = builder.initRoot(pointFactory);
+      point.x = 1;
+      point.y = 2;
+
+      final bytes = builder.serialize();
+      final read = MessageReader.deserialize(bytes).getRoot(pointFactory);
+      expect(read.x, equals(1));
+      expect(read.y, equals(2));
+    });
+
+    test('an empty scratch buffer falls back to a heap segment entirely', () {
+      final builder = MessageBuilder.withScratchSpace(Uint8List(0));
+      final point = builder.initRoot(pointFactory);
+      point.x = 5;
+      point.y = 6;
+
+      final bytes = builder.serialize();
+      final read = MessageReader.deserialize(bytes).getRoot(pointFactory);
+      expect(read.x, equals(5));
+      expect(read.y, equals(6));
     });
   });
 }

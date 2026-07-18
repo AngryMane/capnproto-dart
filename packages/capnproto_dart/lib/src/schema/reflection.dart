@@ -8,11 +8,32 @@ sealed class SchemaInfo {
   final String displayName;
   final String shortName;
 
+  /// Annotations applied directly to this node (e.g. `$myAnno(...)` right
+  /// after a `struct`/`enum`/`interface` declaration). Empty if none.
+  final List<AnnotationInfo> annotations;
+
   const SchemaInfo({
     required this.id,
     required this.displayName,
     required this.shortName,
+    this.annotations = const [],
   });
+}
+
+/// A single annotation application captured from the schema (e.g.
+/// `$myAnno("hello")`), as emitted by `capnpc-dart`.
+///
+/// [id] is the declaring annotation node's id (the `annotation myAnno
+/// @0x... (...) :T;` declaration is not itself represented at runtime —
+/// look up its id in your own schema if you need its name or declared
+/// value type). [value] uses the same representation as
+/// [SlotFieldSchemaInfo.defaultValue]: `bool`/`int`/`double` for scalars,
+/// `String` for Text, `Uint8List` for Data/List/Struct, or `null` for a
+/// Void-valued annotation.
+final class AnnotationInfo {
+  final int id;
+  final Object? value;
+  const AnnotationInfo({required this.id, this.value});
 }
 
 final class StructSchemaInfo extends SchemaInfo {
@@ -35,6 +56,7 @@ final class StructSchemaInfo extends SchemaInfo {
     this.discriminantCount = 0,
     this.discriminantOffset = 0,
     this.typeParameters = const [],
+    super.annotations,
   });
 
   FieldSchemaInfo? fieldByName(String name) {
@@ -50,12 +72,14 @@ final class FieldSchemaInfo {
   final int codeOrder;
   final int discriminantValue;
   final FieldBodySchemaInfo body;
+  final List<AnnotationInfo> annotations;
 
   const FieldSchemaInfo({
     required this.name,
     required this.codeOrder,
     required this.body,
     this.discriminantValue = 0xFFFF,
+    this.annotations = const [],
   });
 
   bool get isUnionField => discriminantValue != 0xFFFF;
@@ -93,14 +117,20 @@ final class EnumSchemaInfo extends SchemaInfo {
     required super.displayName,
     required super.shortName,
     required this.enumerants,
+    super.annotations,
   });
 }
 
 final class EnumerantSchemaInfo {
   final String name;
   final int codeOrder;
+  final List<AnnotationInfo> annotations;
 
-  const EnumerantSchemaInfo({required this.name, required this.codeOrder});
+  const EnumerantSchemaInfo({
+    required this.name,
+    required this.codeOrder,
+    this.annotations = const [],
+  });
 }
 
 final class InterfaceSchemaInfo extends SchemaInfo {
@@ -113,6 +143,7 @@ final class InterfaceSchemaInfo extends SchemaInfo {
     required super.shortName,
     this.methods = const [],
     this.superclassIds = const [],
+    super.annotations,
   });
 
   MethodSchemaInfo? methodByName(String name) {
@@ -128,12 +159,14 @@ final class MethodSchemaInfo {
   final int ordinal;
   final int paramStructTypeId;
   final int resultStructTypeId;
+  final List<AnnotationInfo> annotations;
 
   const MethodSchemaInfo({
     required this.name,
     required this.ordinal,
     required this.paramStructTypeId,
     required this.resultStructTypeId,
+    this.annotations = const [],
   });
 }
 

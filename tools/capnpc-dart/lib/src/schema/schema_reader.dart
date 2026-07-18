@@ -66,6 +66,9 @@ class _NodeReader extends StructReader {
   ListReader<_NestedNodeReader>? get nestedNodes =>
       getStructListFieldWith(1, (r) => _NestedNodeReader(r));
 
+  ListReader<_AnnotationReader>? get annotations =>
+      getStructListFieldWith(2, (r) => _AnnotationReader(r));
+
   // union = struct
   int get structDataWordCount => getUint16Field(_nodeStructDwc);
   int get structPointerCount => getUint16Field(_nodeStructPtrCount);
@@ -110,6 +113,23 @@ class _NestedNodeReader extends StructReader {
   int get id => getUint64Field(0);
 }
 
+// ---- Annotation @0xf1c8950dab257542 (dataWords=1, ptrWords=2) ----
+//
+// Describes an *application* of an annotation (e.g. `$myAnno("hello")`), as
+// opposed to `_NodeReader`'s annotation-union case (kind=5), which describes
+// the `annotation myAnno @0x... (...) :T;` declaration itself.
+//
+// Data section:
+//   bytes 0-7 : id (UInt64, @0) — the declaring annotation node's id
+// Pointer section:
+//   ptr 0 : value (Value, @1)
+//   ptr 1 : brand (Brand, @2) — not modeled; annotations can't be parameterized
+class _AnnotationReader extends StructReader {
+  _AnnotationReader(super.raw);
+  int get id => getUint64Field(0);
+  _ValueReader? get value => getStructFieldWith(0, (r) => _ValueReader(r));
+}
+
 // ---- Field @0x9aad50a41f4af45f (dataWords=3, ptrWords=4) ----
 //
 // Ordinal-first layout verified against greeter.capnp binary.
@@ -136,6 +156,9 @@ class _FieldReader extends StructReader {
   int get codeOrder => getUint16Field(0);
   int get discriminantValue => getUint16Field(2, defaultValue: 0xffff);
   int get _slotGroupDisc => getUint16Field(8);
+
+  ListReader<_AnnotationReader>? get annotations =>
+      getStructListFieldWith(1, (r) => _AnnotationReader(r));
 
   // Field.ordinal :union { implicit @7 :Void; explicit @8 :UInt16; } —
   // verified against real `capnp compile -o-` output (capnp 1.0.1): disc at
@@ -238,6 +261,8 @@ class _EnumerantReader extends StructReader {
   _EnumerantReader(super.raw);
   String? get name => getTextField(0);
   int get codeOrder => getUint16Field(0);
+  ListReader<_AnnotationReader>? get annotations =>
+      getStructListFieldWith(1, (r) => _AnnotationReader(r));
 }
 
 // ---- Value @0xce23dcd2310250fa (dataWords=2, ptrWords=1) ----
@@ -305,6 +330,8 @@ class _MethodReader extends StructReader {
   String? get name => getTextField(0);
   int get paramStructTypeId => getUint64Field(8);
   int get resultStructTypeId => getUint64Field(16);
+  ListReader<_AnnotationReader>? get annotations =>
+      getStructListFieldWith(1, (r) => _AnnotationReader(r));
 }
 
 // ---- Superclass @0xa9962148649a0168 (dataWords=1, ptrWords=1) ----
@@ -431,7 +458,20 @@ SchemaNode _buildNode(_NodeReader r) {
     nestedNodes: nestedNodes,
     body: body,
     parameters: parameters,
+    annotations: _buildAnnotations(r.annotations),
   );
+}
+
+/// Extracts a node/field/enumerant/method's applied annotations (see
+/// [AppliedAnnotation]) from its `List(Annotation)` pointer.
+List<AppliedAnnotation> _buildAnnotations(ListReader<_AnnotationReader>? list) {
+  if (list == null) return const [];
+  final result = <AppliedAnnotation>[];
+  for (int i = 0; i < list.length; i++) {
+    final a = list[i];
+    result.add(AppliedAnnotation(id: a.id, value: _parseValue(a.value)));
+  }
+  return result;
 }
 
 SchemaNodeBody _buildNodeBody(_NodeReader r) {
@@ -462,6 +502,7 @@ SchemaNodeBody _buildNodeBody(_NodeReader r) {
           enumerants.add(SchemaEnumerant(
             name: el[i].name ?? '',
             codeOrder: el[i].codeOrder,
+            annotations: _buildAnnotations(el[i].annotations),
           ));
         }
       }
@@ -476,6 +517,7 @@ SchemaNodeBody _buildNodeBody(_NodeReader r) {
             ordinal: i,
             paramStructTypeId: ml[i].paramStructTypeId,
             resultStructTypeId: ml[i].resultStructTypeId,
+            annotations: _buildAnnotations(ml[i].annotations),
           ));
         }
       }
@@ -543,6 +585,7 @@ SchemaField _buildField(_FieldReader r) {
     ordinal: r.ordinal,
     discriminantValue: r.discriminantValue,
     body: body,
+    annotations: _buildAnnotations(r.annotations),
   );
 }
 

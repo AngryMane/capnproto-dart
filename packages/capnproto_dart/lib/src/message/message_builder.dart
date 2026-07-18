@@ -8,9 +8,16 @@ import '../layout/struct_reader.dart';
 import '../stream/packed_codec.dart';
 
 class MessageBuilder {
-  final ArenaBuilder _arena = ArenaBuilder();
+  final ArenaBuilder _arena;
 
-  MessageBuilder();
+  MessageBuilder() : _arena = ArenaBuilder();
+
+  /// Builds a message using [scratchSpace] as backing memory for the first
+  /// segment instead of a freshly heap-allocated buffer — avoids an
+  /// allocation per message when building many messages in a loop with the
+  /// same reusable buffer (see [ArenaBuilder.withScratchSpace]).
+  MessageBuilder.withScratchSpace(Uint8List scratchSpace)
+      : _arena = ArenaBuilder.withScratchSpace(scratchSpace);
 
   B initRoot<R extends StructReader, B extends StructBuilder>(
     StructFactory<R, B> factory,

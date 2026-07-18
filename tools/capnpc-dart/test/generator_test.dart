@@ -1849,6 +1849,98 @@ void main() {
     });
   });
 
+  group('generateDartFile — schema annotations', () {
+    test('a text-valued annotation on a field appears in FieldSchemaInfo', () {
+      final field = SchemaField(
+        name: 'bar',
+        codeOrder: 0,
+        ordinal: 0,
+        discriminantValue: 0xFFFF,
+        body: const SlotField(
+          offset: 0,
+          type: Int32Type(),
+          hadExplicitDefault: false,
+        ),
+        annotations: const [
+          AppliedAnnotation(id: 0x9c6a6c34968683ae, value: 'hello'),
+        ],
+      );
+      final sNode = structNode(20, 'Foo', 1, 0, [field]);
+      final file = fileNode(1, [const SchemaNestedNode(name: 'Foo', id: 20)]);
+      final src = generateDartFile(file, [file, sNode]);
+
+      expect(
+        src,
+        contains(
+          "AnnotationInfo(id: 0x9c6a6c34968683ae, value: 'hello'),",
+        ),
+      );
+    });
+
+    test('a node-level annotation appears in StructSchemaInfo', () {
+      final sNode = SchemaNode(
+        id: 20,
+        displayName: 'test.capnp:Foo',
+        displayNamePrefixLength: 'test.capnp:'.length,
+        scopeId: 1,
+        nestedNodes: const [],
+        body: const StructBody(
+          dataWordCount: 0,
+          pointerCount: 0,
+          isGroup: false,
+          discriminantCount: 0,
+          discriminantOffset: 0,
+          fields: [],
+        ),
+        annotations: const [AppliedAnnotation(id: 42, value: 7)],
+      );
+      final file = fileNode(1, [const SchemaNestedNode(name: 'Foo', id: 20)]);
+      final src = generateDartFile(file, [file, sNode]);
+
+      expect(
+        src,
+        contains('AnnotationInfo(id: 0x000000000000002a, value: 7),'),
+      );
+    });
+
+    test('a Data-valued annotation is emitted as a Uint8List literal', () {
+      final field = SchemaField(
+        name: 'bar',
+        codeOrder: 0,
+        ordinal: 0,
+        discriminantValue: 0xFFFF,
+        body: const SlotField(
+          offset: 0,
+          type: Int32Type(),
+          hadExplicitDefault: false,
+        ),
+        annotations: [
+          AppliedAnnotation(id: 1, value: Uint8List.fromList([1, 2, 3])),
+        ],
+      );
+      final sNode = structNode(20, 'Foo', 1, 0, [field]);
+      final file = fileNode(1, [const SchemaNestedNode(name: 'Foo', id: 20)]);
+      final src = generateDartFile(file, [file, sNode]);
+
+      expect(
+        src,
+        contains(
+          'AnnotationInfo(id: 0x0000000000000001, value: Uint8List.fromList([1, 2, 3])),',
+        ),
+      );
+    });
+
+    test('a field with no annotations omits the annotations key entirely', () {
+      final sNode = structNode(20, 'Foo', 1, 0, [
+        dataField('x', 0, 0, const Int32Type()),
+      ]);
+      final file = fileNode(1, [const SchemaNestedNode(name: 'Foo', id: 20)]);
+      final src = generateDartFile(file, [file, sNode]);
+
+      expect(src, isNot(contains('annotations:')));
+    });
+  });
+
   group('generateDartFiles — codegen entrypoint', () {
     test('maps .capnp filename to .capnp.dart', () {
       final sNode = structNode(20, 'Msg', 1, 0, [

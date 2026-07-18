@@ -67,6 +67,39 @@ class ArenaBuilder {
     _segments.add(SegmentBuilder(initialCapacityWords, 0));
   }
 
+  /// Creates an arena whose first segment is backed directly by
+  /// externally-provided [scratchSpace] memory instead of a freshly
+  /// heap-allocated buffer — mirrors capnp-rust's
+  /// `ScratchSpaceHeapAllocator`, avoiding a per-message allocation when
+  /// building many messages in a loop with the same reusable buffer.
+  ///
+  /// Writes go directly into [scratchSpace] until it's full, at which point
+  /// [allocate] falls back to a normal heap-allocated segment exactly as it
+  /// already does when any segment fills up — a message is never size
+  /// limited by [scratchSpace], it's just spared an allocation for the
+  /// common case where it fits.
+  ///
+  /// [scratchSpace] must not be reused (e.g. passed to another
+  /// [ArenaBuilder.withScratchSpace] call) until this arena's [serialize]
+  /// has been called: [serialize] copies every segment's bytes into a fresh
+  /// output buffer, so [scratchSpace] is safe to reuse immediately
+  /// afterward.
+  ArenaBuilder.withScratchSpace(Uint8List scratchSpace) {
+    // The wire format requires the root pointer at word 0 of segment 0 (see
+    // ArenaReader.getRootRaw), and that's always this arena's very first
+    // allocation. A scratch buffer that truncates to 0 whole words couldn't
+    // even hold that one word, which would silently produce an unreadable
+    // message (the root pointer would land in segment 1 instead) — fall
+    // back to a normal heap segment in that case rather than using a
+    // segment 0 that can never actually hold anything.
+    final scratchWords = scratchSpace.lengthInBytes ~/ bytesPerWord;
+    _segments.add(
+      scratchWords > 0
+          ? SegmentBuilder.fromScratch(scratchSpace, 0)
+          : SegmentBuilder(_defaultSegmentWords, 0),
+    );
+  }
+
   /// Allocates [words] contiguous words, growing into a new segment if needed.
   /// Returns `(segment, wordOffset)`.
   (SegmentBuilder, int) allocate(int words) {
