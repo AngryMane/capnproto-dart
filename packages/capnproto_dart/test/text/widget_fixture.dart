@@ -22,33 +22,21 @@
 import 'dart:typed_data';
 import 'package:capnproto_dart/capnproto_dart.dart';
 
-enum Color {
-  red,
-  green,
-  blue,
-}
+enum Color { red, green, blue }
 
 const EnumSchemaInfo colorSchema = EnumSchemaInfo(
   id: 0x80378f2b1b82c661,
   displayName: 'test.capnp:Color',
   shortName: 'Color',
   enumerants: [
-    EnumerantSchemaInfo(
-      name: 'red',
-      codeOrder: 0,
-    ),
-    EnumerantSchemaInfo(
-      name: 'green',
-      codeOrder: 1,
-    ),
-    EnumerantSchemaInfo(
-      name: 'blue',
-      codeOrder: 2,
-    ),
+    EnumerantSchemaInfo(name: 'red', codeOrder: 0),
+    EnumerantSchemaInfo(name: 'green', codeOrder: 1),
+    EnumerantSchemaInfo(name: 'blue', codeOrder: 2),
   ],
 );
 
-Color? colorFromUint16(int v) => v < Color.values.length ? Color.values[v] : null;
+Color? colorFromUint16(int v) =>
+    v < Color.values.length ? Color.values[v] : null;
 int colorToUint16(Color v) => v.index;
 
 final class PointReader extends StructReader {
@@ -76,15 +64,20 @@ final class PointBuilder extends StructBuilder {
   }
 }
 
-final class _PointFactory
-    extends StructFactory<PointReader, PointBuilder> {
-  @override StructSchemaInfo get schema => pointSchema;
-  @override int get dataWords => 1;
-  @override int get ptrWords => 0;
+final class _PointFactory extends StructFactory<PointReader, PointBuilder> {
+  @override
+  StructSchemaInfo get schema => pointSchema;
+  @override
+  int get dataWords => 1;
+  @override
+  int get ptrWords => 0;
   @override
   PointReader fromRawReader(RawStructReader r) => PointReader(r);
   @override
-  PointReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => PointReader(r, capabilities: capabilities);
+  PointReader fromRawReaderWithCapabilities(
+    RawStructReader r,
+    List<Object?> capabilities,
+  ) => PointReader(r, capabilities: capabilities);
   @override
   PointBuilder fromRawBuilder(RawStructBuilder r) => PointBuilder(r);
 }
@@ -136,11 +129,17 @@ final class WidgetReader extends StructReader {
 
   Color? get color => colorFromUint16(getUint16Field(6));
 
-  PointReader? get origin => getStructFieldWith(2, (r) => PointReader(r, capabilities: capabilityTable));
+  PointReader? get origin => getStructFieldWith(
+    2,
+    (r) => PointReader(r, capabilities: capabilityTable),
+  );
 
   ListReader<String?>? get tags => getTextListField(3);
 
-  ListReader<PointReader>? get points => getStructListFieldWith(4, (r) => PointReader(r, capabilities: capabilityTable));
+  ListReader<PointReader>? get points => getStructListFieldWith(
+    4,
+    (r) => PointReader(r, capabilities: capabilityTable),
+  );
 
   ListReader<int>? get nums => getInt32ListField(5);
 
@@ -154,8 +153,6 @@ final class WidgetBuilder extends StructBuilder {
 
   @override
   WidgetReader asReader() => WidgetReader(rawToReader());
-
-  void _setWhich(int v) => setUint16Field(20, v);
 
   set name(String? v) {
     setTextField(0, v);
@@ -182,8 +179,7 @@ final class WidgetBuilder extends StructBuilder {
   }
 
   PointBuilder initOrigin() {
-    return initStructFieldWith(2,
-        (r) => PointBuilder(r), 1, 0);
+    return initStructFieldWith(2, (r) => PointBuilder(r), 1, 0);
   }
 
   bool hasOrigin() => hasPointerField(2);
@@ -211,15 +207,20 @@ final class WidgetBuilder extends StructBuilder {
   }
 }
 
-final class _WidgetFactory
-    extends StructFactory<WidgetReader, WidgetBuilder> {
-  @override StructSchemaInfo get schema => widgetSchema;
-  @override int get dataWords => 3;
-  @override int get ptrWords => 7;
+final class _WidgetFactory extends StructFactory<WidgetReader, WidgetBuilder> {
+  @override
+  StructSchemaInfo get schema => widgetSchema;
+  @override
+  int get dataWords => 3;
+  @override
+  int get ptrWords => 7;
   @override
   WidgetReader fromRawReader(RawStructReader r) => WidgetReader(r);
   @override
-  WidgetReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) => WidgetReader(r, capabilities: capabilities);
+  WidgetReader fromRawReaderWithCapabilities(
+    RawStructReader r,
+    List<Object?> capabilities,
+  ) => WidgetReader(r, capabilities: capabilities);
   @override
   WidgetBuilder fromRawBuilder(RawStructBuilder r) => WidgetBuilder(r);
 }
@@ -335,4 +336,3 @@ const StructSchemaInfo widgetSchema = StructSchemaInfo(
 );
 
 final widgetFactory = _WidgetFactory();
-
