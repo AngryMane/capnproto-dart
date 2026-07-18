@@ -39,8 +39,14 @@ A pure Dart library depended on by applications that need Cap'n Proto RPC. Depen
 
 ---
 
+## Quality and interoperability validation
+
+Cross-language interoperability, schema evolution, and wire-format golden tests
+against Rust implementations and the official `capnp` CLI are in scope as quality
+assurance for F-01 through F-08. They validate the Dart implementation; they do not
+add a separate runtime component or FFI dependency.
+
 ## Out of Scope
 
 - Bindings to existing C++ or Rust Cap'n Proto libraries via FFI
-- Interoperability testing with non-Dart Cap'n Proto implementations (may be added later)
 - Schema IDE integration (e.g., language server, syntax highlighting)

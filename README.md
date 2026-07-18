@@ -70,15 +70,15 @@ import 'src/generated/hello.capnp.dart';
 void main() {
   // Build a message
   final builder = MessageBuilder();
-  final greeting = builder.initRoot(GreetingBuilder.factory);
+  final greeting = builder.initRoot(greetingFactory);
   greeting.name = 'World';
 
   // Serialize
-  final bytes = builder.toFlatBytes();
+  final bytes = builder.serialize();
 
   // Deserialize
-  final reader = MessageReader.fromBytes(bytes);
-  final g = reader.getRoot(GreetingReader.factory);
+  final reader = MessageReader.deserialize(bytes);
+  final g = reader.getRoot(greetingFactory);
   print(g.name); // World
 }
 ```
@@ -111,9 +111,15 @@ This library implements a **Cap'n Proto RPC Level 1 subset** for two-party conne
 | Bidirectional RPC (callbacks) | Supported |
 | Tail calls (`Capability.tryTailCall`) | Supported |
 | Receiving `Resolve` / `Disembargo` from peer | Supported |
-| Sending `Resolve` / `Disembargo` from Dart vat | **Not implemented** |
+| Sending `Resolve` / `Disembargo` from Dart vat | Supported |
 | Three-party handoff (Level 1 full) | **Not in scope** |
 | Persistent capabilities (Level 2+) | **Not in scope** |
+
+This is a practical Level 1 subset, not the complete protocol. Weak capability
+references, batch Release, `releaseParamCaps`, `noFinishNeeded`, and full three-party
+handoff (including the remaining Level 1 and Level 2+ flows) are not implemented. Applications with long-lived connections
+and high capability churn should release capabilities promptly and should validate
+their workload against the lifecycle/stress tests in this repository.
 
 The RPC layer is tested for interoperability with Rust servers/clients using the [`capnp`](https://crates.io/crates/capnp) crate (versions 0.20–0.26).
 
@@ -161,7 +167,7 @@ Independent of RPC: checks that this library's serialized bytes are byte-for-byt
 
 A ready-to-use dev container is provided (`.devcontainer/`). It sets up Ubuntu 24.04 with:
 - Cap'n Proto CLI built from source (v1.0.1)
-- Dart SDK 3.7.2
+- Dart SDK 3.7.2 (the minimum supported version; CI also tests latest stable)
 - Rust via rustup
 
 ```sh
@@ -187,7 +193,7 @@ ci/run-tests.sh
 
 ### CI
 
-The GitHub Actions workflow (`.github/workflows/compat.yml`) tests against capnp crate versions 0.20 through 0.26 on every push to `main`.
+The GitHub Actions workflow (`.github/workflows/compat.yml`) runs analysis and tests with both the minimum supported Dart SDK (3.7.2) and the latest stable SDK. It also runs the full interoperability suite against capnp crate versions 0.20 through 0.26 on every push to `main`.
 
 ## Documentation
 

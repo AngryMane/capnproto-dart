@@ -20,6 +20,18 @@ env:
   DART_VERSION: "3.7.2"
 
 jobs:
+  dart-stable:
+    name: "Dart latest stable"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+      - name: Analyze and test all Dart packages
+        run: |
+          for package in tools/capnpc-dart packages/capnproto_dart packages/capnproto_dart_rpc; do
+            (cd "$package" && dart pub get && dart analyze --fatal-infos && dart test)
+          done
+
   compat-test:
     name: "capnp crate ${{ matrix.capnp_version }}"
     runs-on: ubuntu-24.04

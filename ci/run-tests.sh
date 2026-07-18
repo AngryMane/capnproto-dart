@@ -42,6 +42,22 @@ run_section() {
 
 # ── 1. Dart unit tests ───────────────────────────────────────────────────────
 
+run_section "Dart static analysis"
+for package in tools/capnpc-dart packages/capnproto_dart packages/capnproto_dart_rpc; do
+  if (cd "$package" && dart pub get && dart analyze --fatal-infos); then
+    pass "$package analysis"
+  else
+    fail "$package analysis"
+  fi
+done
+
+run_section "Dart unit tests: capnpc-dart"
+if (cd tools/capnpc-dart && dart pub get && dart test); then
+  pass "capnpc-dart unit tests"
+else
+  fail "capnpc-dart unit tests"
+fi
+
 run_section "Dart unit tests: capnproto_dart"
 if (cd packages/capnproto_dart && dart pub get && dart test); then
   pass "capnproto_dart unit tests"

@@ -70,13 +70,6 @@ void main() {
 }
 ```
 
-> The top-level `README.md`'s Quick Start uses `toFlatBytes()`/`fromBytes()`/
-> `GreetingBuilder.factory`, which do not match the current API (`serialize()`,
-> `MessageReader.deserialize()`, and a lowercase top-level `<name>Factory` instance, as
-> generated for the `sample/greeter` schema). That's a pre-existing inaccuracy in the
-> README, not something introduced by this reorg — flagging it here rather than silently
-> fixing the README as a side effect of a docs restructuring pass.
-
 See [`serialization.md`](serialization.md) for packed encoding, streaming, and dynamic
 (schema-less) access.
 

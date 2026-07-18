@@ -4328,6 +4328,30 @@ void main() {
       await server.close();
     });
 
+    test('repeated calls do not accumulate lifecycle table entries', () async {
+      final (client, server) = _makePipe(EchoServer());
+      final stub = client.bootstrap(EchoClientFactory());
+
+      for (var i = 0; i < 200; i++) {
+        expect(await stub.echo('call-$i'), equals('echo: call-$i'));
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(client.debugPendingQuestionCount, equals(0));
+      expect(server.debugPendingQuestionCount, equals(0));
+      expect(server.debugAnswerCount, equals(0));
+      expect(server.debugCancellationCount, equals(0));
+      expect(client.debugEmbargoCount, equals(0));
+
+      await client.close();
+      await server.close();
+      for (final connection in [client, server]) {
+        expect(connection.debugExportCount, equals(0));
+        expect(connection.debugImportCount, equals(0));
+        expect(connection.debugAnswerCount, equals(0));
+      }
+    });
+
     test('server dispatches unknown method as exception', () async {
       final (client, server) = _makePipe(EchoServer());
       final stub = client.bootstrap(EchoClientFactory());
