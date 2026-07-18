@@ -11,10 +11,14 @@ import '../schema/schema_model.dart';
 /// - A struct field (identified by its declaration ordinal) was removed or had
 ///   its type or wire offset changed.
 /// - An enum enumerant (identified by its declaration index) was removed.
+/// - An interface method (identified by its ordinal, i.e. wire method ID) was
+///   removed, or its parameter/result struct gained an incompatible change
+///   (by the same rules as any other struct).
 ///
 /// **Safe changes (not flagged):**
-/// - Adding new fields, enum variants, or top-level types.
-/// - Renaming fields or types (wire format uses ordinals/IDs, not names).
+/// - Adding new fields, enum variants, methods, or top-level types.
+/// - Renaming fields, methods, or types (wire format uses ordinals/IDs, not
+///   names).
 List<String> checkCompatibility(
   CodeGeneratorRequest oldReq,
   CodeGeneratorRequest newReq,
@@ -66,6 +70,9 @@ void _checkNestedNodes(
     } else if (oldNode.body is EnumBody) {
       _checkEnum(
           name, oldNode.body as EnumBody, newNode.body as EnumBody, errors);
+    } else if (oldNode.body is InterfaceBody) {
+      _checkInterface(name, oldNode.body as InterfaceBody,
+          newNode.body as InterfaceBody, oldMap, newMap, errors);
     }
   }
 }
@@ -120,6 +127,71 @@ void _checkEnum(
       errors.add('$name.${oldE.name} (index $idx) was removed');
     }
   }
+}
+
+void _checkInterface(
+    String name,
+    InterfaceBody oldBody,
+    InterfaceBody newBody,
+    Map<int, SchemaNode> oldMap,
+    Map<int, SchemaNode> newMap,
+    List<String> errors) {
+  // Match by ordinal (the method's position in the interface's method list,
+  // which — unlike struct fields — is always the wire method ID; Cap'n Proto
+  // gives interface methods no separate reorderable `@N` annotation distinct
+  // from that position), not by name — matching by name would miss a
+  // reordered/renumbered method's wire-level identity, and flagging a pure
+  // rename would misreport a safe change as breaking.
+  final oldByOrdinal = {for (final m in oldBody.methods) m.ordinal: m};
+  final newByOrdinal = {for (final m in newBody.methods) m.ordinal: m};
+
+  for (final entry in oldByOrdinal.entries) {
+    final ordinal = entry.key;
+    final oldMethod = entry.value;
+    final newMethod = newByOrdinal[ordinal];
+
+    if (newMethod == null) {
+      errors.add(
+          '$name.${oldMethod.name} (ordinal $ordinal) was removed');
+      continue;
+    }
+
+    _checkMethodStruct(
+        '$name.${oldMethod.name} params',
+        oldMethod.paramStructTypeId,
+        newMethod.paramStructTypeId,
+        oldMap,
+        newMap,
+        errors);
+    _checkMethodStruct(
+        '$name.${oldMethod.name} results',
+        oldMethod.resultStructTypeId,
+        newMethod.resultStructTypeId,
+        oldMap,
+        newMap,
+        errors);
+  }
+}
+
+/// Resolves [oldTypeId]/[newTypeId] (a method's implicit parameter or result
+/// struct) and runs the normal struct compatibility check on them.
+///
+/// Diffing the resolved structs' fields — rather than just comparing
+/// [oldTypeId] == [newTypeId] — both catches a parameter/result type change
+/// that keeps the same auto-generated struct ID (e.g. retyping a parameter
+/// in place) and avoids a false positive if the ID changed but the layout
+/// didn't (which is wire-compatible regardless of the ID).
+void _checkMethodStruct(
+    String label,
+    int oldTypeId,
+    int newTypeId,
+    Map<int, SchemaNode> oldMap,
+    Map<int, SchemaNode> newMap,
+    List<String> errors) {
+  final oldStruct = oldMap[oldTypeId]?.body;
+  final newStruct = newMap[newTypeId]?.body;
+  if (oldStruct is! StructBody || newStruct is! StructBody) return;
+  _checkStruct(label, oldStruct, newStruct, errors);
 }
 
 // ---------------------------------------------------------------------------

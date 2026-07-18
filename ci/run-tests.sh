@@ -264,6 +264,47 @@ else
   pass "F-08: incompatible change (retyped field) correctly rejected"
 fi
 
+# #55: interface method evolution rules, against the real capnp CLI output —
+# same rationale as the struct fixtures above, but exercising the
+# InterfaceBody branch (method removal, method addition).
+cat > "$F08_TMP/old_iface.capnp" <<'EOF'
+@0xa1b2c3d4e5f60718;
+interface Widget {
+  getName @0 () -> (name :Text);
+  setName @1 (name :Text) -> ();
+}
+EOF
+cat > "$F08_TMP/new_iface_compatible.capnp" <<'EOF'
+@0xa1b2c3d4e5f60718;
+interface Widget {
+  getName @0 () -> (name :Text);
+  setName @1 (name :Text) -> ();
+  getId @2 () -> (id :UInt64);
+}
+EOF
+cat > "$F08_TMP/new_iface_incompatible.capnp" <<'EOF'
+@0xa1b2c3d4e5f60718;
+interface Widget {
+  getName @0 () -> (name :Text);
+}
+EOF
+
+run_section "F-08 compat-check: compatible interface change (appended method)"
+if capnp compile -o- "$F08_TMP/new_iface_compatible.capnp" \
+    | dart run tools/capnpc-dart/bin/capnpc_dart.dart --check="$F08_TMP/old_iface.capnp"; then
+  pass "F-08: compatible interface change reports no incompatibilities"
+else
+  fail "F-08: compatible interface change reports no incompatibilities"
+fi
+
+run_section "F-08 compat-check: incompatible interface change (removed method)"
+if capnp compile -o- "$F08_TMP/new_iface_incompatible.capnp" \
+    | dart run tools/capnpc-dart/bin/capnpc_dart.dart --check="$F08_TMP/old_iface.capnp"; then
+  fail "F-08: incompatible interface change (removed method) correctly rejected (exit 0, expected 1)"
+else
+  pass "F-08: incompatible interface change (removed method) correctly rejected"
+fi
+
 rm -rf "$F08_TMP"
 trap - EXIT
 
