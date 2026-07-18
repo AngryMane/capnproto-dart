@@ -274,12 +274,18 @@ class _MessageTargetBuilder extends StructBuilder {
     setUint16Field(_targetDisc, 0);
   }
 
-  void setPromisedAnswer(int questionId, int ptrIndex) {
+  /// [transformPath] is the full sequence of `getPointerField` hops (see
+  /// [RpcCapDescriptor.path]) — not just a single index — so a capability
+  /// nested more than one struct deep in the target answer round-trips
+  /// correctly.
+  void setPromisedAnswer(int questionId, List<int> transformPath) {
     setUint16Field(_targetDisc, _targetPromisedAnswer);
     final pa = initStructFieldWith(0, _PromisedAnswerBuilder.new, 1, 1);
     pa.setQuestionId(questionId);
-    final transform = pa.initTransform(1);
-    transform[0].setGetPointerField(ptrIndex);
+    final transform = pa.initTransform(transformPath.length);
+    for (var i = 0; i < transformPath.length; i++) {
+      transform[i].setGetPointerField(transformPath[i]);
+    }
   }
 }
 
@@ -365,12 +371,15 @@ class _CapDescBuilder extends StructBuilder {
     setUint16Field(_capDescDisc, _capDescReceiverHosted);
   }
 
-  void setReceiverAnswer(int questionId, int ptrIndex) {
+  /// See [_MessageTargetBuilder.setPromisedAnswer] on [transformPath].
+  void setReceiverAnswer(int questionId, List<int> transformPath) {
     setUint16Field(_capDescDisc, _capDescReceiverAnswer);
     final pa = initStructFieldWith(0, _PromisedAnswerBuilder.new, 1, 1);
     pa.setQuestionId(questionId);
-    final transform = pa.initTransform(1);
-    transform[0].setGetPointerField(ptrIndex);
+    final transform = pa.initTransform(transformPath.length);
+    for (var i = 0; i < transformPath.length; i++) {
+      transform[i].setGetPointerField(transformPath[i]);
+    }
   }
 }
 
@@ -529,19 +538,23 @@ enum RpcMessageType {
 /// A decoded CapDescriptor from an RPC Payload capTable.
 ///
 /// For hosted descriptors [id] carries the ExportId / ImportId. For
-/// [RpcCapDescriptor.receiverAnswer], [questionId] and [ptrIndex] identify the
-/// promised answer pipeline path.
+/// [RpcCapDescriptor.receiverAnswer], [questionId] and [path] identify the
+/// promised answer pipeline path: [path] is the full sequence of
+/// `getPointerField` hops a `PromisedAnswer.transform` names (`noop` entries
+/// are dropped — see `_readTransformPath`), so a capability nested more than
+/// one struct deep in the answer (e.g. `result.a.b`, a two-hop path) is
+/// represented faithfully rather than collapsed to just its first hop.
 final class RpcCapDescriptor {
   final int disc;
   final int id;
   final int questionId;
-  final int ptrIndex;
+  final List<int> path;
 
   const RpcCapDescriptor._({
     required this.disc,
     this.id = 0,
     this.questionId = 0,
-    this.ptrIndex = 0,
+    this.path = const [],
   });
 
   const RpcCapDescriptor.none() : this._(disc: _capDescNone);
@@ -555,11 +568,11 @@ final class RpcCapDescriptor {
   const RpcCapDescriptor.receiverHosted(int importId)
     : this._(disc: _capDescReceiverHosted, id: importId);
 
-  const RpcCapDescriptor.receiverAnswer(int questionId, int ptrIndex)
+  const RpcCapDescriptor.receiverAnswer(int questionId, List<int> path)
     : this._(
         disc: _capDescReceiverAnswer,
         questionId: questionId,
-        ptrIndex: ptrIndex,
+        path: path,
       );
 
   (int, int) get legacyEntry => (disc, id);
@@ -579,7 +592,9 @@ final class RpcMessage {
   final int targetImportId;
   final bool targetIsPromisedAnswer;
   final int targetPromisedAnswerQid;
-  final int targetPtrIndex;
+  // Full getPointerField hop sequence (see RpcCapDescriptor.path) — not
+  // just the first hop.
+  final List<int> targetTransformPath;
   final Uint8List? paramsBytes;
   // (disc, id) pairs from the Call's capTable, in order.
   // disc: 1=senderHosted, 3=receiverHosted
@@ -630,7 +645,7 @@ final class RpcMessage {
   final int disembargoTargetImportId;
   final bool disembargoTargetIsPromisedAnswer;
   final int disembargoTargetPromisedAnswerQid;
-  final int disembargoTargetPtrIndex;
+  final List<int> disembargoTargetTransformPath;
 
   // finish
   final bool releaseResultCaps;
@@ -647,7 +662,7 @@ final class RpcMessage {
     this.targetImportId = 0,
     this.targetIsPromisedAnswer = false,
     this.targetPromisedAnswerQid = 0,
-    this.targetPtrIndex = 0,
+    this.targetTransformPath = const [],
     this.paramsBytes,
     this.paramsCapTable = const [],
     this.sendResultsToDisc = 0,
@@ -673,7 +688,7 @@ final class RpcMessage {
     this.disembargoTargetImportId = 0,
     this.disembargoTargetIsPromisedAnswer = false,
     this.disembargoTargetPromisedAnswerQid = 0,
-    this.disembargoTargetPtrIndex = 0,
+    this.disembargoTargetTransformPath = const [],
     this.releaseResultCaps = true,
     this.releaseId = 0,
     this.referenceCount = 0,
@@ -698,7 +713,8 @@ Uint8List buildBootstrapMessage(int questionId) {
 /// **Target**: either importedCap or promisedAnswer (wire-level pipelining).
 /// - To target an already-imported cap: set [targetImportId] (default).
 /// - To target a pending question result: set [targetPromisedAnswerQid] and
-///   [targetPtrIndex] (the pointer-field index inside the result struct).
+///   [targetTransformPath] (the getPointerField hop sequence inside the
+///   result struct — see [RpcCapDescriptor.path]).
 ///
 /// [capTableEntries] is an ordered list of `(disc, id)` pairs for the capTable:
 ///   - disc=1 (senderHosted): we export [id] to the peer
@@ -707,7 +723,7 @@ Uint8List buildCallMessage({
   required int questionId,
   int targetImportId = 0,
   int? targetPromisedAnswerQid,
-  int targetPtrIndex = 0,
+  List<int> targetTransformPath = const [],
   required int interfaceId,
   required int methodId,
   required Uint8List paramsBytes,
@@ -730,7 +746,7 @@ Uint8List buildCallMessage({
   if (targetPromisedAnswerQid != null) {
     call.initTarget().setPromisedAnswer(
       targetPromisedAnswerQid,
-      targetPtrIndex,
+      targetTransformPath,
     );
   } else {
     call.initTarget().setImportedCap(targetImportId);
@@ -862,7 +878,7 @@ Uint8List buildResolveExceptionMessage({
 Uint8List buildDisembargoMessage({
   int targetImportId = 0,
   int? targetPromisedAnswerQid,
-  int targetPtrIndex = 0,
+  List<int> targetTransformPath = const [],
   required int contextDisc,
   required int contextId,
 }) {
@@ -874,7 +890,7 @@ Uint8List buildDisembargoMessage({
   if (targetPromisedAnswerQid != null) {
     disembargo.initTarget().setPromisedAnswer(
       targetPromisedAnswerQid,
-      targetPtrIndex,
+      targetTransformPath,
     );
   } else {
     disembargo.initTarget().setImportedCap(targetImportId);
@@ -1006,7 +1022,7 @@ void _writeCapDescriptor(_CapDescBuilder builder, RpcCapDescriptor descriptor) {
     case _capDescReceiverHosted:
       builder.setReceiverHosted(descriptor.id);
     case _capDescReceiverAnswer:
-      builder.setReceiverAnswer(descriptor.questionId, descriptor.ptrIndex);
+      builder.setReceiverAnswer(descriptor.questionId, descriptor.path);
     case _capDescSenderHosted:
       builder.setSenderHosted(descriptor.id);
     default:
@@ -1035,18 +1051,34 @@ RpcCapDescriptor _legacyEntryToCapDescriptor(int disc, int id) {
 RpcCapDescriptor _readCapDescriptor(_CapDescReader entry) {
   if (entry.disc == _capDescReceiverAnswer) {
     final promisedAnswer = entry.receiverAnswer;
-    int ptrIndex = 0;
-    final transform = promisedAnswer?.transform;
-    if (transform != null && transform.isNotEmpty) {
-      final op = transform[0];
-      if (op.disc == 1) ptrIndex = op.ptrIndex;
-    }
     return RpcCapDescriptor.receiverAnswer(
       promisedAnswer?.questionId ?? 0,
-      ptrIndex,
+      _readTransformPath(promisedAnswer?.transform),
     );
   }
   return _legacyEntryToCapDescriptor(entry.disc, entry.id);
+}
+
+/// Collects every `getPointerField` index from [transform], in order,
+/// skipping `noop` entries (which per rpc.capnp's `PromisedAnswer.Op`
+/// contribute no hop) — the full multi-hop path a transform describes, not
+/// just its first operation. An empty/all-noop transform (or no transform
+/// at all) yields an empty path; callers normalize that themselves (see
+/// two_party_connection.dart) since what an empty path *means* depends on
+/// context — for a real method's result it can never legitimately occur
+/// (results are always a struct, so reaching a capability field always
+/// takes at least one hop), but a Bootstrap answer's content genuinely *is*
+/// the capability with no wrapping struct, so this vat's internal
+/// single-capability wrapper representation for that case treats an empty
+/// path as reaching pointer slot 0 of the wrapper.
+List<int> _readTransformPath(ListReader<_OpReader>? transform) {
+  if (transform == null) return const [];
+  final path = <int>[];
+  for (var i = 0; i < transform.length; i++) {
+    final op = transform[i];
+    if (op.disc == 1) path.add(op.ptrIndex);
+  }
+  return path;
 }
 
 // ---------------------------------------------------------------------------
@@ -1084,15 +1116,12 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
         }
       }
       final isPA = (target?.disc ?? 0) == _targetPromisedAnswer;
-      int paQid = 0, paPtrIndex = 0;
+      int paQid = 0;
+      var paPath = const <int>[];
       if (isPA) {
         final pa = target?.promisedAnswer;
         paQid = pa?.questionId ?? 0;
-        final transform = pa?.transform;
-        if (transform != null && transform.isNotEmpty) {
-          final op = transform[0];
-          if (op.disc == 1) paPtrIndex = op.ptrIndex;
-        }
+        paPath = _readTransformPath(pa?.transform);
       }
       return RpcMessage._(
         type: RpcMessageType.call,
@@ -1102,7 +1131,7 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
         targetImportId: isPA ? 0 : (target?.importedCap ?? 0),
         targetIsPromisedAnswer: isPA,
         targetPromisedAnswerQid: paQid,
-        targetPtrIndex: paPtrIndex,
+        targetTransformPath: paPath,
         paramsBytes: params?.contentBytes,
         paramsCapTable: capTablePairs,
         capTableDescriptors: capTableDescriptors,
@@ -1213,15 +1242,12 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
       final disembargo = msg.asDisembargo;
       final target = disembargo?.target;
       final isPA = (target?.disc ?? 0) == _targetPromisedAnswer;
-      int paQid = 0, paPtrIndex = 0;
+      int paQid = 0;
+      var paPath = const <int>[];
       if (isPA) {
         final pa = target?.promisedAnswer;
         paQid = pa?.questionId ?? 0;
-        final transform = pa?.transform;
-        if (transform != null && transform.isNotEmpty) {
-          final op = transform[0];
-          if (op.disc == 1) paPtrIndex = op.ptrIndex;
-        }
+        paPath = _readTransformPath(pa?.transform);
       }
       return RpcMessage._(
         type: RpcMessageType.disembargo,
@@ -1230,7 +1256,7 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
         disembargoTargetImportId: isPA ? 0 : (target?.importedCap ?? 0),
         disembargoTargetIsPromisedAnswer: isPA,
         disembargoTargetPromisedAnswerQid: paQid,
-        disembargoTargetPtrIndex: paPtrIndex,
+        disembargoTargetTransformPath: paPath,
       );
 
     case _msgAbort:

@@ -289,6 +289,78 @@ Capability requireCapabilityFromResult(DispatchResult result, int ptrIndex) {
   }
 }
 
+/// Like [capabilityFromResult], but resolves a capability reachable via a
+/// chain of pointer-field hops (`path`) rather than a single top-level
+/// index — used when a wire-level `receiverAnswer`/`promisedAnswer`
+/// transform names a capability nested more than one struct deep in the
+/// result (see rpc.capnp's `PromisedAnswer.Op`; each entry but the last is
+/// followed as a nested struct pointer, the last as the capability itself).
+/// Returns null instead of throwing on any resolution failure.
+Capability? capabilityFromResultPath(DispatchResult result, List<int> path) {
+  try {
+    return requireCapabilityFromResultPath(result, path);
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Throwing counterpart of [capabilityFromResultPath] — see
+/// [requireCapabilityFromResult] for the single-hop version this
+/// generalizes.
+Capability requireCapabilityFromResultPath(
+  DispatchResult result,
+  List<int> path,
+) {
+  if (path.isEmpty) {
+    throw const RpcException('transform path must not be empty');
+  }
+  if (result.caps.isEmpty) {
+    throw const RpcException('result has no capability table entries');
+  }
+  try {
+    var raw = MessageReader.deserialize(result.bytes).getRootRaw();
+    for (var i = 0; i < path.length - 1; i++) {
+      final idx = path[i];
+      if (idx < 0 || idx >= raw.ptrWords) {
+        throw RpcException('pointer slot $idx in transform path is out of range');
+      }
+      final next = raw.arena.resolveOptionalStructAt(
+        raw.segment,
+        raw.ptrWordOffset + idx,
+        raw.nestingLimit,
+      );
+      if (next == null) {
+        throw RpcException('pointer slot $idx in transform path is null');
+      }
+      raw = next;
+    }
+    final lastIdx = path.last;
+    if (lastIdx < 0 || lastIdx >= raw.ptrWords) {
+      throw RpcException('pointer slot $lastIdx is out of range');
+    }
+    final ptr = WirePointer.decode(
+      raw.segment.data,
+      raw.ptrWordOffset + lastIdx,
+    );
+    if (ptr is! CapabilityPointer) {
+      throw RpcException(
+        'pointer slot $lastIdx in result struct is not a capability',
+      );
+    }
+    final capIdx = ptr.capabilityIndex;
+    if (capIdx >= result.caps.length) {
+      throw RpcException(
+        'capability table index $capIdx is out of range for ${result.caps.length} result capabilities',
+      );
+    }
+    return vendCapabilityHandle(result.caps[capIdx]);
+  } on RpcException {
+    rethrow;
+  } catch (e) {
+    throw RpcException('failed to decode result capability: $e');
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Reference-counted capability handles.
 //

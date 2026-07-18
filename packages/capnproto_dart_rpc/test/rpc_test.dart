@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:capnproto_dart_rpc/capnproto_dart_rpc.dart';
+import 'package:capnproto_dart_rpc/src/capability/capability.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_proto.dart';
 import 'package:capnproto_dart_rpc/src/rpc/two_party_connection.dart';
 import 'package:test/test.dart';
@@ -1018,7 +1019,7 @@ void main() {
       final bytes = buildCallMessage(
         questionId: 5,
         targetPromisedAnswerQid: 3,
-        targetPtrIndex: 0,
+        targetTransformPath: [0],
         interfaceId: 0xABCD,
         methodId: 1,
         paramsBytes: params,
@@ -1028,7 +1029,7 @@ void main() {
       expect(msg.questionId, 5);
       expect(msg.targetIsPromisedAnswer, isTrue);
       expect(msg.targetPromisedAnswerQid, 3);
-      expect(msg.targetPtrIndex, 0);
+      expect(msg.targetTransformPath, [0]);
     });
 
     test('importedCap target still parses correctly', () {
@@ -1047,6 +1048,120 @@ void main() {
       expect(msg.targetIsPromisedAnswer, isFalse);
       expect(msg.targetImportId, 42);
     });
+
+    test(
+      'a multi-hop promisedAnswer transform round-trips every hop, not '
+      'just the first (regression: the parser used to read only '
+      'transform[0])',
+      () {
+        final mb = MessageBuilder();
+        mb.initRoot(_TextParamFactory()).setTextField(0, 'x');
+        final params = mb.serialize();
+
+        final bytes = buildCallMessage(
+          questionId: 5,
+          targetPromisedAnswerQid: 3,
+          targetTransformPath: [0, 2, 1],
+          interfaceId: 0xABCD,
+          methodId: 1,
+          paramsBytes: params,
+        );
+        final msg = parseRpcMessage(bytes);
+        expect(msg.targetTransformPath, [0, 2, 1]);
+      },
+    );
+
+    test(
+      'a receiverAnswer CapDescriptor with a multi-hop transform round-trips '
+      'every hop',
+      () {
+        final mb = MessageBuilder();
+        mb.initRoot(_TextParamFactory());
+        final params = mb.serialize();
+
+        final bytes = buildCallMessage(
+          questionId: 1,
+          targetImportId: 0,
+          interfaceId: 0xABCD,
+          methodId: 0,
+          paramsBytes: params,
+          capTableDescriptors: const [
+            RpcCapDescriptor.receiverAnswer(9, [0, 2, 1]),
+          ],
+        );
+        final msg = parseRpcMessage(bytes);
+        expect(msg.capTableDescriptors.single.path, [0, 2, 1]);
+      },
+    );
+  });
+
+  group('capability — receiverAnswer multi-hop resolution (#59)', () {
+    test(
+      'requireCapabilityFromResultPath walks every hop to reach a '
+      'capability nested two structs deep (regression: resolving via just '
+      'the first hop would find a struct pointer, not a capability, and '
+      'fail)',
+      () async {
+        // result = (outer: (inner: (cap: <capability 0>)))
+        // i.e. a capability reachable at result.getPointerField(0)
+        //        .getPointerField(1), two hops deep — field 0 of the root
+        // is itself a struct (not a capability), so resolving via path [0]
+        // alone (the pre-fix behavior) would hit a struct pointer and fail
+        // with "not a capability", while [0, 1] correctly reaches it.
+        final mb = MessageBuilder();
+        final root = mb.initRoot(_TwoPtrFactory());
+        final inner = root.initStructFieldWith(
+          0,
+          _TextParamBuilder.new,
+          0,
+          2,
+        );
+        inner.setCapabilityField(1, 0);
+        final bytes = mb.serialize();
+
+        final result = DispatchResult(bytes: bytes, caps: [NullCapability()]);
+
+        // The old single-hop behavior: resolving pointer slot 0 of the root
+        // directly hits a struct pointer, not a capability.
+        expect(
+          () => requireCapabilityFromResultPath(result, const [0]),
+          throwsA(
+            isA<RpcException>().having(
+              (e) => e.message,
+              'message',
+              contains('not a capability'),
+            ),
+          ),
+        );
+
+        // The fixed multi-hop behavior: [0, 1] walks into the nested
+        // struct first, then resolves the capability at its slot 1 — proven
+        // by delegating to the same underlying NullCapability (whose
+        // dispatch always fails with this specific message), rather than
+        // throwing "not a capability" like the single-hop path above did.
+        final cap = requireCapabilityFromResultPath(result, const [0, 1]);
+        await expectLater(
+          cap.dispatch(0, 0, Uint8List(0)),
+          throwsA(
+            isA<RpcException>().having(
+              (e) => e.message,
+              'message',
+              'null capability',
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'capabilityFromResultPath returns null (not throw) for an empty path',
+      () {
+        final mb = MessageBuilder();
+        mb.initRoot(_TwoPtrFactory());
+        final result = DispatchResult(bytes: mb.serialize(), caps: const []);
+        expect(capabilityFromResultPath(result, const []), isNull);
+      },
+    );
   });
 
   group('rpc_proto — #53 tail call (Level 1) wire encoding', () {
@@ -1461,7 +1576,7 @@ void main() {
                 ),
       );
       expect(pipelinedCall.targetPromisedAnswerQid, calls.first.questionId);
-      expect(pipelinedCall.targetPtrIndex, 0);
+      expect(pipelinedCall.targetTransformPath, [0]);
 
       await client.close();
     });
@@ -1563,7 +1678,7 @@ void main() {
           callWithCap.capTableDescriptors.single.questionId,
           parentCall.questionId,
         );
-        expect(callWithCap.capTableDescriptors.single.ptrIndex, 0);
+        expect(callWithCap.capTableDescriptors.single.path, [0]);
 
         completeParent.complete();
         await parent.result;
@@ -3557,7 +3672,7 @@ void main() {
     test('disembargo senderLoopback round-trip', () {
       final bytes = buildDisembargoMessage(
         targetPromisedAnswerQid: 7,
-        targetPtrIndex: 1,
+        targetTransformPath: [1],
         contextDisc: 0,
         contextId: 123,
       );
@@ -3567,7 +3682,7 @@ void main() {
       expect(msg.disembargoContextId, 123);
       expect(msg.disembargoTargetIsPromisedAnswer, isTrue);
       expect(msg.disembargoTargetPromisedAnswerQid, 7);
-      expect(msg.disembargoTargetPtrIndex, 1);
+      expect(msg.disembargoTargetTransformPath, [1]);
     });
 
     test('finish round-trip', () {
@@ -3693,13 +3808,15 @@ void main() {
         interfaceId: 0xABCD,
         methodId: 0,
         paramsBytes: params,
-        capTableDescriptors: const [RpcCapDescriptor.receiverAnswer(9, 2)],
+        capTableDescriptors: const [
+          RpcCapDescriptor.receiverAnswer(9, [2]),
+        ],
       );
       final msg = parseRpcMessage(bytes);
       expect(msg.capTableDescriptors, hasLength(1));
       expect(msg.capTableDescriptors[0].disc, equals(4));
       expect(msg.capTableDescriptors[0].questionId, equals(9));
-      expect(msg.capTableDescriptors[0].ptrIndex, equals(2));
+      expect(msg.capTableDescriptors[0].path, equals([2]));
     });
   });
 

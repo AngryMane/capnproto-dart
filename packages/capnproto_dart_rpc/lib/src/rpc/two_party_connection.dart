@@ -13,8 +13,9 @@ import '../capability/capability.dart'
         DispatchResult,
         NullCapability,
         TailCall,
-        capabilityFromResult,
-        requireCapabilityFromResult;
+        capabilityFromResultPath,
+        requireCapabilityFromResult,
+        requireCapabilityFromResultPath;
 import '../capability/capability_factory.dart';
 import 'flow_controller.dart';
 import 'rpc_exception.dart';
@@ -326,7 +327,7 @@ class TwoPartyRpcConnection implements RpcConnection {
           cap._conn == this &&
           !cap._hasResolved) {
         capEntries.add(
-          RpcCapDescriptor.receiverAnswer(cap._parentQid, cap._ptrIndex),
+          RpcCapDescriptor.receiverAnswer(cap._parentQid, [cap._ptrIndex]),
         );
       } else {
         capEntries.add(
@@ -340,7 +341,7 @@ class TwoPartyRpcConnection implements RpcConnection {
         buildCallMessage(
           questionId: qid,
           targetPromisedAnswerQid: targetPromisedAnswerQid,
-          targetPtrIndex: targetPtrIndex,
+          targetTransformPath: [targetPtrIndex],
           interfaceId: interfaceId,
           methodId: methodId,
           paramsBytes: paramsBytes,
@@ -597,18 +598,26 @@ class TwoPartyRpcConnection implements RpcConnection {
 
   void _handlePipelinedCall(RpcMessage msg) {
     final parentQid = msg.targetPromisedAnswerQid;
-    final ptrIndex = msg.targetPtrIndex;
+    // An empty/noop-only transform is normalized to a single hop at pointer
+    // slot 0. The only case where a peer legitimately sends one is a
+    // promisedAnswer targeting a Bootstrap answer's capability directly —
+    // Bootstrap's result has no wrapping wire struct (there's no field to
+    // traverse), and this vat's own synthesized _bootstrapResultBytes
+    // wrapper always places that capability at ptr slot 0 to match (see
+    // _handleBootstrap). A real method's result is always a real struct, so
+    // a well-behaved peer never sends an empty transform for anything else.
+    final path =
+        msg.targetTransformPath.isEmpty ? const [0] : msg.targetTransformPath;
 
     // Already resolved: dispatch immediately.
     final resolved = _answerCaps[parentQid];
     if (resolved != null) {
-      final cap = _capFromPtrIndex(resolved, ptrIndex);
+      final cap = _capFromPath(resolved, path);
       if (cap == null) {
         _sendRaw(
           buildReturnExceptionMessage(
             answerId: msg.questionId,
-            reason:
-                'pointer slot $ptrIndex in result struct is not a capability',
+            reason: 'pointer path $path in result struct is not a capability',
           ),
         );
         return;
@@ -630,13 +639,13 @@ class TwoPartyRpcConnection implements RpcConnection {
     }
     pending
         .then((resolved) {
-          final cap = _capFromPtrIndex(resolved, ptrIndex);
+          final cap = _capFromPath(resolved, path);
           if (cap == null) {
             _sendRaw(
               buildReturnExceptionMessage(
                 answerId: msg.questionId,
                 reason:
-                    'pointer slot $ptrIndex in result struct is not a capability',
+                    'pointer path $path in result struct is not a capability',
               ),
             );
             return;
@@ -653,10 +662,10 @@ class TwoPartyRpcConnection implements RpcConnection {
         });
   }
 
-  Capability? _capFromPtrIndex(_ResolvedAnswer resolved, int ptrIndex) =>
-      capabilityFromResult(
+  Capability? _capFromPath(_ResolvedAnswer resolved, List<int> path) =>
+      capabilityFromResultPath(
         DispatchResult(bytes: resolved.resultBytes, caps: resolved.caps),
-        ptrIndex,
+        path,
       );
 
   void _dispatchToCapability(RpcMessage msg, Capability cap) {
@@ -1154,7 +1163,7 @@ class TwoPartyRpcConnection implements RpcConnection {
             msg.disembargoTargetIsPromisedAnswer
                 ? msg.disembargoTargetPromisedAnswerQid
                 : null,
-        targetPtrIndex: msg.disembargoTargetPtrIndex,
+        targetTransformPath: msg.disembargoTargetTransformPath,
         contextDisc: 1,
         contextId: msg.disembargoContextId,
       ),
@@ -1369,7 +1378,11 @@ class TwoPartyRpcConnection implements RpcConnection {
         return _ReceiverAnswerCapability(
           this,
           descriptor.questionId,
-          descriptor.ptrIndex,
+          // See _handlePipelinedCall's matching comment: an empty/noop-only
+          // transform is normalized to a single hop at pointer slot 0
+          // (legitimate only for a Bootstrap answer's capability, which has
+          // no wrapping struct to traverse).
+          descriptor.path.isEmpty ? const [0] : descriptor.path,
         );
       default:
         throw RpcException(
@@ -2004,10 +2017,10 @@ class _WirePipelinedCapability extends Capability {
 class _ReceiverAnswerCapability extends Capability {
   final TwoPartyRpcConnection _conn;
   final int _questionId;
-  final int _ptrIndex;
+  final List<int> _path;
   bool _disposed = false;
 
-  _ReceiverAnswerCapability(this._conn, this._questionId, this._ptrIndex);
+  _ReceiverAnswerCapability(this._conn, this._questionId, this._path);
 
   Future<Capability> _resolve() async {
     if (_disposed) {
@@ -2018,9 +2031,9 @@ class _ReceiverAnswerCapability extends Capability {
     }
     final resolved = _conn._answerCaps[_questionId];
     if (resolved != null) {
-      return requireCapabilityFromResult(
+      return requireCapabilityFromResultPath(
         DispatchResult(bytes: resolved.resultBytes, caps: resolved.caps),
-        _ptrIndex,
+        _path,
       );
     }
     final pending = _conn._pendingCaps[_questionId];
@@ -2028,9 +2041,9 @@ class _ReceiverAnswerCapability extends Capability {
       throw RpcException('invalid receiverAnswer questionId: $_questionId');
     }
     final answer = await pending;
-    return requireCapabilityFromResult(
+    return requireCapabilityFromResultPath(
       DispatchResult(bytes: answer.resultBytes, caps: answer.caps),
-      _ptrIndex,
+      _path,
     );
   }
 
