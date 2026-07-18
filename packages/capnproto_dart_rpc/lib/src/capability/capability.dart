@@ -228,27 +228,16 @@ class _DeferredCapCall implements CapCall {
   );
 }
 
-/// Resolves the capability at pointer slot [ptrIndex] of a [DispatchResult].
-///
-/// Deserializes [result.bytes], reads the [CapabilityPointer] at [ptrIndex] of
-/// the root struct, and returns the corresponding entry from [result.caps].
-/// Returns null when [ptrIndex] is out of range, the pointer is not a
-/// [CapabilityPointer], the cap table index is out of range, or the result
-/// bytes cannot be decoded.
-///
-/// Used by both [_DeferredCapCall] (local pipelining) and the RPC layer's
-/// `_WirePipelinedCapability` (wire-level pipelining) so they share the same
-/// pointer-slot → cap-table-index mapping logic.
-Capability? capabilityFromResult(DispatchResult result, int ptrIndex) {
-  try {
-    return requireCapabilityFromResult(result, ptrIndex);
-  } catch (_) {
-    return null;
-  }
-}
-
 /// Resolves the capability at pointer slot [ptrIndex], or throws an
 /// [RpcException] that preserves why the pipeline target could not resolve.
+///
+/// Used for *local*, single-hop pipelining where [ptrIndex] is a
+/// schema-known constant baked into generated code — [_DeferredCapCall],
+/// [_FutureCapCall], [_ErrorCapCall], and `_AsyncWireCapCall`'s
+/// already-settled fallback in the RPC layer. Wire-level `receiverAnswer`/
+/// `promisedAnswer` targets instead go through
+/// [requireCapabilityFromResultPath], since those can name a capability
+/// nested more than one struct deep in the result.
 ///
 /// Returns a vended handle (see [vendCapabilityHandle]), not the raw
 /// [DispatchResult.caps] entry directly: the same underlying capability is
@@ -289,13 +278,14 @@ Capability requireCapabilityFromResult(DispatchResult result, int ptrIndex) {
   }
 }
 
-/// Like [capabilityFromResult], but resolves a capability reachable via a
-/// chain of pointer-field hops (`path`) rather than a single top-level
-/// index — used when a wire-level `receiverAnswer`/`promisedAnswer`
-/// transform names a capability nested more than one struct deep in the
-/// result (see rpc.capnp's `PromisedAnswer.Op`; each entry but the last is
-/// followed as a nested struct pointer, the last as the capability itself).
-/// Returns null instead of throwing on any resolution failure.
+/// Like [requireCapabilityFromResult], but resolves a capability reachable
+/// via a chain of pointer-field hops (`path`) rather than a single
+/// top-level index — used when a wire-level `receiverAnswer`/
+/// `promisedAnswer` transform names a capability nested more than one
+/// struct deep in the result (see rpc.capnp's `PromisedAnswer.Op`; each
+/// entry but the last is followed as a nested struct pointer, the last as
+/// the capability itself). Returns null instead of throwing on any
+/// resolution failure.
 Capability? capabilityFromResultPath(DispatchResult result, List<int> path) {
   try {
     return requireCapabilityFromResultPath(result, path);

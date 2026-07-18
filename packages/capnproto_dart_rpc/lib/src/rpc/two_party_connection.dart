@@ -251,8 +251,11 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// ID (available synchronously for pipelining) and the result future.
   ///
   /// Use [importIdFuture] for an `importedCap` target; set
-  /// [targetPromisedAnswerQid] + [targetPtrIndex] for a `promisedAnswer`
-  /// target (wire-level pipelining).
+  /// [targetPromisedAnswerQid] + [targetTransformPath] for a
+  /// `promisedAnswer` target (wire-level pipelining) — the full
+  /// getPointerField hop sequence into the parent answer, not just a single
+  /// index, so a capability nested more than one struct deep is expressible
+  /// (see [RpcCapDescriptor.path]).
   (int, Future<DispatchResult>) _startCall(
     Future<int>? importIdFuture,
     int interfaceId,
@@ -260,7 +263,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     Uint8List paramsBytes, {
     List<Capability> paramsCapabilities = const [],
     int? targetPromisedAnswerQid,
-    int targetPtrIndex = 0,
+    List<int> targetTransformPath = const [],
   }) {
     if (_closedError != null) {
       throw RpcException('connection is closed', kind: ErrorKind.disconnected);
@@ -279,7 +282,7 @@ class TwoPartyRpcConnection implements RpcConnection {
       sentCompleter: sentCompleter,
       importIdFuture: importIdFuture,
       targetPromisedAnswerQid: targetPromisedAnswerQid,
-      targetPtrIndex: targetPtrIndex,
+      targetTransformPath: targetTransformPath,
       interfaceId: interfaceId,
       methodId: methodId,
       paramsBytes: paramsBytes,
@@ -300,7 +303,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     required Completer<void> sentCompleter,
     required Future<int>? importIdFuture,
     required int? targetPromisedAnswerQid,
-    required int targetPtrIndex,
+    required List<int> targetTransformPath,
     required int interfaceId,
     required int methodId,
     required Uint8List paramsBytes,
@@ -327,7 +330,7 @@ class TwoPartyRpcConnection implements RpcConnection {
           cap._conn == this &&
           !cap._hasResolved) {
         capEntries.add(
-          RpcCapDescriptor.receiverAnswer(cap._parentQid, [cap._ptrIndex]),
+          RpcCapDescriptor.receiverAnswer(cap._parentQid, cap._transformPath),
         );
       } else {
         capEntries.add(
@@ -341,7 +344,7 @@ class TwoPartyRpcConnection implements RpcConnection {
         buildCallMessage(
           questionId: qid,
           targetPromisedAnswerQid: targetPromisedAnswerQid,
-          targetTransformPath: [targetPtrIndex],
+          targetTransformPath: targetTransformPath,
           interfaceId: interfaceId,
           methodId: methodId,
           paramsBytes: paramsBytes,
@@ -817,7 +820,7 @@ class TwoPartyRpcConnection implements RpcConnection {
       sentCompleter: sentCompleter,
       importIdFuture: target._importIdFuture,
       targetPromisedAnswerQid: null,
-      targetPtrIndex: 0,
+      targetTransformPath: const [],
       interfaceId: tailCall.interfaceId,
       methodId: tailCall.methodId,
       paramsBytes: tailCall.paramsBytes,
@@ -1839,7 +1842,7 @@ class _WireCapCall implements CapCall {
 
   @override
   Capability pipelineResult(int ptrIndex) =>
-      _WirePipelinedCapability(_conn, _qid, ptrIndex, result);
+      _WirePipelinedCapability(_conn, _qid, [ptrIndex], result);
 }
 
 class _AsyncWireCapCall implements CapCall {
@@ -1854,7 +1857,7 @@ class _AsyncWireCapCall implements CapCall {
   Capability pipelineResult(int ptrIndex) => DeferredCapability(() async {
     final qid = await _qidFuture;
     if (qid >= 0) {
-      return _WirePipelinedCapability(_conn, qid, ptrIndex, result);
+      return _WirePipelinedCapability(_conn, qid, [ptrIndex], result);
     }
     final resolved = await result;
     return requireCapabilityFromResult(resolved, ptrIndex);
@@ -1869,7 +1872,13 @@ class _AsyncWireCapCall implements CapCall {
 class _WirePipelinedCapability extends Capability {
   final TwoPartyRpcConnection _conn;
   final int _parentQid;
-  final int _ptrIndex;
+  // The full getPointerField hop sequence into the parent answer (see
+  // RpcCapDescriptor.path) — today always a single index, since nothing
+  // generates a deeper path yet (see _collectCapResults in
+  // dart_generator.dart), but represented as a path throughout the wire
+  // codec and resolution layers, so this doesn't have to special-case
+  // length-1 vs. longer paths.
+  final List<int> _transformPath;
   late final Future<Capability> _resolution;
 
   // Set once the parent question resolves; null while still pending.
@@ -1885,11 +1894,11 @@ class _WirePipelinedCapability extends Capability {
   _WirePipelinedCapability(
     this._conn,
     this._parentQid,
-    this._ptrIndex,
+    this._transformPath,
     Future<DispatchResult> parentResult,
   ) {
     _resolution = parentResult.then(
-      (result) => requireCapabilityFromResult(result, _ptrIndex),
+      (result) => requireCapabilityFromResultPath(result, _transformPath),
     );
     _resolution.ignore();
     _resolution
@@ -1962,7 +1971,7 @@ class _WirePipelinedCapability extends Capability {
       params,
       paramsCapabilities: paramsCapabilities,
       targetPromisedAnswerQid: _parentQid,
-      targetPtrIndex: _ptrIndex,
+      targetTransformPath: _transformPath,
     );
     return _trackPipelinedCall(future);
   }
@@ -2002,7 +2011,7 @@ class _WirePipelinedCapability extends Capability {
       params,
       paramsCapabilities: paramsCapabilities,
       targetPromisedAnswerQid: _parentQid,
-      targetPtrIndex: _ptrIndex,
+      targetTransformPath: _transformPath,
     );
     return _WireCapCall(_trackPipelinedCall(future), _conn, qid);
   }
