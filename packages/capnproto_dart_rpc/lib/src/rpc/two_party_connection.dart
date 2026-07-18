@@ -500,7 +500,11 @@ class TwoPartyRpcConnection implements RpcConnection {
           _handleIncomingMessage(msg, rawBytes);
         } catch (error, stackTrace) {
           _tearDown(
-            RpcException('invalid incoming RPC message: $error'),
+            RpcException(
+              'invalid incoming RPC message: $error',
+              kind: error is CapnpException ? error.kind : ErrorKind.failed,
+              cause: error,
+            ),
             stackTrace: stackTrace,
           );
         }
@@ -663,8 +667,10 @@ class TwoPartyRpcConnection implements RpcConnection {
     // Resolve capabilities from the incoming capTable.
     // Each entry in the list must correspond 1-to-1 with the capTable index,
     // because capability pointers in the params struct reference these indices.
-    // Unsupported or unresolvable descriptors get a NullCapability placeholder
-    // so subsequent indices remain correct.
+    // `none` descriptors get a NullCapability placeholder so subsequent
+    // indices remain correct. Unsupported descriptors are protocol errors:
+    // silently treating them as null loses information and can change the
+    // meaning of an otherwise valid call.
     final paramsCapabilities = <Capability>[];
     for (final descriptor in msg.capTableDescriptors) {
       paramsCapabilities.add(_capabilityFromDescriptor(descriptor));
@@ -1348,6 +1354,8 @@ class TwoPartyRpcConnection implements RpcConnection {
 
   Capability _capabilityFromDescriptor(RpcCapDescriptor descriptor) {
     switch (descriptor.disc) {
+      case 0: // none
+        return NullCapability();
       case 1: // senderHosted
         final state = _retainImport(descriptor.id);
         return _ImportedCapability.fromState(this, state);
@@ -1364,7 +1372,10 @@ class TwoPartyRpcConnection implements RpcConnection {
           descriptor.ptrIndex,
         );
       default:
-        return NullCapability();
+        throw RpcException(
+          'unsupported capability descriptor (disc=${descriptor.disc})',
+          kind: ErrorKind.unimplemented,
+        );
     }
   }
 

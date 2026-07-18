@@ -1026,7 +1026,9 @@ RpcCapDescriptor _legacyEntryToCapDescriptor(int disc, int id) {
     case _capDescReceiverHosted:
       return RpcCapDescriptor.receiverHosted(id);
     default:
-      return const RpcCapDescriptor.none();
+      // Preserve descriptors we do not implement so the connection layer can
+      // reject them explicitly instead of treating them as application nulls.
+      return RpcCapDescriptor._(disc: disc, id: id);
   }
 }
 

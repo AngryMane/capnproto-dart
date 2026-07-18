@@ -89,6 +89,36 @@ final class _TwoPtrFactory
   _TextParamBuilder fromRawBuilder(RawStructBuilder r) => _TextParamBuilder(r);
 }
 
+Uint8List _callWithCapDescriptorDisc(int disc) {
+  final paramsBuilder = MessageBuilder();
+  paramsBuilder.initRoot(_TextParamFactory());
+  final params = paramsBuilder.serialize();
+  final withNone = buildCallMessage(
+    questionId: 1,
+    targetImportId: 0,
+    interfaceId: _echoInterfaceId,
+    methodId: _echoMethodId,
+    paramsBytes: params,
+    capTableDescriptors: const [RpcCapDescriptor.none()],
+  );
+  final withSenderHosted = buildCallMessage(
+    questionId: 1,
+    targetImportId: 0,
+    interfaceId: _echoInterfaceId,
+    methodId: _echoMethodId,
+    paramsBytes: params,
+    capTableDescriptors: const [RpcCapDescriptor.senderHosted(0)],
+  );
+  final differences = <int>[
+    for (var i = 0; i < withNone.length; i++)
+      if (withNone[i] != withSenderHosted[i]) i,
+  ];
+  expect(differences, hasLength(1));
+  final result = Uint8List.fromList(withNone);
+  result[differences.single] = disc;
+  return result;
+}
+
 class _TextParamReader extends StructReader {
   _TextParamReader(super.raw);
 }
@@ -3607,6 +3637,14 @@ void main() {
   });
 
   group('rpc_proto — RPC-003 receiverHosted encoding', () {
+    test('preserves an unsupported thirdPartyHosted descriptor', () {
+      final descriptor =
+          parseRpcMessage(
+            _callWithCapDescriptorDisc(5),
+          ).capTableDescriptors.single;
+      expect(descriptor.disc, 5);
+    });
+
     test('buildCallMessage with receiverHosted entry encodes disc=3', () {
       final mb = MessageBuilder();
       mb.initRoot(_TextParamFactory()).setTextField(0, 'x');
@@ -3780,6 +3818,45 @@ void main() {
   );
 
   group('TwoPartyRpcConnection — RPC-007 Unimplemented for unknown messages', () {
+    test(
+      'thirdPartyHosted tears down the connection as unimplemented',
+      () async {
+        final serverInput = StreamController<Uint8List>();
+        final serverOutput = StreamController<Uint8List>();
+        serverOutput.stream.listen((_) {});
+        final server = TwoPartyRpcConnection.server(
+          incoming: serverInput.stream,
+          outgoing: serverOutput.sink,
+          bootstrap: EchoServer(),
+        );
+
+        final doneExpectation = expectLater(
+          server.done,
+          throwsA(
+            isA<RpcException>().having(
+              (error) => error.cause,
+              'cause',
+              isA<RpcException>()
+                  .having(
+                    (cause) => cause.kind,
+                    'kind',
+                    ErrorKind.unimplemented,
+                  )
+                  .having(
+                    (cause) => cause.message,
+                    'message',
+                    contains('descriptor (disc=5)'),
+                  ),
+            ),
+          ),
+        );
+
+        serverInput.add(_callWithCapDescriptorDisc(5));
+        await doneExpectation;
+        await serverInput.close();
+        await serverOutput.close();
+      },
+    );
     test(
       'server sends Unimplemented when it receives a message with unknown disc',
       () async {
