@@ -5,6 +5,7 @@ import '../arena/arena_reader.dart';
 import '../exception/decode_exception.dart';
 import '../message/message_copy.dart';
 import '../message/message_reader.dart';
+import '../message/message_reader_options.dart';
 import '../wire/pointer.dart';
 import '../wire/wire_helpers.dart';
 import 'list_builder.dart';
@@ -672,9 +673,13 @@ final class AnyPointerBuilder {
     );
   }
 
+  /// [messageBytes] is re-parsed as its own standalone message; pass
+  /// [options] with the limits appropriate for its source if it may be
+  /// untrusted (see [StructBuilder.setAnyPointerFromMessage]).
   void setMessageBytes(
     Uint8List? messageBytes, {
     bool preserveCapabilityPointers = false,
+    MessageReaderOptions options = const MessageReaderOptions(),
   }) {
     if (messageBytes == null) {
       clear();
@@ -686,6 +691,7 @@ final class AnyPointerBuilder {
       _owner.segment,
       _owner.ptrWordOffset + _ptrIndex,
       preserveCapabilityPointers: preserveCapabilityPointers,
+      options: options,
     );
   }
 

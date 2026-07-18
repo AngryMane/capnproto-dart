@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import '../arena/arena_builder.dart';
 import '../arena/arena_reader.dart' show ArenaReader, RawStructReader;
 import '../message/message_copy.dart' show copyMessageRootToBuilder;
+import '../message/message_reader_options.dart';
 import '../wire/pointer.dart' show ListElementSize, CapabilityPointer;
 import '../wire/wire_helpers.dart';
 import 'any_pointer.dart';
@@ -184,10 +185,17 @@ abstract class StructBuilder {
   /// Capability pointers are zeroed by default because raw message bytes do not
   /// include a capability table. RPC payloads that carry a matching cap table
   /// can set [preserveCapabilityPointers].
+  ///
+  /// [messageBytes] is re-parsed as its own standalone message, so if it may
+  /// come from an untrusted source, pass [options] with the same
+  /// traversal/nesting/segment limits used elsewhere for that source —
+  /// otherwise the (still finite, but possibly more permissive) defaults in
+  /// [MessageReaderOptions] apply.
   void setAnyPointerFromMessage(
     int ptrIndex,
     Uint8List messageBytes, {
     bool preserveCapabilityPointers = false,
+    MessageReaderOptions options = const MessageReaderOptions(),
   }) {
     copyMessageRootToBuilder(
       messageBytes,
@@ -195,6 +203,7 @@ abstract class StructBuilder {
       _raw.segment,
       _raw.ptrWordOffset + ptrIndex,
       preserveCapabilityPointers: preserveCapabilityPointers,
+      options: options,
     );
   }
 

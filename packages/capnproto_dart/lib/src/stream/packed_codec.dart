@@ -89,10 +89,27 @@ Uint8List packBytes(Uint8List input) {
 /// Unpacks packed Cap'n Proto bytes, returning the original byte stream.
 ///
 /// The output length is always a multiple of 8 (whole words).
-Uint8List unpackBytes(Uint8List packed) {
+///
+/// [maxOutputBytes], when given, bounds how many bytes the expansion is
+/// allowed to produce. The packed encoding's zero-run tag lets 2 input bytes
+/// (`0x00` + a count byte) expand to up to 2040 zero bytes — a ~1000x
+/// amplification — so unpacking attacker-controlled input without a cap
+/// lets a small message force an arbitrarily large allocation (a
+/// "decompression bomb") before any other size limit in the library gets a
+/// chance to run. Throws [DecodeException] as soon as the output would
+/// exceed the cap, rather than finishing the expansion first.
+Uint8List unpackBytes(Uint8List packed, {int? maxOutputBytes}) {
   // Use a List<int> because zero-run expansion can be large and unpredictable.
   final out = <int>[];
   int i = 0;
+
+  void checkLimit() {
+    if (maxOutputBytes != null && out.length > maxOutputBytes) {
+      throw DecodeException(
+        'packed data expands beyond maxOutputBytes ($maxOutputBytes bytes)',
+      );
+    }
+  }
 
   try {
     while (i < packed.length) {
@@ -112,6 +129,8 @@ Uint8List unpackBytes(Uint8List packed) {
         final count = packed[i++];
         for (int j = 0; j < count * 8; j++) { out.add(packed[i++]); }
       }
+
+      checkLimit();
     }
   } on RangeError {
     // A tag promised more literal/verbatim bytes than actually remain —

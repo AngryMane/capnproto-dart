@@ -23,9 +23,16 @@ import 'message_reader_options.dart';
 /// When [preserveCapabilityPointers] is true and [messageBytes] is already a
 /// single-segment message, this returns [messageBytes] unchanged. Callers must
 /// treat the returned bytes as sharing ownership with the input.
+///
+/// [options] bounds the re-parse of [messageBytes] (traversal/nesting/segment
+/// limits). It defaults to [MessageReaderOptions]'s defaults, but callers
+/// parsing untrusted input under a stricter policy should pass the same
+/// options they used to read the surrounding message, since this function
+/// re-parses [messageBytes] independently and won't otherwise inherit it.
 Uint8List ensureSingleSegment(
   Uint8List messageBytes, {
   bool preserveCapabilityPointers = false,
+  MessageReaderOptions options = const MessageReaderOptions(),
 }) {
   if (messageBytes.lengthInBytes < 4) return messageBytes;
   final hdr = ByteData.sublistView(messageBytes, 0, messageBytes.lengthInBytes);
@@ -42,10 +49,7 @@ Uint8List ensureSingleSegment(
   }
 
   // Deep-copy the root pointer into a pre-sized single-segment arena.
-  final srcArena = ArenaReader.fromBytes(
-    messageBytes,
-    const MessageReaderOptions(),
-  );
+  final srcArena = ArenaReader.fromBytes(messageBytes, options);
   // Add 64 words of overhead for the root pointer slot and alignment.
   final dst = ArenaBuilder(totalSourceWords + 64);
   final (ptrSeg, rootPtrOffset) = dst.allocate(1);
@@ -70,17 +74,17 @@ Uint8List ensureSingleSegment(
 /// source arena. Capability pointers are zeroed by default because their table
 /// is not part of the raw message bytes; RPC callers that carry the matching
 /// capability table can set [preserveCapabilityPointers].
+///
+/// [options] bounds the re-parse of [messageBytes] (see [ensureSingleSegment]).
 void copyMessageRootToBuilder(
   Uint8List messageBytes,
   ArenaBuilder dstArena,
   SegmentBuilder dstPtrSeg,
   int dstPtrWordOffset, {
   bool preserveCapabilityPointers = false,
+  MessageReaderOptions options = const MessageReaderOptions(),
 }) {
-  final srcArena = ArenaReader.fromBytes(
-    messageBytes,
-    const MessageReaderOptions(),
-  );
+  final srcArena = ArenaReader.fromBytes(messageBytes, options);
   _copyPointer(
     srcArena,
     srcArena.getSegment(0),

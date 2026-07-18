@@ -5,6 +5,7 @@ import '../layout/struct_builder.dart';
 import '../layout/struct_factory.dart';
 import '../layout/struct_reader.dart';
 import '../stream/packed_codec.dart';
+import '../wire/wire_helpers.dart';
 import 'message_copy.dart';
 import 'message_reader_options.dart';
 
@@ -21,7 +22,13 @@ class MessageReader {
   static MessageReader deserializePacked(
     Uint8List bytes, [
     MessageReaderOptions options = const MessageReaderOptions(),
-  ]) => MessageReader._(ArenaReader.fromBytes(unpackBytes(bytes), options));
+  ]) => MessageReader._(ArenaReader.fromBytes(
+        unpackBytes(
+          bytes,
+          maxOutputBytes: options.traversalLimitInWords * bytesPerWord,
+        ),
+        options,
+      ));
 
   R getRoot<R extends StructReader, B extends StructBuilder>(
     StructFactory<R, B> factory, {
