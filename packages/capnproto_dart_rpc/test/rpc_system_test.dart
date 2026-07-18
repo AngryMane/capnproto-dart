@@ -225,6 +225,57 @@ void main() {
       );
     });
 
+    test(
+      'server path is enforced while query parameters remain allowed',
+      () async {
+        final server = await RpcSystem.serve(
+          Uri.parse('ws://127.0.0.1:0/capnp'),
+          NullCapability(),
+        );
+        addTearDown(server.close);
+
+        await expectLater(
+          RpcSystem.connect(Uri.parse('ws://127.0.0.1:${server.port}/wrong')),
+          throwsA(anything),
+        );
+
+        final client = await RpcSystem.connect(
+          Uri.parse('ws://127.0.0.1:${server.port}/capnp?token=test'),
+        );
+        addTearDown(client.close);
+        await expectLater(
+          client
+              .bootstrap(_RawCapabilityFactory())
+              .dispatch(0, 0, _emptyParams),
+          throwsA(isA<RpcException>()),
+        );
+      },
+    );
+
+    test('concurrent upgrades cannot oversubscribe maxConnections', () async {
+      final server = await RpcSystem.serve(
+        Uri.parse('ws://127.0.0.1:0'),
+        NullCapability(),
+        maxConnections: 1,
+      );
+      addTearDown(server.close);
+
+      final attempts = await Future.wait(
+        List.generate(12, (_) async {
+          try {
+            return await RpcSystem.connect(
+              Uri.parse('ws://127.0.0.1:${server.port}'),
+            );
+          } catch (_) {
+            return null;
+          }
+        }),
+      );
+      final accepted = attempts.whereType<RpcConnection>().toList();
+      expect(accepted, hasLength(1));
+      await Future.wait(accepted.map((connection) => connection.close()));
+    });
+
     test('wss:// server without a securityContext is rejected', () async {
       await expectLater(
         RpcSystem.serve(Uri.parse('wss://127.0.0.1:0'), NullCapability()),

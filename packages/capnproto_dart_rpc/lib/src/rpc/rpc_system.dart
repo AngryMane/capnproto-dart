@@ -68,7 +68,9 @@ class RpcSystem {
   /// the caller's own address explicitly asked for. Ignored for `tcp://`
   /// and `ws://`.
   ///
-  /// [maxConnections] caps how many clients may be connected at once. Once
+  /// [maxConnections] caps how many clients may be connected at once.
+  /// WebSocket handshakes currently being upgraded count toward the cap, so
+  /// concurrent upgrade requests cannot oversubscribe it. Once
   /// the cap is reached, additional incoming connections are rejected
   /// immediately (before any [TwoPartyRpcConnection] is created for them)
   /// rather than accepted — without this, a remote peer able to reach the
@@ -76,6 +78,10 @@ class RpcSystem {
   /// memory/file descriptors, since each accepted connection allocates its
   /// own message loop and question/answer/export/import tables. Defaults
   /// to 1024; pass `null` for no limit.
+  ///
+  /// For WebSocket transports, the request path must equal [Uri.path] from
+  /// [address] (or a single slash when it is empty). Query parameters are
+  /// accepted and are not part of this routing check.
   ///
   /// See [connect] for [onDisposeError] and [streamWindowSize].
   static Future<RpcServer> serve(
@@ -96,6 +102,8 @@ class RpcSystem {
     final host =
         InternetAddress.tryParse(address.host) ?? InternetAddress.loopbackIPv4;
     final connections = <TwoPartyRpcConnection>{};
+    var pendingWebSocketUpgrades = 0;
+    final expectedWebSocketPath = address.path.isEmpty ? '/' : address.path;
 
     void track(TwoPartyRpcConnection conn) {
       connections.add(conn);
@@ -112,7 +120,8 @@ class RpcSystem {
     }
 
     bool atCapacity() =>
-        maxConnections != null && connections.length >= maxConnections;
+        maxConnections != null &&
+        connections.length + pendingWebSocketUpgrades >= maxConnections;
 
     switch (address.scheme) {
       case 'tcp':
@@ -163,21 +172,38 @@ class RpcSystem {
             await request.response.close();
             return;
           }
+          if (request.uri.path != expectedWebSocketPath) {
+            request.response.statusCode = HttpStatus.notFound;
+            await request.response.close();
+            return;
+          }
           if (atCapacity()) {
             request.response.statusCode = HttpStatus.serviceUnavailable;
             await request.response.close();
             return;
           }
-          final ws = await WebSocketTransformer.upgrade(request);
-          track(
-            TwoPartyRpcConnection.server(
-              incoming: _webSocketIncoming(ws),
-              outgoing: _WebSocketSink(ws),
-              bootstrap: bootstrap,
-              onDisposeError: onDisposeError,
-              streamWindowSize: streamWindowSize,
-            ),
-          );
+          pendingWebSocketUpgrades++;
+          try {
+            final ws = await WebSocketTransformer.upgrade(request);
+            track(
+              TwoPartyRpcConnection.server(
+                incoming: _webSocketIncoming(ws),
+                outgoing: _WebSocketSink(ws),
+                bootstrap: bootstrap,
+                onDisposeError: onDisposeError,
+                streamWindowSize: streamWindowSize,
+              ),
+            );
+          } catch (_) {
+            try {
+              request.response.statusCode = HttpStatus.badRequest;
+              await request.response.close();
+            } catch (_) {
+              // The upgrade may already have committed or closed the response.
+            }
+          } finally {
+            pendingWebSocketUpgrades--;
+          }
         });
         return _ListenerRpcServer(
           () => httpServer.port,

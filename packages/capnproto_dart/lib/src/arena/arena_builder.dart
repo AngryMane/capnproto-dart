@@ -79,11 +79,12 @@ class ArenaBuilder {
   /// limited by [scratchSpace], it's just spared an allocation for the
   /// common case where it fits.
   ///
-  /// [scratchSpace] must not be reused (e.g. passed to another
-  /// [ArenaBuilder.withScratchSpace] call) until this arena's [serialize]
-  /// has been called: [serialize] copies every segment's bytes into a fresh
-  /// output buffer, so [scratchSpace] is safe to reuse immediately
-  /// afterward.
+  /// The arena aliases [scratchSpace] for its entire lifetime. Calling [serialize] returns a snapshot; it does not freeze or invalidate the
+  /// arena, and later builder/reader operations may still access the same
+  /// memory. Do not reuse or mutate [scratchSpace], its backing buffer, or any
+  /// overlapping view while this arena or a derived builder/reader may be used.
+  /// The caller must also prevent concurrent mutation (including from another
+  /// isolate); the runtime does not copy the scratch memory.
   ArenaBuilder.withScratchSpace(Uint8List scratchSpace) {
     // The wire format requires the root pointer at word 0 of segment 0 (see
     // ArenaReader.getRootRaw), and that's always this arena's very first

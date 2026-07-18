@@ -35,8 +35,10 @@ class PointBuilder extends StructBuilder {
   set y(int v) => setInt32Field(4, v);
 
   @override
-  PointReader asReader() => throw UnimplementedError(
-      'asReader() not needed for round-trip test; use serialize() instead');
+  PointReader asReader() =>
+      throw UnimplementedError(
+        'asReader() not needed for round-trip test; use serialize() instead',
+      );
 }
 
 // ignore: non_constant_identifier_names
@@ -147,21 +149,24 @@ void main() {
       expect(read.y, equals(-7));
     });
 
-    test('a message larger than the scratch space still serializes correctly', () {
-      // Only 2 words: root pointer (1 word) + nothing else — Point's 1 data
-      // word can't fit alongside it, forcing an overflow into a second,
-      // heap-allocated segment (exercised via a far pointer).
-      final scratch = Uint8List(2 * bytesPerWord);
-      final builder = MessageBuilder.withScratchSpace(scratch);
-      final point = builder.initRoot(pointFactory);
-      point.x = 1;
-      point.y = 2;
+    test(
+      'a message larger than the scratch space still serializes correctly',
+      () {
+        // Only 2 words: root pointer (1 word) + nothing else — Point's 1 data
+        // word can't fit alongside it, forcing an overflow into a second,
+        // heap-allocated segment (exercised via a far pointer).
+        final scratch = Uint8List(2 * bytesPerWord);
+        final builder = MessageBuilder.withScratchSpace(scratch);
+        final point = builder.initRoot(pointFactory);
+        point.x = 1;
+        point.y = 2;
 
-      final bytes = builder.serialize();
-      final read = MessageReader.deserialize(bytes).getRoot(pointFactory);
-      expect(read.x, equals(1));
-      expect(read.y, equals(2));
-    });
+        final bytes = builder.serialize();
+        final read = MessageReader.deserialize(bytes).getRoot(pointFactory);
+        expect(read.x, equals(1));
+        expect(read.y, equals(2));
+      },
+    );
 
     test('an empty scratch buffer falls back to a heap segment entirely', () {
       final builder = MessageBuilder.withScratchSpace(Uint8List(0));
@@ -174,5 +179,35 @@ void main() {
       expect(read.x, equals(5));
       expect(read.y, equals(6));
     });
+
+    test(
+      'reusing scratch does not retain fields from the previous message',
+      () {
+        final backing = Uint8List(20 * bytesPerWord);
+        final scratch = Uint8List.sublistView(
+          backing,
+          2 * bytesPerWord,
+          18 * bytesPerWord,
+        );
+
+        final first = MessageBuilder.withScratchSpace(scratch);
+        final firstPoint = first.initRoot(pointFactory);
+        firstPoint.x = 123;
+        firstPoint.y = 456;
+        first.serialize();
+
+        final second = MessageBuilder.withScratchSpace(scratch);
+        final secondPoint = second.initRoot(pointFactory);
+        secondPoint.x = 7;
+        final read = MessageReader.deserialize(
+          second.serialize(),
+        ).getRoot(pointFactory);
+
+        expect(read.x, equals(7));
+        expect(read.y, equals(0));
+        expect(backing.sublist(0, 2 * bytesPerWord), everyElement(0));
+        expect(backing.sublist(18 * bytesPerWord), everyElement(0));
+      },
+    );
   });
 }

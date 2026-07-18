@@ -16,8 +16,15 @@ class MessageBuilder {
   /// segment instead of a freshly heap-allocated buffer — avoids an
   /// allocation per message when building many messages in a loop with the
   /// same reusable buffer (see [ArenaBuilder.withScratchSpace]).
+  ///
+  /// The builder aliases [scratchSpace] (including its original buffer offset)
+  /// for its entire usable lifetime; it does not copy the bytes. Calling
+  /// [serialize] or [serializePacked] returns a snapshot but does not detach or
+  /// invalidate this builder. Do not reuse or externally mutate the buffer, or
+  /// any overlapping view, while this builder or a derived builder/reader may
+  /// still be accessed. Concurrent cross-isolate mutation is unsupported.
   MessageBuilder.withScratchSpace(Uint8List scratchSpace)
-      : _arena = ArenaBuilder.withScratchSpace(scratchSpace);
+    : _arena = ArenaBuilder.withScratchSpace(scratchSpace);
 
   B initRoot<R extends StructReader, B extends StructBuilder>(
     StructFactory<R, B> factory,
