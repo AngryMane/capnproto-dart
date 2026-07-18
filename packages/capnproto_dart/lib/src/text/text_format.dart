@@ -388,7 +388,11 @@ String _quoteData(Uint8List bytes) {
 /// rune is valid UTF-8 text and passes through as-is, matching capnp) and
 /// [_quoteData] (raw bytes — anything outside printable ASCII is escaped,
 /// since a byte >= 0x80 isn't a standalone printable character).
-void _writeEscapedByteOrRune(StringBuffer buf, int value, {required bool isRune}) {
+void _writeEscapedByteOrRune(
+  StringBuffer buf,
+  int value, {
+  required bool isRune,
+}) {
   switch (value) {
     case 0x22:
       buf.write(r'\"');
@@ -491,7 +495,19 @@ final class _TextIdent extends _TextValue {
 
 // ---- Tokenizer ----
 
-enum _TokKind { lparen, rparen, lbracket, rbracket, equals, comma, ident, number, string, hexString, end }
+enum _TokKind {
+  lparen,
+  rparen,
+  lbracket,
+  rbracket,
+  equals,
+  comma,
+  ident,
+  number,
+  string,
+  hexString,
+  end,
+}
 
 class _Tok {
   final _TokKind kind;
@@ -604,8 +620,10 @@ bool _isIdentChar(int c) => _isIdentStart(c) || (c >= 0x30 && c <= 0x39);
 bool _isNumberChar(int c) =>
     (c >= 0x30 && c <= 0x39) ||
     c == 0x2e || // .
-    c == 0x65 || c == 0x45 || // e/E
-    c == 0x2b || c == 0x2d || // +/-
+    c == 0x65 ||
+    c == 0x45 || // e/E
+    c == 0x2b ||
+    c == 0x2d || // +/-
     c == 0x78 || // x (0x prefix)
     (c >= 0x41 && c <= 0x46) || // A-F (hex digits)
     (c >= 0x61 && c <= 0x66); // a-f (hex digits)
@@ -669,9 +687,7 @@ List<int> _scanQuoted(String src, int start, void Function(int) setEnd) {
           i++;
         case 0x78:
           if (i + 2 >= n) {
-            throw const DecodeException(
-              'text format: incomplete \\x escape',
-            );
+            throw const DecodeException('text format: incomplete \\x escape');
           }
           final hex = src.substring(i + 1, i + 3);
           final v = int.tryParse(hex, radix: 16);
@@ -685,7 +701,10 @@ List<int> _scanQuoted(String src, int start, void Function(int) setEnd) {
           var j = i;
           var digits = 0;
           var value = 0;
-          while (j < n && digits < 3 && src.codeUnitAt(j) >= 0x30 && src.codeUnitAt(j) <= 0x37) {
+          while (j < n &&
+              digits < 3 &&
+              src.codeUnitAt(j) >= 0x30 &&
+              src.codeUnitAt(j) <= 0x37) {
             value = value * 8 + (src.codeUnitAt(j) - 0x30);
             j++;
             digits++;
@@ -716,9 +735,7 @@ List<int> _scanHexQuoted(String src, int start, void Function(int) setEnd) {
   final digits = StringBuffer();
   while (true) {
     if (i >= n) {
-      throw const DecodeException(
-        'text format: unterminated hex data literal',
-      );
+      throw const DecodeException('text format: unterminated hex data literal');
     }
     final c = src.codeUnitAt(i);
     if (c == 0x22) {
@@ -765,10 +782,15 @@ extension on String {
 
 // ---- Parser ----
 
+// Keep hostile text input from exhausting the Dart stack before schema-aware
+// materialization gets a chance to apply the normal message nesting limit.
+const int _maxTextNestingDepth = 64;
+
 class _TextParser {
   final List<_Tok> _tokens;
   final String _src;
   int _pos = 0;
+  int _depth = 0;
 
   _TextParser(this._tokens, this._src);
 
@@ -805,6 +827,24 @@ class _TextParser {
   }
 
   _TextValue parseValue() {
+    final isContainer =
+        _current.kind == _TokKind.lparen || _current.kind == _TokKind.lbracket;
+    if (isContainer) {
+      if (_depth >= _maxTextNestingDepth) {
+        throw _error(
+          'nesting depth exceeds the limit of $_maxTextNestingDepth',
+        );
+      }
+      _depth++;
+    }
+    try {
+      return _parseValueUnchecked();
+    } finally {
+      if (isContainer) _depth--;
+    }
+  }
+
+  _TextValue _parseValueUnchecked() {
     switch (_current.kind) {
       case _TokKind.lparen:
         return _parseStruct();
@@ -1004,10 +1044,12 @@ void _materializeSlotValue(
       );
     }
     final structSchema = _requireStructSchema(registry, type.typeId);
-    final nested = builder.initPointerField(offset).initDynamicStruct(
-      dataWords: structSchema.dataWords,
-      pointerWords: structSchema.pointerWords,
-    );
+    final nested = builder
+        .initPointerField(offset)
+        .initDynamicStruct(
+          dataWords: structSchema.dataWords,
+          pointerWords: structSchema.pointerWords,
+        );
     _materializeStruct(value, nested, structSchema, registry);
     return;
   }
@@ -1018,7 +1060,13 @@ void _materializeSlotValue(
         '\'$fieldName\'',
       );
     }
-    _materializeList(value, builder.initPointerField(offset), type.elementType, registry, fieldName);
+    _materializeList(
+      value,
+      builder.initPointerField(offset),
+      type.elementType,
+      registry,
+      fieldName,
+    );
     return;
   }
   if (type is InterfaceRefTypeSchemaInfo) {
@@ -1056,7 +1104,14 @@ void _materializeList(
     structPointerWords: structPointerWords,
   );
   for (var i = 0; i < count; i++) {
-    _materializeListElement(value.items[i], list, i, elementType, registry, fieldName);
+    _materializeListElement(
+      value.items[i],
+      list,
+      i,
+      elementType,
+      registry,
+      fieldName,
+    );
   }
 }
 

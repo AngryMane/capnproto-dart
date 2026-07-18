@@ -462,19 +462,19 @@ if [[ -z "${goto_summary5:-}" ]]; then
   LITERAL_NESTED='(label = "root", values = [1, 2, 3], tags = ["a", "b"], children = [(label = "child1", values = [4], tags = [], children = []), (label = "child2", values = [], tags = ["x"], children = [])])'
 
   # Direction 1: Dart encode -> capnp decode, compared to capnp's own round-trip.
-  golden_text=$(echo "$LITERAL_SCALARS" | capnp encode "$WFG_SCHEMA" AllScalars | capnp decode "$WFG_SCHEMA" AllScalars --short)
+  scalar_golden=$(echo "$LITERAL_SCALARS" | capnp encode "$WFG_SCHEMA" AllScalars | capnp decode "$WFG_SCHEMA" AllScalars --short)
+  nested_golden=$(echo "$LITERAL_NESTED" | capnp encode "$WFG_SCHEMA" Nested | capnp decode "$WFG_SCHEMA" Nested --short)
   wfg_dart encode-scalars "$WFG_TMP/scalars_dart.bin"
   dart_text=$(capnp decode "$WFG_SCHEMA" AllScalars --short < "$WFG_TMP/scalars_dart.bin")
-  if [[ "$golden_text" == "$dart_text" ]]; then
+  if [[ "$scalar_golden" == "$dart_text" ]]; then
     pass "wire-format golden: Dart-encoded AllScalars matches capnp decode text"
   else
     fail "wire-format golden: Dart-encoded AllScalars matches capnp decode text (got: $dart_text)"
   fi
 
-  golden_text=$(echo "$LITERAL_NESTED" | capnp encode "$WFG_SCHEMA" Nested | capnp decode "$WFG_SCHEMA" Nested --short)
   wfg_dart encode-nested "$WFG_TMP/nested_dart.bin"
   dart_text=$(capnp decode "$WFG_SCHEMA" Nested --short < "$WFG_TMP/nested_dart.bin")
-  if [[ "$golden_text" == "$dart_text" ]]; then
+  if [[ "$nested_golden" == "$dart_text" ]]; then
     pass "wire-format golden: Dart-encoded Nested matches capnp decode text"
   else
     fail "wire-format golden: Dart-encoded Nested matches capnp decode text (got: $dart_text)"
@@ -495,7 +495,44 @@ if [[ -z "${goto_summary5:-}" ]]; then
     fail "wire-format golden: Dart decodes capnp-encoded Nested"
   fi
 
-  # Direction 3: canonicalization. `capnp convert binary:canonical` is the
+
+  # Direction 3: text-format interoperability. Cross the implementation
+  # boundary in both directions so encodeText/decodeText cannot share a bug
+  # and still satisfy the check.
+  dart_text=$(wfg_dart encode-text-scalars)
+  echo "$dart_text" | capnp encode "$WFG_SCHEMA" AllScalars > "$WFG_TMP/text_scalars_capnp.bin"
+  roundtrip_text=$(capnp decode "$WFG_SCHEMA" AllScalars --short < "$WFG_TMP/text_scalars_capnp.bin")
+  if [[ "$roundtrip_text" == "$scalar_golden" ]]; then
+    pass "text-format golden: Dart encodeText is accepted by capnp encode (scalars)"
+  else
+    fail "text-format golden: Dart encodeText differs from capnp semantics (scalars)"
+  fi
+
+  dart_text=$(wfg_dart encode-text-nested)
+  echo "$dart_text" | capnp encode "$WFG_SCHEMA" Nested > "$WFG_TMP/text_nested_capnp.bin"
+  roundtrip_text=$(capnp decode "$WFG_SCHEMA" Nested --short < "$WFG_TMP/text_nested_capnp.bin")
+  if [[ "$roundtrip_text" == "$nested_golden" ]]; then
+    pass "text-format golden: Dart encodeText is accepted by capnp encode (nested)"
+  else
+    fail "text-format golden: Dart encodeText differs from capnp semantics (nested)"
+  fi
+
+  echo "$scalar_golden" | wfg_dart decode-text-scalars "$WFG_TMP/text_scalars_dart.bin"
+  roundtrip_text=$(capnp decode "$WFG_SCHEMA" AllScalars --short < "$WFG_TMP/text_scalars_dart.bin")
+  if [[ "$roundtrip_text" == "$scalar_golden" ]]; then
+    pass "text-format golden: Dart decodeText accepts capnp decode output (scalars)"
+  else
+    fail "text-format golden: Dart decodeText differs from capnp semantics (scalars)"
+  fi
+
+  echo "$nested_golden" | wfg_dart decode-text-nested "$WFG_TMP/text_nested_dart.bin"
+  roundtrip_text=$(capnp decode "$WFG_SCHEMA" Nested --short < "$WFG_TMP/text_nested_dart.bin")
+  if [[ "$roundtrip_text" == "$nested_golden" ]]; then
+    pass "text-format golden: Dart decodeText accepts capnp decode output (nested)"
+  else
+    fail "text-format golden: Dart decodeText differs from capnp semantics (nested)"
+  fi
+  # Direction 4: canonicalization. `capnp convert binary:canonical` is the
   # reference implementation's canonical encoding; MessageReader.canonicalize()
   # must produce byte-for-byte identical output on the same input, including
   # fixtures that deliberately leave fields at their default/null value so

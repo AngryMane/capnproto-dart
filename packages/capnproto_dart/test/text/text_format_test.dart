@@ -80,9 +80,7 @@ void main() {
 
       expect(
         encodeText(reader, widgetSchema, registry),
-        contains(
-          r'name = "line1\nline2\ttab\"quote\"\\back こんにちは"',
-        ),
+        contains(r'name = "line1\nline2\ttab\"quote\"\\back こんにちは"'),
       );
     });
 
@@ -93,9 +91,52 @@ void main() {
       final reader = MessageReader.deserialize(
         mb.serialize(),
       ).getRoot(widgetFactory);
-      expect(encodeText(reader, widgetSchema, registry), contains('ratio = nan'));
+      expect(
+        encodeText(reader, widgetSchema, registry),
+        contains('ratio = nan'),
+      );
     });
 
+    test('special floats and negative zero match capnp spelling', () {
+      for (final (value, spelling) in [
+        (double.nan, 'nan'),
+        (double.infinity, 'inf'),
+        (double.negativeInfinity, '-inf'),
+        (-0.0, '-0'),
+      ]) {
+        final mb = MessageBuilder();
+        mb.initRoot(widgetFactory).ratio = value;
+        final reader = MessageReader.deserialize(
+          mb.serialize(),
+        ).getRoot(widgetFactory);
+        expect(
+          encodeText(reader, widgetSchema, registry),
+          contains('ratio = $spelling'),
+        );
+      }
+    });
+
+    test('distinguishes an unset list pointer from an explicit empty list', () {
+      final unset = MessageBuilder()..initRoot(widgetFactory);
+      expect(
+        encodeText(
+          MessageReader.deserialize(unset.serialize()).getRoot(widgetFactory),
+          widgetSchema,
+          registry,
+        ),
+        isNot(contains('tags =')),
+      );
+
+      final empty = MessageBuilder()..initRoot(widgetFactory).initTags(0);
+      expect(
+        encodeText(
+          MessageReader.deserialize(empty.serialize()).getRoot(widgetFactory),
+          widgetSchema,
+          registry,
+        ),
+        contains('tags = []'),
+      );
+    });
     test('throws for a struct/enum type missing from the registry', () {
       final mb = MessageBuilder();
       mb.initRoot(widgetFactory).initOrigin();
@@ -104,7 +145,8 @@ void main() {
       ).getRoot(widgetFactory);
 
       expect(
-        () => encodeText(reader, widgetSchema, schemaRegistryOf([widgetSchema])),
+        () =>
+            encodeText(reader, widgetSchema, schemaRegistryOf([widgetSchema])),
         throwsA(isA<DecodeException>()),
       );
     });
@@ -147,11 +189,7 @@ void main() {
     });
 
     test('parses hex data literals (0x"...")', () {
-      final bytes = decodeText(
-        '(tag = 0x"01 02 ff")',
-        widgetSchema,
-        registry,
-      );
+      final bytes = decodeText('(tag = 0x"01 02 ff")', widgetSchema, registry);
       final w = MessageReader.deserialize(bytes).getRoot(widgetFactory);
       expect(w.tag, orderedEquals([1, 2, 0xff]));
     });
@@ -185,6 +223,53 @@ void main() {
       expect(w.size, 5);
     });
 
+    test('parses nan, inf, -inf, and negative zero', () {
+      for (final (literal, check) in [
+        ('nan', (double value) => value.isNaN),
+        ('inf', (double value) => value == double.infinity),
+        ('-inf', (double value) => value == double.negativeInfinity),
+        ('-0', (double value) => value == 0 && value.isNegative),
+      ]) {
+        final bytes = decodeText('(ratio = $literal)', widgetSchema, registry);
+        final value =
+            MessageReader.deserialize(bytes).getRoot(widgetFactory).ratio;
+        expect(check(value), isTrue, reason: literal);
+      }
+    });
+
+    test('matches capnp duplicate-field behavior: the last value wins', () {
+      final bytes = decodeText('(size = 1, size = 2)', widgetSchema, registry);
+      expect(MessageReader.deserialize(bytes).getRoot(widgetFactory).size, 2);
+    });
+
+    test('rejects malformed escapes, hex data, commas, and trailing input', () {
+      for (final text in [
+        r'(name = "\q")',
+        r'(tag = 0x"0")',
+        '(size = 1,,)',
+        '(size = 1) trailing',
+      ]) {
+        expect(
+          () => decodeText(text, widgetSchema, registry),
+          throwsA(isA<DecodeException>()),
+          reason: text,
+        );
+      }
+    });
+
+    test('rejects text nesting deeper than the parser limit', () {
+      final deeplyNested = '(tags = ${'[' * 65}${']' * 65})';
+      expect(
+        () => decodeText(deeplyNested, widgetSchema, registry),
+        throwsA(
+          isA<DecodeException>().having(
+            (error) => error.message,
+            'message',
+            contains('nesting depth exceeds the limit of 64'),
+          ),
+        ),
+      );
+    });
     test('throws DecodeException for an unknown field name', () {
       expect(
         () => decodeText('(bogus = 1)', widgetSchema, registry),

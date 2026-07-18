@@ -276,6 +276,21 @@ Uint8List decodeText(String text, StructSchemaInfo schema, SchemaRegistry regist
 untyped `AnyPointer`/generic-typed field — neither has a text representation — and
 for any struct/enum type missing from `registry`.
 
+
+The parser rejects container nesting deeper than 64 levels before schema
+materialization, preventing hostile text input from exhausting the Dart call
+stack. This limit applies to struct and list literals and is independent of the
+binary message traversal/nesting limits.
+
+CI checks both directions against the official reference CLI for scalar and
+nested/list fixtures:
+
+- Dart `encodeText` -> `capnp encode` -> `capnp decode --short`
+- `capnp decode --short` -> Dart `decodeText` -> `capnp decode --short`
+
+Because Cap'n Proto does not publish a complete formal grammar for this format,
+behavior outside the tested reference-CLI surface is not promised merely from a
+Dart-only round trip.
 ## Error Handling
 
 All errors thrown by this library are subclasses of `CapnpException`.

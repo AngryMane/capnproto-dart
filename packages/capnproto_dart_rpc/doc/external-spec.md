@@ -4,13 +4,29 @@ A pure Dart library with no FFI dependencies. Depends on the
 [Serialization Runtime (`capnproto_dart`)](pathname:///capnproto_dart/external-spec) for
 message encoding; only needed by applications that use RPC.
 
-Implements a **Cap'n Proto RPC Level 1 subset**: object-capability references and promise pipelining
-in two-party connections. The following Level 1 features are **not** implemented:
-- `Resolve` and `Disembargo` messages sent by the Dart vat (only received/processed when sent by a peer)
-- Three-party handoff (required for full Level 1 compliance)
+Implements a **Cap'n Proto RPC Level 1 subset** for two-party connections,
+including object-capability references, promise pipelining, tail calls, and
+Resolve/Disembargo in both directions. Three-party handoff is not implemented,
+so this is not full Level 1. Level 2 and above (persistent capabilities) are out
+of scope.
 
-Level 2 and above (persistent capabilities) are out of scope.
 
+## Unsupported capability descriptors
+
+Receiving an unsupported capability descriptor, including Level 2
+`thirdPartyHosted`, terminates the `RpcConnection`. The connection's `done`
+future completes with an `RpcException` whose `kind` is
+`ErrorKind.unimplemented`; pending calls fail as disconnected during teardown.
+A `none` descriptor remains the only descriptor represented as
+`NullCapability`.
+
+This is deliberately a connection-level protocol boundary rather than a
+per-Call `Return(exception)`. An unknown descriptor can participate in payload
+capability indices and connection-wide import/export ownership. Continuing
+without understanding those semantics could misroute authority or corrupt
+reference counts. Peers that require three-party handoff or Level 2 descriptors
+are therefore not interoperable with this Level 1 subset and must negotiate or
+use a different connection.
 ## Core RPC types
 
 ```dart
