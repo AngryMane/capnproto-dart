@@ -22,6 +22,8 @@ const int _largeCapResultMethodId = 4; // result has large data + cap
 const int _largeCapParamMethodId = 5; // params have large data + cap
 const int _listCapsResultMethodId = 6; // result has List(Interface) in ptr[0]
 const int _listCapsParamMethodId = 7; // params have List(Interface) in ptr[0]
+const int _equalCapsMethodId = 10; // returns equal-but-not-identical caps
+const int _throwingTryTailCallMethodId = 11;
 
 // Simple factory to build param message { message :Text } (ptr 0)
 Uint8List _buildEchoParams(String message) {
@@ -568,22 +570,37 @@ class ListCapsServer extends Capability {
     }
     if (methodId == _listCapsResultMethodId) {
       final mb = MessageBuilder();
-      final list = mb.initRoot(_TextParamFactory()).initCapabilityListField(0, 2);
+      final list = mb
+          .initRoot(_TextParamFactory())
+          .initCapabilityListField(0, 2);
       list[0] = 0;
       list[1] = 1;
       return DispatchResult(bytes: mb.serialize(), caps: [child0, child1]);
     }
     if (methodId == _listCapsParamMethodId) {
-      final root = MessageReader.deserialize(params).getRoot(_TextParamFactory());
+      final root = MessageReader.deserialize(
+        params,
+      ).getRoot(_TextParamFactory());
       final rawList = root.getCapabilityListField(0);
       if (rawList == null || rawList.length < 2) {
-        throw const RpcException('expected List(Interface) with 2 caps in ptr[0]');
+        throw const RpcException(
+          'expected List(Interface) with 2 caps in ptr[0]',
+        );
       }
       final cap0 = paramsCapabilities[rawList[0]];
       final cap1 = paramsCapabilities[rawList[1]];
-      final r0 = await cap0.dispatch(_echoInterfaceId, _echoMethodId, _buildEchoParams('a'));
-      final r1 = await cap1.dispatch(_echoInterfaceId, _echoMethodId, _buildEchoParams('b'));
-      final reply = '${_parseEchoResult(r0.bytes)}|${_parseEchoResult(r1.bytes)}';
+      final r0 = await cap0.dispatch(
+        _echoInterfaceId,
+        _echoMethodId,
+        _buildEchoParams('a'),
+      );
+      final r1 = await cap1.dispatch(
+        _echoInterfaceId,
+        _echoMethodId,
+        _buildEchoParams('b'),
+      );
+      final reply =
+          '${_parseEchoResult(r0.bytes)}|${_parseEchoResult(r1.bytes)}';
       return DispatchResult(bytes: _buildEchoParams(reply));
     }
     throw RpcException('unknown method: $methodId');
@@ -692,6 +709,109 @@ class TailCallLocalServer extends Capability {
   }) => Future.error(
     RpcException('method $methodId should have been tail-called'),
   );
+
+  @override
+  Future<void> dispose() async {}
+}
+
+class ThrowingTryTailCallServer extends Capability {
+  @override
+  TailCall? tryTailCall(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) {
+    if (methodId == _throwingTryTailCallMethodId) {
+      throw const RpcException('tryTailCall failed synchronously');
+    }
+    return null;
+  }
+
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) async {
+    if (methodId == _echoMethodId) {
+      return DispatchResult(bytes: _buildEchoParams('still usable'));
+    }
+    throw RpcException('unexpected dispatch: $methodId');
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
+class ThrowingEchoServer extends Capability {
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) {
+    throw const RpcException('tail target failed synchronously');
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
+class EqualEchoCapability extends Capability {
+  final String name;
+  EqualEchoCapability(this.name);
+
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) async {
+    final message =
+        MessageReader.deserialize(
+          params,
+        ).getRoot(_TextParamFactory()).getTextField(0) ??
+        '';
+    return DispatchResult(bytes: _buildEchoParams('$name: $message'));
+  }
+
+  @override
+  bool operator ==(Object other) => other is EqualEchoCapability;
+
+  @override
+  int get hashCode => 1;
+
+  @override
+  Future<void> dispose() async {}
+}
+
+class EqualCapsServer extends Capability {
+  final Capability left = EqualEchoCapability('left');
+  final Capability right = EqualEchoCapability('right');
+
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    Uint8List params, {
+    List<Capability> paramsCapabilities = const [],
+  }) async {
+    if (methodId == _equalCapsMethodId) {
+      final mb = MessageBuilder();
+      final root = mb.initRoot(_TwoPtrFactory());
+      root.setCapabilityField(0, 0);
+      root.setCapabilityField(1, 1);
+      return DispatchResult(bytes: mb.serialize(), caps: [left, right]);
+    }
+    if (methodId == _echoMethodId) {
+      return DispatchResult(bytes: _buildEchoParams('ok'));
+    }
+    throw RpcException('unknown method: $methodId');
+  }
 
   @override
   Future<void> dispose() async {}
@@ -962,11 +1082,46 @@ void main() {
     });
   });
 
-  group('TwoPartyRpcConnection — #53 tail calls (Level 1 wire optimization)', () {
-    test(
-      'tail call to a same-connection import avoids a second results '
-      'round trip',
-      () async {
+  group(
+    'TwoPartyRpcConnection — #53 tail calls (Level 1 wire optimization)',
+    () {
+      test(
+        'synchronous tryTailCall failure becomes a Return exception and keeps '
+        'the connection usable',
+        () async {
+          final (client, serverConn) = _makePipe(ThrowingTryTailCallServer());
+          final bootstrapCap = client.bootstrap(EchoClientFactory());
+
+          await expectLater(
+            bootstrapCap.cap.dispatch(
+              _echoInterfaceId,
+              _throwingTryTailCallMethodId,
+              _buildEchoParams(''),
+            ),
+            throwsA(
+              allOf(
+                isA<RpcException>(),
+                predicate<Object>(
+                  (e) => e.toString().contains('tryTailCall failed'),
+                ),
+              ),
+            ),
+          );
+
+          final result = await bootstrapCap.cap.dispatch(
+            _echoInterfaceId,
+            _echoMethodId,
+            _buildEchoParams('after'),
+          );
+          expect(_parseEchoResult(result.bytes), 'still usable');
+
+          await client.close();
+          await serverConn.close();
+        },
+      );
+
+      test('tail call to a same-connection import avoids a second results '
+          'round trip', () async {
         // target is hosted on the CLIENT; TailCallServer (on the server)
         // receives it as an import and tail-calls into it.
         final target = EchoServer();
@@ -1047,13 +1202,10 @@ void main() {
         );
 
         await client.close();
-      },
-    );
+      });
 
-    test(
-      'tryTailCall target that is not a same-connection import falls back '
-      'to a transparent proxy dispatch',
-      () async {
+      test('tryTailCall target that is not a same-connection import falls back '
+          'to a transparent proxy dispatch', () async {
         final (client, serverConn) = _makePipe(
           TailCallLocalServer(EchoServer()),
         );
@@ -1067,13 +1219,10 @@ void main() {
         expect(_parseEchoResult(result.bytes), 'echo: local tail call');
 
         await client.close();
-      },
-    );
+      });
 
-    test(
-      'an incoming Call flagged sendResultsTo=yourself is answered with '
-      'resultsSentElsewhere, independent of tryTailCall',
-      () async {
+      test('an incoming Call flagged sendResultsTo=yourself is answered with '
+          'resultsSentElsewhere, independent of tryTailCall', () async {
         // Raw wire injection (no tryTailCall involved on either side) —
         // proves the *receiving* half of the mechanism, which matters for
         // interop with a peer (e.g. a real capnp implementation) that
@@ -1113,13 +1262,42 @@ void main() {
         expect(returns.single.resultsBytes, isNull);
 
         await clientToServer.close();
-      },
-    );
+      });
 
-    test(
-      'pipelining onto an answer resolved via takeFromOtherQuestion fails '
-      'clearly, not silently — a documented limitation',
-      () async {
+      test(
+        'takeFromOtherQuestion preserves the forwarded call failure reason',
+        () async {
+          final target = ThrowingEchoServer();
+          final (client, serverConn) = _makePipe(TailCallServer());
+          final bootstrapCap = client.bootstrap(EchoClientFactory());
+          await bootstrapCap.echo('warmup');
+
+          await expectLater(
+            bootstrapCap.cap.dispatch(
+              _echoInterfaceId,
+              _tailCallMethodId,
+              _buildEchoParams(''),
+              paramsCapabilities: [target],
+            ),
+            throwsA(
+              allOf(
+                isA<RpcException>(),
+                predicate<Object>(
+                  (e) =>
+                      e.toString().contains('tail target failed') &&
+                      !e.toString().contains('unknown question id'),
+                ),
+              ),
+            ),
+          );
+
+          await client.close();
+          await serverConn.close();
+        },
+      );
+
+      test('pipelining onto an answer resolved via takeFromOtherQuestion fails '
+          'clearly, not silently — a documented limitation', () async {
         final target = EchoServer();
         final (client, serverConn) = _makePipe(TailCallServer());
         final bootstrapCap = client.bootstrap(EchoClientFactory());
@@ -1148,8 +1326,41 @@ void main() {
         expect(_parseEchoResult(result.bytes), 'echo: via tail call');
 
         await client.close();
-      },
-    );
+      });
+    },
+  );
+
+  group('TwoPartyRpcConnection — capability identity', () {
+    test('export table keys use object identity, not operator ==', () async {
+      final (client, serverConn) = _makePipe(EqualCapsServer());
+      final bootstrapCap = client.bootstrap(EchoClientFactory());
+      await bootstrapCap.echo('warmup');
+
+      final result = await bootstrapCap.cap.dispatch(
+        _echoInterfaceId,
+        _equalCapsMethodId,
+        _buildEchoParams(''),
+      );
+      final left = requireCapabilityFromResult(result, 0);
+      final right = requireCapabilityFromResult(result, 1);
+
+      final leftReply = await left.dispatch(
+        _echoInterfaceId,
+        _echoMethodId,
+        _buildEchoParams('one'),
+      );
+      final rightReply = await right.dispatch(
+        _echoInterfaceId,
+        _echoMethodId,
+        _buildEchoParams('two'),
+      );
+
+      expect(_parseEchoResult(leftReply.bytes), 'left: one');
+      expect(_parseEchoResult(rightReply.bytes), 'right: two');
+
+      await client.close();
+      await serverConn.close();
+    });
   });
 
   group('TwoPartyRpcConnection — RPC-001 wire-level promise pipelining', () {
@@ -1853,51 +2064,48 @@ void main() {
       await serverConn.close();
     });
 
-    test(
-      'disposing a pipelined capability does not invalidate the same '
-      'capability independently read from the awaited result',
-      () async {
-        // Regression test: the eagerly-pipelined capability
-        // (call.pipelineResult(0)) and the capability independently resolved
-        // from the awaited result (requireCapabilityFromResult(result, 0))
-        // both resolve to the identical underlying capability object (the
-        // same DispatchResult.caps entry). Disposing one must not silently
-        // invalidate the other — this is exactly how generated code exposes
-        // the same field twice: eagerly via `XxxPipeline.someCap` and again
-        // via the corresponding getter on the awaited `.result` reader.
-        final server = PipelineServer();
-        final (client, serverConn) = _makePipe(server);
-        final bootstrapCap = client.bootstrap(EchoClientFactory());
-        await bootstrapCap.echo('warmup');
+    test('disposing a pipelined capability does not invalidate the same '
+        'capability independently read from the awaited result', () async {
+      // Regression test: the eagerly-pipelined capability
+      // (call.pipelineResult(0)) and the capability independently resolved
+      // from the awaited result (requireCapabilityFromResult(result, 0))
+      // both resolve to the identical underlying capability object (the
+      // same DispatchResult.caps entry). Disposing one must not silently
+      // invalidate the other — this is exactly how generated code exposes
+      // the same field twice: eagerly via `XxxPipeline.someCap` and again
+      // via the corresponding getter on the awaited `.result` reader.
+      final server = PipelineServer();
+      final (client, serverConn) = _makePipe(server);
+      final bootstrapCap = client.bootstrap(EchoClientFactory());
+      await bootstrapCap.echo('warmup');
 
-        final call = bootstrapCap.cap.beginDispatch(
-          _echoInterfaceId,
-          _pipelineMethodId,
-          _buildEchoParams(''),
-        );
-        final pipelinedCap = call.pipelineResult(0);
+      final call = bootstrapCap.cap.beginDispatch(
+        _echoInterfaceId,
+        _pipelineMethodId,
+        _buildEchoParams(''),
+      );
+      final pipelinedCap = call.pipelineResult(0);
 
-        final result = await call.result;
-        final resolvedCap = requireCapabilityFromResult(result, 0);
+      final result = await call.result;
+      final resolvedCap = requireCapabilityFromResult(result, 0);
 
-        // Let pipelinedCap's internal resolution (which runs off the same
-        // `call.result` future, asynchronously) settle before disposing it.
-        await Future<void>.delayed(Duration.zero);
-        await pipelinedCap.dispose();
+      // Let pipelinedCap's internal resolution (which runs off the same
+      // `call.result` future, asynchronously) settle before disposing it.
+      await Future<void>.delayed(Duration.zero);
+      await pipelinedCap.dispose();
 
-        // resolvedCap must still work — it was never disposed.
-        final reply = await resolvedCap.dispatch(
-          _echoInterfaceId,
-          _echoMethodId,
-          _buildEchoParams('still alive'),
-        );
-        expect(_parseEchoResult(reply.bytes), equals('echo: still alive'));
+      // resolvedCap must still work — it was never disposed.
+      final reply = await resolvedCap.dispatch(
+        _echoInterfaceId,
+        _echoMethodId,
+        _buildEchoParams('still alive'),
+      );
+      expect(_parseEchoResult(reply.bytes), equals('echo: still alive'));
 
-        await resolvedCap.dispose();
-        await client.close();
-        await serverConn.close();
-      },
-    );
+      await resolvedCap.dispose();
+      await client.close();
+      await serverConn.close();
+    });
 
     test('negative result pointer index is rejected explicitly', () async {
       final server = DuplicateCapsServer();
@@ -2035,344 +2243,326 @@ void main() {
       },
     );
 
-    test(
-      'onDisposeError observes an exported capability dispose failure '
-      'instead of it being silently swallowed',
-      () async {
-        final clientToServer = StreamController<Uint8List>();
-        final serverToClient = StreamController<Uint8List>();
-        final captured = <Uint8List>[];
-        final uncaught = <Object>[];
-        final observedErrors = <Object>[];
+    test('onDisposeError observes an exported capability dispose failure '
+        'instead of it being silently swallowed', () async {
+      final clientToServer = StreamController<Uint8List>();
+      final serverToClient = StreamController<Uint8List>();
+      final captured = <Uint8List>[];
+      final uncaught = <Object>[];
+      final observedErrors = <Object>[];
 
-        final interceptSink =
-            StreamController<Uint8List>()
-              ..stream.listen((b) {
-                captured.add(b);
-                clientToServer.add(b);
-              });
+      final interceptSink =
+          StreamController<Uint8List>()
+            ..stream.listen((b) {
+              captured.add(b);
+              clientToServer.add(b);
+            });
 
-        TwoPartyRpcConnection.server(
-          incoming: clientToServer.stream,
-          outgoing: serverToClient.sink,
-          bootstrap: EchoServer(),
-        );
-        final client = TwoPartyRpcConnection.client(
-          incoming: serverToClient.stream,
-          outgoing: interceptSink.sink,
-          onDisposeError: (error, stackTrace) => observedErrors.add(error),
-        );
+      TwoPartyRpcConnection.server(
+        incoming: clientToServer.stream,
+        outgoing: serverToClient.sink,
+        bootstrap: EchoServer(),
+      );
+      final client = TwoPartyRpcConnection.client(
+        incoming: serverToClient.stream,
+        outgoing: interceptSink.sink,
+        onDisposeError: (error, stackTrace) => observedErrors.add(error),
+      );
 
-        final bodyDone = Completer<void>();
-        runZonedGuarded(() {
-          () async {
-            try {
-              final bootstrapCap = client.bootstrap(EchoClientFactory());
-              await bootstrapCap.echo('warmup');
+      final bodyDone = Completer<void>();
+      runZonedGuarded(() {
+        () async {
+          try {
+            final bootstrapCap = client.bootstrap(EchoClientFactory());
+            await bootstrapCap.echo('warmup');
 
-              captured.clear();
-              await bootstrapCap.cap.dispatch(
-                _echoInterfaceId,
-                _echoMethodId,
-                _buildEchoParams('with-cap'),
-                paramsCapabilities: [ThrowingDisposeCapability()],
-              );
+            captured.clear();
+            await bootstrapCap.cap.dispatch(
+              _echoInterfaceId,
+              _echoMethodId,
+              _buildEchoParams('with-cap'),
+              paramsCapabilities: [ThrowingDisposeCapability()],
+            );
 
-              final callWithCap =
-                  captured
-                      .map(parseRpcMessage)
-                      .where(
-                        (m) =>
-                            m.type == RpcMessageType.call &&
-                            m.capTableDescriptors.isNotEmpty,
-                      )
-                      .single;
-              final exportId = callWithCap.capTableDescriptors.single.id;
+            final callWithCap =
+                captured
+                    .map(parseRpcMessage)
+                    .where(
+                      (m) =>
+                          m.type == RpcMessageType.call &&
+                          m.capTableDescriptors.isNotEmpty,
+                    )
+                    .single;
+            final exportId = callWithCap.capTableDescriptors.single.id;
 
-              serverToClient.add(buildReleaseMessage(exportId, 1));
-              await Future<void>.delayed(const Duration(milliseconds: 20));
-              bodyDone.complete();
-            } catch (error, stackTrace) {
-              bodyDone.completeError(error, stackTrace);
-            }
-          }();
-        }, (error, _) => uncaught.add(error));
+            serverToClient.add(buildReleaseMessage(exportId, 1));
+            await Future<void>.delayed(const Duration(milliseconds: 20));
+            bodyDone.complete();
+          } catch (error, stackTrace) {
+            bodyDone.completeError(error, stackTrace);
+          }
+        }();
+      }, (error, _) => uncaught.add(error));
 
-        await bodyDone.future;
-        // The dispose failure must reach onDisposeError...
-        expect(observedErrors, hasLength(1));
-        expect(observedErrors.single, isA<StateError>());
-        // ...instead of leaking as an unhandled zone error.
-        expect(uncaught, isEmpty);
+      await bodyDone.future;
+      // The dispose failure must reach onDisposeError...
+      expect(observedErrors, hasLength(1));
+      expect(observedErrors.single, isA<StateError>());
+      // ...instead of leaking as an unhandled zone error.
+      expect(uncaught, isEmpty);
 
-        await client.close();
-        await interceptSink.close();
-      },
-    );
+      await client.close();
+      await interceptSink.close();
+    });
 
-    test(
-      'a capability whose dispose() throws synchronously does not abort '
-      "teardown's export-disposal loop — later capabilities are still "
-      'disposed and close()/done still complete normally',
-      () async {
-        final clientToServer = StreamController<Uint8List>();
-        final serverToClient = StreamController<Uint8List>();
+    test('a capability whose dispose() throws synchronously does not abort '
+        "teardown's export-disposal loop — later capabilities are still "
+        'disposed and close()/done still complete normally', () async {
+      final clientToServer = StreamController<Uint8List>();
+      final serverToClient = StreamController<Uint8List>();
 
-        TwoPartyRpcConnection.server(
-          incoming: clientToServer.stream,
-          outgoing: serverToClient.sink,
-          bootstrap: EchoServer(),
-        );
+      TwoPartyRpcConnection.server(
+        incoming: clientToServer.stream,
+        outgoing: serverToClient.sink,
+        bootstrap: EchoServer(),
+      );
 
-        final observedErrors = <Object>[];
-        final client = TwoPartyRpcConnection.client(
-          incoming: serverToClient.stream,
-          outgoing: clientToServer.sink,
-          onDisposeError: (error, stackTrace) => observedErrors.add(error),
-        );
+      final observedErrors = <Object>[];
+      final client = TwoPartyRpcConnection.client(
+        incoming: serverToClient.stream,
+        outgoing: clientToServer.sink,
+        onDisposeError: (error, stackTrace) => observedErrors.add(error),
+      );
 
-        final bootstrapCap = client.bootstrap(EchoClientFactory());
-        await bootstrapCap.echo('warmup');
+      final bootstrapCap = client.bootstrap(EchoClientFactory());
+      await bootstrapCap.echo('warmup');
 
-        // Exporting a capability as a call *parameter* makes the sending
-        // side (the client, here) the one that hosts/exports it — the same
-        // mechanism the pre-existing Release-triggered dispose-failure
-        // tests above use, just reaching _exports via teardown instead of
-        // an explicit Release message.
-        final syncFailingCap = SyncThrowingDisposeCapability();
-        final okCap = CountingCapability();
-        await bootstrapCap.cap.dispatch(
-          _echoInterfaceId,
-          _echoMethodId,
-          _buildEchoParams('a'),
-          paramsCapabilities: [syncFailingCap],
-        );
-        await bootstrapCap.cap.dispatch(
-          _echoInterfaceId,
-          _echoMethodId,
-          _buildEchoParams('b'),
-          paramsCapabilities: [okCap],
-        );
-        expect(client.debugExportCount, equals(2));
+      // Exporting a capability as a call *parameter* makes the sending
+      // side (the client, here) the one that hosts/exports it — the same
+      // mechanism the pre-existing Release-triggered dispose-failure
+      // tests above use, just reaching _exports via teardown instead of
+      // an explicit Release message.
+      final syncFailingCap = SyncThrowingDisposeCapability();
+      final okCap = CountingCapability();
+      await bootstrapCap.cap.dispatch(
+        _echoInterfaceId,
+        _echoMethodId,
+        _buildEchoParams('a'),
+        paramsCapabilities: [syncFailingCap],
+      );
+      await bootstrapCap.cap.dispatch(
+        _echoInterfaceId,
+        _echoMethodId,
+        _buildEchoParams('b'),
+        paramsCapabilities: [okCap],
+      );
+      expect(client.debugExportCount, equals(2));
 
-        // If the synchronous throw from syncFailingCap.dispose() escaped
-        // _disposeIgnoringErrors unguarded, this would either hang (the
-        // export loop/teardown never finishing) or reject with a
-        // StateError instead of completing normally.
-        await client.close().timeout(const Duration(milliseconds: 200));
-        await client.done.timeout(const Duration(milliseconds: 200));
+      // If the synchronous throw from syncFailingCap.dispose() escaped
+      // _disposeIgnoringErrors unguarded, this would either hang (the
+      // export loop/teardown never finishing) or reject with a
+      // StateError instead of completing normally.
+      await client.close().timeout(const Duration(milliseconds: 200));
+      await client.done.timeout(const Duration(milliseconds: 200));
 
-        expect(client.debugExportCount, equals(0));
-        expect(okCap.disposeCount, equals(1));
-        expect(observedErrors, hasLength(1));
-        expect(observedErrors.single, isA<StateError>());
-      },
-    );
+      expect(client.debugExportCount, equals(0));
+      expect(okCap.disposeCount, equals(1));
+      expect(observedErrors, hasLength(1));
+      expect(observedErrors.single, isA<StateError>());
+    });
 
-    test(
-      'a throwing onDisposeError callback does not break dispose-error '
-      'reporting for other capabilities, nor teardown completion',
-      () async {
-        final clientToServer = StreamController<Uint8List>();
-        final serverToClient = StreamController<Uint8List>();
+    test('a throwing onDisposeError callback does not break dispose-error '
+        'reporting for other capabilities, nor teardown completion', () async {
+      final clientToServer = StreamController<Uint8List>();
+      final serverToClient = StreamController<Uint8List>();
 
-        TwoPartyRpcConnection.server(
-          incoming: clientToServer.stream,
-          outgoing: serverToClient.sink,
-          bootstrap: EchoServer(),
-        );
+      TwoPartyRpcConnection.server(
+        incoming: clientToServer.stream,
+        outgoing: serverToClient.sink,
+        bootstrap: EchoServer(),
+      );
 
-        final uncaught = <Object>[];
-        final client = TwoPartyRpcConnection.client(
-          incoming: serverToClient.stream,
-          outgoing: clientToServer.sink,
-          onDisposeError: (error, stackTrace) =>
-              throw StateError('onDisposeError callback exploded'),
-        );
-        final okCap = CountingCapability();
+      final uncaught = <Object>[];
+      final client = TwoPartyRpcConnection.client(
+        incoming: serverToClient.stream,
+        outgoing: clientToServer.sink,
+        onDisposeError:
+            (error, stackTrace) =>
+                throw StateError('onDisposeError callback exploded'),
+      );
+      final okCap = CountingCapability();
 
-        final bodyDone = Completer<void>();
-        runZonedGuarded(() {
-          () async {
-            try {
-              final bootstrapCap = client.bootstrap(EchoClientFactory());
-              await bootstrapCap.echo('warmup');
+      final bodyDone = Completer<void>();
+      runZonedGuarded(() {
+        () async {
+          try {
+            final bootstrapCap = client.bootstrap(EchoClientFactory());
+            await bootstrapCap.echo('warmup');
 
-              final firstFailingCap = ThrowingDisposeCapability();
-              final secondFailingCap = ThrowingDisposeCapability();
-              await bootstrapCap.cap.dispatch(
-                _echoInterfaceId,
-                _echoMethodId,
-                _buildEchoParams('a'),
-                paramsCapabilities: [firstFailingCap],
-              );
-              await bootstrapCap.cap.dispatch(
-                _echoInterfaceId,
-                _echoMethodId,
-                _buildEchoParams('b'),
-                paramsCapabilities: [secondFailingCap],
-              );
-              await bootstrapCap.cap.dispatch(
-                _echoInterfaceId,
-                _echoMethodId,
-                _buildEchoParams('c'),
-                paramsCapabilities: [okCap],
-              );
+            final firstFailingCap = ThrowingDisposeCapability();
+            final secondFailingCap = ThrowingDisposeCapability();
+            await bootstrapCap.cap.dispatch(
+              _echoInterfaceId,
+              _echoMethodId,
+              _buildEchoParams('a'),
+              paramsCapabilities: [firstFailingCap],
+            );
+            await bootstrapCap.cap.dispatch(
+              _echoInterfaceId,
+              _echoMethodId,
+              _buildEchoParams('b'),
+              paramsCapabilities: [secondFailingCap],
+            );
+            await bootstrapCap.cap.dispatch(
+              _echoInterfaceId,
+              _echoMethodId,
+              _buildEchoParams('c'),
+              paramsCapabilities: [okCap],
+            );
 
-              await client.close().timeout(const Duration(milliseconds: 200));
-              await client.done.timeout(const Duration(milliseconds: 200));
-              bodyDone.complete();
-            } catch (error, stackTrace) {
-              bodyDone.completeError(error, stackTrace);
-            }
-          }();
-        }, (error, _) => uncaught.add(error));
+            await client.close().timeout(const Duration(milliseconds: 200));
+            await client.done.timeout(const Duration(milliseconds: 200));
+            bodyDone.complete();
+          } catch (error, stackTrace) {
+            bodyDone.completeError(error, stackTrace);
+          }
+        }();
+      }, (error, _) => uncaught.add(error));
 
-        await bodyDone.future;
+      await bodyDone.future;
 
-        expect(okCap.disposeCount, equals(1));
-        expect(uncaught, isEmpty);
-      },
-    );
+      expect(okCap.disposeCount, equals(1));
+      expect(uncaught, isEmpty);
+    });
 
-    test(
-      'Release with referenceCount exceeding the outstanding remote '
-      'refcount tears the connection down as a protocol violation',
-      () async {
-        final clientToServer = StreamController<Uint8List>();
-        final serverToClient = StreamController<Uint8List>();
-        final captured = <Uint8List>[];
+    test('Release with referenceCount exceeding the outstanding remote '
+        'refcount tears the connection down as a protocol violation', () async {
+      final clientToServer = StreamController<Uint8List>();
+      final serverToClient = StreamController<Uint8List>();
+      final captured = <Uint8List>[];
 
-        final interceptSink =
-            StreamController<Uint8List>()
-              ..stream.listen((b) {
-                captured.add(b);
-                clientToServer.add(b);
-              });
+      final interceptSink =
+          StreamController<Uint8List>()
+            ..stream.listen((b) {
+              captured.add(b);
+              clientToServer.add(b);
+            });
 
-        TwoPartyRpcConnection.server(
-          incoming: clientToServer.stream,
-          outgoing: serverToClient.sink,
-          bootstrap: EchoServer(),
-        );
-        final client = TwoPartyRpcConnection.client(
-          incoming: serverToClient.stream,
-          outgoing: interceptSink.sink,
-        );
+      TwoPartyRpcConnection.server(
+        incoming: clientToServer.stream,
+        outgoing: serverToClient.sink,
+        bootstrap: EchoServer(),
+      );
+      final client = TwoPartyRpcConnection.client(
+        incoming: serverToClient.stream,
+        outgoing: interceptSink.sink,
+      );
 
-        final bootstrapCap = client.bootstrap(EchoClientFactory());
-        await bootstrapCap.echo('warmup');
+      final bootstrapCap = client.bootstrap(EchoClientFactory());
+      await bootstrapCap.echo('warmup');
 
-        captured.clear();
-        // Exports a capability with exactly one outstanding remote reference.
-        await bootstrapCap.cap.dispatch(
-          _echoInterfaceId,
-          _echoMethodId,
-          _buildEchoParams('with-cap'),
-          paramsCapabilities: [EchoServer()],
-        );
+      captured.clear();
+      // Exports a capability with exactly one outstanding remote reference.
+      await bootstrapCap.cap.dispatch(
+        _echoInterfaceId,
+        _echoMethodId,
+        _buildEchoParams('with-cap'),
+        paramsCapabilities: [EchoServer()],
+      );
 
-        final callWithCap =
-            captured
-                .map(parseRpcMessage)
-                .where(
-                  (m) =>
-                      m.type == RpcMessageType.call &&
-                      m.capTableDescriptors.isNotEmpty,
-                )
-                .single;
-        final exportId = callWithCap.capTableDescriptors.single.id;
+      final callWithCap =
+          captured
+              .map(parseRpcMessage)
+              .where(
+                (m) =>
+                    m.type == RpcMessageType.call &&
+                    m.capTableDescriptors.isNotEmpty,
+              )
+              .single;
+      final exportId = callWithCap.capTableDescriptors.single.id;
 
-        // Peer claims to release 2 references when only 1 was ever granted.
-        serverToClient.add(buildReleaseMessage(exportId, 2));
+      // Peer claims to release 2 references when only 1 was ever granted.
+      serverToClient.add(buildReleaseMessage(exportId, 2));
 
-        await expectLater(
-          client.done,
-          throwsA(
-            predicate<Object>(
-              (e) => e.toString().contains('protocol violation'),
-            ),
-          ),
-        );
+      await expectLater(
+        client.done,
+        throwsA(
+          predicate<Object>((e) => e.toString().contains('protocol violation')),
+        ),
+      );
 
-        // Teardown must actually happen, not just report on `done`.
-        await expectLater(
-          bootstrapCap.echo('after-violation'),
-          throwsA(anything),
-        );
+      // Teardown must actually happen, not just report on `done`.
+      await expectLater(
+        bootstrapCap.echo('after-violation'),
+        throwsA(anything),
+      );
 
-        await interceptSink.close();
-      },
-    );
+      await interceptSink.close();
+    });
 
-    test(
-      'Release with referenceCount 0 tears the connection down as a '
-      'protocol violation',
-      () async {
-        final clientToServer = StreamController<Uint8List>();
-        final serverToClient = StreamController<Uint8List>();
-        final captured = <Uint8List>[];
+    test('Release with referenceCount 0 tears the connection down as a '
+        'protocol violation', () async {
+      final clientToServer = StreamController<Uint8List>();
+      final serverToClient = StreamController<Uint8List>();
+      final captured = <Uint8List>[];
 
-        final interceptSink =
-            StreamController<Uint8List>()
-              ..stream.listen((b) {
-                captured.add(b);
-                clientToServer.add(b);
-              });
+      final interceptSink =
+          StreamController<Uint8List>()
+            ..stream.listen((b) {
+              captured.add(b);
+              clientToServer.add(b);
+            });
 
-        TwoPartyRpcConnection.server(
-          incoming: clientToServer.stream,
-          outgoing: serverToClient.sink,
-          bootstrap: EchoServer(),
-        );
-        final client = TwoPartyRpcConnection.client(
-          incoming: serverToClient.stream,
-          outgoing: interceptSink.sink,
-        );
+      TwoPartyRpcConnection.server(
+        incoming: clientToServer.stream,
+        outgoing: serverToClient.sink,
+        bootstrap: EchoServer(),
+      );
+      final client = TwoPartyRpcConnection.client(
+        incoming: serverToClient.stream,
+        outgoing: interceptSink.sink,
+      );
 
-        final bootstrapCap = client.bootstrap(EchoClientFactory());
-        await bootstrapCap.echo('warmup');
+      final bootstrapCap = client.bootstrap(EchoClientFactory());
+      await bootstrapCap.echo('warmup');
 
-        captured.clear();
-        await bootstrapCap.cap.dispatch(
-          _echoInterfaceId,
-          _echoMethodId,
-          _buildEchoParams('with-cap'),
-          paramsCapabilities: [EchoServer()],
-        );
+      captured.clear();
+      await bootstrapCap.cap.dispatch(
+        _echoInterfaceId,
+        _echoMethodId,
+        _buildEchoParams('with-cap'),
+        paramsCapabilities: [EchoServer()],
+      );
 
-        final callWithCap =
-            captured
-                .map(parseRpcMessage)
-                .where(
-                  (m) =>
-                      m.type == RpcMessageType.call &&
-                      m.capTableDescriptors.isNotEmpty,
-                )
-                .single;
-        final exportId = callWithCap.capTableDescriptors.single.id;
+      final callWithCap =
+          captured
+              .map(parseRpcMessage)
+              .where(
+                (m) =>
+                    m.type == RpcMessageType.call &&
+                    m.capTableDescriptors.isNotEmpty,
+              )
+              .single;
+      final exportId = callWithCap.capTableDescriptors.single.id;
 
-        // Releasing zero references is meaningless — a legitimate peer
-        // never sends one — and must not be silently accepted as a no-op.
-        serverToClient.add(buildReleaseMessage(exportId, 0));
+      // Releasing zero references is meaningless — a legitimate peer
+      // never sends one — and must not be silently accepted as a no-op.
+      serverToClient.add(buildReleaseMessage(exportId, 0));
 
-        await expectLater(
-          client.done,
-          throwsA(
-            predicate<Object>(
-              (e) => e.toString().contains('protocol violation'),
-            ),
-          ),
-        );
+      await expectLater(
+        client.done,
+        throwsA(
+          predicate<Object>((e) => e.toString().contains('protocol violation')),
+        ),
+      );
 
-        await expectLater(
-          bootstrapCap.echo('after-violation'),
-          throwsA(anything),
-        );
+      await expectLater(
+        bootstrapCap.echo('after-violation'),
+        throwsA(anything),
+      );
 
-        await interceptSink.close();
-      },
-    );
+      await interceptSink.close();
+    });
 
     test(
       'bootstrap Return without a capability fails the bootstrap cap',
@@ -2497,376 +2687,345 @@ void main() {
       expect(serverConn.debugAnswerCount, equals(0));
     });
 
-    test(
-      'a result capability is disposed exactly once when the connection '
-      'closes before the dispatch that produced it resolves',
-      () async {
-        final clientToServer = StreamController<Uint8List>();
-        final serverToClient = StreamController<Uint8List>();
-        serverToClient.stream.listen((_) {});
+    test('a result capability is disposed exactly once when the connection '
+        'closes before the dispatch that produced it resolves', () async {
+      final clientToServer = StreamController<Uint8List>();
+      final serverToClient = StreamController<Uint8List>();
+      serverToClient.stream.listen((_) {});
 
-        final resultCap = CountingCapability();
-        final server = SlowCapResultServer([resultCap]);
-        final serverConn = TwoPartyRpcConnection.server(
-          incoming: clientToServer.stream,
-          outgoing: serverToClient.sink,
-          bootstrap: server,
-        );
+      final resultCap = CountingCapability();
+      final server = SlowCapResultServer([resultCap]);
+      final serverConn = TwoPartyRpcConnection.server(
+        incoming: clientToServer.stream,
+        outgoing: serverToClient.sink,
+        bootstrap: server,
+      );
 
-        clientToServer.add(
-          buildCallMessage(
-            questionId: 1,
-            targetImportId: 0,
-            interfaceId: _echoInterfaceId,
-            methodId: _pipelineMethodId,
-            paramsBytes: _buildEchoParams(''),
-          ),
-        );
-        await server.started.future;
+      clientToServer.add(
+        buildCallMessage(
+          questionId: 1,
+          targetImportId: 0,
+          interfaceId: _echoInterfaceId,
+          methodId: _pipelineMethodId,
+          paramsBytes: _buildEchoParams(''),
+        ),
+      );
+      await server.started.future;
 
-        await clientToServer.close();
-        await serverConn.done;
+      await clientToServer.close();
+      await serverConn.done;
 
-        // Teardown finished before the dispatch itself resolved; the result
-        // capability only becomes reachable once it does.
-        expect(resultCap.disposeCount, equals(0));
-        server.complete.complete();
-        await Future<void>.delayed(const Duration(milliseconds: 20));
+      // Teardown finished before the dispatch itself resolved; the result
+      // capability only becomes reachable once it does.
+      expect(resultCap.disposeCount, equals(0));
+      server.complete.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
-        expect(resultCap.disposeCount, equals(1));
-      },
-    );
+      expect(resultCap.disposeCount, equals(1));
+    });
 
-    test(
-      'a result capability is disposed instead of leaked when the answer '
-      'was already canceled by a Finish that arrived before dispatch '
-      'resolved',
-      () async {
-        final clientToServer = StreamController<Uint8List>();
-        final serverToClient = StreamController<Uint8List>();
-        final captured = <RpcMessage>[];
-        serverToClient.stream.listen(
-          (bytes) => captured.add(parseRpcMessage(bytes)),
-        );
+    test('a result capability is disposed instead of leaked when the answer '
+        'was already canceled by a Finish that arrived before dispatch '
+        'resolved', () async {
+      final clientToServer = StreamController<Uint8List>();
+      final serverToClient = StreamController<Uint8List>();
+      final captured = <RpcMessage>[];
+      serverToClient.stream.listen(
+        (bytes) => captured.add(parseRpcMessage(bytes)),
+      );
 
-        final resultCap = CountingCapability();
-        final server = SlowCapResultServer([resultCap]);
-        final serverConn = TwoPartyRpcConnection.server(
-          incoming: clientToServer.stream,
-          outgoing: serverToClient.sink,
-          bootstrap: server,
-        );
+      final resultCap = CountingCapability();
+      final server = SlowCapResultServer([resultCap]);
+      final serverConn = TwoPartyRpcConnection.server(
+        incoming: clientToServer.stream,
+        outgoing: serverToClient.sink,
+        bootstrap: server,
+      );
 
-        clientToServer.add(
-          buildCallMessage(
-            questionId: 1,
-            targetImportId: 0,
-            interfaceId: _echoInterfaceId,
-            methodId: _pipelineMethodId,
-            paramsBytes: _buildEchoParams(''),
-          ),
-        );
-        await server.started.future;
+      clientToServer.add(
+        buildCallMessage(
+          questionId: 1,
+          targetImportId: 0,
+          interfaceId: _echoInterfaceId,
+          methodId: _pipelineMethodId,
+          paramsBytes: _buildEchoParams(''),
+        ),
+      );
+      await server.started.future;
 
-        clientToServer.add(buildFinishMessage(1));
-        await Future<void>.delayed(const Duration(milliseconds: 20));
+      clientToServer.add(buildFinishMessage(1));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
-        // The dispatch ignores cancellation and succeeds anyway; its result
-        // capability was never going to be sent (Finish already suppressed
-        // this answer), so it must be disposed instead of dropped.
-        server.complete.complete();
-        await Future<void>.delayed(const Duration(milliseconds: 20));
+      // The dispatch ignores cancellation and succeeds anyway; its result
+      // capability was never going to be sent (Finish already suppressed
+      // this answer), so it must be disposed instead of dropped.
+      server.complete.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
-        expect(
-          captured.where((m) => m.type == RpcMessageType.return_),
-          isEmpty,
-        );
-        expect(resultCap.disposeCount, equals(1));
+      expect(captured.where((m) => m.type == RpcMessageType.return_), isEmpty);
+      expect(resultCap.disposeCount, equals(1));
 
-        await clientToServer.close();
-        await serverConn.done;
-      },
-    );
+      await clientToServer.close();
+      await serverConn.done;
+    });
 
-    test(
-      'the same capability instance appearing twice in a discarded result '
-      'is disposed once, not twice',
-      () async {
-        final clientToServer = StreamController<Uint8List>();
-        final serverToClient = StreamController<Uint8List>();
-        serverToClient.stream.listen((_) {});
+    test('the same capability instance appearing twice in a discarded result '
+        'is disposed once, not twice', () async {
+      final clientToServer = StreamController<Uint8List>();
+      final serverToClient = StreamController<Uint8List>();
+      serverToClient.stream.listen((_) {});
 
-        final resultCap = CountingCapability();
-        final server = SlowCapResultServer([resultCap, resultCap]);
-        final serverConn = TwoPartyRpcConnection.server(
-          incoming: clientToServer.stream,
-          outgoing: serverToClient.sink,
-          bootstrap: server,
-        );
+      final resultCap = CountingCapability();
+      final server = SlowCapResultServer([resultCap, resultCap]);
+      final serverConn = TwoPartyRpcConnection.server(
+        incoming: clientToServer.stream,
+        outgoing: serverToClient.sink,
+        bootstrap: server,
+      );
 
-        clientToServer.add(
-          buildCallMessage(
-            questionId: 1,
-            targetImportId: 0,
-            interfaceId: _echoInterfaceId,
-            methodId: _pipelineMethodId,
-            paramsBytes: _buildEchoParams(''),
-          ),
-        );
-        await server.started.future;
+      clientToServer.add(
+        buildCallMessage(
+          questionId: 1,
+          targetImportId: 0,
+          interfaceId: _echoInterfaceId,
+          methodId: _pipelineMethodId,
+          paramsBytes: _buildEchoParams(''),
+        ),
+      );
+      await server.started.future;
 
-        await clientToServer.close();
-        await serverConn.done;
-        server.complete.complete();
-        await Future<void>.delayed(const Duration(milliseconds: 20));
+      await clientToServer.close();
+      await serverConn.done;
+      server.complete.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
-        expect(resultCap.disposeCount, equals(1));
-      },
-    );
+      expect(resultCap.disposeCount, equals(1));
+    });
 
-    test(
-      'one capability failing to dispose does not stop others in the same '
-      'discarded result from being disposed',
-      () async {
-        final clientToServer = StreamController<Uint8List>();
-        final serverToClient = StreamController<Uint8List>();
-        serverToClient.stream.listen((_) {});
+    test('one capability failing to dispose does not stop others in the same '
+        'discarded result from being disposed', () async {
+      final clientToServer = StreamController<Uint8List>();
+      final serverToClient = StreamController<Uint8List>();
+      serverToClient.stream.listen((_) {});
 
-        final failingCap = ThrowingDisposeCapability();
-        final okCap = CountingCapability();
-        final onDisposeErrors = <Object>[];
-        final server = SlowCapResultServer([failingCap, okCap]);
-        final serverConn = TwoPartyRpcConnection.server(
-          incoming: clientToServer.stream,
-          outgoing: serverToClient.sink,
-          bootstrap: server,
-          onDisposeError: (error, stackTrace) => onDisposeErrors.add(error),
-        );
+      final failingCap = ThrowingDisposeCapability();
+      final okCap = CountingCapability();
+      final onDisposeErrors = <Object>[];
+      final server = SlowCapResultServer([failingCap, okCap]);
+      final serverConn = TwoPartyRpcConnection.server(
+        incoming: clientToServer.stream,
+        outgoing: serverToClient.sink,
+        bootstrap: server,
+        onDisposeError: (error, stackTrace) => onDisposeErrors.add(error),
+      );
 
-        clientToServer.add(
-          buildCallMessage(
-            questionId: 1,
-            targetImportId: 0,
-            interfaceId: _echoInterfaceId,
-            methodId: _pipelineMethodId,
-            paramsBytes: _buildEchoParams(''),
-          ),
-        );
-        await server.started.future;
+      clientToServer.add(
+        buildCallMessage(
+          questionId: 1,
+          targetImportId: 0,
+          interfaceId: _echoInterfaceId,
+          methodId: _pipelineMethodId,
+          paramsBytes: _buildEchoParams(''),
+        ),
+      );
+      await server.started.future;
 
-        await clientToServer.close();
-        await serverConn.done;
-        server.complete.complete();
-        await Future<void>.delayed(const Duration(milliseconds: 20));
+      await clientToServer.close();
+      await serverConn.done;
+      server.complete.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
-        expect(okCap.disposeCount, equals(1));
-        expect(onDisposeErrors, hasLength(1));
-        expect(onDisposeErrors.single, isA<StateError>());
-      },
-    );
+      expect(okCap.disposeCount, equals(1));
+      expect(onDisposeErrors, hasLength(1));
+      expect(onDisposeErrors.single, isA<StateError>());
+    });
 
-    test(
-      'debugExportCount / debugImportCount track an exchanged capability '
-      'and return to zero after it is released',
-      () async {
-        // ChildPipelineServer returns a distinct capability (not itself) so
-        // the pipelined result is a genuinely new export/import, not just a
-        // second reference to the already-exported bootstrap capability.
-        final (client, serverConn) = _makePipe(ChildPipelineServer());
+    test('debugExportCount / debugImportCount track an exchanged capability '
+        'and return to zero after it is released', () async {
+      // ChildPipelineServer returns a distinct capability (not itself) so
+      // the pipelined result is a genuinely new export/import, not just a
+      // second reference to the already-exported bootstrap capability.
+      final (client, serverConn) = _makePipe(ChildPipelineServer());
 
-        final bootstrapCap = client.bootstrap(EchoClientFactory());
-        await bootstrapCap.echo('warmup');
+      final bootstrapCap = client.bootstrap(EchoClientFactory());
+      await bootstrapCap.echo('warmup');
 
-        // The bootstrap capability itself is export 0 / import 0 at this point.
-        expect(serverConn.debugExportCount, equals(1));
-        expect(client.debugImportCount, equals(1));
+      // The bootstrap capability itself is export 0 / import 0 at this point.
+      expect(serverConn.debugExportCount, equals(1));
+      expect(client.debugImportCount, equals(1));
 
-        final call = bootstrapCap.cap.beginDispatch(
-          _echoInterfaceId,
-          _pipelineMethodId,
-          _buildEchoParams(''),
-        );
-        final pipelinedCap = call.pipelineResult(0);
-        await call.result;
-        await Future<void>.delayed(Duration.zero);
+      final call = bootstrapCap.cap.beginDispatch(
+        _echoInterfaceId,
+        _pipelineMethodId,
+        _buildEchoParams(''),
+      );
+      final pipelinedCap = call.pipelineResult(0);
+      await call.result;
+      await Future<void>.delayed(Duration.zero);
 
-        expect(serverConn.debugExportCount, equals(2));
-        expect(client.debugImportCount, equals(2));
+      expect(serverConn.debugExportCount, equals(2));
+      expect(client.debugImportCount, equals(2));
 
-        await pipelinedCap.dispose();
-        await Future<void>.delayed(const Duration(milliseconds: 20));
+      await pipelinedCap.dispose();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
-        expect(serverConn.debugExportCount, equals(1));
-        expect(client.debugImportCount, equals(1));
+      expect(serverConn.debugExportCount, equals(1));
+      expect(client.debugImportCount, equals(1));
 
-        await client.close();
-        await serverConn.close();
-      },
-    );
+      await client.close();
+      await serverConn.close();
+    });
 
-    test(
-      'debugCancellationCount / debugAnswerCount reflect an in-flight '
-      'dispatch and settle back to zero once teardown completes',
-      () async {
-        final clientToServer = StreamController<Uint8List>();
-        final serverToClient = StreamController<Uint8List>();
-        serverToClient.stream.listen((_) {});
+    test('debugCancellationCount / debugAnswerCount reflect an in-flight '
+        'dispatch and settle back to zero once teardown completes', () async {
+      final clientToServer = StreamController<Uint8List>();
+      final serverToClient = StreamController<Uint8List>();
+      serverToClient.stream.listen((_) {});
 
-        final server = SlowEchoServer();
-        final serverConn = TwoPartyRpcConnection.server(
-          incoming: clientToServer.stream,
-          outgoing: serverToClient.sink,
-          bootstrap: server,
-        );
+      final server = SlowEchoServer();
+      final serverConn = TwoPartyRpcConnection.server(
+        incoming: clientToServer.stream,
+        outgoing: serverToClient.sink,
+        bootstrap: server,
+      );
 
-        clientToServer.add(
-          buildCallMessage(
-            questionId: 1,
-            targetImportId: 0,
-            interfaceId: _echoInterfaceId,
-            methodId: _echoMethodId,
-            paramsBytes: _buildEchoParams('slow'),
-          ),
-        );
-        await server.started.future;
+      clientToServer.add(
+        buildCallMessage(
+          questionId: 1,
+          targetImportId: 0,
+          interfaceId: _echoInterfaceId,
+          methodId: _echoMethodId,
+          paramsBytes: _buildEchoParams('slow'),
+        ),
+      );
+      await server.started.future;
 
-        // Dispatch is running: one live cancellation controller, one
-        // in-flight answer.
-        expect(serverConn.debugCancellationCount, equals(1));
-        expect(serverConn.debugAnswerCount, equals(1));
+      // Dispatch is running: one live cancellation controller, one
+      // in-flight answer.
+      expect(serverConn.debugCancellationCount, equals(1));
+      expect(serverConn.debugAnswerCount, equals(1));
 
-        await clientToServer.close();
-        await server.canceled.future.timeout(const Duration(milliseconds: 100));
-        server.complete.complete();
-        await serverConn.done;
+      await clientToServer.close();
+      await server.canceled.future.timeout(const Duration(milliseconds: 100));
+      server.complete.complete();
+      await serverConn.done;
 
-        expect(serverConn.debugCancellationCount, equals(0));
-        expect(serverConn.debugAnswerCount, equals(0));
-      },
-    );
+      expect(serverConn.debugCancellationCount, equals(0));
+      expect(serverConn.debugAnswerCount, equals(0));
+    });
 
-    test(
-      'exporting the same capability twice reuses the export id; only the '
-      'final Release disposes it',
-      () async {
-        final incoming = StreamController<Uint8List>();
-        final outgoingCaptured = <RpcMessage>[];
-        final outgoing =
-            StreamController<Uint8List>()
-              ..stream.listen((b) => outgoingCaptured.add(parseRpcMessage(b)));
+    test('exporting the same capability twice reuses the export id; only the '
+        'final Release disposes it', () async {
+      final incoming = StreamController<Uint8List>();
+      final outgoingCaptured = <RpcMessage>[];
+      final outgoing =
+          StreamController<Uint8List>()
+            ..stream.listen((b) => outgoingCaptured.add(parseRpcMessage(b)));
 
-        final target = CountingCapability();
-        final serverConn = TwoPartyRpcConnection.server(
-          incoming: incoming.stream,
-          outgoing: outgoing.sink,
-          bootstrap: FixedCapServer(target),
-        );
+      final target = CountingCapability();
+      final serverConn = TwoPartyRpcConnection.server(
+        incoming: incoming.stream,
+        outgoing: outgoing.sink,
+        bootstrap: FixedCapServer(target),
+      );
 
-        // First call: server returns `target` as a result capability.
-        incoming.add(
-          buildCallMessage(
-            questionId: 1,
-            targetImportId: 0,
-            interfaceId: _echoInterfaceId,
-            methodId: _pipelineMethodId,
-            paramsBytes: _buildEchoParams(''),
-          ),
-        );
-        await Future<void>.delayed(Duration.zero);
+      // First call: server returns `target` as a result capability.
+      incoming.add(
+        buildCallMessage(
+          questionId: 1,
+          targetImportId: 0,
+          interfaceId: _echoInterfaceId,
+          methodId: _pipelineMethodId,
+          paramsBytes: _buildEchoParams(''),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
 
-        final return1 =
-            outgoingCaptured
-                .where(
-                  (m) => m.type == RpcMessageType.return_ && m.answerId == 1,
-                )
-                .single;
-        expect(return1.capTableDescriptors, hasLength(1));
-        final exportId = return1.capTableDescriptors.single.id;
-        // Export 0 is the bootstrap (FixedCapServer); export [exportId] is target.
-        expect(serverConn.debugExportCount, equals(2));
-        expect(target.disposeCount, equals(0));
+      final return1 =
+          outgoingCaptured
+              .where((m) => m.type == RpcMessageType.return_ && m.answerId == 1)
+              .single;
+      expect(return1.capTableDescriptors, hasLength(1));
+      final exportId = return1.capTableDescriptors.single.id;
+      // Export 0 is the bootstrap (FixedCapServer); export [exportId] is target.
+      expect(serverConn.debugExportCount, equals(2));
+      expect(target.disposeCount, equals(0));
 
-        incoming.add(buildFinishMessage(1, releaseResultCaps: false));
-        await Future<void>.delayed(Duration.zero);
+      incoming.add(buildFinishMessage(1, releaseResultCaps: false));
+      await Future<void>.delayed(Duration.zero);
 
-        outgoingCaptured.clear();
-        // Second call: the *same* target capability is returned again.
-        incoming.add(
-          buildCallMessage(
-            questionId: 2,
-            targetImportId: 0,
-            interfaceId: _echoInterfaceId,
-            methodId: _pipelineMethodId,
-            paramsBytes: _buildEchoParams(''),
-          ),
-        );
-        await Future<void>.delayed(Duration.zero);
+      outgoingCaptured.clear();
+      // Second call: the *same* target capability is returned again.
+      incoming.add(
+        buildCallMessage(
+          questionId: 2,
+          targetImportId: 0,
+          interfaceId: _echoInterfaceId,
+          methodId: _pipelineMethodId,
+          paramsBytes: _buildEchoParams(''),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
 
-        final return2 =
-            outgoingCaptured
-                .where(
-                  (m) => m.type == RpcMessageType.return_ && m.answerId == 2,
-                )
-                .single;
-        // Same capability -> the existing export id is reused, not a new one.
-        expect(return2.capTableDescriptors.single.id, equals(exportId));
-        expect(serverConn.debugExportCount, equals(2));
+      final return2 =
+          outgoingCaptured
+              .where((m) => m.type == RpcMessageType.return_ && m.answerId == 2)
+              .single;
+      // Same capability -> the existing export id is reused, not a new one.
+      expect(return2.capTableDescriptors.single.id, equals(exportId));
+      expect(serverConn.debugExportCount, equals(2));
 
-        incoming.add(buildFinishMessage(2, releaseResultCaps: false));
-        await Future<void>.delayed(Duration.zero);
+      incoming.add(buildFinishMessage(2, releaseResultCaps: false));
+      await Future<void>.delayed(Duration.zero);
 
-        // Peer now releases the two references it was granted, one at a time.
-        incoming.add(buildReleaseMessage(exportId, 1));
-        await Future<void>.delayed(Duration.zero);
-        expect(
-          target.disposeCount,
-          equals(0),
-          reason: 'one remote reference is still outstanding',
-        );
-        expect(serverConn.debugExportCount, equals(2));
+      // Peer now releases the two references it was granted, one at a time.
+      incoming.add(buildReleaseMessage(exportId, 1));
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        target.disposeCount,
+        equals(0),
+        reason: 'one remote reference is still outstanding',
+      );
+      expect(serverConn.debugExportCount, equals(2));
 
-        incoming.add(buildReleaseMessage(exportId, 1));
-        await Future<void>.delayed(Duration.zero);
-        expect(target.disposeCount, equals(1));
-        expect(serverConn.debugExportCount, equals(1)); // only bootstrap remains
+      incoming.add(buildReleaseMessage(exportId, 1));
+      await Future<void>.delayed(Duration.zero);
+      expect(target.disposeCount, equals(1));
+      expect(serverConn.debugExportCount, equals(1)); // only bootstrap remains
 
-        await serverConn.close();
-      },
-    );
+      await serverConn.close();
+    });
 
-    test(
-      'closing the connection while Bootstrap is in flight fails it instead '
-      'of hanging, and a late Bootstrap Return is safely ignored',
-      () async {
-        final incoming = StreamController<Uint8List>();
-        final outgoing = StreamController<Uint8List>()..stream.listen((_) {});
+    test('closing the connection while Bootstrap is in flight fails it instead '
+        'of hanging, and a late Bootstrap Return is safely ignored', () async {
+      final incoming = StreamController<Uint8List>();
+      final outgoing = StreamController<Uint8List>()..stream.listen((_) {});
 
-        final client = TwoPartyRpcConnection.client(
-          incoming: incoming.stream,
-          outgoing: outgoing.sink,
-        );
+      final client = TwoPartyRpcConnection.client(
+        incoming: incoming.stream,
+        outgoing: outgoing.sink,
+      );
 
-        final bootstrapCap = client.bootstrap(EchoClientFactory());
-        // Bootstrap message sent; no Return has arrived yet.
-        expect(client.debugPendingQuestionCount, equals(1));
+      final bootstrapCap = client.bootstrap(EchoClientFactory());
+      // Bootstrap message sent; no Return has arrived yet.
+      expect(client.debugPendingQuestionCount, equals(1));
 
-        await client.close();
+      await client.close();
 
-        // The pending bootstrap call must fail, not hang forever.
-        await expectLater(
-          bootstrapCap.echo('after-close-race'),
-          throwsA(anything),
-        );
-        expect(client.debugPendingQuestionCount, equals(0));
+      // The pending bootstrap call must fail, not hang forever.
+      await expectLater(
+        bootstrapCap.echo('after-close-race'),
+        throwsA(anything),
+      );
+      expect(client.debugPendingQuestionCount, equals(0));
 
-        // A Bootstrap Return that was already in flight when close() ran
-        // must be safely ignored — no crash, no state resurrected.
-        incoming.add(buildBootstrapReturnMessage(answerId: 0, exportId: 0));
-        await Future<void>.delayed(const Duration(milliseconds: 20));
+      // A Bootstrap Return that was already in flight when close() ran
+      // must be safely ignored — no crash, no state resurrected.
+      incoming.add(buildBootstrapReturnMessage(answerId: 0, exportId: 0));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
-        expect(client.debugPendingQuestionCount, equals(0));
-      },
-    );
+      expect(client.debugPendingQuestionCount, equals(0));
+    });
 
     test(
       'a duplicate incoming question ID while the first dispatch is still '
@@ -2922,181 +3081,173 @@ void main() {
       },
     );
 
-    test(
-      'a Bootstrap reusing a question ID with an in-flight Call tears the '
-      'connection down as a protocol violation',
-      () async {
-        final clientToServer = StreamController<Uint8List>();
-        final serverToClient = StreamController<Uint8List>();
-        serverToClient.stream.listen((_) {});
+    test('a Bootstrap reusing a question ID with an in-flight Call tears the '
+        'connection down as a protocol violation', () async {
+      final clientToServer = StreamController<Uint8List>();
+      final serverToClient = StreamController<Uint8List>();
+      serverToClient.stream.listen((_) {});
 
-        final server = SlowEchoServer();
-        final serverConn = TwoPartyRpcConnection.server(
-          incoming: clientToServer.stream,
-          outgoing: serverToClient.sink,
-          bootstrap: server,
-        );
+      final server = SlowEchoServer();
+      final serverConn = TwoPartyRpcConnection.server(
+        incoming: clientToServer.stream,
+        outgoing: serverToClient.sink,
+        bootstrap: server,
+      );
 
-        clientToServer.add(
-          buildCallMessage(
-            questionId: 5,
-            targetImportId: 0,
-            interfaceId: _echoInterfaceId,
-            methodId: _echoMethodId,
-            paramsBytes: _buildEchoParams('slow'),
+      clientToServer.add(
+        buildCallMessage(
+          questionId: 5,
+          targetImportId: 0,
+          interfaceId: _echoInterfaceId,
+          methodId: _echoMethodId,
+          paramsBytes: _buildEchoParams('slow'),
+        ),
+      );
+      await server.started.future;
+
+      clientToServer.add(buildBootstrapMessage(5));
+
+      await expectLater(
+        serverConn.done,
+        throwsA(
+          predicate<Object>(
+            (e) =>
+                e.toString().contains('protocol violation') &&
+                e.toString().contains('duplicate incoming question ID'),
           ),
-        );
-        await server.started.future;
+        ),
+      );
 
-        clientToServer.add(buildBootstrapMessage(5));
+      server.complete.complete();
+      await clientToServer.close();
+    });
 
-        await expectLater(
-          serverConn.done,
-          throwsA(
-            predicate<Object>(
-              (e) =>
-                  e.toString().contains('protocol violation') &&
-                  e.toString().contains('duplicate incoming question ID'),
-            ),
-          ),
-        );
+    test('a synchronous throw from the outgoing sink tears the connection '
+        'down instead of leaking as an unhandled error', () async {
+      final clientToServer = StreamController<Uint8List>();
+      // StreamController.close() never completes without a listener
+      // (there's no "done" for a subscription that never existed) —
+      // attach a no-op one so the close() below can actually finish.
+      final serverToClient =
+          StreamController<Uint8List>()..stream.listen((_) {});
 
-        server.complete.complete();
-        await clientToServer.close();
-      },
-    );
+      final serverConn = TwoPartyRpcConnection.server(
+        incoming: clientToServer.stream,
+        outgoing: serverToClient.sink,
+        bootstrap: EchoServer(),
+      );
 
-    test(
-      'a synchronous throw from the outgoing sink tears the connection '
-      'down instead of leaking as an unhandled error',
-      () async {
-        final clientToServer = StreamController<Uint8List>();
-        // StreamController.close() never completes without a listener
-        // (there's no "done" for a subscription that never existed) —
-        // attach a no-op one so the close() below can actually finish.
-        final serverToClient = StreamController<Uint8List>()
-          ..stream.listen((_) {});
+      // Close the outgoing sink out from under the connection, so the
+      // next _sendRaw() call hits StreamController's synchronous "Cannot
+      // add event after closing" throw rather than a normal asynchronous
+      // sink failure (reported via the sink's `done` future).
+      await serverToClient.close();
 
-        final serverConn = TwoPartyRpcConnection.server(
-          incoming: clientToServer.stream,
-          outgoing: serverToClient.sink,
-          bootstrap: EchoServer(),
-        );
+      Object? doneError;
+      serverConn.done.catchError((Object e) => doneError = e);
 
-        // Close the outgoing sink out from under the connection, so the
-        // next _sendRaw() call hits StreamController's synchronous "Cannot
-        // add event after closing" throw rather than a normal asynchronous
-        // sink failure (reported via the sink's `done` future).
-        await serverToClient.close();
+      final uncaught = <Object>[];
+      final bodyDone = Completer<void>();
+      runZonedGuarded(() {
+        () async {
+          try {
+            clientToServer.add(
+              buildCallMessage(
+                questionId: 1,
+                targetImportId: 0,
+                interfaceId: _echoInterfaceId,
+                methodId: _echoMethodId,
+                paramsBytes: _buildEchoParams('hi'),
+              ),
+            );
+            await Future<void>.delayed(const Duration(milliseconds: 20));
+            bodyDone.complete();
+          } catch (error, stackTrace) {
+            bodyDone.completeError(error, stackTrace);
+          }
+        }();
+      }, (error, _) => uncaught.add(error));
 
-        Object? doneError;
-        serverConn.done.catchError((Object e) => doneError = e);
+      await bodyDone.future;
 
-        final uncaught = <Object>[];
-        final bodyDone = Completer<void>();
-        runZonedGuarded(() {
-          () async {
-            try {
-              clientToServer.add(
-                buildCallMessage(
-                  questionId: 1,
-                  targetImportId: 0,
-                  interfaceId: _echoInterfaceId,
-                  methodId: _echoMethodId,
-                  paramsBytes: _buildEchoParams('hi'),
-                ),
-              );
-              await Future<void>.delayed(const Duration(milliseconds: 20));
-              bodyDone.complete();
-            } catch (error, stackTrace) {
-              bodyDone.completeError(error, stackTrace);
-            }
-          }();
-        }, (error, _) => uncaught.add(error));
+      // The send failure must be routed through teardown (surfacing as
+      // the sink's own StateError, not miscategorized as a malformed
+      // incoming message) rather than becoming an unhandled zone error.
+      expect(uncaught, isEmpty);
+      expect(doneError, isA<StateError>());
 
-        await bodyDone.future;
-
-        // The send failure must be routed through teardown (surfacing as
-        // the sink's own StateError, not miscategorized as a malformed
-        // incoming message) rather than becoming an unhandled zone error.
-        expect(uncaught, isEmpty);
-        expect(doneError, isA<StateError>());
-
-        await clientToServer.close();
-      },
-    );
+      await clientToServer.close();
+    });
   });
 
   group('TwoPartyRpcConnection — streaming flow control', () {
-    test(
-      'dispatchStreaming applies window backpressure and unblocks as calls '
-      'are acked, in order',
-      () async {
-        final clientToServer = StreamController<Uint8List>();
-        final serverToClient = StreamController<Uint8List>();
+    test('dispatchStreaming applies window backpressure and unblocks as calls '
+        'are acked, in order', () async {
+      final clientToServer = StreamController<Uint8List>();
+      final serverToClient = StreamController<Uint8List>();
 
-        final server = QueuedSlowServer();
-        TwoPartyRpcConnection.server(
-          incoming: clientToServer.stream,
-          outgoing: serverToClient.sink,
-          bootstrap: server,
-        );
+      final server = QueuedSlowServer();
+      TwoPartyRpcConnection.server(
+        incoming: clientToServer.stream,
+        outgoing: serverToClient.sink,
+        bootstrap: server,
+      );
 
-        // Measure one real (empty) params message so the window arithmetic
-        // below is exact regardless of framing overhead.
-        final params = _buildEchoParams('');
-        final messageSize = params.lengthInBytes;
+      // Measure one real (empty) params message so the window arithmetic
+      // below is exact regardless of framing overhead.
+      final params = _buildEchoParams('');
+      final messageSize = params.lengthInBytes;
 
-        // windowSize = 2x message size: sends 1 and 2 fit (in-flight <=
-        // 2*size, limit = window(2*size) + maxMessage(size) = 3*size); send
-        // 3 does not (in-flight 3*size is not < limit 3*size).
-        final client = TwoPartyRpcConnection.client(
-          incoming: serverToClient.stream,
-          outgoing: clientToServer.sink,
-          streamWindowSize: messageSize * 2,
-        );
+      // windowSize = 2x message size: sends 1 and 2 fit (in-flight <=
+      // 2*size, limit = window(2*size) + maxMessage(size) = 3*size); send
+      // 3 does not (in-flight 3*size is not < limit 3*size).
+      final client = TwoPartyRpcConnection.client(
+        incoming: serverToClient.stream,
+        outgoing: clientToServer.sink,
+        streamWindowSize: messageSize * 2,
+      );
 
-        final bootstrapCap = client.bootstrap(EchoClientFactory());
-        final cap = bootstrapCap.cap;
+      final bootstrapCap = client.bootstrap(EchoClientFactory());
+      final cap = bootstrapCap.cap;
 
-        final order = <int>[];
-        Future<void> streamCall(int n) => cap
-            .dispatchStreaming(_echoInterfaceId, _echoMethodId, params)
-            .then((_) => order.add(n));
+      final order = <int>[];
+      Future<void> streamCall(int n) => cap
+          .dispatchStreaming(_echoInterfaceId, _echoMethodId, params)
+          .then((_) => order.add(n));
 
-        unawaited(streamCall(1));
-        unawaited(streamCall(2));
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        expect(
-          order,
-          equals([1, 2]),
-          reason: 'first two calls fit in the window',
-        );
-        expect(server.dispatchCount, equals(2));
+      unawaited(streamCall(1));
+      unawaited(streamCall(2));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(
+        order,
+        equals([1, 2]),
+        reason: 'first two calls fit in the window',
+      );
+      expect(server.dispatchCount, equals(2));
 
-        unawaited(streamCall(3));
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        expect(
-          order,
-          equals([1, 2]),
-          reason: 'third call is blocked by the full window, not yet sent '
-              'to the flow-control caller — but it IS already on the wire',
-        );
-        // The call was still sent immediately despite being window-blocked
-        // (message order on the wire is never delayed by flow control).
-        expect(server.dispatchCount, equals(3));
+      unawaited(streamCall(3));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(
+        order,
+        equals([1, 2]),
+        reason:
+            'third call is blocked by the full window, not yet sent '
+            'to the flow-control caller — but it IS already on the wire',
+      );
+      // The call was still sent immediately despite being window-blocked
+      // (message order on the wire is never delayed by flow control).
+      expect(server.dispatchCount, equals(3));
 
-        // Acking the oldest call frees enough window for the third send's
-        // future to resolve.
-        server.completeNext();
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        expect(order, equals([1, 2, 3]));
+      // Acking the oldest call frees enough window for the third send's
+      // future to resolve.
+      server.completeNext();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(order, equals([1, 2, 3]));
 
-        server.completeNext();
-        server.completeNext();
-        await client.close();
-      },
-    );
+      server.completeNext();
+      server.completeNext();
+      await client.close();
+    });
 
     test(
       'a failed streaming call poisons that capability\'s flow-control '
@@ -3422,40 +3573,37 @@ void main() {
       expect(msg.exceptionKind, ErrorKind.unimplemented);
     });
 
-    test(
-      'an out-of-range wire Exception.type decodes to a safe fallback '
-      'instead of throwing (#50)',
-      () {
-        // A future peer-side ErrorKind variant this vat doesn't know about
-        // yet. No builder exposes an out-of-range type directly, so mangle
-        // the byte for it instead (same technique as the "unknown disc"
-        // test above) — found empirically by diffing two otherwise-
-        // identical messages that only differ in `kind`, rather than
-        // hardcoding an offset derived by hand.
-        final withDefaultKind = buildReturnExceptionMessage(
-          answerId: 9,
-          reason: 'mystery error',
-        );
-        final withOtherKind = buildReturnExceptionMessage(
-          answerId: 9,
-          reason: 'mystery error',
-          kind: ErrorKind.unimplemented,
-        );
-        expect(withDefaultKind.length, withOtherKind.length);
-        var typeByteOffset = -1;
-        for (var i = 0; i < withDefaultKind.length; i++) {
-          if (withDefaultKind[i] != withOtherKind[i]) {
-            typeByteOffset = i;
-            break;
-          }
+    test('an out-of-range wire Exception.type decodes to a safe fallback '
+        'instead of throwing (#50)', () {
+      // A future peer-side ErrorKind variant this vat doesn't know about
+      // yet. No builder exposes an out-of-range type directly, so mangle
+      // the byte for it instead (same technique as the "unknown disc"
+      // test above) — found empirically by diffing two otherwise-
+      // identical messages that only differ in `kind`, rather than
+      // hardcoding an offset derived by hand.
+      final withDefaultKind = buildReturnExceptionMessage(
+        answerId: 9,
+        reason: 'mystery error',
+      );
+      final withOtherKind = buildReturnExceptionMessage(
+        answerId: 9,
+        reason: 'mystery error',
+        kind: ErrorKind.unimplemented,
+      );
+      expect(withDefaultKind.length, withOtherKind.length);
+      var typeByteOffset = -1;
+      for (var i = 0; i < withDefaultKind.length; i++) {
+        if (withDefaultKind[i] != withOtherKind[i]) {
+          typeByteOffset = i;
+          break;
         }
-        expect(typeByteOffset, greaterThanOrEqualTo(0));
+      }
+      expect(typeByteOffset, greaterThanOrEqualTo(0));
 
-        final mangled = Uint8List.fromList(withDefaultKind);
-        mangled[typeByteOffset] = 99; // out of ErrorKind.values range
-        expect(parseRpcMessage(mangled).exceptionKind, ErrorKind.failed);
-      },
-    );
+      final mangled = Uint8List.fromList(withDefaultKind);
+      mangled[typeByteOffset] = 99; // out of ErrorKind.values range
+      expect(parseRpcMessage(mangled).exceptionKind, ErrorKind.failed);
+    });
   });
 
   group('rpc_proto — RPC-003 receiverHosted encoding', () {
@@ -3880,59 +4028,56 @@ void main() {
       },
     );
 
-    test(
-      'a Resolve(exception) that arrives after the senderPromise import it '
-      'names was already released does not resurrect import/broken-import '
-      'state',
-      () async {
-        final input = StreamController<Uint8List>();
-        final output = StreamController<Uint8List>();
-        output.stream.listen((_) {});
+    test('a Resolve(exception) that arrives after the senderPromise import it '
+        'names was already released does not resurrect import/broken-import '
+        'state', () async {
+      final input = StreamController<Uint8List>();
+      final output = StreamController<Uint8List>();
+      output.stream.listen((_) {});
 
-        final capReceiver = CapReceivingServer();
-        final conn = TwoPartyRpcConnection.server(
-          incoming: input.stream,
-          outgoing: output.sink,
-          bootstrap: capReceiver,
-        );
+      final capReceiver = CapReceivingServer();
+      final conn = TwoPartyRpcConnection.server(
+        incoming: input.stream,
+        outgoing: output.sink,
+        bootstrap: capReceiver,
+      );
 
-        // A Call whose params capTable carries a senderPromise(10)
-        // descriptor makes the server genuinely import it — matching how a
-        // real peer references a promise capability it's hosting.
-        input.add(
-          buildCallMessage(
-            questionId: 1,
-            targetImportId: 0,
-            interfaceId: _echoInterfaceId,
-            methodId: _echoMethodId,
-            paramsBytes: _buildEchoParams(''),
-            capTableDescriptors: const [RpcCapDescriptor.senderPromise(10)],
-          ),
-        );
-        await Future<void>.delayed(Duration.zero);
+      // A Call whose params capTable carries a senderPromise(10)
+      // descriptor makes the server genuinely import it — matching how a
+      // real peer references a promise capability it's hosting.
+      input.add(
+        buildCallMessage(
+          questionId: 1,
+          targetImportId: 0,
+          interfaceId: _echoInterfaceId,
+          methodId: _echoMethodId,
+          paramsBytes: _buildEchoParams(''),
+          capTableDescriptors: const [RpcCapDescriptor.senderPromise(10)],
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
 
-        expect(capReceiver.lastParams, hasLength(1));
-        expect(conn.debugImportCount, equals(1));
+      expect(capReceiver.lastParams, hasLength(1));
+      expect(conn.debugImportCount, equals(1));
 
-        // Release our only reference to the promise import.
-        await capReceiver.lastParams.single.dispose();
-        expect(conn.debugImportCount, equals(0));
-        expect(conn.debugBrokenImportCount, equals(0));
+      // Release our only reference to the promise import.
+      await capReceiver.lastParams.single.dispose();
+      expect(conn.debugImportCount, equals(0));
+      expect(conn.debugBrokenImportCount, equals(0));
 
-        // A delayed Resolve(exception) for the same (now fully-released)
-        // promiseId must be a no-op, not resurrect tracking state for it.
-        input.add(
-          buildResolveExceptionMessage(promiseId: 10, reason: 'too late'),
-        );
-        await Future<void>.delayed(Duration.zero);
+      // A delayed Resolve(exception) for the same (now fully-released)
+      // promiseId must be a no-op, not resurrect tracking state for it.
+      input.add(
+        buildResolveExceptionMessage(promiseId: 10, reason: 'too late'),
+      );
+      await Future<void>.delayed(Duration.zero);
 
-        expect(conn.debugImportCount, equals(0));
-        expect(conn.debugBrokenImportCount, equals(0));
+      expect(conn.debugImportCount, equals(0));
+      expect(conn.debugBrokenImportCount, equals(0));
 
-        await input.close();
-        await conn.done;
-      },
-    );
+      await input.close();
+      await conn.done;
+    });
 
     test(
       'incoming Disembargo(senderLoopback) is echoed as receiverLoopback',
@@ -4119,23 +4264,20 @@ void main() {
       expect(server.debugPendingQuestionCount, equals(0));
     });
 
-    test(
-      "a dispatch's RpcException.kind round-trips to the caller over the "
-      'wire (#50)',
-      () async {
-        final (client, server) = _makePipe(_KindThrowingCapability());
-        final stub = client.bootstrap(EchoClientFactory());
-        try {
-          await stub.echo('x');
-          fail('expected an RpcException');
-        } on RpcException catch (e) {
-          expect(e.kind, ErrorKind.disconnected);
-          expect(e.message, 'peer is gone');
-        }
-        await client.close();
-        await server.close();
-      },
-    );
+    test("a dispatch's RpcException.kind round-trips to the caller over the "
+        'wire (#50)', () async {
+      final (client, server) = _makePipe(_KindThrowingCapability());
+      final stub = client.bootstrap(EchoClientFactory());
+      try {
+        await stub.echo('x');
+        fail('expected an RpcException');
+      } on RpcException catch (e) {
+        expect(e.kind, ErrorKind.disconnected);
+        expect(e.message, 'peer is gone');
+      }
+      await client.close();
+      await server.close();
+    });
   });
 
   group('TwoPartyRpcConnection — List(Interface) over RPC', () {
@@ -4193,8 +4335,9 @@ void main() {
         await bootstrapCap.echo('warmup');
 
         final mb = MessageBuilder();
-        final list =
-            mb.initRoot(_TextParamFactory()).initCapabilityListField(0, 2);
+        final list = mb
+            .initRoot(_TextParamFactory())
+            .initCapabilityListField(0, 2);
         list[0] = 0;
         list[1] = 1;
 
@@ -4227,37 +4370,28 @@ void main() {
 
         // The call must fail — the synchronous throw must be converted to a
         // Return(exception) rather than crashing the stream listener.
-        await expectLater(
-          bootstrapCap.echo('test'),
-          throwsA(anything),
-        );
+        await expectLater(bootstrapCap.echo('test'), throwsA(anything));
 
         // Connection close must succeed (stream must not have crashed).
         await client.close();
         await serverConn.close();
       });
 
-      test(
-        'connection handles subsequent calls after sync throw',
-        () async {
-          final server = _FirstCallSyncThrowCapability();
-          final (client, serverConn) = _makePipe(server);
-          final bootstrapCap = client.bootstrap(EchoClientFactory());
+      test('connection handles subsequent calls after sync throw', () async {
+        final server = _FirstCallSyncThrowCapability();
+        final (client, serverConn) = _makePipe(server);
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
 
-          // First call: server throws synchronously.
-          await expectLater(
-            bootstrapCap.echo('call1'),
-            throwsA(anything),
-          );
+        // First call: server throws synchronously.
+        await expectLater(bootstrapCap.echo('call1'), throwsA(anything));
 
-          // Second call: server echoes normally.
-          final result = await bootstrapCap.echo('call2');
-          expect(result, 'echo: call2');
+        // Second call: server echoes normally.
+        final result = await bootstrapCap.echo('call2');
+        expect(result, 'echo: call2');
 
-          await client.close();
-          await serverConn.close();
-        },
-      );
+        await client.close();
+        await serverConn.close();
+      });
     },
   );
 
@@ -4283,8 +4417,8 @@ void main() {
       () async {
         // Manually wire up a client without a real server.
         final serverToClient = StreamController<Uint8List>();
-        final clientToServer = StreamController<Uint8List>()
-          ..stream.listen((_) {});
+        final clientToServer =
+            StreamController<Uint8List>()..stream.listen((_) {});
 
         final client = TwoPartyRpcConnection.client(
           incoming: serverToClient.stream,
@@ -4321,8 +4455,8 @@ void main() {
       'malformed frame tears down connection cleanly (no pending calls)',
       () async {
         final serverToClient = StreamController<Uint8List>();
-        final clientToServer = StreamController<Uint8List>()
-          ..stream.listen((_) {});
+        final clientToServer =
+            StreamController<Uint8List>()..stream.listen((_) {});
 
         final client = TwoPartyRpcConnection.client(
           incoming: serverToClient.stream,
@@ -4337,7 +4471,9 @@ void main() {
         // After teardown, new calls must be rejected immediately.
         // bootstrap() may throw synchronously, so wrap in Future.sync.
         await expectLater(
-          Future.sync(() => client.bootstrap(EchoClientFactory()).echo('hello')),
+          Future.sync(
+            () => client.bootstrap(EchoClientFactory()).echo('hello'),
+          ),
           throwsA(anything),
         );
 
@@ -4355,69 +4491,63 @@ void main() {
   });
 
   group('TwoPartyRpcConnection — Bootstrap Finish message', () {
-    test(
-      'client sends Finish after receiving Bootstrap Return',
-      () async {
-        final serverToClient = StreamController<Uint8List>();
-        final clientToServer = StreamController<Uint8List>();
-        final captured = <RpcMessage>[];
-        clientToServer.stream.listen(
-          (bytes) => captured.add(parseRpcMessage(bytes)),
-        );
+    test('client sends Finish after receiving Bootstrap Return', () async {
+      final serverToClient = StreamController<Uint8List>();
+      final clientToServer = StreamController<Uint8List>();
+      final captured = <RpcMessage>[];
+      clientToServer.stream.listen(
+        (bytes) => captured.add(parseRpcMessage(bytes)),
+      );
 
-        final client = TwoPartyRpcConnection.client(
-          incoming: serverToClient.stream,
-          outgoing: clientToServer.sink,
-        );
+      final client = TwoPartyRpcConnection.client(
+        incoming: serverToClient.stream,
+        outgoing: clientToServer.sink,
+      );
 
-        // Trigger bootstrap — sends Bootstrap(QID=0).
-        final stub = client.bootstrap(EchoClientFactory());
+      // Trigger bootstrap — sends Bootstrap(QID=0).
+      final stub = client.bootstrap(EchoClientFactory());
 
-        // Let the Bootstrap message reach the captured list.
-        await Future<void>.delayed(Duration.zero);
+      // Let the Bootstrap message reach the captured list.
+      await Future<void>.delayed(Duration.zero);
 
-        // Simulate server sending Bootstrap Return with one senderHosted cap.
-        serverToClient.add(
-          buildBootstrapReturnMessage(answerId: 0, exportId: 0),
-        );
+      // Simulate server sending Bootstrap Return with one senderHosted cap.
+      serverToClient.add(buildBootstrapReturnMessage(answerId: 0, exportId: 0));
 
-        // Let the Return be processed and the Finish be sent.
-        await Future<void>.delayed(const Duration(milliseconds: 20));
+      // Let the Return be processed and the Finish be sent.
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
-        // Verify Bootstrap was sent first (QID=0).
-        expect(
-          captured,
-          contains(
-            predicate<RpcMessage>(
-              (m) =>
-                  m.type == RpcMessageType.bootstrap && m.questionId == 0,
-            ),
+      // Verify Bootstrap was sent first (QID=0).
+      expect(
+        captured,
+        contains(
+          predicate<RpcMessage>(
+            (m) => m.type == RpcMessageType.bootstrap && m.questionId == 0,
           ),
-        );
+        ),
+      );
 
-        // Verify Finish(QID=0, releaseResultCaps=false) was sent after.
-        final finishMsg = captured.firstWhere(
-          (m) => m.type == RpcMessageType.finish && m.questionId == 0,
-          orElse: () => throw TestFailure('expected Finish(0) but not found'),
-        );
-        expect(finishMsg.releaseResultCaps, isFalse);
+      // Verify Finish(QID=0, releaseResultCaps=false) was sent after.
+      final finishMsg = captured.firstWhere(
+        (m) => m.type == RpcMessageType.finish && m.questionId == 0,
+        orElse: () => throw TestFailure('expected Finish(0) but not found'),
+      );
+      expect(finishMsg.releaseResultCaps, isFalse);
 
-        // Verify Finish appears after Bootstrap in message order.
-        final bootstrapIndex = captured.indexWhere(
-          (m) => m.type == RpcMessageType.bootstrap && m.questionId == 0,
-        );
-        final finishIndex = captured.indexWhere(
-          (m) => m.type == RpcMessageType.finish && m.questionId == 0,
-        );
-        expect(finishIndex, greaterThan(bootstrapIndex));
+      // Verify Finish appears after Bootstrap in message order.
+      final bootstrapIndex = captured.indexWhere(
+        (m) => m.type == RpcMessageType.bootstrap && m.questionId == 0,
+      );
+      final finishIndex = captured.indexWhere(
+        (m) => m.type == RpcMessageType.finish && m.questionId == 0,
+      );
+      expect(finishIndex, greaterThan(bootstrapIndex));
 
-        // The bootstrap cap must be usable after the exchange completes.
-        stub.dispose();
+      // The bootstrap cap must be usable after the exchange completes.
+      stub.dispose();
 
-        await serverToClient.close();
-        await clientToServer.close();
-      },
-    );
+      await serverToClient.close();
+      await clientToServer.close();
+    });
 
     test(
       'client sends Finish even when Bootstrap Return carries an exception',
@@ -4440,10 +4570,7 @@ void main() {
 
         // Simulate server sending a Bootstrap Return exception.
         serverToClient.add(
-          buildReturnExceptionMessage(
-            answerId: 0,
-            reason: 'no bootstrap cap',
-          ),
+          buildReturnExceptionMessage(answerId: 0, reason: 'no bootstrap cap'),
         );
 
         await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -4473,47 +4600,44 @@ void main() {
     // referenceCount=1) would then exceed the (wrongly tracked) outstanding
     // count, _handleRelease's protocol-violation guard tears the whole
     // connection down.
-    test(
-      'two Bootstrap requests followed by two separate single Releases do '
-      'not tear the connection down or drop the export early',
-      () async {
-        final clientToServer = StreamController<Uint8List>();
-        final serverToClient = StreamController<Uint8List>()
-          ..stream.listen((_) {});
+    test('two Bootstrap requests followed by two separate single Releases do '
+        'not tear the connection down or drop the export early', () async {
+      final clientToServer = StreamController<Uint8List>();
+      final serverToClient =
+          StreamController<Uint8List>()..stream.listen((_) {});
 
-        final server = TwoPartyRpcConnection.server(
-          incoming: clientToServer.stream,
-          outgoing: serverToClient.sink,
-          bootstrap: EchoServer(),
-        );
+      final server = TwoPartyRpcConnection.server(
+        incoming: clientToServer.stream,
+        outgoing: serverToClient.sink,
+        bootstrap: EchoServer(),
+      );
 
-        // Simulate a peer that calls bootstrap() twice on the same
-        // connection — each is a legitimate, independent Bootstrap request.
-        clientToServer.add(buildBootstrapMessage(0));
-        clientToServer.add(buildBootstrapMessage(1));
-        await Future<void>.delayed(Duration.zero);
+      // Simulate a peer that calls bootstrap() twice on the same
+      // connection — each is a legitimate, independent Bootstrap request.
+      clientToServer.add(buildBootstrapMessage(0));
+      clientToServer.add(buildBootstrapMessage(1));
+      await Future<void>.delayed(Duration.zero);
 
-        expect(server.debugExportCount, equals(1));
+      expect(server.debugExportCount, equals(1));
 
-        // Peer disposes only ONE of its two local capability objects.
-        clientToServer.add(buildReleaseMessage(0, 1));
-        await Future<void>.delayed(Duration.zero);
+      // Peer disposes only ONE of its two local capability objects.
+      clientToServer.add(buildReleaseMessage(0, 1));
+      await Future<void>.delayed(Duration.zero);
 
-        // The export must still be alive — the peer's other bootstrap
-        // reference is still outstanding — and the connection must not have
-        // been torn down as a (false) protocol violation.
-        expect(server.debugExportCount, equals(1));
+      // The export must still be alive — the peer's other bootstrap
+      // reference is still outstanding — and the connection must not have
+      // been torn down as a (false) protocol violation.
+      expect(server.debugExportCount, equals(1));
 
-        // Peer disposes its second (and last) reference.
-        clientToServer.add(buildReleaseMessage(0, 1));
-        await Future<void>.delayed(Duration.zero);
+      // Peer disposes its second (and last) reference.
+      clientToServer.add(buildReleaseMessage(0, 1));
+      await Future<void>.delayed(Duration.zero);
 
-        expect(server.debugExportCount, equals(0));
+      expect(server.debugExportCount, equals(0));
 
-        await clientToServer.close();
-        await serverToClient.close();
-      },
-    );
+      await clientToServer.close();
+      await serverToClient.close();
+    });
   });
 
   group('TwoPartyRpcConnection — unsupported Return variants', () {
@@ -4544,14 +4668,17 @@ void main() {
 
         final stub = client.bootstrap(EchoClientFactory());
         await Future<void>.delayed(Duration.zero);
-        serverToClient.add(buildBootstrapReturnMessage(answerId: 0, exportId: 0));
+        serverToClient.add(
+          buildBootstrapReturnMessage(answerId: 0, exportId: 0),
+        );
         await Future<void>.delayed(Duration.zero);
 
         final echoFuture = stub.echo('hello');
         await Future<void>.delayed(Duration.zero);
         final callMsg = captured.firstWhere(
           (m) => m.type == RpcMessageType.call,
-          orElse: () => throw TestFailure('expected a Call message but none found'),
+          orElse:
+              () => throw TestFailure('expected a Call message but none found'),
         );
 
         serverToClient.add(

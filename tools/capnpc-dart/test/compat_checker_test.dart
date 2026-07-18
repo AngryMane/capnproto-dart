@@ -31,54 +31,61 @@ CodeGeneratorRequest _req(List<SchemaNode> topLevel) {
 }
 
 SchemaNode _struct(List<SchemaField> fields) => SchemaNode(
-      id: _structId,
-      displayName: 'MyStruct',
-      displayNamePrefixLength: 0,
-      scopeId: _fileId,
-      nestedNodes: const [],
-      body: StructBody(
-        dataWordCount: 1,
-        pointerCount: 1,
-        isGroup: false,
-        discriminantCount: 0,
-        discriminantOffset: 0,
-        fields: fields,
-      ),
-    );
+  id: _structId,
+  displayName: 'MyStruct',
+  displayNamePrefixLength: 0,
+  scopeId: _fileId,
+  nestedNodes: const [],
+  body: StructBody(
+    dataWordCount: 1,
+    pointerCount: 1,
+    isGroup: false,
+    discriminantCount: 0,
+    discriminantOffset: 0,
+    fields: fields,
+  ),
+);
 
 SchemaNode _enum(List<SchemaEnumerant> enumerants) => SchemaNode(
-      id: _enumId,
-      displayName: 'MyEnum',
-      displayNamePrefixLength: 0,
-      scopeId: _fileId,
-      nestedNodes: const [],
-      body: EnumBody(enumerants: enumerants),
-    );
+  id: _enumId,
+  displayName: 'MyEnum',
+  displayNamePrefixLength: 0,
+  scopeId: _fileId,
+  nestedNodes: const [],
+  body: EnumBody(enumerants: enumerants),
+);
 
-SchemaField _slotField(String name, int codeOrder, SchemaType type,
-        {int offset = 0, int? ordinal}) =>
-    SchemaField(
-      name: name,
-      codeOrder: codeOrder,
-      // Defaults to codeOrder so existing callers that don't care about the
-      // codeOrder-vs-ordinal distinction are unaffected; tests that
-      // specifically exercise that distinction pass ordinal explicitly.
-      ordinal: ordinal ?? codeOrder,
-      discriminantValue: 0xFFFF,
-      body: SlotField(offset: offset, type: type, hadExplicitDefault: false),
-    );
+SchemaField _slotField(
+  String name,
+  int codeOrder,
+  SchemaType type, {
+  int offset = 0,
+  int? ordinal,
+}) => SchemaField(
+  name: name,
+  codeOrder: codeOrder,
+  // Defaults to codeOrder so existing callers that don't care about the
+  // codeOrder-vs-ordinal distinction are unaffected; tests that
+  // specifically exercise that distinction pass ordinal explicitly.
+  ordinal: ordinal ?? codeOrder,
+  discriminantValue: 0xFFFF,
+  body: SlotField(offset: offset, type: type, hadExplicitDefault: false),
+);
 
 SchemaEnumerant _enumerant(String name, int codeOrder) =>
     SchemaEnumerant(name: name, codeOrder: codeOrder);
 
 SchemaMethod _method(
-        String name, int ordinal, int paramStructTypeId, int resultStructTypeId) =>
-    SchemaMethod(
-      name: name,
-      ordinal: ordinal,
-      paramStructTypeId: paramStructTypeId,
-      resultStructTypeId: resultStructTypeId,
-    );
+  String name,
+  int ordinal,
+  int paramStructTypeId,
+  int resultStructTypeId,
+) => SchemaMethod(
+  name: name,
+  ordinal: ordinal,
+  paramStructTypeId: paramStructTypeId,
+  resultStructTypeId: resultStructTypeId,
+);
 
 /// Builds a method's auto-generated parameter/result struct node. Real capnp
 /// gives these their own top-level node (reachable only via
@@ -107,7 +114,9 @@ SchemaNode _methodStruct(int id, String name, List<SchemaField> fields) =>
 /// structs) as separate top-level nodes — not listed in the file's
 /// `nestedNodes`, matching real capnp output.
 CodeGeneratorRequest _interfaceReq(
-    List<SchemaMethod> methods, List<SchemaNode> structNodes) {
+  List<SchemaMethod> methods,
+  List<SchemaNode> structNodes,
+) {
   final interfaceNode = SchemaNode(
     id: _interfaceId,
     displayName: 'MyInterface',
@@ -178,58 +187,46 @@ void main() {
       expect(checkCompatibility(old, newReq), isEmpty);
     });
 
-    test(
-      'reordering field declarations without changing @N ordinals is '
-      'compatible',
-      () {
-        // Regression test: the checker must match fields by wire ordinal
-        // (@N), not by codeOrder (textual declaration order). Here `a` and
-        // `b` swap declaration order between old/new, but each keeps its own
-        // @N (and therefore its own type/offset) — a no-op on the wire.
-        final old = _req([
-          _struct([
-            _slotField('a', 0, const Int32Type(), offset: 0, ordinal: 0),
-            _slotField('b', 1, const TextType(), offset: 0, ordinal: 1),
-          ]),
-        ]);
-        final newReq = _req([
-          _struct([
-            _slotField('b', 0, const TextType(), offset: 0, ordinal: 1),
-            _slotField('a', 1, const Int32Type(), offset: 0, ordinal: 0),
-          ]),
-        ]);
-        expect(checkCompatibility(old, newReq), isEmpty);
-      },
-    );
+    test('reordering field declarations without changing @N ordinals is '
+        'compatible', () {
+      // Regression test: the checker must match fields by wire ordinal
+      // (@N), not by codeOrder (textual declaration order). Here `a` and
+      // `b` swap declaration order between old/new, but each keeps its own
+      // @N (and therefore its own type/offset) — a no-op on the wire.
+      final old = _req([
+        _struct([
+          _slotField('a', 0, const Int32Type(), offset: 0, ordinal: 0),
+          _slotField('b', 1, const TextType(), offset: 0, ordinal: 1),
+        ]),
+      ]);
+      final newReq = _req([
+        _struct([
+          _slotField('b', 0, const TextType(), offset: 0, ordinal: 1),
+          _slotField('a', 1, const Int32Type(), offset: 0, ordinal: 0),
+        ]),
+      ]);
+      expect(checkCompatibility(old, newReq), isEmpty);
+    });
 
-    test(
-      'changing a field\'s actual @N ordinal is detected even when '
-      'codeOrder stays the same',
-      () {
-        // Complements the reordering test above: codeOrder alone must not
-        // be treated as compatible either — a real ordinal change (which
-        // does change the field's wire slot) has to still be caught.
-        final old = _req([
-          _struct([
-            _slotField('a', 0, const Int32Type(), offset: 0, ordinal: 0),
-          ]),
-        ]);
-        final newReq = _req([
-          _struct([
-            _slotField('a', 0, const Int32Type(), offset: 1, ordinal: 1),
-          ]),
-        ]);
-        expect(
-          checkCompatibility(old, newReq),
-          contains('MyStruct.a (ordinal 0) was removed'),
-        );
-      },
-    );
+    test('changing a field\'s actual @N ordinal is detected even when '
+        'codeOrder stays the same', () {
+      // Complements the reordering test above: codeOrder alone must not
+      // be treated as compatible either — a real ordinal change (which
+      // does change the field's wire slot) has to still be caught.
+      final old = _req([
+        _struct([_slotField('a', 0, const Int32Type(), offset: 0, ordinal: 0)]),
+      ]);
+      final newReq = _req([
+        _struct([_slotField('a', 0, const Int32Type(), offset: 1, ordinal: 1)]),
+      ]);
+      expect(
+        checkCompatibility(old, newReq),
+        contains('MyStruct.a (ordinal 0) was removed'),
+      );
+    });
 
     test('empty struct with no fields produces no errors', () {
-      final req = _req([
-        _struct([]),
-      ]);
+      final req = _req([_struct([])]);
       expect(checkCompatibility(req, req), isEmpty);
     });
   });
@@ -329,8 +326,10 @@ void main() {
       final errors = checkCompatibility(old, newReq);
       expect(errors, hasLength(2));
       expect(errors.any((e) => e.contains('a') && e.contains('type')), isTrue);
-      expect(errors.any((e) => e.contains('b') && e.contains('removed')),
-          isTrue);
+      expect(
+        errors.any((e) => e.contains('b') && e.contains('removed')),
+        isTrue,
+      );
     });
   });
 
@@ -383,11 +382,13 @@ void main() {
     });
 
     test('changing a method parameter type is incompatible', () {
-      final oldParams =
-          _methodStruct(1000, 'Foo\$Params', [_slotField('x', 0, const UInt32Type())]);
+      final oldParams = _methodStruct(1000, 'Foo\$Params', [
+        _slotField('x', 0, const UInt32Type()),
+      ]);
       final results = _methodStruct(1001, 'Foo\$Results', const []);
-      final newParams =
-          _methodStruct(1000, 'Foo\$Params', [_slotField('x', 0, const TextType())]);
+      final newParams = _methodStruct(1000, 'Foo\$Params', [
+        _slotField('x', 0, const TextType()),
+      ]);
 
       final old = _interfaceReq(
         [_method('foo', 0, 1000, 1001)],
@@ -430,10 +431,12 @@ void main() {
 
     test('changing a method result type is incompatible', () {
       final params = _methodStruct(1000, 'Foo\$Params', const []);
-      final oldResults =
-          _methodStruct(1001, 'Foo\$Results', [_slotField('reply', 0, const TextType())]);
-      final newResults =
-          _methodStruct(1001, 'Foo\$Results', [_slotField('reply', 0, const UInt32Type())]);
+      final oldResults = _methodStruct(1001, 'Foo\$Results', [
+        _slotField('reply', 0, const TextType()),
+      ]);
+      final newResults = _methodStruct(1001, 'Foo\$Results', [
+        _slotField('reply', 0, const UInt32Type()),
+      ]);
 
       final old = _interfaceReq(
         [_method('foo', 0, 1000, 1001)],
@@ -447,6 +450,34 @@ void main() {
       expect(errors, hasLength(1));
       expect(errors.first, contains('foo results'));
       expect(errors.first, contains('type changed'));
+    });
+
+    test('missing old method parameter struct is diagnosed', () {
+      final results = _methodStruct(1001, 'Foo\$Results', const []);
+
+      final old = _interfaceReq([_method('foo', 0, 1000, 1001)], [results]);
+      final newReq = _interfaceReq([_method('foo', 0, 1000, 1001)], [results]);
+
+      final errors = checkCompatibility(old, newReq);
+      expect(errors, hasLength(1));
+      expect(errors.first, contains('foo params'));
+      expect(errors.first, contains('old parameter/result struct'));
+    });
+
+    test('missing new method result struct is diagnosed', () {
+      final params = _methodStruct(1000, 'Foo\$Params', const []);
+      final oldResults = _methodStruct(1001, 'Foo\$Results', const []);
+
+      final old = _interfaceReq(
+        [_method('foo', 0, 1000, 1001)],
+        [params, oldResults],
+      );
+      final newReq = _interfaceReq([_method('foo', 0, 1000, 1001)], [params]);
+
+      final errors = checkCompatibility(old, newReq);
+      expect(errors, hasLength(1));
+      expect(errors.first, contains('foo results'));
+      expect(errors.first, contains('new parameter/result struct'));
     });
   });
 }

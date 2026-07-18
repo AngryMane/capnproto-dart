@@ -63,6 +63,14 @@ extra wire round trip. When the target isn't a same-connection import, the runti
 back to a normal dispatch against it (`_runDispatch`), answering the original question the
 usual way.
 
+When this vat receives a forwarded `Call` with `sendResultsTo=yourself`, `_answerCaps`
+stores the completed result only as a local rendezvous point for
+`Return.takeFromOtherQuestion`. That table entry does not own the result capabilities:
+`_awaitReturn()` transfers those same capability references to the original local caller's
+`DispatchResult`, and the forwarded question is later finished with
+`releaseResultCaps=false`. Therefore `Finish` for that forwarded question drops only the
+answer bookkeeping; it must not dispose the result capabilities.
+
 ### Promise Pipelining via Dart Futures
 When a client sends a `Call` whose return value is a `Capability`,
 the runtime immediately creates a pipelined `Capability` stub backed by the pending `Future`.
