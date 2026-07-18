@@ -284,26 +284,27 @@ void main() {
       },
     );
 
-    test('raw AnyPointer import rejects multi-segment source today', () {
-      final sourceBytes = _buildLargeDataMessage(10000);
-      final arena = ArenaBuilder();
-      final (ptrSeg, ptrWordOffset) = arena.allocate(1);
+    test(
+      'ArenaBuilder.writeAnyPointerFromMessage supports multi-segment '
+      'source messages',
+      () {
+        final sourceBytes = _buildLargeDataMessage(10000);
+        final arena = ArenaBuilder();
+        final (ptrSeg, ptrWordOffset) = arena.allocate(1);
 
-      expect(
-        () => arena.writeAnyPointerFromMessage(
-          ptrSeg,
-          ptrWordOffset,
-          sourceBytes,
-        ),
-        throwsA(
-          isA<UnsupportedError>().having(
-            (e) => e.message,
-            'message',
-            contains('multi-segment AnyPointer embedding'),
+        arena.writeAnyPointerFromMessage(ptrSeg, ptrWordOffset, sourceBytes);
+
+        final reader = MessageReader.deserialize(
+          arena.serialize(),
+        ).getRoot(anyHostFactory);
+        expect(
+          reader.getDataField(0),
+          orderedEquals(
+            Uint8List.fromList(List<int>.generate(10000, (i) => i & 0xff)),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
 
     test('setAnyPointerFromMessage embeds multi-segment source messages', () {
       final sourceBytes = _buildLargeDataMessage(10000);

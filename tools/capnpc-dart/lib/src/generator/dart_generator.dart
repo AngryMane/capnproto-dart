@@ -335,8 +335,24 @@ void _writeInterface(
     _writeResultsPipeline(sb, name, m.method, nodeMap, m.dartName);
   }
 
+  // A generic interface (`interface Foo(T) { ... }`) makes its own type
+  // parameters available to its methods' params/results — see
+  // TypeParameterRefType.scopeId and _writeTypedClientMethod's
+  // `fromClassScope` handling. The client (and its factory) carry that same
+  // `<T>` so a single reference communicates what `T` is, instead of every
+  // call needing to repeat an AnyPointerCodec<T>. The server stub does not:
+  // it always hands implementers the raw, untyped params/results reader,
+  // regardless of generics (matching how a plain generic method already
+  // works), so `T` would never actually appear in its body.
+  final classGenericNames = [
+    for (var i = 0; i < node.parameters.length; i++)
+      _genericTypeParamName(node.parameters[i], i),
+  ];
+  final classGenericDecl =
+      classGenericNames.isEmpty ? '' : '<${classGenericNames.join(', ')}>';
+
   // ---- Client stub ----
-  sb.writeln('class ${name}Client extends Capability {');
+  sb.writeln('class ${name}Client$classGenericDecl extends Capability {');
   sb.writeln('  static const int _interfaceId = ${_hexId(node.id)};');
   sb.writeln('  static const InterfaceSchemaInfo schema = $schemaConstName;');
   sb.writeln();
@@ -345,7 +361,16 @@ void _writeInterface(
   sb.writeln('  Capability get capability => _cap;');
 
   for (final m in allMethods) {
-    _writeClientMethod(sb, name, m.ifaceNode, m.method, nodeMap, m.dartName);
+    _writeClientMethod(
+      sb,
+      name,
+      m.ifaceNode,
+      m.method,
+      nodeMap,
+      m.dartName,
+      node.id,
+      classGenericNames,
+    );
   }
 
   sb.writeln();
@@ -359,11 +384,13 @@ void _writeInterface(
 
   // ---- Factory ----
   sb.writeln(
-    'class ${name}ClientFactory extends CapabilityFactory<${name}Client> {',
+    'class ${name}ClientFactory$classGenericDecl extends '
+    'CapabilityFactory<${name}Client$classGenericDecl> {',
   );
   sb.writeln('  @override');
   sb.writeln(
-    '  ${name}Client fromCapability(Capability cap) => ${name}Client(cap);',
+    '  ${name}Client$classGenericDecl fromCapability(Capability cap) => '
+    '${name}Client$classGenericDecl(cap);',
   );
   sb.writeln('}');
   sb.writeln();
@@ -409,6 +436,8 @@ void _writeClientMethod(
   SchemaMethod method,
   Map<int, SchemaNode> nodeMap,
   String dartName,
+  int classNodeId,
+  List<String> classGenericNames,
 ) {
   final methodName = dartName;
   final paramsNode = nodeMap[method.paramStructTypeId];
@@ -466,6 +495,9 @@ void _writeClientMethod(
       resultsName,
       paramsNode,
       resultsNode,
+      ifaceNode,
+      classNodeId,
+      classGenericNames,
       'void',
       false,
       ifaceId,
@@ -540,6 +572,9 @@ void _writeClientMethod(
     resultsName,
     paramsNode,
     resultsNode,
+    ifaceNode,
+    classNodeId,
+    classGenericNames,
     asyncReturnType,
     hasPipeline,
     ifaceId,
@@ -555,16 +590,49 @@ void _writeTypedClientMethod(
   String resultsName,
   SchemaNode? paramsNode,
   SchemaNode? resultsNode,
+  SchemaNode definingIfaceNode,
+  int classNodeId,
+  List<String> classGenericNames,
   String asyncReturnType,
   bool hasPipeline,
   String ifaceId,
   int ordinal, {
   bool isStreaming = false,
 }) {
-  final typeParams =
+  // A type parameter used directly in this method's params/results normally
+  // belongs to that struct's own generic scope (set when the method itself
+  // declares implicit parameters, e.g. `foo [T] (...)`  — the compiler gives
+  // foo$Params/$Results their own `parameters` list in that case). But when
+  // `T` is instead the *enclosing interface's* own type parameter
+  // (`interface Foo(T) { bar @0 () -> (value :T); }`), foo$Results has an
+  // *empty* `parameters` of its own — the class-level generic (already
+  // declared on this client, see _writeInterface) is what actually owns it,
+  // identified by TypeParameterRefType.scopeId (see schema_model.dart).
+  // Only trust that class-level binding for methods declared directly on
+  // the class being generated, not ones inherited from a different
+  // interface — an inherited method's params/results are permanently bound
+  // to *its own* declaring interface's generic scope, which isn't
+  // necessarily expressible as this class's own type parameters.
+  final ownParams =
       paramsNode?.parameters.isNotEmpty == true
           ? paramsNode!.parameters
           : resultsNode?.parameters ?? const <String>[];
+
+  final List<String> typeParams;
+  final bool fromClassScope;
+  if (ownParams.isNotEmpty) {
+    typeParams = ownParams;
+    fromClassScope = false;
+  } else if (classGenericNames.isNotEmpty &&
+      definingIfaceNode.id == classNodeId &&
+      (_usesScope(paramsNode, classNodeId) ||
+          _usesScope(resultsNode, classNodeId))) {
+    typeParams = definingIfaceNode.parameters;
+    fromClassScope = true;
+  } else {
+    typeParams = const [];
+    fromClassScope = false;
+  }
   if (typeParams.isEmpty) return;
 
   final paramFields = _collectDirectTypeParamFields(paramsNode);
@@ -578,11 +646,18 @@ void _writeTypedClientMethod(
     for (final f in resultFields) f.$2,
   };
 
-  final genericNames = [
-    for (var i = 0; i < typeParams.length; i++)
-      _genericTypeParamName(typeParams[i], i),
-  ];
-  final genericDecl = '<${genericNames.join(', ')}>';
+  // When the type parameter is the enclosing class's own, reuse its already
+  // -declared name instead of introducing a fresh method-level one (which
+  // would just shadow it under the same name anyway, since both are derived
+  // from the same `typeParams`/`_genericTypeParamName` pairing).
+  final genericNames =
+      fromClassScope
+          ? classGenericNames
+          : [
+            for (var i = 0; i < typeParams.length; i++)
+              _genericTypeParamName(typeParams[i], i),
+          ];
+  final genericDecl = fromClassScope ? '' : '<${genericNames.join(', ')}>';
   final args = <String>[];
   for (final i in codecParamIndexes.toList()..sort()) {
     args.add(
@@ -871,6 +946,23 @@ List<(String, int)> _collectDirectTypeParamFields(SchemaNode? node) {
     }
   }
   return result;
+}
+
+/// True if any direct slot field of [node] is a [TypeParameterRefType]
+/// scoped to [scopeId] — see [TypeParameterRefType.scopeId] for what that
+/// means and why it matters for resolving interface-level generics.
+bool _usesScope(SchemaNode? node, int scopeId) {
+  final body = node?.body;
+  if (body is! StructBody) return false;
+  for (final field in body.fields) {
+    final fieldBody = field.body;
+    if (fieldBody is SlotField &&
+        fieldBody.type is TypeParameterRefType &&
+        (fieldBody.type as TypeParameterRefType).scopeId == scopeId) {
+      return true;
+    }
+  }
+  return false;
 }
 
 String _genericTypeParamName(String raw, int index) {

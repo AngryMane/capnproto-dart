@@ -75,3 +75,25 @@ final field = dynStruct?.schema.fieldByName('name');
 This is built on the `SchemaInfo` metadata `capnpc-dart` emits alongside every generated
 struct/enum/interface — see
 [`packages/capnproto_dart/doc/external-spec.md#dynamic-access-and-schema-reflection`](pathname:///capnproto_dart/external-spec#dynamic-access-and-schema-reflection).
+
+## Text format
+
+`encodeText`/`decodeText` convert to/from the human-readable representation used by the
+reference `capnp` CLI's `encode`/`decode` subcommands (e.g. `capnp decode my.capnp Foo`) —
+handy for debugging or hand-authoring test fixtures:
+
+```dart
+final registry = schemaRegistryOf([greetingSchema]); // every struct/enum reachable
+                                                      // from Greeting's fields
+
+print(encodeText(g, greetingSchema, registry));
+// (name = "World")
+
+final bytes = decodeText('(name = "World")', greetingSchema, registry);
+final g2 = MessageReader.deserialize(bytes).getRoot(greetingFactory);
+```
+
+See
+[`packages/capnproto_dart/doc/external-spec.md#text-format`](pathname:///capnproto_dart/external-spec#text-format)
+for the full contract, including what isn't representable (capabilities, untyped
+`AnyPointer`/generic fields).

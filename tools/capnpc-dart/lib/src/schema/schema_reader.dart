@@ -615,7 +615,12 @@ SchemaType _buildType(_TypeReader? r) {
       final typeArgs17 = _readBrandTypeArgs(r.brand, r.typeId);
       return InterfaceRefType(r.typeId, typeArgs: typeArgs17);
     case 18:
-      if (r.isTypeParameter) return TypeParameterRefType(r.typeParameterIndex);
+      if (r.isTypeParameter) {
+        return TypeParameterRefType(
+          r.typeParameterIndex,
+          scopeId: r.typeParameterScopeId,
+        );
+      }
       return const AnyPointerType();
     default: return const AnyPointerType();
   }

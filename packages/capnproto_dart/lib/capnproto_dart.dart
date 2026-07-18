@@ -58,6 +58,7 @@ export 'src/message/message_reader.dart';
 export 'src/message/message_builder.dart';
 export 'src/schema/reflection.dart';
 export 'src/stream/message_stream.dart';
+export 'src/text/text_format.dart' show SchemaRegistry, schemaRegistryOf, encodeText, decodeText;
 export 'src/layout/any_pointer.dart';
 export 'src/layout/orphan.dart' show Orphan, StructOrphan, ListOrphan;
 

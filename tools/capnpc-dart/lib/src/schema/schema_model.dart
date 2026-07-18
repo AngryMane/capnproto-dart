@@ -227,7 +227,25 @@ class AnyPointerType extends SchemaType { const AnyPointerType(); }
 /// Used in template struct nodes; replaced by concrete types in specializations.
 class TypeParameterRefType extends SchemaType {
   final int parameterIndex;
-  const TypeParameterRefType(this.parameterIndex);
+
+  /// Node id of the generic scope that owns this parameter.
+  ///
+  /// Usually the struct itself (e.g. `struct Foo(T)`, or a method's own
+  /// implicit `[T]` parameters — the compiler gives that method's
+  /// auto-generated params/results struct its own matching `parameters`
+  /// list, so [parameterIndex] indexes into that same node's `parameters`).
+  ///
+  /// But when `T` is instead the *enclosing interface's* own type parameter
+  /// (`interface Foo(T) { bar @0 () -> (value :T); }`), the auto-generated
+  /// `bar$Results` struct has an *empty* `parameters` list of its own —
+  /// [scopeId] is `Foo`'s node id instead, and [parameterIndex] indexes into
+  /// `Foo`'s `parameters`, not `bar$Results`'s. Defaults to 0 (meaning
+  /// "unknown/not set", not a valid node id) for callers that don't need
+  /// scope-aware resolution — see `_writeTypedClientMethod` in the
+  /// generator for where this actually matters.
+  final int scopeId;
+
+  const TypeParameterRefType(this.parameterIndex, {this.scopeId = 0});
 }
 
 class ListType extends SchemaType {

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import '../message/message_copy.dart' show copyMessageRootToBuilder;
 import '../wire/pointer.dart';
 import '../wire/wire_helpers.dart';
 import 'segment_builder.dart';
@@ -127,54 +128,20 @@ class ArenaBuilder {
     return seg.id;
   }
 
-  /// Parses [messageBytes] as a standalone Cap'n Proto message, imports its
-  /// segments into this arena, and writes a far pointer at [ptrWordOffset] in
-  /// [ptrSeg] that points to the root of the imported segments.
+  /// Parses [messageBytes] as a standalone Cap'n Proto message and deep-copies
+  /// its root into this arena at [ptrWordOffset] in [ptrSeg].
   ///
-  /// Only single-segment source messages are fully supported. Multi-segment
-  /// messages are rejected with [UnsupportedError].
+  /// Delegates to [copyMessageRootToBuilder], which is pointer-aware (it
+  /// resolves and rewrites pointers via an [ArenaReader] rather than
+  /// re-numbering segments by blindly copying their raw bytes), so unlike an
+  /// earlier version of this method, multi-segment source messages are fully
+  /// supported — not just the single-segment case.
   void writeAnyPointerFromMessage(
     SegmentBuilder ptrSeg,
     int ptrWordOffset,
     Uint8List messageBytes,
   ) {
-    if (messageBytes.lengthInBytes < 8) {
-      throw ArgumentError(
-        'message bytes too short to be a valid Cap\'n Proto message',
-      );
-    }
-    final hdr = ByteData.sublistView(messageBytes, 0, 4);
-    final numSegments = readUint32(hdr, 0) + 1;
-    if (numSegments != 1) {
-      throw UnsupportedError(
-        'multi-segment AnyPointer embedding is not yet supported',
-      );
-    }
-    final headerBytes =
-        8; // for single segment: [numSegs-1, seg0Words] = 2 words
-    final seg0Words = readUint32(ByteData.sublistView(messageBytes, 4, 8), 0);
-    final seg0ByteCount = seg0Words * bytesPerWord;
-    if (headerBytes + seg0ByteCount > messageBytes.lengthInBytes) {
-      throw ArgumentError(
-        'message declares $seg0Words words for segment 0 but only '
-        '${messageBytes.lengthInBytes - headerBytes} bytes are available',
-      );
-    }
-    final seg0Data = messageBytes.buffer.asUint8List(
-      messageBytes.offsetInBytes + headerBytes,
-      seg0ByteCount,
-    );
-
-    // Import the params segment.  Word 0 of this segment is the original
-    // message's root struct pointer, which becomes the landing pad for the
-    // far pointer we write below.
-    final importedSegId = importSegmentData(seg0Data);
-
-    FarPointer(
-      isDoubleFar: false,
-      landingPadOffset: 0,
-      segmentId: importedSegId,
-    ).encode(ptrSeg.data, ptrWordOffset);
+    copyMessageRootToBuilder(messageBytes, this, ptrSeg, ptrWordOffset);
   }
 
   /// Serializes the message into a single [Uint8List] using Cap'n Proto framing.

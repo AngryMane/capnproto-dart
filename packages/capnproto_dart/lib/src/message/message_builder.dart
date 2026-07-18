@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../arena/arena_builder.dart';
+import '../layout/any_pointer.dart' show DynamicStructBuilder;
 import '../layout/orphan.dart';
 import '../layout/struct_builder.dart';
 import '../layout/struct_factory.dart';
@@ -38,6 +39,25 @@ class MessageBuilder {
       ptrWords: factory.ptrWords,
     );
     return factory.fromRawBuilder(raw);
+  }
+
+  /// Allocates the root struct as a schema-less [DynamicStructBuilder] with
+  /// [dataWords]/[pointerWords] words, for callers building a message purely
+  /// from runtime [StructSchemaInfo] reflection metadata (see
+  /// `text_format.dart`'s `decodeText`) rather than a generated
+  /// [StructFactory].
+  DynamicStructBuilder initDynamicRoot({
+    required int dataWords,
+    required int pointerWords,
+  }) {
+    final (ptrSeg, ptrWordOffset) = _arena.allocate(1);
+    final raw = _arena.allocateStruct(
+      ptrSeg: ptrSeg,
+      ptrWordOffset: ptrWordOffset,
+      dataWords: dataWords,
+      ptrWords: pointerWords,
+    );
+    return DynamicStructBuilder(raw);
   }
 
   /// Adopts [orphan] as this message's root, replacing whatever's there.

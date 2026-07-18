@@ -1136,6 +1136,173 @@ void main() {
     });
   });
 
+  group(
+    'generateDartFile — interface-level generics (interface-scoped type params)',
+    () {
+      test(
+        'interface(T) methods generate a class-level generic client',
+        () {
+          // Mirrors what the real `capnp` compiler actually emits for
+          // `interface Producer(T) { produce @0 () -> (value :T); consume
+          // @1 (value :T) -> (); }` (verified against `capnp compile -o-`):
+          // the auto-generated produce$Results/consume$Params structs have
+          // an *empty* `parameters` list of their own — the `value` field's
+          // TypeParameterRefType is scoped to the *interface* node instead.
+          const ifaceId = 500;
+          final produceParams = structNode(
+            100,
+            'Producer.produce\$Params',
+            0,
+            0,
+            [],
+          );
+          final produceResults = structNode(
+            101,
+            'Producer.produce\$Results',
+            0,
+            1,
+            [
+              ptrField(
+                'value',
+                0,
+                0,
+                const TypeParameterRefType(0, scopeId: ifaceId),
+              ),
+            ],
+          );
+          final consumeParams = structNode(
+            102,
+            'Producer.consume\$Params',
+            0,
+            1,
+            [
+              ptrField(
+                'value',
+                0,
+                0,
+                const TypeParameterRefType(0, scopeId: ifaceId),
+              ),
+            ],
+          );
+          final consumeResults = structNode(
+            103,
+            'Producer.consume\$Results',
+            0,
+            0,
+            [],
+          );
+
+          final iface = SchemaNode(
+            id: ifaceId,
+            displayName: 'test.capnp:Producer',
+            displayNamePrefixLength: 'test.capnp:'.length,
+            scopeId: 1,
+            nestedNodes: const [],
+            body: const InterfaceBody(
+              methods: [
+                SchemaMethod(
+                  name: 'produce',
+                  ordinal: 0,
+                  paramStructTypeId: 100,
+                  resultStructTypeId: 101,
+                ),
+                SchemaMethod(
+                  name: 'consume',
+                  ordinal: 1,
+                  paramStructTypeId: 102,
+                  resultStructTypeId: 103,
+                ),
+              ],
+            ),
+            parameters: const ['T'],
+          );
+
+          final file = fileNode(1, [
+            const SchemaNestedNode(name: 'Producer', id: ifaceId),
+          ]);
+          final src = generateDartFile(file, [
+            file,
+            produceParams,
+            produceResults,
+            consumeParams,
+            consumeResults,
+            iface,
+          ]);
+
+          // Class-level generic on the client and factory.
+          expect(src, contains('class ProducerClient<T> extends Capability {'));
+          expect(
+            src,
+            contains(
+              'class ProducerClientFactory<T> extends '
+              'CapabilityFactory<ProducerClient<T>> {',
+            ),
+          );
+          expect(
+            src,
+            contains(
+              'ProducerClient<T> fromCapability(Capability cap) => '
+              'ProducerClient<T>(cap);',
+            ),
+          );
+
+          // Typed convenience methods reuse the class's own `T` — no
+          // redundant per-method generic declaration.
+          expect(
+            src,
+            contains(
+              'Future<T?> produceTyped(AnyPointerCodec<T> tCodec) async {',
+            ),
+          );
+          expect(
+            src,
+            contains(
+              'Future<ProducerConsumeResultsReader> consumeTyped('
+              'AnyPointerCodec<T> tCodec, T value) async {',
+            ),
+          );
+
+          // The server stub stays non-generic — it always hands
+          // implementers the raw, untyped reader regardless of generics
+          // (same as an ordinary generic method).
+          expect(
+            src,
+            contains('abstract class ProducerServer extends Capability {'),
+          );
+        },
+      );
+
+      test('a non-generic interface is unaffected (no stray <T>)', () {
+        final resultsNode = structNode(101, 'Foo.bar\$Results', 1, 0, [
+          dataField('x', 0, 0, const Int32Type()),
+        ]);
+        final paramsNode = structNode(100, 'Foo.bar\$Params', 0, 0, []);
+        final iface = interfaceNode(200, 'Foo', [
+          const SchemaMethod(
+            name: 'bar',
+            ordinal: 0,
+            paramStructTypeId: 100,
+            resultStructTypeId: 101,
+          ),
+        ]);
+        final file = fileNode(1, [const SchemaNestedNode(name: 'Foo', id: 200)]);
+        final src = generateDartFile(file, [
+          file,
+          paramsNode,
+          resultsNode,
+          iface,
+        ]);
+
+        expect(src, contains('class FooClient extends Capability {'));
+        expect(src, isNot(contains('FooClient<')));
+        expect(
+          src,
+          contains('class FooClientFactory extends CapabilityFactory<FooClient> {'),
+        );
+      });
+    },
+  );
+
   group('generateDartFile — capability-returning methods (GEN-002)', () {
     const sessionIfaceId = 40;
     const greeterIfaceId = 0x1234abcd;

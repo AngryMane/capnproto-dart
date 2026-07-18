@@ -242,6 +242,30 @@ final class DynamicStructBuilder extends StructBuilder {}
 final class DynamicListBuilder {}
 ```
 
+## Text Format
+
+Renders/parses the human-readable representation used by the reference `capnp`
+CLI's `encode`/`decode` subcommands (e.g. `(name = "hi", size = 3)`), built on the
+same `SchemaInfo` reflection metadata and Dynamic* API as the previous section — it
+works for any generated struct without needing per-type generated support. Checked
+against the actual `capnp` CLI's input/output, not derived from a written grammar.
+
+```dart
+/// Maps a schema node id to its SchemaInfo, so nested struct/enum/group types
+/// referenced by field types can be resolved. Build one from your generated
+/// file's `xxxSchema` constants.
+typedef SchemaRegistry = Map<int, SchemaInfo>;
+SchemaRegistry schemaRegistryOf(Iterable<SchemaInfo> schemas);
+
+String encodeText(StructReader reader, StructSchemaInfo schema, SchemaRegistry registry);
+Uint8List decodeText(String text, StructSchemaInfo schema, SchemaRegistry registry);
+```
+
+`decodeText` returns a standalone framed message (`MessageReader.deserialize(...)
+.getRoot(fooFactory)`-ready). Both throw `DecodeException` for a capability or an
+untyped `AnyPointer`/generic-typed field — neither has a text representation — and
+for any struct/enum type missing from `registry`.
+
 ## Error Handling
 
 All errors thrown by this library are subclasses of `CapnpException`.
