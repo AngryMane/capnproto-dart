@@ -1075,6 +1075,65 @@ void main() {
       expect(src, contains('paramsCapabilities: typedCapabilities'));
       expect(src, contains('return result.getSameCapabilityTyped(capCodec)'));
     });
+
+    test('generates typed convenience API for a `-> stream` method', () {
+      final params = structNode(
+        100,
+        'Sink.writeItem\$Params',
+        0,
+        1,
+        [ptrField('item', 0, 0, const TypeParameterRefType(0))],
+        parameters: ['T'],
+      );
+      // Mirrors capnp/stream.capnp's built-in StreamResult: no fields.
+      final results = structNode(101, 'StreamResult', 0, 0, []);
+      final iface = interfaceNode(200, 'Sink', [
+        const SchemaMethod(
+          name: 'writeItem',
+          ordinal: 0,
+          paramStructTypeId: 100,
+          // 0x995f9a3377c0b16e == dart_generator.dart's streamResultTypeId.
+          resultStructTypeId: 0x995f9a3377c0b16e,
+        ),
+      ]);
+      final file = fileNode(1, [SchemaNestedNode(name: 'Sink', id: 200)]);
+      final src = generateDartFile(file, [file, params, results, iface]);
+
+      const ifaceId = '0x00000000000000c8';
+
+      // The plain (untyped) stream method is still generated as before.
+      expect(
+        src,
+        contains(
+          'Future<void> writeItem(void Function(SinkWriteItemParamsBuilder) build) async',
+        ),
+      );
+      expect(
+        src,
+        contains('await _cap.dispatchStreaming($ifaceId, 0, mb.serialize());'),
+      );
+
+      // The new Typed variant dispatches via dispatchStreaming too, returns
+      // void, and never generates a pipeline method (StreamResult has no
+      // fields to pipeline on).
+      expect(
+        src,
+        contains('Future<void> writeItemTyped<T>(AnyPointerCodec<T> tCodec, T item) async'),
+      );
+      expect(
+        src,
+        contains(
+          'b.setItemTyped(tCodec, item, capabilities: typedCapabilities);',
+        ),
+      );
+      expect(
+        src,
+        contains(
+          'await _cap.dispatchStreaming($ifaceId, 0, mb.serialize(), paramsCapabilities: typedCapabilities);',
+        ),
+      );
+      expect(src, isNot(contains('writeItemTypedPipeline')));
+    });
   });
 
   group('generateDartFile — capability-returning methods (GEN-002)', () {

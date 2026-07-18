@@ -436,10 +436,10 @@ void _writeClientMethod(
     // `-> stream` method: dispatchStreaming() applies flow-control windowing
     // on RPC-connected capabilities (see FlowController) instead of a plain
     // awaited dispatch. The result is always the empty StreamResult struct,
-    // so there's nothing to return. Pipelining and generic/Typed variants
-    // aren't generated here — StreamResult never has fields to pipeline on,
-    // and a `-> stream` method with generic params is not supported by this
-    // generator today.
+    // so there's nothing to return. No pipeline method is generated —
+    // StreamResult never has fields to pipeline on — but a Typed convenience
+    // variant is, when the params struct has generic type parameters (see
+    // _writeTypedClientMethod's isStreaming branch).
     sb.writeln(
       '  Future<void> $methodName(void Function(${paramsName}Builder) build$namedParams) async {',
     );
@@ -457,6 +457,21 @@ void _writeClientMethod(
       '    await _cap.dispatchStreaming($ifaceId, $ordinal, mb.serialize()$dispatchCaps);',
     );
     sb.writeln('  }');
+
+    _writeTypedClientMethod(
+      sb,
+      ifaceName,
+      methodName,
+      paramsName,
+      resultsName,
+      paramsNode,
+      resultsNode,
+      'void',
+      false,
+      ifaceId,
+      ordinal,
+      isStreaming: true,
+    );
     return;
   }
 
@@ -543,8 +558,9 @@ void _writeTypedClientMethod(
   String asyncReturnType,
   bool hasPipeline,
   String ifaceId,
-  int ordinal,
-) {
+  int ordinal, {
+  bool isStreaming = false,
+}) {
   final typeParams =
       paramsNode?.parameters.isNotEmpty == true
           ? paramsNode!.parameters
@@ -552,7 +568,11 @@ void _writeTypedClientMethod(
   if (typeParams.isEmpty) return;
 
   final paramFields = _collectDirectTypeParamFields(paramsNode);
-  final resultFields = _collectDirectTypeParamFields(resultsNode);
+  // `-> stream` methods always resolve to the built-in, non-generic
+  // StreamResult struct, which never has fields to type — so any type
+  // parameters here always come from the params struct alone.
+  final resultFields = isStreaming ? const <(String, int)>[]
+      : _collectDirectTypeParamFields(resultsNode);
   final codecParamIndexes = <int>{
     for (final f in paramFields) f.$2,
     for (final f in resultFields) f.$2,
@@ -575,7 +595,9 @@ void _writeTypedClientMethod(
 
   final typedMethodName = '${methodName}Typed';
   final returnType =
-      !hasPipeline && resultFields.length == 1
+      isStreaming
+          ? 'void'
+          : !hasPipeline && resultFields.length == 1
           ? '${genericNames[resultFields.single.$2]}?'
           : asyncReturnType;
 
@@ -596,6 +618,16 @@ void _writeTypedClientMethod(
     sb.writeln(
       '    b.set${ucField}Typed(${_lcfirst(typeName)}Codec, ${_camel(fieldName)}, capabilities: typedCapabilities);',
     );
+  }
+  if (isStreaming) {
+    // Same flow-controlled windowing as the untyped stream method (see
+    // dispatchStreaming's doc comment) — StreamResult has no fields, so
+    // there's nothing to read back or pipeline on.
+    sb.writeln(
+      '    await _cap.dispatchStreaming($ifaceId, $ordinal, mb.serialize(), paramsCapabilities: typedCapabilities);',
+    );
+    sb.writeln('  }');
+    return;
   }
   sb.writeln(
     '    final dispatchResult = await _cap.dispatch($ifaceId, $ordinal, mb.serialize(), paramsCapabilities: typedCapabilities);',
