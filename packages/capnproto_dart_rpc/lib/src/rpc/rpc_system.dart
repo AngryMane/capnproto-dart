@@ -74,7 +74,16 @@ class RpcSystem {
         streamWindowSize: streamWindowSize,
       );
       connections.add(conn);
-      conn.done.whenComplete(() => connections.remove(conn));
+      // `conn.done` completes with an error for a connection that was torn
+      // down abnormally (malformed peer data, reset, etc.) — TwoPartyRpcConnection
+      // itself already calls `.ignore()` on that completer before erroring it
+      // specifically so an unobserved `.done` doesn't print as an unhandled
+      // error. `.whenComplete()` observes the future but replays the same
+      // error onto the future it returns; without also silencing *that* one,
+      // a single malformed/aborted connection (e.g. a stray TCP probe) would
+      // surface as a top-level unhandled exception instead of just being
+      // logged via `onDisposeError` like every other per-connection failure.
+      conn.done.whenComplete(() => connections.remove(conn)).ignore();
     });
 
     return _TcpRpcServer(serverSocket, connections);
