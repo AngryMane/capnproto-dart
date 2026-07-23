@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1, user-scalable=no">
+  <meta name="description" content="API docs for the DynamicStructReader class from the capnproto_dart library, for the Dart programming language.">
+  <title>DynamicStructReader class - capnproto_dart library - Dart API</title>
+
+
+  
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+  
+  <link rel="stylesheet" href="../static-assets/github.css?v1">
+  <link rel="stylesheet" href="../static-assets/styles.css?v1">
+  <link rel="icon" href="../static-assets/favicon.png?v1">
+  
+</head>
+
+<body data-base-href="../" data-using-base-href="false" class="light-theme">
+<div id="overlay-under-drawer"></div>
+<header id="title">
+  <span id="sidenav-left-toggle" class="material-symbols-outlined" role="button" tabindex="0">menu</span>
+  <ol class="breadcrumbs gt-separated dark hidden-xs">
+    <li><a href="../index.html">capnproto_dart</a></li>
+    <li><a href="../capnproto_dart">capnproto_dart.dart</a></li>
+    <li class="self-crumb">DynamicStructReader class</li>
+  </ol>
+  <div class="self-name">DynamicStructReader</div>
+  <form class="search navbar-right" role="search">
+    <input type="text" id="search-box" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
+  </form>
+  <div class="toggle" id="theme-button" title="Toggle brightness">
+    <label for="theme">
+      <input type="checkbox" id="theme" value="light-theme">
+      <span id="dark-theme-button" class="material-symbols-outlined">
+        dark_mode
+      </span>
+      <span id="light-theme-button" class="material-symbols-outlined">
+        light_mode
+      </span>
+    </label>
+  </div>
+</header>
+<main>
+<div
+    id="dartdoc-main-content"
+    class="main-content"
+    data-above-sidebar="capnproto_dart&#47;capnproto_dart-library-sidebar.html"
+    data-below-sidebar="capnproto_dart&#47;DynamicStructReader-class-sidebar.html">
+    <div>
+<h1><span class="kind-class">DynamicStructReader</span> class 
+    <a href="https://dart.dev/language/class-modifiers#final" class="feature feature-final" title="This class can neither be extended, implemented, nor mixed in.">final</a>
+ 
+</h1></div>
+
+    
+<section class="desc markdown">
+  <p>Schema-less struct reader used by the dynamic API.</p>
+<p><strong>Intended users</strong></p>
+<ul>
+<li>Generated bindings and developers building reflection-driven or RPC integrations.</li>
+</ul>
+<p><strong>Primary use cases</strong></p>
+<ul>
+<li>Supports values whose schema or concrete Dart type is selected at runtime.</li>
+</ul>
+</section>
+
+
+    <section>
+      <dl class="dl-horizontal">
+        
+  <dt>Inheritance</dt>
+  <dd>
+    <ul class="gt-separated dark clazz-relationships">
+      <li><a href="https://api.dart.dev/stable/3.7.2/dart-core/Object-class.html">Object</a></li>
+        <li><a href="../capnproto_dart/StructReader-class.html">StructReader</a></li>
+      <li>DynamicStructReader</li>
+    </ul>
+  </dd>
+
+        
+        
+
+
+        
+        
+
+
+      </dl>
+    </section>
+
+    
+  <section class="summary offset-anchor" id="constructors">
+    <h2>Constructors</h2>
+    <dl class="constructor-summary-list">
+        <dt id="DynamicStructReader" class="callable">
+          <span class="name"><a href="../capnproto_dart/DynamicStructReader/DynamicStructReader.html">DynamicStructReader</a></span><span class="signature">(<span class="parameter" id="-param-raw"><span class="type-annotation"><a href="../capnproto_dart/RawStructReader-class.html">RawStructReader</a></span> <span class="parameter-name">raw</span>, {</span><span class="parameter" id="-param-capabilities"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/List-class.html">List</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/Object-class.html">Object</a>?</span>&gt;</span></span> <span class="parameter-name">capabilities</span> = <span class="default-value">const []</span></span>})</span>
+        </dt>
+        <dd>
+          Creates a <a href="../capnproto_dart/DynamicStructReader-class.html">DynamicStructReader</a> instance.
+        </dd>
+    </dl>
+  </section>
+    
+  <section
+      class="summary offset-anchor"
+      id="instance-properties">
+    <h2>Properties</h2>
+    <dl class="properties">
+        <dt id="capabilityTable" class="property inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/capabilityTable.html">capabilityTable</a></span>
+  <span class="signature">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-core/List-class.html">List</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/Object-class.html">Object</a>?</span>&gt;</span></span>
+  
+
+</dt>
+<dd class="inherited">
+  Capability table associated with this struct's message payload.
+  <div class="features"><span class="feature">no setter</span><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="dataWords" class="property">
+  <span class="name"><a href="../capnproto_dart/DynamicStructReader/dataWords.html">dataWords</a></span>
+  <span class="signature">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>
+  
+
+</dt>
+<dd>
+  Returns the current <a href="../capnproto_dart/DynamicStructReader/dataWords.html">dataWords</a> value.
+  <div class="features"><span class="feature">no setter</span></div>
+
+</dd>
+
+        <dt id="hashCode" class="property inherited">
+  <span class="name"><a href="https://api.dart.dev/stable/3.7.2/dart-core/Object/hashCode.html">hashCode</a></span>
+  <span class="signature">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>
+  
+
+</dt>
+<dd class="inherited">
+  The hash code for this object.
+  <div class="features"><span class="feature">no setter</span><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="pointerWords" class="property">
+  <span class="name"><a href="../capnproto_dart/DynamicStructReader/pointerWords.html">pointerWords</a></span>
+  <span class="signature">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>
+  
+
+</dt>
+<dd>
+  Returns the current <a href="../capnproto_dart/DynamicStructReader/pointerWords.html">pointerWords</a> value.
+  <div class="features"><span class="feature">no setter</span></div>
+
+</dd>
+
+        <dt id="raw" class="property inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/raw.html">raw</a></span>
+  <span class="signature">&#8594; <a href="../capnproto_dart/RawStructReader-class.html">RawStructReader</a></span>
+  
+
+</dt>
+<dd class="inherited">
+  Exposes the underlying raw reader so that group accessors generated by
+capnpc-dart can forward the same raw bytes to their own constructor.
+  <div class="features"><span class="feature">no setter</span><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="runtimeType" class="property inherited">
+  <span class="name"><a href="https://api.dart.dev/stable/3.7.2/dart-core/Object/runtimeType.html">runtimeType</a></span>
+  <span class="signature">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-core/Type-class.html">Type</a></span>
+  
+
+</dt>
+<dd class="inherited">
+  A representation of the runtime type of the object.
+  <div class="features"><span class="feature">no setter</span><span class="feature">inherited</span></div>
+
+</dd>
+
+    </dl>
+  </section>
+
+    
+  <section
+      class="summary offset-anchor"
+      id="instance-methods">
+    <h2>Methods</h2>
+    <dl class="callables">
+        <dt id="getAnyPointerAsMessageBytes" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getAnyPointerAsMessageBytes.html">getAnyPointerAsMessageBytes</a></span><span class="signature">(<wbr><span class="parameter" id="getAnyPointerAsMessageBytes-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span>, {</span><span class="parameter" id="getAnyPointerAsMessageBytes-param-preserveCapabilityPointers"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/bool-class.html">bool</a></span> <span class="parameter-name">preserveCapabilityPointers</span> = <span class="default-value">false</span></span>})
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Reads the AnyPointer at <code>ptrIndex</code>, deep-copies the referenced struct
+into a new standalone message, and returns the serialized bytes.
+Returns null if the pointer is null.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getAnyPointerField" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getAnyPointerField.html">getAnyPointerField</a></span><span class="signature">(<wbr><span class="parameter" id="getAnyPointerField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/AnyPointerReader-class.html">AnyPointerReader</a>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Returns a typed view of the AnyPointer at <code>ptrIndex</code>.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getBoolField" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getBoolField.html">getBoolField</a></span><span class="signature">(<wbr><span class="parameter" id="getBoolField-param-bitOffset"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">bitOffset</span>, {</span><span class="parameter" id="getBoolField-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/bool-class.html">bool</a></span> <span class="parameter-name">defaultValue</span> = <span class="default-value">false</span></span>})
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Performs the <a href="../capnproto_dart/StructReader/getBoolField.html">getBoolField</a> operation.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getBoolListField" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getBoolListField.html">getBoolListField</a></span><span class="signature">(<wbr><span class="parameter" id="getBoolListField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span>, {</span><span class="parameter" id="getBoolListField-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a>?</span> <span class="parameter-name">defaultValue</span></span>})
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/bool-class.html">bool</a></span>&gt;</span>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Performs the <a href="../capnproto_dart/StructReader/getBoolListField.html">getBoolListField</a> operation.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getCapabilityField" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getCapabilityField.html">getCapabilityField</a></span><span class="signature">(<wbr><span class="parameter" id="getCapabilityField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span></span>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Returns the capability-table index stored in the capability pointer at
+<code>ptrIndex</code>, or -1 if the pointer is absent or not a capability pointer.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getCapabilityListField" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getCapabilityListField.html">getCapabilityListField</a></span><span class="signature">(<wbr><span class="parameter" id="getCapabilityListField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Reads a <code>List(Interface)</code> field at <code>ptrIndex</code>.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getCapabilityListFieldWith" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getCapabilityListFieldWith.html">getCapabilityListFieldWith</a></span><span class="signature">&lt;<wbr><span class="type-parameter">T</span>&gt;</span><span class="signature">(<wbr><span class="parameter" id="getCapabilityListFieldWith-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span>, </span><span class="parameter" id="getCapabilityListFieldWith-param-fromCapability"><span class="type-annotation">T</span> <span class="parameter-name">fromCapability</span>(<span class="parameter" id="param-capability"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/Object-class.html">Object</a></span> <span class="parameter-name">capability</span></span>)</span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter">T?</span>&gt;</span>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Reads a typed <code>List(Interface)</code> field at <code>ptrIndex</code>.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getCapabilityObject" class="callable">
+  <span class="name"><a href="../capnproto_dart/DynamicStructReader/getCapabilityObject.html">getCapabilityObject</a></span><span class="signature">(<wbr><span class="parameter" id="getCapabilityObject-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span></span>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-core/Object-class.html">Object</a>?</span>
+  </span>
+  
+
+</dt>
+<dd>
+  Performs the <a href="../capnproto_dart/DynamicStructReader/getCapabilityObject.html">getCapabilityObject</a> operation.
+  
+
+</dd>
+
+        <dt id="getCapabilityObjectField" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getCapabilityObjectField.html">getCapabilityObjectField</a></span><span class="signature">(<wbr><span class="parameter" id="getCapabilityObjectField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span></span>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-core/Object-class.html">Object</a>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Returns the capability object referenced by <code>ptrIndex</code>, or null if the
+pointer is null / not a capability pointer.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getDataField" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getDataField.html">getDataField</a></span><span class="signature">(<wbr><span class="parameter" id="getDataField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span>, {</span><span class="parameter" id="getDataField-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a>?</span> <span class="parameter-name">defaultValue</span></span>})
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Reads a Data (raw bytes) field from the pointer at <code>ptrIndex</code>.
+Returns <code>defaultValue</code> if the pointer is null (see <a href="../capnproto_dart/StructReader/getTextField.html">getTextField</a>).
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getDataListField" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getDataListField.html">getDataListField</a></span><span class="signature">(<wbr><span class="parameter" id="getDataListField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span>, {</span><span class="parameter" id="getDataListField-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a>?</span> <span class="parameter-name">defaultValue</span></span>})
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a>?</span>&gt;</span>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Performs the <a href="../capnproto_dart/StructReader/getDataListField.html">getDataListField</a> operation.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getEnumListField" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getEnumListField.html">getEnumListField</a></span><span class="signature">&lt;<wbr><span class="type-parameter">E</span>&gt;</span><span class="signature">(<wbr><span class="parameter" id="getEnumListField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span>, </span><span class="parameter" id="getEnumListField-param-fromInt"><span class="type-annotation">E?</span> <span class="parameter-name">fromInt</span>(<span class="parameter" id="param-"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span></span>), {</span><span class="parameter" id="getEnumListField-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a>?</span> <span class="parameter-name">defaultValue</span></span>})
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter">E?</span>&gt;</span>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Reads a list of enum values (stored as uint16) from <code>ptrIndex</code>.
+<code>fromInt</code> maps the raw integer to <code>E?</code> (null = unknown discriminant).
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getFloat32Field" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getFloat32Field.html">getFloat32Field</a></span><span class="signature">(<wbr><span class="parameter" id="getFloat32Field-param-byteOffset"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">byteOffset</span>, {</span><span class="parameter" id="getFloat32Field-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/double-class.html">double</a></span> <span class="parameter-name">defaultValue</span> = <span class="default-value">0.0</span></span>})
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-core/double-class.html">double</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Performs the <a href="../capnproto_dart/StructReader/getFloat32Field.html">getFloat32Field</a> operation.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getFloat32ListField" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getFloat32ListField.html">getFloat32ListField</a></span><span class="signature">(<wbr><span class="parameter" id="getFloat32ListField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span>, {</span><span class="parameter" id="getFloat32ListField-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a>?</span> <span class="parameter-name">defaultValue</span></span>})
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/double-class.html">double</a></span>&gt;</span>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Performs the <a href="../capnproto_dart/StructReader/getFloat32ListField.html">getFloat32ListField</a> operation.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getFloat64Field" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getFloat64Field.html">getFloat64Field</a></span><span class="signature">(<wbr><span class="parameter" id="getFloat64Field-param-byteOffset"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">byteOffset</span>, {</span><span class="parameter" id="getFloat64Field-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/double-class.html">double</a></span> <span class="parameter-name">defaultValue</span> = <span class="default-value">0.0</span></span>})
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-core/double-class.html">double</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Performs the <a href="../capnproto_dart/StructReader/getFloat64Field.html">getFloat64Field</a> operation.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getFloat64ListField" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getFloat64ListField.html">getFloat64ListField</a></span><span class="signature">(<wbr><span class="parameter" id="getFloat64ListField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span>, {</span><span class="parameter" id="getFloat64ListField-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a>?</span> <span class="parameter-name">defaultValue</span></span>})
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/double-class.html">double</a></span>&gt;</span>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Performs the <a href="../capnproto_dart/StructReader/getFloat64ListField.html">getFloat64ListField</a> operation.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getInt16Field" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getInt16Field.html">getInt16Field</a></span><span class="signature">(<wbr><span class="parameter" id="getInt16Field-param-byteOffset"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">byteOffset</span>, {</span><span class="parameter" id="getInt16Field-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">defaultValue</span> = <span class="default-value">0</span></span>})
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Performs the <a href="../capnproto_dart/StructReader/getInt16Field.html">getInt16Field</a> operation.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getInt16ListField" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getInt16ListField.html">getInt16ListField</a></span><span class="signature">(<wbr><span class="parameter" id="getInt16ListField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span>, {</span><span class="parameter" id="getInt16ListField-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a>?</span> <span class="parameter-name">defaultValue</span></span>})
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Performs the <a href="../capnproto_dart/StructReader/getInt16ListField.html">getInt16ListField</a> operation.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getInt32Field" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getInt32Field.html">getInt32Field</a></span><span class="signature">(<wbr><span class="parameter" id="getInt32Field-param-byteOffset"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">byteOffset</span>, {</span><span class="parameter" id="getInt32Field-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">defaultValue</span> = <span class="default-value">0</span></span>})
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Performs the <a href="../capnproto_dart/StructReader/getInt32Field.html">getInt32Field</a> operation.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getInt32ListField" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getInt32ListField.html">getInt32ListField</a></span><span class="signature">(<wbr><span class="parameter" id="getInt32ListField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span>, {</span><span class="parameter" id="getInt32ListField-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a>?</span> <span class="parameter-name">defaultValue</span></span>})
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Performs the <a href="../capnproto_dart/StructReader/getInt32ListField.html">getInt32ListField</a> operation.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getInt64Field" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getInt64Field.html">getInt64Field</a></span><span class="signature">(<wbr><span class="parameter" id="getInt64Field-param-byteOffset"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">byteOffset</span>, {</span><span class="parameter" id="getInt64Field-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">defaultValue</span> = <span class="default-value">0</span></span>})
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Performs the <a href="../capnproto_dart/StructReader/getInt64Field.html">getInt64Field</a> operation.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getInt64ListField" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getInt64ListField.html">getInt64ListField</a></span><span class="signature">(<wbr><span class="parameter" id="getInt64ListField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span>, {</span><span class="parameter" id="getInt64ListField-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a>?</span> <span class="parameter-name">defaultValue</span></span>})
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Performs the <a href="../capnproto_dart/StructReader/getInt64ListField.html">getInt64ListField</a> operation.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getInt8Field" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getInt8Field.html">getInt8Field</a></span><span class="signature">(<wbr><span class="parameter" id="getInt8Field-param-byteOffset"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">byteOffset</span>, {</span><span class="parameter" id="getInt8Field-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">defaultValue</span> = <span class="default-value">0</span></span>})
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Performs the <a href="../capnproto_dart/StructReader/getInt8Field.html">getInt8Field</a> operation.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getInt8ListField" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getInt8ListField.html">getInt8ListField</a></span><span class="signature">(<wbr><span class="parameter" id="getInt8ListField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span>, {</span><span class="parameter" id="getInt8ListField-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a>?</span> <span class="parameter-name">defaultValue</span></span>})
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Performs the <a href="../capnproto_dart/StructReader/getInt8ListField.html">getInt8ListField</a> operation.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getListField" class="callable">
+  <span class="name"><a href="../capnproto_dart/DynamicStructReader/getListField.html">getListField</a></span><span class="signature">(<wbr><span class="parameter" id="getListField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/DynamicListReader-class.html">DynamicListReader</a>?</span>
+  </span>
+  
+
+</dt>
+<dd>
+  Performs the <a href="../capnproto_dart/DynamicStructReader/getListField.html">getListField</a> operation.
+  
+
+</dd>
+
+        <dt id="getNestedListField" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getNestedListField.html">getNestedListField</a></span><span class="signature">&lt;<wbr><span class="type-parameter">T</span>&gt;</span><span class="signature">(<wbr><span class="parameter" id="getNestedListField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span>, </span><span class="parameter" id="getNestedListField-param-fromRaw"><span class="type-annotation"><a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter">T</span>&gt;</span>?</span> <span class="parameter-name">fromRaw</span>(<span class="parameter" id="param-"><span class="type-annotation"><a href="../capnproto_dart/RawListReader-class.html">RawListReader</a></span></span>)</span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter">T</span>&gt;</span>?</span>&gt;</span>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Reads a <code>List(List(T))</code> from <code>ptrIndex</code>.
+<code>fromRaw</code> converts each inner <a href="../capnproto_dart/RawListReader-class.html">RawListReader</a> to <a href="../capnproto_dart/ListReader-class.html">ListReader&lt;T&gt;</a>.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getPointerField" class="callable">
+  <span class="name"><a href="../capnproto_dart/DynamicStructReader/getPointerField.html">getPointerField</a></span><span class="signature">(<wbr><span class="parameter" id="getPointerField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/AnyPointerReader-class.html">AnyPointerReader</a>?</span>
+  </span>
+  
+
+</dt>
+<dd>
+  Performs the <a href="../capnproto_dart/DynamicStructReader/getPointerField.html">getPointerField</a> operation.
+  
+
+</dd>
+
+        <dt id="getStructField" class="callable">
+  <span class="name"><a href="../capnproto_dart/DynamicStructReader/getStructField.html">getStructField</a></span><span class="signature">(<wbr><span class="parameter" id="getStructField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/DynamicStructReader-class.html">DynamicStructReader</a>?</span>
+  </span>
+  
+
+</dt>
+<dd>
+  Performs the <a href="../capnproto_dart/DynamicStructReader/getStructField.html">getStructField</a> operation.
+  
+
+</dd>
+
+        <dt id="getStructFieldWith" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getStructFieldWith.html">getStructFieldWith</a></span><span class="signature">&lt;<wbr><span class="type-parameter">R extends <a href="../capnproto_dart/StructReader-class.html">StructReader</a></span>&gt;</span><span class="signature">(<wbr><span class="parameter" id="getStructFieldWith-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span>, </span><span class="parameter" id="getStructFieldWith-param-fromRaw"><span class="type-annotation">R</span> <span class="parameter-name">fromRaw</span>(<span class="parameter" id="param-"><span class="type-annotation"><a href="../capnproto_dart/RawStructReader-class.html">RawStructReader</a></span></span>), {</span><span class="parameter" id="getStructFieldWith-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a>?</span> <span class="parameter-name">defaultValue</span></span>})
+    <span class="returntype parameter">&#8594; R?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Reads a nested struct from the pointer at <code>ptrIndex</code>. Returns the
+struct decoded from <code>defaultValue</code> if the pointer is null and
+<code>defaultValue</code> is given (see <a href="../capnproto_dart/StructReader/getTextField.html">getTextField</a> for how this default
+mechanism relates to the plain "field absent" case); returns null
+otherwise.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getStructListFieldWith" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getStructListFieldWith.html">getStructListFieldWith</a></span><span class="signature">&lt;<wbr><span class="type-parameter">R</span>&gt;</span><span class="signature">(<wbr><span class="parameter" id="getStructListFieldWith-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span>, </span><span class="parameter" id="getStructListFieldWith-param-fromRaw"><span class="type-annotation">R</span> <span class="parameter-name">fromRaw</span>(<span class="parameter" id="param-"><span class="type-annotation"><a href="../capnproto_dart/RawStructReader-class.html">RawStructReader</a></span></span>), {</span><span class="parameter" id="getStructListFieldWith-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a>?</span> <span class="parameter-name">defaultValue</span></span>})
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter">R</span>&gt;</span>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Reads a composite struct list from the pointer at <code>ptrIndex</code>.
+Returns null if the pointer is null and no <code>defaultValue</code> is given.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getTextField" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getTextField.html">getTextField</a></span><span class="signature">(<wbr><span class="parameter" id="getTextField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span>, {</span><span class="parameter" id="getTextField-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/String-class.html">String</a>?</span> <span class="parameter-name">defaultValue</span></span>})
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-core/String-class.html">String</a>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Reads a Text (UTF-8 string) from the pointer at <code>ptrIndex</code>.
+Returns <code>defaultValue</code> if the pointer is null — either because the
+field is genuinely absent (older message / never set) or, per the
+Cap'n Proto default-value spec, because it was explicitly set back to
+the schema-declared default (which pointer fields encode as a null
+pointer, same as "unset").
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getTextListField" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getTextListField.html">getTextListField</a></span><span class="signature">(<wbr><span class="parameter" id="getTextListField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span>, {</span><span class="parameter" id="getTextListField-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a>?</span> <span class="parameter-name">defaultValue</span></span>})
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/String-class.html">String</a>?</span>&gt;</span>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Performs the <a href="../capnproto_dart/StructReader/getTextListField.html">getTextListField</a> operation.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getUint16Field" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getUint16Field.html">getUint16Field</a></span><span class="signature">(<wbr><span class="parameter" id="getUint16Field-param-byteOffset"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">byteOffset</span>, {</span><span class="parameter" id="getUint16Field-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">defaultValue</span> = <span class="default-value">0</span></span>})
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Performs the <a href="../capnproto_dart/StructReader/getUint16Field.html">getUint16Field</a> operation.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getUint16ListField" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getUint16ListField.html">getUint16ListField</a></span><span class="signature">(<wbr><span class="parameter" id="getUint16ListField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span>, {</span><span class="parameter" id="getUint16ListField-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a>?</span> <span class="parameter-name">defaultValue</span></span>})
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Performs the <a href="../capnproto_dart/StructReader/getUint16ListField.html">getUint16ListField</a> operation.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getUint32Field" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getUint32Field.html">getUint32Field</a></span><span class="signature">(<wbr><span class="parameter" id="getUint32Field-param-byteOffset"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">byteOffset</span>, {</span><span class="parameter" id="getUint32Field-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">defaultValue</span> = <span class="default-value">0</span></span>})
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Performs the <a href="../capnproto_dart/StructReader/getUint32Field.html">getUint32Field</a> operation.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getUint32ListField" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getUint32ListField.html">getUint32ListField</a></span><span class="signature">(<wbr><span class="parameter" id="getUint32ListField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span>, {</span><span class="parameter" id="getUint32ListField-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a>?</span> <span class="parameter-name">defaultValue</span></span>})
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Performs the <a href="../capnproto_dart/StructReader/getUint32ListField.html">getUint32ListField</a> operation.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getUint64Field" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getUint64Field.html">getUint64Field</a></span><span class="signature">(<wbr><span class="parameter" id="getUint64Field-param-byteOffset"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">byteOffset</span>, {</span><span class="parameter" id="getUint64Field-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">defaultValue</span> = <span class="default-value">0</span></span>})
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Performs the <a href="../capnproto_dart/StructReader/getUint64Field.html">getUint64Field</a> operation.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getUint64ListField" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getUint64ListField.html">getUint64ListField</a></span><span class="signature">(<wbr><span class="parameter" id="getUint64ListField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span>, {</span><span class="parameter" id="getUint64ListField-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a>?</span> <span class="parameter-name">defaultValue</span></span>})
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Performs the <a href="../capnproto_dart/StructReader/getUint64ListField.html">getUint64ListField</a> operation.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getUint8Field" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getUint8Field.html">getUint8Field</a></span><span class="signature">(<wbr><span class="parameter" id="getUint8Field-param-byteOffset"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">byteOffset</span>, {</span><span class="parameter" id="getUint8Field-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">defaultValue</span> = <span class="default-value">0</span></span>})
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Performs the <a href="../capnproto_dart/StructReader/getUint8Field.html">getUint8Field</a> operation.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getUint8ListField" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getUint8ListField.html">getUint8ListField</a></span><span class="signature">(<wbr><span class="parameter" id="getUint8ListField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span>, {</span><span class="parameter" id="getUint8ListField-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a>?</span> <span class="parameter-name">defaultValue</span></span>})
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Performs the <a href="../capnproto_dart/StructReader/getUint8ListField.html">getUint8ListField</a> operation.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getVoidListField" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/getVoidListField.html">getVoidListField</a></span><span class="signature">(<wbr><span class="parameter" id="getVoidListField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span>, {</span><span class="parameter" id="getVoidListField-param-defaultValue"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a>?</span> <span class="parameter-name">defaultValue</span></span>})
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/Null-class.html">Null</a></span>&gt;</span>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Reads a <code>List(Void)</code> from the pointer at <code>ptrIndex</code>.
+Returns null if the pointer is null and no <code>defaultValue</code> is given.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="hasPointerField" class="callable inherited">
+  <span class="name"><a href="../capnproto_dart/StructReader/hasPointerField.html">hasPointerField</a></span><span class="signature">(<wbr><span class="parameter" id="hasPointerField-param-ptrIndex"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">ptrIndex</span></span>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Returns true if the pointer at <code>ptrIndex</code> is non-null.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="noSuchMethod" class="callable inherited">
+  <span class="name"><a href="https://api.dart.dev/stable/3.7.2/dart-core/Object/noSuchMethod.html">noSuchMethod</a></span><span class="signature">(<wbr><span class="parameter" id="noSuchMethod-param-invocation"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/Invocation-class.html">Invocation</a></span> <span class="parameter-name">invocation</span></span>)
+    <span class="returntype parameter">&#8594; dynamic</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Invoked when a nonexistent method or property is accessed.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="toString" class="callable inherited">
+  <span class="name"><a href="https://api.dart.dev/stable/3.7.2/dart-core/Object/toString.html">toString</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-core/String-class.html">String</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  A string representation of this object.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+    </dl>
+  </section>
+    
+  <section
+      class="summary offset-anchor inherited"
+      id="operators">
+    <h2>Operators</h2>
+    <dl class="callables">
+        <dt id="operator ==" class="callable inherited">
+  <span class="name"><a href="https://api.dart.dev/stable/3.7.2/dart-core/Object/operator_equals.html">operator ==</a></span><span class="signature">(<wbr><span class="parameter" id="==-param-other"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/Object-class.html">Object</a></span> <span class="parameter-name">other</span></span>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  The equality operator.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+    </dl>
+  </section>
+    
+    
+    
+
+  </div> <!-- /.main-content -->
+  <div id="dartdoc-sidebar-left" class="sidebar sidebar-offcanvas-left">
+    <!-- The search input and breadcrumbs below are only responsively visible at low resolutions. -->
+<header id="header-search-sidebar" class="hidden-l">
+  <form class="search-sidebar" role="search">
+    <input type="text" id="search-sidebar" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
+  </form>
+</header>
+<ol class="breadcrumbs gt-separated dark hidden-l" id="sidebar-nav">
+    <li><a href="../index.html">capnproto_dart</a></li>
+    <li><a href="../capnproto_dart">capnproto_dart</a></li>
+    <li class="self-crumb">DynamicStructReader class</li>
+</ol>
+
+    <h5>capnproto_dart library</h5>
+    <div id="dartdoc-sidebar-left-content"></div>
+  </div>
+  <div id="dartdoc-sidebar-right" class="sidebar sidebar-offcanvas-right">
+  </div><!--/.sidebar-offcanvas-->
+</main>
+<footer>
+  <span class="no-break">
+    capnproto_dart
+      0.1.0
+  </span>
+  
+</footer>
+
+
+<script src="../static-assets/highlight.pack.js?v1"></script>
+<script src="../static-assets/docs.dart.js"></script>
+
+</body>
+</html>
+

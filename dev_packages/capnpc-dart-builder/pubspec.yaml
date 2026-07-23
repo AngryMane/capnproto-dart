@@ -1,0 +1,31 @@
+name: capnpc_dart_builder
+description: >-
+  build_runner integration for capnpc-dart. Add as a dev_dependency to
+  generate .capnp.dart files from .capnp schema files via
+  `dart run build_runner build`, instead of invoking `capnp compile`
+  yourself. Requires the official `capnp` CLI to be installed separately —
+  this package does not parse .capnp syntax itself, it only shells out to
+  `capnp compile -o-` and hands the result to capnpc_dart.
+version: 0.1.0
+publish_to: none # TODO: remove once ready to publish to pub.dev.
+repository: https://github.com/AngryMane/capnproto-dart
+issue_tracker: https://github.com/AngryMane/capnproto-dart/issues
+topics: [capnproto, code-generation, build-runner]
+
+resolution: workspace
+
+environment:
+  sdk: ^3.7.2
+
+dependencies:
+  build: ^2.4.0
+  capnpc_dart:
+    git:
+      url: https://github.com/AngryMane/capnproto-dart.git
+      path: dev_packages/capnpc-dart
+  path: ^1.9.0
+
+dev_dependencies:
+  build_test: ^2.2.0
+  lints: ^5.0.0
+  test: ^1.24.0

@@ -1,0 +1,7 @@
+builders:
+  capnp:
+    import: "package:capnpc_dart_builder/builder.dart"
+    builder_factories: ["capnpBuilder"]
+    build_extensions: {".capnp": [".capnp.dart"]}
+    auto_apply: dependents
+    build_to: source

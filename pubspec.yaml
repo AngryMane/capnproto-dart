@@ -1,0 +1,11 @@
+name: capnproto_dart_workspace
+publish_to: none
+
+environment:
+  sdk: ^3.7.2
+
+workspace:
+  - dev_packages/capnpc-dart
+  - dev_packages/capnpc-dart-builder
+  - packages/capnproto_dart
+  - packages/capnproto_dart_rpc

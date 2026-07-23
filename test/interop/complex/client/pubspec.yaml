@@ -1,0 +1,31 @@
+name: complex_client
+description: Complex schema interoperability sample.
+publish_to: 'none'
+
+environment:
+  sdk: ^3.7.2
+
+resolution:
+
+dependencies:
+  capnproto_dart_rpc:
+    git:
+      url: https://github.com/AngryMane/capnproto-dart.git
+      path: packages/capnproto_dart_rpc
+
+dev_dependencies:
+  build_runner: ^2.4.13
+  capnpc_dart_builder:
+    git:
+      url: https://github.com/AngryMane/capnproto-dart.git
+      path: dev_packages/capnpc-dart-builder
+
+dependency_overrides:
+  capnproto_dart:
+    path: ../../../../packages/capnproto_dart
+  capnproto_dart_rpc:
+    path: ../../../../packages/capnproto_dart_rpc
+  capnpc_dart:
+    path: ../../../../dev_packages/capnpc-dart
+  capnpc_dart_builder:
+    path: ../../../../dev_packages/capnpc-dart-builder

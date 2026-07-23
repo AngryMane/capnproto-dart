@@ -1,0 +1,29 @@
+name: wire_format_golden_dart
+description: Dart side of the wire-format golden test against the official capnp CLI.
+publish_to: 'none'
+
+environment:
+  sdk: ^3.7.2
+
+resolution:
+
+dependencies:
+  capnproto_dart:
+    git:
+      url: https://github.com/AngryMane/capnproto-dart.git
+      path: packages/capnproto_dart
+
+dev_dependencies:
+  build_runner: ^2.4.13
+  capnpc_dart_builder:
+    git:
+      url: https://github.com/AngryMane/capnproto-dart.git
+      path: dev_packages/capnpc-dart-builder
+
+dependency_overrides:
+  capnproto_dart:
+    path: ../../../../packages/capnproto_dart
+  capnpc_dart:
+    path: ../../../../dev_packages/capnpc-dart
+  capnpc_dart_builder:
+    path: ../../../../dev_packages/capnpc-dart-builder

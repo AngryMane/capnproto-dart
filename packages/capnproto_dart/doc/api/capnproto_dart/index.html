@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1, user-scalable=no">
+  <meta name="description" content="capnproto_dart library API docs, for the Dart programming language.">
+  <title>capnproto_dart library - Dart API</title>
+
+
+  
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+  
+  <link rel="stylesheet" href="../static-assets/github.css?v1">
+  <link rel="stylesheet" href="../static-assets/styles.css?v1">
+  <link rel="icon" href="../static-assets/favicon.png?v1">
+  
+</head>
+
+<body data-base-href="../" data-using-base-href="false" class="light-theme">
+<div id="overlay-under-drawer"></div>
+<header id="title">
+  <span id="sidenav-left-toggle" class="material-symbols-outlined" role="button" tabindex="0">menu</span>
+  <ol class="breadcrumbs gt-separated dark hidden-xs">
+    <li><a href="../index.html">capnproto_dart</a></li>
+    <li class="self-crumb">capnproto_dart.dart</li>
+  </ol>
+  <div class="self-name">capnproto_dart</div>
+  <form class="search navbar-right" role="search">
+    <input type="text" id="search-box" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
+  </form>
+  <div class="toggle" id="theme-button" title="Toggle brightness">
+    <label for="theme">
+      <input type="checkbox" id="theme" value="light-theme">
+      <span id="dark-theme-button" class="material-symbols-outlined">
+        dark_mode
+      </span>
+      <span id="light-theme-button" class="material-symbols-outlined">
+        light_mode
+      </span>
+    </label>
+  </div>
+</header>
+<main>
+<div
+    id="dartdoc-main-content"
+    class="main-content"
+    data-above-sidebar=""
+    data-below-sidebar="capnproto_dart&#47;capnproto_dart-library-sidebar.html">
+  
+    <div>
+      
+
+      <h1>
+        <span class="kind-library">capnproto_dart</span>
+        library 
+ 
+
+      </h1>
+    </div>
+
+    
+<section class="desc markdown">
+  <p>A pure Dart implementation of Cap'n Proto serialization and streaming.</p>
+</section>
+
+
+    <section class="summary offset-anchor" id="classes">
+      <h2>Classes</h2>
+      <dl>
+          <dt id="AnnotationInfo">
+  <span class="name "><a href="../capnproto_dart/AnnotationInfo-class.html">AnnotationInfo</a></span> 
+
+</dt>
+<dd>
+  A single annotation application captured from the schema (e.g.
+<code>$myAnno("hello")</code>), as emitted by <code>capnpc-dart</code>.
+</dd>
+
+          <dt id="AnyPointerBuilder">
+  <span class="name "><a href="../capnproto_dart/AnyPointerBuilder-class.html">AnyPointerBuilder</a></span> 
+
+</dt>
+<dd>
+  Writable view of an <code>AnyPointer</code> field.
+</dd>
+
+          <dt id="AnyPointerCodec">
+  <span class="name "><a href="../capnproto_dart/AnyPointerCodec-class.html">AnyPointerCodec</a><span class="signature">&lt;<wbr><span class="type-parameter">T</span>&gt;</span></span> 
+
+</dt>
+<dd>
+  Encodes and decodes values carried through schema type parameters.
+</dd>
+
+          <dt id="AnyPointerReader">
+  <span class="name "><a href="../capnproto_dart/AnyPointerReader-class.html">AnyPointerReader</a></span> 
+
+</dt>
+<dd>
+  Read-only view of an <code>AnyPointer</code> field.
+</dd>
+
+          <dt id="AnyPointerTypeSchemaInfo">
+  <span class="name "><a href="../capnproto_dart/AnyPointerTypeSchemaInfo-class.html">AnyPointerTypeSchemaInfo</a></span> 
+
+</dt>
+<dd>
+  Identifies an AnyPointer schema type.
+</dd>
+
+          <dt id="CapabilityListBuilder">
+  <span class="name "><a href="../capnproto_dart/CapabilityListBuilder-class.html">CapabilityListBuilder</a></span> 
+
+</dt>
+<dd>
+  List builder for capability fields stored as cap-table indices.
+</dd>
+
+          <dt id="CapabilityListReader">
+  <span class="name "><a href="../capnproto_dart/CapabilityListReader-class.html">CapabilityListReader</a></span> 
+
+</dt>
+<dd>
+  List of capability references stored as cap-table indices.
+</dd>
+
+          <dt id="CapabilityPointer">
+  <span class="name "><a href="../capnproto_dart/CapabilityPointer-class.html">CapabilityPointer</a></span> 
+
+</dt>
+<dd>
+  Pointer to an entry in the message's capability table.
+</dd>
+
+          <dt id="DynamicListBuilder">
+  <span class="name "><a href="../capnproto_dart/DynamicListBuilder-class.html">DynamicListBuilder</a></span> 
+
+</dt>
+<dd>
+  Schema-less list builder used by the dynamic API.
+</dd>
+
+          <dt id="DynamicListReader">
+  <span class="name "><a href="../capnproto_dart/DynamicListReader-class.html">DynamicListReader</a></span> 
+
+</dt>
+<dd>
+  Schema-less list reader metadata used by the dynamic API.
+</dd>
+
+          <dt id="DynamicStructBuilder">
+  <span class="name "><a href="../capnproto_dart/DynamicStructBuilder-class.html">DynamicStructBuilder</a></span> 
+
+</dt>
+<dd>
+  Schema-less struct builder used by the dynamic API.
+</dd>
+
+          <dt id="DynamicStructReader">
+  <span class="name "><a href="../capnproto_dart/DynamicStructReader-class.html">DynamicStructReader</a></span> 
+
+</dt>
+<dd>
+  Schema-less struct reader used by the dynamic API.
+</dd>
+
+          <dt id="EnumerantSchemaInfo">
+  <span class="name "><a href="../capnproto_dart/EnumerantSchemaInfo-class.html">EnumerantSchemaInfo</a></span> 
+
+</dt>
+<dd>
+  Describes one enum value and its wire ordinal.
+</dd>
+
+          <dt id="EnumRefTypeSchemaInfo">
+  <span class="name "><a href="../capnproto_dart/EnumRefTypeSchemaInfo-class.html">EnumRefTypeSchemaInfo</a></span> 
+
+</dt>
+<dd>
+  References an enum schema type by node ID.
+</dd>
+
+          <dt id="EnumSchemaInfo">
+  <span class="name "><a href="../capnproto_dart/EnumSchemaInfo-class.html">EnumSchemaInfo</a></span> 
+
+</dt>
+<dd>
+  Describes an enum schema node and its enumerants.
+</dd>
+
+          <dt id="FieldBodySchemaInfo">
+  <span class="name "><a href="../capnproto_dart/FieldBodySchemaInfo-class.html">FieldBodySchemaInfo</a></span> 
+
+</dt>
+<dd>
+  Represents the body of a slot or group field.
+</dd>
+
+          <dt id="FieldSchemaInfo">
+  <span class="name "><a href="../capnproto_dart/FieldSchemaInfo-class.html">FieldSchemaInfo</a></span> 
+
+</dt>
+<dd>
+  Describes a named struct field and its union metadata.
+</dd>
+
+          <dt id="GroupFieldSchemaInfo">
+  <span class="name "><a href="../capnproto_dart/GroupFieldSchemaInfo-class.html">GroupFieldSchemaInfo</a></span> 
+
+</dt>
+<dd>
+  Describes a group field by its struct type ID.
+</dd>
+
+          <dt id="InterfaceRefTypeSchemaInfo">
+  <span class="name "><a href="../capnproto_dart/InterfaceRefTypeSchemaInfo-class.html">InterfaceRefTypeSchemaInfo</a></span> 
+
+</dt>
+<dd>
+  References an interface schema type and its type arguments.
+</dd>
+
+          <dt id="InterfaceSchemaInfo">
+  <span class="name "><a href="../capnproto_dart/InterfaceSchemaInfo-class.html">InterfaceSchemaInfo</a></span> 
+
+</dt>
+<dd>
+  Describes an interface schema node, methods, and superclasses.
+</dd>
+
+          <dt id="ListBuilder">
+  <span class="name "><a href="../capnproto_dart/ListBuilder-class.html">ListBuilder</a><span class="signature">&lt;<wbr><span class="type-parameter">T</span>&gt;</span></span> 
+
+</dt>
+<dd>
+  Writable view of a Cap'n Proto list field.
+</dd>
+
+          <dt id="ListOrphan">
+  <span class="name "><a href="../capnproto_dart/ListOrphan-class.html">ListOrphan</a></span> 
+
+</dt>
+<dd>
+  An orphaned list (including Text/Data, which are byte-element lists).
+</dd>
+
+          <dt id="ListReader">
+  <span class="name "><a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter">T</span>&gt;</span></span> 
+
+</dt>
+<dd>
+  Read-only, iterable view of a Cap'n Proto list field.
+</dd>
+
+          <dt id="ListTypeSchemaInfo">
+  <span class="name "><a href="../capnproto_dart/ListTypeSchemaInfo-class.html">ListTypeSchemaInfo</a></span> 
+
+</dt>
+<dd>
+  Describes a list schema type and its element type.
+</dd>
+
+          <dt id="MessageAnyPointerCodec">
+  <span class="name "><a href="../capnproto_dart/MessageAnyPointerCodec-class.html">MessageAnyPointerCodec</a></span> 
+
+</dt>
+<dd>
+  Codec for callers that already have a serialized single-root message for a
+generic value.
+</dd>
+
+          <dt id="MessageBuilder">
+  <span class="name "><a href="../capnproto_dart/MessageBuilder-class.html">MessageBuilder</a></span> 
+
+</dt>
+<dd>
+  Builds and serializes a Cap'n Proto message.
+</dd>
+
+          <dt id="MessageReader">
+  <span class="name "><a href="../capnproto_dart/MessageReader-class.html">MessageReader</a></span> 
+
+</dt>
+<dd>
+  Reads a validated Cap'n Proto message from framed or packed bytes.
+</dd>
+
+          <dt id="MessageReaderOptions">
+  <span class="name "><a href="../capnproto_dart/MessageReaderOptions-class.html">MessageReaderOptions</a></span> 
+
+</dt>
+<dd>
+  Configures resource limits applied while decoding a message.
+</dd>
+
+          <dt id="MessageStream">
+  <span class="name "><a href="../capnproto_dart/MessageStream-class.html">MessageStream</a></span> 
+
+</dt>
+<dd>
+  Utilities for reading and writing streams of Cap'n Proto messages.
+</dd>
+
+          <dt id="MethodSchemaInfo">
+  <span class="name "><a href="../capnproto_dart/MethodSchemaInfo-class.html">MethodSchemaInfo</a></span> 
+
+</dt>
+<dd>
+  Describes an interface method and its parameter and result types.
+</dd>
+
+          <dt id="NestedListBuilder">
+  <span class="name "><a href="../capnproto_dart/NestedListBuilder-class.html">NestedListBuilder</a><span class="signature">&lt;<wbr><span class="type-parameter">T</span>&gt;</span></span> 
+
+</dt>
+<dd>
+  Builder for nested list fields (<code>List(List(T))</code>).
+</dd>
+
+          <dt id="NestedListReader">
+  <span class="name "><a href="../capnproto_dart/NestedListReader-class.html">NestedListReader</a><span class="signature">&lt;<wbr><span class="type-parameter">T</span>&gt;</span></span> 
+
+</dt>
+<dd>
+  List whose elements are themselves lists — used for Cap'n Proto
+<code>List(List(T))</code> fields.
+</dd>
+
+          <dt id="Orphan">
+  <span class="name "><a href="../capnproto_dart/Orphan-class.html">Orphan</a></span> 
+
+</dt>
+<dd>
+  A detached Cap'n Proto object. See the file-level doc comment for the
+zero-copy/same-arena contract. Created by <a href="../capnproto_dart/StructBuilder/disownPointerField.html">StructBuilder.disownPointerField</a>;
+consumed exactly once by <a href="../capnproto_dart/StructBuilder/adoptPointerField.html">StructBuilder.adoptPointerField</a> or
+<a href="../capnproto_dart/MessageBuilder/adoptRoot.html">MessageBuilder.adoptRoot</a> — adopting the same Orphan twice throws
+<a href="https://api.dart.dev/stable/3.7.2/dart-core/StateError-class.html">StateError</a>.
+</dd>
+
+          <dt id="PrimitiveTypeSchemaInfo">
+  <span class="name "><a href="../capnproto_dart/PrimitiveTypeSchemaInfo-class.html">PrimitiveTypeSchemaInfo</a></span> 
+
+</dt>
+<dd>
+  Describes a primitive schema type by name.
+</dd>
+
+          <dt id="RawListReader">
+  <span class="name "><a href="../capnproto_dart/RawListReader-class.html">RawListReader</a></span> 
+
+</dt>
+<dd>
+  Untyped view of a list's memory inside a segment, used by generated list readers.
+</dd>
+
+          <dt id="RawStructBuilder">
+  <span class="name "><a href="../capnproto_dart/RawStructBuilder-class.html">RawStructBuilder</a></span> 
+
+</dt>
+<dd>
+  Untyped view of a struct's memory inside a writable segment, used by generated builders.
+</dd>
+
+          <dt id="RawStructReader">
+  <span class="name "><a href="../capnproto_dart/RawStructReader-class.html">RawStructReader</a></span> 
+
+</dt>
+<dd>
+  Untyped view of a struct's memory inside a segment, used by generated readers.
+</dd>
+
+          <dt id="SchemaInfo">
+  <span class="name "><a href="../capnproto_dart/SchemaInfo-class.html">SchemaInfo</a></span> 
+
+</dt>
+<dd>
+  Lightweight schema reflection metadata emitted by <code>capnpc-dart</code>.
+</dd>
+
+          <dt id="SlotFieldSchemaInfo">
+  <span class="name "><a href="../capnproto_dart/SlotFieldSchemaInfo-class.html">SlotFieldSchemaInfo</a></span> 
+
+</dt>
+<dd>
+  Describes a data or pointer slot field.
+</dd>
+
+          <dt id="StructBuilder">
+  <span class="name "><a href="../capnproto_dart/StructBuilder-class.html">StructBuilder</a></span> 
+
+</dt>
+<dd>
+  Base class for all generated struct builders.
+</dd>
+
+          <dt id="StructFactory">
+  <span class="name "><a href="../capnproto_dart/StructFactory-class.html">StructFactory</a><span class="signature">&lt;<wbr><span class="type-parameter">R extends <a href="../capnproto_dart/StructReader-class.html">StructReader</a></span>, <span class="type-parameter">B extends <a href="../capnproto_dart/StructBuilder-class.html">StructBuilder</a></span>&gt;</span></span> 
+
+</dt>
+<dd>
+  Factory that carries struct layout information and constructs typed
+reader/builder instances from raw arena pointers.
+</dd>
+
+          <dt id="StructOrphan">
+  <span class="name "><a href="../capnproto_dart/StructOrphan-class.html">StructOrphan</a></span> 
+
+</dt>
+<dd>
+  An orphaned struct.
+</dd>
+
+          <dt id="StructReader">
+  <span class="name "><a href="../capnproto_dart/StructReader-class.html">StructReader</a></span> 
+
+</dt>
+<dd>
+  Base class for all generated struct readers.
+</dd>
+
+          <dt id="StructReaderAnyPointerCodec">
+  <span class="name "><a href="../capnproto_dart/StructReaderAnyPointerCodec-class.html">StructReaderAnyPointerCodec</a><span class="signature">&lt;<wbr><span class="type-parameter">R extends <a href="../capnproto_dart/StructReader-class.html">StructReader</a></span>, <span class="type-parameter">B extends <a href="../capnproto_dart/StructBuilder-class.html">StructBuilder</a></span>&gt;</span></span> 
+
+</dt>
+<dd>
+  Codec for generic values whose runtime representation is a struct reader.
+</dd>
+
+          <dt id="StructRefTypeSchemaInfo">
+  <span class="name "><a href="../capnproto_dart/StructRefTypeSchemaInfo-class.html">StructRefTypeSchemaInfo</a></span> 
+
+</dt>
+<dd>
+  References a struct schema type and its type arguments.
+</dd>
+
+          <dt id="StructSchemaInfo">
+  <span class="name "><a href="../capnproto_dart/StructSchemaInfo-class.html">StructSchemaInfo</a></span> 
+
+</dt>
+<dd>
+  Describes the runtime layout and fields of a struct schema node.
+</dd>
+
+          <dt id="TypedCapabilityListReader">
+  <span class="name "><a href="../capnproto_dart/TypedCapabilityListReader-class.html">TypedCapabilityListReader</a><span class="signature">&lt;<wbr><span class="type-parameter">T</span>&gt;</span></span> 
+
+</dt>
+<dd>
+  Typed view over a <code>List(Interface)</code> using an RPC capability table.
+</dd>
+
+          <dt id="TypeParameterSchemaInfo">
+  <span class="name "><a href="../capnproto_dart/TypeParameterSchemaInfo-class.html">TypeParameterSchemaInfo</a></span> 
+
+</dt>
+<dd>
+  Identifies a generic schema type parameter by index.
+</dd>
+
+          <dt id="TypeSchemaInfo">
+  <span class="name "><a href="../capnproto_dart/TypeSchemaInfo-class.html">TypeSchemaInfo</a></span> 
+
+</dt>
+<dd>
+  Represents a field or type-parameter type in runtime schema metadata.
+</dd>
+
+          <dt id="WirePointer">
+  <span class="name "><a href="../capnproto_dart/WirePointer-class.html">WirePointer</a></span> 
+
+</dt>
+<dd>
+  Decoded representation of a single Cap'n Proto wire pointer (8 bytes).
+</dd>
+
+      </dl>
+    </section>
+
+    <section class="summary offset-anchor" id="enums">
+      <h2>Enums</h2>
+      <dl>
+          <dt id="ErrorKind">
+  <span class="name "><a href="../capnproto_dart/ErrorKind.html">ErrorKind</a></span> 
+
+</dt>
+<dd>
+  Broad classification of why a Cap'n Proto operation failed — mirrors
+<code>capnp::ErrorKind</code> so it round-trips losslessly with real Cap'n Proto
+peers over RPC (see <code>rpc.capnp</code>'s <code>Exception.Type</code>, whose wire values
+match this enum's declaration order exactly: index 0 = failed ... 3 =
+unimplemented).
+</dd>
+
+          <dt id="ListElementSize">
+  <span class="name "><a href="../capnproto_dart/ListElementSize.html">ListElementSize</a></span> 
+
+</dt>
+<dd>
+  Element size encoding used in list pointers.
+</dd>
+
+      </dl>
+    </section>
+
+
+
+
+
+
+    <section class="summary offset-anchor" id="functions">
+      <h2>Functions</h2>
+      <dl class="callables">
+          <dt id="boolListBuilderFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/boolListBuilderFromRaw.html">boolListBuilderFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="boolListBuilderFromRaw-param-raw"><span class="type-annotation">RawListBuilder</span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListBuilder-class.html">ListBuilder</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/bool-class.html">bool</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Creates a <code>BoolListBuilder</code> from a <code>RawListBuilder</code>.
+  
+
+</dd>
+
+          <dt id="boolListFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/boolListFromRaw.html">boolListFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="boolListFromRaw-param-raw"><span class="type-annotation"><a href="../capnproto_dart/RawListReader-class.html">RawListReader</a></span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/bool-class.html">bool</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Performs the <a href="../capnproto_dart/boolListFromRaw.html">boolListFromRaw</a> operation.
+  
+
+</dd>
+
+          <dt id="canonicalizeMessage" class="callable">
+  <span class="name"><a href="../capnproto_dart/canonicalizeMessage.html">canonicalizeMessage</a></span><span class="signature">(<wbr><span class="parameter" id="canonicalizeMessage-param-messageBytes"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a></span> <span class="parameter-name">messageBytes</span>, [</span><span class="parameter" id="canonicalizeMessage-param-options"><span class="type-annotation"><a href="../capnproto_dart/MessageReaderOptions-class.html">MessageReaderOptions</a></span> <span class="parameter-name">options</span> = <span class="default-value">const MessageReaderOptions()</span></span>])
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Deep-copies the root pointer of <code>messageBytes</code> into the
+<a href="https://capnproto.org/encoding.html#canonicalization">canonical</a> form of
+the message: every struct's data and pointer sections are trimmed of
+trailing default-valued (all-zero / null) words, and lists of structs are
+re-packed to the smallest uniform element size that still fits every
+element.
+  
+
+</dd>
+
+          <dt id="capabilityListBuilderFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/capabilityListBuilderFromRaw.html">capabilityListBuilderFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="capabilityListBuilderFromRaw-param-raw"><span class="type-annotation">RawListBuilder</span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListBuilder-class.html">ListBuilder</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Creates a <a href="../capnproto_dart/CapabilityListBuilder-class.html">CapabilityListBuilder</a> from a <code>RawListBuilder</code>.
+  
+
+</dd>
+
+          <dt id="capabilityListFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/capabilityListFromRaw.html">capabilityListFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="capabilityListFromRaw-param-raw"><span class="type-annotation"><a href="../capnproto_dart/RawListReader-class.html">RawListReader</a></span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Creates a <a href="../capnproto_dart/CapabilityListReader-class.html">CapabilityListReader</a> from a <a href="../capnproto_dart/RawListReader-class.html">RawListReader</a>.
+  
+
+</dd>
+
+          <dt id="dataListBuilderFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/dataListBuilderFromRaw.html">dataListBuilderFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="dataListBuilderFromRaw-param-raw"><span class="type-annotation">RawListBuilder</span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListBuilder-class.html">ListBuilder</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a>?</span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Creates a <code>DataListBuilder</code> from a <code>RawListBuilder</code>.
+  
+
+</dd>
+
+          <dt id="dataListFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/dataListFromRaw.html">dataListFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="dataListFromRaw-param-raw"><span class="type-annotation"><a href="../capnproto_dart/RawListReader-class.html">RawListReader</a></span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a>?</span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Performs the <a href="../capnproto_dart/dataListFromRaw.html">dataListFromRaw</a> operation.
+  
+
+</dd>
+
+          <dt id="decodeText" class="callable">
+  <span class="name"><a href="../capnproto_dart/decodeText.html">decodeText</a></span><span class="signature">(<wbr><span class="parameter" id="decodeText-param-text"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/String-class.html">String</a></span> <span class="parameter-name">text</span>, </span><span class="parameter" id="decodeText-param-schema"><span class="type-annotation"><a href="../capnproto_dart/StructSchemaInfo-class.html">StructSchemaInfo</a></span> <span class="parameter-name">schema</span>, </span><span class="parameter" id="decodeText-param-registry"><span class="type-annotation"><a href="../capnproto_dart/SchemaRegistry.html">SchemaRegistry</a></span> <span class="parameter-name">registry</span></span>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-typed_data/Uint8List-class.html">Uint8List</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Parses <code>text</code> (Cap'n Proto text format, e.g. <code>(name = "hi", size = 3)</code>)
+against <code>schema</code> and returns a standalone, framed Cap'n Proto message
+(ready for <code>MessageReader.deserialize(...).getRoot(fooFactory)</code>).
+  
+
+</dd>
+
+          <dt id="encodeText" class="callable">
+  <span class="name"><a href="../capnproto_dart/encodeText.html">encodeText</a></span><span class="signature">(<wbr><span class="parameter" id="encodeText-param-reader"><span class="type-annotation"><a href="../capnproto_dart/StructReader-class.html">StructReader</a></span> <span class="parameter-name">reader</span>, </span><span class="parameter" id="encodeText-param-schema"><span class="type-annotation"><a href="../capnproto_dart/StructSchemaInfo-class.html">StructSchemaInfo</a></span> <span class="parameter-name">schema</span>, </span><span class="parameter" id="encodeText-param-registry"><span class="type-annotation"><a href="../capnproto_dart/SchemaRegistry.html">SchemaRegistry</a></span> <span class="parameter-name">registry</span></span>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.7.2/dart-core/String-class.html">String</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Renders <code>reader</code> as Cap'n Proto text format, e.g. <code>(name = "hi", size = 3)</code> — matching <code>capnp decode --short</code>'s output (a single line, no space
+padding inside the parens).
+  
+
+</dd>
+
+          <dt id="enumListBuilderFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/enumListBuilderFromRaw.html">enumListBuilderFromRaw</a></span><span class="signature">&lt;<wbr><span class="type-parameter">E</span>&gt;</span><span class="signature">(<wbr><span class="parameter" id="enumListBuilderFromRaw-param-raw"><span class="type-annotation">RawListBuilder</span> <span class="parameter-name">raw</span>, </span><span class="parameter" id="enumListBuilderFromRaw-param-toInt"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">toInt</span>(<span class="parameter" id="param-"><span class="type-annotation">E</span></span>)</span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListBuilder-class.html">ListBuilder</a><span class="signature">&lt;<wbr><span class="type-parameter">E</span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Creates an <code>EnumListBuilder</code> from a <code>RawListBuilder</code> and a <code>toInt</code> function.
+  
+
+</dd>
+
+          <dt id="enumListFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/enumListFromRaw.html">enumListFromRaw</a></span><span class="signature">&lt;<wbr><span class="type-parameter">E</span>&gt;</span><span class="signature">(<wbr><span class="parameter" id="enumListFromRaw-param-raw"><span class="type-annotation"><a href="../capnproto_dart/RawListReader-class.html">RawListReader</a></span> <span class="parameter-name">raw</span>, </span><span class="parameter" id="enumListFromRaw-param-fromInt"><span class="type-annotation">E?</span> <span class="parameter-name">fromInt</span>(<span class="parameter" id="param-"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span></span>)</span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter">E?</span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Performs this operation.
+  
+
+</dd>
+
+          <dt id="float32ListBuilderFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/float32ListBuilderFromRaw.html">float32ListBuilderFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="float32ListBuilderFromRaw-param-raw"><span class="type-annotation">RawListBuilder</span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListBuilder-class.html">ListBuilder</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/double-class.html">double</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Creates a <code>Float32</code> <code>PrimitiveDoubleListBuilder</code> from a <code>RawListBuilder</code>.
+  
+
+</dd>
+
+          <dt id="float32ListFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/float32ListFromRaw.html">float32ListFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="float32ListFromRaw-param-raw"><span class="type-annotation"><a href="../capnproto_dart/RawListReader-class.html">RawListReader</a></span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/double-class.html">double</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Performs the <a href="../capnproto_dart/float32ListFromRaw.html">float32ListFromRaw</a> operation.
+  
+
+</dd>
+
+          <dt id="float64ListBuilderFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/float64ListBuilderFromRaw.html">float64ListBuilderFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="float64ListBuilderFromRaw-param-raw"><span class="type-annotation">RawListBuilder</span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListBuilder-class.html">ListBuilder</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/double-class.html">double</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Creates a <code>Float64</code> <code>PrimitiveDoubleListBuilder</code> from a <code>RawListBuilder</code>.
+  
+
+</dd>
+
+          <dt id="float64ListFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/float64ListFromRaw.html">float64ListFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="float64ListFromRaw-param-raw"><span class="type-annotation"><a href="../capnproto_dart/RawListReader-class.html">RawListReader</a></span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/double-class.html">double</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Performs the <a href="../capnproto_dart/float64ListFromRaw.html">float64ListFromRaw</a> operation.
+  
+
+</dd>
+
+          <dt id="int16ListBuilderFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/int16ListBuilderFromRaw.html">int16ListBuilderFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="int16ListBuilderFromRaw-param-raw"><span class="type-annotation">RawListBuilder</span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListBuilder-class.html">ListBuilder</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Creates an <code>Int16</code> <code>PrimitiveIntListBuilder</code> from a <code>RawListBuilder</code>.
+  
+
+</dd>
+
+          <dt id="int16ListFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/int16ListFromRaw.html">int16ListFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="int16ListFromRaw-param-raw"><span class="type-annotation"><a href="../capnproto_dart/RawListReader-class.html">RawListReader</a></span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Performs the <a href="../capnproto_dart/int16ListFromRaw.html">int16ListFromRaw</a> operation.
+  
+
+</dd>
+
+          <dt id="int32ListBuilderFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/int32ListBuilderFromRaw.html">int32ListBuilderFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="int32ListBuilderFromRaw-param-raw"><span class="type-annotation">RawListBuilder</span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListBuilder-class.html">ListBuilder</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Creates an <code>Int32</code> <code>PrimitiveIntListBuilder</code> from a <code>RawListBuilder</code>.
+  
+
+</dd>
+
+          <dt id="int32ListFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/int32ListFromRaw.html">int32ListFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="int32ListFromRaw-param-raw"><span class="type-annotation"><a href="../capnproto_dart/RawListReader-class.html">RawListReader</a></span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Performs the <a href="../capnproto_dart/int32ListFromRaw.html">int32ListFromRaw</a> operation.
+  
+
+</dd>
+
+          <dt id="int64ListBuilderFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/int64ListBuilderFromRaw.html">int64ListBuilderFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="int64ListBuilderFromRaw-param-raw"><span class="type-annotation">RawListBuilder</span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListBuilder-class.html">ListBuilder</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Creates an <code>Int64</code> <code>PrimitiveIntListBuilder</code> from a <code>RawListBuilder</code>.
+  
+
+</dd>
+
+          <dt id="int64ListFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/int64ListFromRaw.html">int64ListFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="int64ListFromRaw-param-raw"><span class="type-annotation"><a href="../capnproto_dart/RawListReader-class.html">RawListReader</a></span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Performs the <a href="../capnproto_dart/int64ListFromRaw.html">int64ListFromRaw</a> operation.
+  
+
+</dd>
+
+          <dt id="int8ListBuilderFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/int8ListBuilderFromRaw.html">int8ListBuilderFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="int8ListBuilderFromRaw-param-raw"><span class="type-annotation">RawListBuilder</span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListBuilder-class.html">ListBuilder</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Creates an <code>Int8</code> <code>PrimitiveIntListBuilder</code> from a <code>RawListBuilder</code>.
+  
+
+</dd>
+
+          <dt id="int8ListFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/int8ListFromRaw.html">int8ListFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="int8ListFromRaw-param-raw"><span class="type-annotation"><a href="../capnproto_dart/RawListReader-class.html">RawListReader</a></span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Performs the <a href="../capnproto_dart/int8ListFromRaw.html">int8ListFromRaw</a> operation.
+  
+
+</dd>
+
+          <dt id="schemaRegistryOf" class="callable">
+  <span class="name"><a href="../capnproto_dart/schemaRegistryOf.html">schemaRegistryOf</a></span><span class="signature">(<wbr><span class="parameter" id="schemaRegistryOf-param-schemas"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.7.2/dart-core/Iterable-class.html">Iterable</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="../capnproto_dart/SchemaInfo-class.html">SchemaInfo</a></span>&gt;</span></span> <span class="parameter-name">schemas</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/SchemaRegistry.html">SchemaRegistry</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Builds a <a href="../capnproto_dart/SchemaRegistry.html">SchemaRegistry</a> from a list of <code>xxxSchema</code> constants (as
+exposed by every generated struct/enum, e.g. <code>FooReader.schema</code>).
+  
+
+</dd>
+
+          <dt id="structListBuilderFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/structListBuilderFromRaw.html">structListBuilderFromRaw</a></span><span class="signature">&lt;<wbr><span class="type-parameter">B</span>&gt;</span><span class="signature">(<wbr><span class="parameter" id="structListBuilderFromRaw-param-raw"><span class="type-annotation">RawListBuilder</span> <span class="parameter-name">raw</span>, </span><span class="parameter" id="structListBuilderFromRaw-param-fromRaw"><span class="type-annotation">B</span> <span class="parameter-name">fromRaw</span>(<span class="parameter" id="param-"><span class="type-annotation"><a href="../capnproto_dart/RawStructBuilder-class.html">RawStructBuilder</a></span></span>)</span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListBuilder-class.html">ListBuilder</a><span class="signature">&lt;<wbr><span class="type-parameter">B</span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Creates a <code>StructListBuilder</code> from a <code>RawListBuilder</code> and a <code>fromRaw</code>
+factory function.
+  
+
+</dd>
+
+          <dt id="structListFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/structListFromRaw.html">structListFromRaw</a></span><span class="signature">&lt;<wbr><span class="type-parameter">R</span>&gt;</span><span class="signature">(<wbr><span class="parameter" id="structListFromRaw-param-raw"><span class="type-annotation"><a href="../capnproto_dart/RawListReader-class.html">RawListReader</a></span> <span class="parameter-name">raw</span>, </span><span class="parameter" id="structListFromRaw-param-fromRaw"><span class="type-annotation">R</span> <span class="parameter-name">fromRaw</span>(<span class="parameter" id="param-"><span class="type-annotation"><a href="../capnproto_dart/RawStructReader-class.html">RawStructReader</a></span></span>)</span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter">R</span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Performs this operation.
+  
+
+</dd>
+
+          <dt id="textListBuilderFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/textListBuilderFromRaw.html">textListBuilderFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="textListBuilderFromRaw-param-raw"><span class="type-annotation">RawListBuilder</span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListBuilder-class.html">ListBuilder</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/String-class.html">String</a>?</span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Creates a <code>TextListBuilder</code> from a <code>RawListBuilder</code>.
+  
+
+</dd>
+
+          <dt id="textListFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/textListFromRaw.html">textListFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="textListFromRaw-param-raw"><span class="type-annotation"><a href="../capnproto_dart/RawListReader-class.html">RawListReader</a></span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/String-class.html">String</a>?</span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Performs the <a href="../capnproto_dart/textListFromRaw.html">textListFromRaw</a> operation.
+  
+
+</dd>
+
+          <dt id="uint16ListBuilderFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/uint16ListBuilderFromRaw.html">uint16ListBuilderFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="uint16ListBuilderFromRaw-param-raw"><span class="type-annotation">RawListBuilder</span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListBuilder-class.html">ListBuilder</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Creates a <code>UInt16</code> <code>PrimitiveIntListBuilder</code> from a <code>RawListBuilder</code>.
+  
+
+</dd>
+
+          <dt id="uint16ListFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/uint16ListFromRaw.html">uint16ListFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="uint16ListFromRaw-param-raw"><span class="type-annotation"><a href="../capnproto_dart/RawListReader-class.html">RawListReader</a></span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Performs the <a href="../capnproto_dart/uint16ListFromRaw.html">uint16ListFromRaw</a> operation.
+  
+
+</dd>
+
+          <dt id="uint32ListBuilderFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/uint32ListBuilderFromRaw.html">uint32ListBuilderFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="uint32ListBuilderFromRaw-param-raw"><span class="type-annotation">RawListBuilder</span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListBuilder-class.html">ListBuilder</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Creates a <code>UInt32</code> <code>PrimitiveIntListBuilder</code> from a <code>RawListBuilder</code>.
+  
+
+</dd>
+
+          <dt id="uint32ListFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/uint32ListFromRaw.html">uint32ListFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="uint32ListFromRaw-param-raw"><span class="type-annotation"><a href="../capnproto_dart/RawListReader-class.html">RawListReader</a></span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Performs the <a href="../capnproto_dart/uint32ListFromRaw.html">uint32ListFromRaw</a> operation.
+  
+
+</dd>
+
+          <dt id="uint64ListBuilderFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/uint64ListBuilderFromRaw.html">uint64ListBuilderFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="uint64ListBuilderFromRaw-param-raw"><span class="type-annotation">RawListBuilder</span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListBuilder-class.html">ListBuilder</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Creates a <code>UInt64</code> <code>PrimitiveIntListBuilder</code> from a <code>RawListBuilder</code>.
+  
+
+</dd>
+
+          <dt id="uint64ListFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/uint64ListFromRaw.html">uint64ListFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="uint64ListFromRaw-param-raw"><span class="type-annotation"><a href="../capnproto_dart/RawListReader-class.html">RawListReader</a></span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Performs the <a href="../capnproto_dart/uint64ListFromRaw.html">uint64ListFromRaw</a> operation.
+  
+
+</dd>
+
+          <dt id="uint8ListBuilderFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/uint8ListBuilderFromRaw.html">uint8ListBuilderFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="uint8ListBuilderFromRaw-param-raw"><span class="type-annotation">RawListBuilder</span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListBuilder-class.html">ListBuilder</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Creates a <code>UInt8</code> <code>PrimitiveIntListBuilder</code> from a <code>RawListBuilder</code>.
+  
+
+</dd>
+
+          <dt id="uint8ListFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/uint8ListFromRaw.html">uint8ListFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="uint8ListFromRaw-param-raw"><span class="type-annotation"><a href="../capnproto_dart/RawListReader-class.html">RawListReader</a></span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Performs the <a href="../capnproto_dart/uint8ListFromRaw.html">uint8ListFromRaw</a> operation.
+  
+
+</dd>
+
+          <dt id="voidListBuilderFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/voidListBuilderFromRaw.html">voidListBuilderFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="voidListBuilderFromRaw-param-raw"><span class="type-annotation">RawListBuilder</span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListBuilder-class.html">ListBuilder</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/Null-class.html">Null</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Creates a <code>VoidListBuilder</code> from a <code>RawListBuilder</code>.
+  
+
+</dd>
+
+          <dt id="voidListFromRaw" class="callable">
+  <span class="name"><a href="../capnproto_dart/voidListFromRaw.html">voidListFromRaw</a></span><span class="signature">(<wbr><span class="parameter" id="voidListFromRaw-param-raw"><span class="type-annotation"><a href="../capnproto_dart/RawListReader-class.html">RawListReader</a></span> <span class="parameter-name">raw</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../capnproto_dart/ListReader-class.html">ListReader</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/Null-class.html">Null</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Performs the <a href="../capnproto_dart/voidListFromRaw.html">voidListFromRaw</a> operation.
+  
+
+</dd>
+
+      </dl>
+    </section>
+
+    <section class="summary offset-anchor" id="typedefs">
+      <h2>Typedefs</h2>
+      <dl>
+          
+  <dt id="SchemaRegistry" class="">
+  <span class="name"><a href="../capnproto_dart/SchemaRegistry.html">SchemaRegistry</a></span>
+    = <a href="https://api.dart.dev/stable/3.7.2/dart-core/Map-class.html">Map</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>, <span class="type-parameter"><a href="../capnproto_dart/SchemaInfo-class.html">SchemaInfo</a></span>&gt;</span>
+  </span>
+  
+
+</dt>
+<dd>
+  Maps a schema node id to its <a href="../capnproto_dart/SchemaInfo-class.html">SchemaInfo</a> (struct or enum), so
+<a href="../capnproto_dart/encodeText.html">encodeText</a>/<a href="../capnproto_dart/decodeText.html">decodeText</a> can resolve the nested struct/enum types
+referenced by field types. Node ids are globally unique, so one registry
+can cover an entire schema file (or several).
+  
+
+</dd>
+
+
+      </dl>
+    </section>
+
+    <section class="summary offset-anchor" id="exceptions">
+      <h2>Exceptions / Errors</h2>
+      <dl>
+          <dt id="CapnpException">
+  <span class="name "><a href="../capnproto_dart/CapnpException-class.html">CapnpException</a></span> 
+
+</dt>
+<dd>
+  Reports a Cap'n Proto failure with a category and optional cause.
+</dd>
+
+          <dt id="DecodeException">
+  <span class="name "><a href="../capnproto_dart/DecodeException-class.html">DecodeException</a></span> 
+
+</dt>
+<dd>
+  Reports malformed input or a configured decoding-limit violation.
+</dd>
+
+      </dl>
+    </section>
+  </div> <!-- /.main-content -->
+  <div id="dartdoc-sidebar-left" class="sidebar sidebar-offcanvas-left">
+    <!-- The search input and breadcrumbs below are only responsively visible at low resolutions. -->
+<header id="header-search-sidebar" class="hidden-l">
+  <form class="search-sidebar" role="search">
+    <input type="text" id="search-sidebar" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
+  </form>
+</header>
+<ol class="breadcrumbs gt-separated dark hidden-l" id="sidebar-nav">
+    <li><a href="../index.html">capnproto_dart</a></li>
+    <li class="self-crumb">capnproto_dart.dart</li>
+</ol>
+
+    <h5><span class="package-name">capnproto_dart</span> <span class="package-kind">package</span></h5>
+    <ol>
+      <li class="section-title">Libraries</li>
+      <li><a href="../capnproto_dart">capnproto_dart</a></li>
+</ol>
+
+  </div>
+  <div id="dartdoc-sidebar-right" class="sidebar sidebar-offcanvas-right">
+    <h5>capnproto_dart library</h5>
+  </div><!--/sidebar-offcanvas-right-->
+</main>
+<footer>
+  <span class="no-break">
+    capnproto_dart
+      0.1.0
+  </span>
+  
+</footer>
+
+
+<script src="../static-assets/highlight.pack.js?v1"></script>
+<script src="../static-assets/docs.dart.js"></script>
+
+</body>
+</html>
+

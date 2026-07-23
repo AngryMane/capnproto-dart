@@ -1,0 +1,14 @@
+[package]
+name = "schema-evolution-rust"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "schema-evolution-rust"
+path = "src/main.rs"
+
+[dependencies]
+capnp = "0.26"
+
+[build-dependencies]
+capnpc = "0.26"

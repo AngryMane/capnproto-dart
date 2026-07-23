@@ -1,0 +1,233 @@
+# capnproto-dart
+
+A pure Dart implementation of [Cap'n Proto](https://capnproto.org) serialization and RPC, with no FFI dependency.
+
+[![CI](https://github.com/AngryMane/capnproto-dart/actions/workflows/compat.yml/badge.svg)](https://github.com/AngryMane/capnproto-dart/actions/workflows/compat.yml)
+
+## Why
+
+The only existing way to use Cap'n Proto from Flutter is to call C++ or Rust libraries via FFI. This approach introduces complex build configurations, hard-to-debug FFI boundaries, and threading mismatches. This repository provides a pure Dart implementation that integrates like any other Dart package.
+
+## Repository Layout
+
+```
+capnproto-dart/
+├── dev_packages/
+│   ├── capnpc-dart/          # Code generator plugin (dart pub global activate)
+│   │   └── doc/               # External spec + internal design for this component
+│   └── capnpc-dart-builder/  # build_runner integration for capnpc-dart
+├── packages/
+│   ├── capnproto_dart/       # Serialization + streaming runtime
+│   │   └── doc/               # External spec + internal design for this component
+│   └── capnproto_dart_rpc/   # RPC runtime (Level 1)
+│       └── doc/               # External spec + internal design for this component
+├── sample/
+│   └── greeter/              # Simple Dart↔Rust greeter (RPC basics)
+├── test/
+│   └── interop/              # Cross-language correctness suites (Dart↔Rust), run by ci/run-tests.sh
+│       ├── complex/               # 29-section RPC interop suite, both directions
+│       ├── schema-evolution/      # Runtime forward/backward-compat cross-check
+│       └── wire-format-golden/    # Wire-format cross-check against the official capnp CLI
+├── ci/                        # Test runner and capnp-version-bump scripts
+├── docs/                     # Requirements, repo-level external spec, and howto guides
+│   └── howto/                 # Task-oriented usage guides
+└── website/                  # Docusaurus site aggregating all of the above (gh-pages)
+```
+
+## Quick Start
+
+### 1. Install the code generator
+
+```sh
+dart pub global activate --source path dev_packages/capnpc-dart
+```
+
+### 2. Write a schema
+
+```capnp
+# hello.capnp
+@0xdeadbeefdeadbeef;
+
+struct Greeting {
+  name @0 :Text;
+  reply @1 :Text;
+}
+```
+
+### 3. Generate Dart code
+
+```sh
+capnp compile -o dart:lib/src/generated hello.capnp
+```
+
+This produces `lib/src/generated/hello.capnp.dart` with typed reader and builder classes.
+
+### 4. Use in Dart
+
+```dart
+import 'package:capnproto_dart/capnproto_dart.dart';
+import 'src/generated/hello.capnp.dart';
+
+void main() {
+  // Build a message
+  final builder = MessageBuilder();
+  final greeting = builder.initRoot(greetingFactory);
+  greeting.name = 'World';
+
+  // Serialize
+  final bytes = builder.serialize();
+
+  // Deserialize
+  final reader = MessageReader.deserialize(bytes);
+  final g = reader.getRoot(greetingFactory);
+  print(g.name); // World
+}
+```
+
+### 5. RPC (optional)
+
+```dart
+import 'package:capnproto_dart_rpc/capnproto_dart_rpc.dart';
+import 'src/generated/greeter.capnp.dart';
+
+Future<void> main() async {
+  final conn = await RpcSystem.connect(Uri.parse('tcp://127.0.0.1:12345'));
+  final greeter = conn.bootstrap(GreeterClientFactory());
+
+  final result = await greeter.greet((b) => b.name = 'World');
+  print(result.reply);
+
+  await conn.close();
+}
+```
+
+## RPC Support Status
+
+This library implements **Cap'n Proto RPC Level 1** for two-party connections:
+
+| Feature | Status |
+|---|---|
+| Object-capability references | Supported |
+| Promise pipelining | Supported |
+| Bidirectional RPC (callbacks) | Supported |
+| Tail calls (`Capability.tryTailCall`) | Supported |
+| Receiving `Resolve` / `Disembargo` from peer | Supported |
+| Sending `Resolve` / `Disembargo` from Dart vat | Supported |
+| Three-party handoff (Level 3) | **Not in scope** |
+| Persistent capabilities (Level 2) | **Not in scope** |
+| Reference equality / Join (Level 4) | **Not in scope** |
+
+Level 2 (persistent capabilities), Level 3 (three-party handoff), and Level 4
+(Join) are separate, higher protocol levels defined by `rpc.capnp` — not part
+of Level 1 itself — and none of them are implemented. Weak capability
+references, batch Release, `releaseParamCaps`, and `noFinishNeeded` (all
+Level 1 optimizations, not correctness requirements) are also not
+implemented. Applications with long-lived connections and high capability
+churn should release capabilities promptly and should validate their
+workload against the lifecycle/stress tests in this repository.
+
+The RPC layer is tested for interoperability with Rust servers/clients using the [`capnp`](https://crates.io/crates/capnp) crate (versions 0.23–0.26).
+
+## Samples
+
+### `sample/greeter` — Simple greeter
+
+A minimal Dart client + Rust server demonstrating basic RPC calls and session capabilities.
+
+```sh
+# Terminal 1: start the Rust server
+cargo run --manifest-path sample/greeter/server/Cargo.toml
+
+# Terminal 2: run the Dart client
+dart run sample/greeter/client/bin/main.dart
+```
+
+## Cross-Language Interop Tests
+
+`test/interop/` holds correctness suites, not usage samples — see [`ci/run-tests.sh`](ci/run-tests.sh) for the full, automated run. Each suite is runnable by hand too:
+
+### `test/interop/complex` — RPC interop suite
+
+A 29-section test covering encoding, all field types, pipelining, bidirectional callbacks, and Level 1 subset flows, driven in both directions (Dart client ↔ Rust server, and Rust client ↔ Dart server).
+
+```sh
+# Dart client against the Rust server
+cargo run --manifest-path test/interop/complex/server/Cargo.toml &
+dart run test/interop/complex/client/bin/main.dart
+
+# Or the Rust client against the Dart server
+dart run test/interop/complex/dart-server/bin/main.dart &
+cargo run --manifest-path test/interop/complex/rust-client/Cargo.toml
+```
+
+### `test/interop/schema-evolution` — runtime forward/backward compatibility
+
+Proves at runtime, across both languages, that a message written against an old schema version is readable by the other language's newer schema (and vice versa) — see [`ci/run-tests.sh`](ci/run-tests.sh) for the four write/read combinations it drives.
+
+### `test/interop/wire-format-golden` — official `capnp` CLI as oracle
+
+Independent of RPC: checks that this library's serialized bytes are byte-for-byte interchangeable with the official C++ reference implementation, using the `capnp decode`/`capnp encode` CLI as ground truth.
+
+## Development
+
+A ready-to-use dev container is provided (`.devcontainer/`). It sets up Ubuntu 24.04 with:
+- Cap'n Proto CLI built from source (v1.0.1)
+- Dart SDK 3.7.2 (the minimum supported version; CI also tests latest stable)
+- Rust via rustup
+
+```sh
+# Open in VS Code → "Reopen in Container"
+# or use the Dev Containers CLI:
+devcontainer up --workspace-folder .
+```
+
+### Running tests
+
+```sh
+# Generator tests
+dart test dev_packages/capnpc-dart/
+
+# Runtime tests
+dart test packages/capnproto_dart/
+dart test packages/capnproto_dart_rpc/
+
+# Everything above, plus the cross-language interop suites in test/interop/
+# (requires the `capnp` CLI and a Rust toolchain — see ci/run-tests.sh)
+ci/run-tests.sh
+```
+
+### CI
+
+The GitHub Actions workflow (`.github/workflows/compat.yml`) runs analysis and tests with both the minimum supported Dart SDK (3.7.2) and the latest stable SDK. It also runs the full interoperability suite against capnp crate versions 0.23 through 0.26 on every push to `main`.
+
+## Documentation
+
+The full documentation is also published as a [Docusaurus site](website/) (see
+`website/README` for how to build it locally; gh-pages hosting is set up but must be
+enabled once in the repo's Pages settings).
+
+### Repository-level: requirements and howto
+
+| File | Contents |
+|---|---|
+| [`docs/purpose.md`](docs/purpose.md) | Problem statement and motivation |
+| [`docs/scope.md`](docs/scope.md) | Feature scope and out-of-scope items |
+| [`docs/constraint.md`](docs/constraint.md) | Design constraints |
+| [`docs/global-design.md`](docs/global-design.md) | How the 3 components relate to each other and to external systems |
+| [`docs/howto/getting-started.md`](docs/howto/getting-started.md) | Install, generate code, first message, first RPC call |
+| [`docs/howto/schema-and-codegen.md`](docs/howto/schema-and-codegen.md) | Writing schemas, running `capnpc-dart`, compatibility checks |
+| [`docs/howto/serialization.md`](docs/howto/serialization.md) | Building/reading messages, packed encoding, streaming, dynamic access |
+| [`docs/howto/rpc.md`](docs/howto/rpc.md) | Connecting, bootstrap, capabilities, promise pipelining, streaming calls |
+| [`docs/howto/samples-and-testing.md`](docs/howto/samples-and-testing.md) | Running `sample/greeter` and the `test/interop/*` suites |
+
+### Per-component: external spec and internal design
+
+| Component | External spec | Internal design |
+|---|---|---|
+| CLI Tool (`capnpc-dart`) | [`dev_packages/capnpc-dart/doc/external-spec.md`](dev_packages/capnpc-dart/doc/external-spec.md) | [`dev_packages/capnpc-dart/doc/internal-design.md`](dev_packages/capnpc-dart/doc/internal-design.md) *(stub)* |
+| Serialization Runtime (`capnproto_dart`) | [`packages/capnproto_dart/doc/external-spec.md`](packages/capnproto_dart/doc/external-spec.md) | [`packages/capnproto_dart/doc/internal-design.md`](packages/capnproto_dart/doc/internal-design.md) |
+| RPC Runtime (`capnproto_dart_rpc`) | [`packages/capnproto_dart_rpc/doc/external-spec.md`](packages/capnproto_dart_rpc/doc/external-spec.md) | [`packages/capnproto_dart_rpc/doc/internal-design.md`](packages/capnproto_dart_rpc/doc/internal-design.md) |
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).

@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1, user-scalable=no">
+  <meta name="description" content="API docs for the uint8ListBuilderFromRaw function from the capnproto_dart library, for the Dart programming language.">
+  <title>uint8ListBuilderFromRaw function - capnproto_dart library - Dart API</title>
+
+
+  
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+  
+  <link rel="stylesheet" href="../static-assets/github.css?v1">
+  <link rel="stylesheet" href="../static-assets/styles.css?v1">
+  <link rel="icon" href="../static-assets/favicon.png?v1">
+  
+</head>
+
+<body data-base-href="../" data-using-base-href="false" class="light-theme">
+<div id="overlay-under-drawer"></div>
+<header id="title">
+  <span id="sidenav-left-toggle" class="material-symbols-outlined" role="button" tabindex="0">menu</span>
+  <ol class="breadcrumbs gt-separated dark hidden-xs">
+    <li><a href="../index.html">capnproto_dart</a></li>
+    <li><a href="../capnproto_dart">capnproto_dart.dart</a></li>
+    <li class="self-crumb">uint8ListBuilderFromRaw function</li>
+  </ol>
+  <div class="self-name">uint8ListBuilderFromRaw</div>
+  <form class="search navbar-right" role="search">
+    <input type="text" id="search-box" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
+  </form>
+  <div class="toggle" id="theme-button" title="Toggle brightness">
+    <label for="theme">
+      <input type="checkbox" id="theme" value="light-theme">
+      <span id="dark-theme-button" class="material-symbols-outlined">
+        dark_mode
+      </span>
+      <span id="light-theme-button" class="material-symbols-outlined">
+        light_mode
+      </span>
+    </label>
+  </div>
+</header>
+<main>
+  <div
+      id="dartdoc-main-content"
+      class="main-content"
+      data-above-sidebar="capnproto_dart&#47;capnproto_dart-library-sidebar.html"
+      data-below-sidebar="">
+      <div>
+<h1><span class="kind-function">uint8ListBuilderFromRaw</span> function 
+ 
+</h1></div>
+
+    <section class="multi-line-signature">
+        
+<span class="returntype"><a href="../capnproto_dart/ListBuilder-class.html">ListBuilder</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.7.2/dart-core/int-class.html">int</a></span>&gt;</span></span>
+<span class="name ">uint8ListBuilderFromRaw</span>(<wbr><ol class="parameter-list single-line"> <li><span class="parameter" id="uint8ListBuilderFromRaw-param-raw"><span class="type-annotation">RawListBuilder</span> <span class="parameter-name">raw</span></span></li>
+</ol>)
+
+        
+
+    </section>
+    
+<section class="desc markdown">
+  <p>Creates a <code>UInt8</code> <code>PrimitiveIntListBuilder</code> from a <code>RawListBuilder</code>.</p>
+<p><strong>Intended users</strong></p>
+<ul>
+<li>Generated <code>capnpc_dart</code> bindings and custom code generators.</li>
+</ul>
+<p><strong>Primary use cases</strong></p>
+<ul>
+<li>Adapts an untyped wire-layout view to the typed list API expected by generated bindings.</li>
+</ul>
+<p><strong>Parameters</strong></p>
+<ul>
+<li>Function parameters supply the source value and any schema, options, or conversion callbacks required by the operation.</li>
+</ul>
+<p><strong>Returns</strong></p>
+<ul>
+<li>A typed reader or builder view over the supplied raw list.</li>
+</ul>
+<p><strong>Example</strong></p>
+<pre class="language-dart"><code class="language-dart">// Given the required message, schema, or raw-layout values:
+final values = uint8ListBuilderFromRaw(raw);
+</code></pre>
+</section>
+
+
+    
+<section class="summary source-code" id="source">
+  <h2><span>Implementation</span></h2>
+  <pre class="language-dart"><code class="language-dart">ListBuilder&lt;int&gt; uint8ListBuilderFromRaw(RawListBuilder raw) =&gt;
+    PrimitiveIntListBuilder(raw, readUint8, writeUint8, 1);</code></pre>
+</section>
+
+
+  </div> <!-- /.main-content -->
+  <div id="dartdoc-sidebar-left" class="sidebar sidebar-offcanvas-left">
+    <!-- The search input and breadcrumbs below are only responsively visible at low resolutions. -->
+<header id="header-search-sidebar" class="hidden-l">
+  <form class="search-sidebar" role="search">
+    <input type="text" id="search-sidebar" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
+  </form>
+</header>
+<ol class="breadcrumbs gt-separated dark hidden-l" id="sidebar-nav">
+    <li><a href="../index.html">capnproto_dart</a></li>
+    <li><a href="../capnproto_dart">capnproto_dart</a></li>
+    <li class="self-crumb">uint8ListBuilderFromRaw function</li>
+</ol>
+
+    <h5>capnproto_dart library</h5>
+    <div id="dartdoc-sidebar-left-content"></div>
+  </div><!--/.sidebar-offcanvas-left-->
+  <div id="dartdoc-sidebar-right" class="sidebar sidebar-offcanvas-right">
+  </div><!--/.sidebar-offcanvas-->
+</main>
+<footer>
+  <span class="no-break">
+    capnproto_dart
+      0.1.0
+  </span>
+  
+</footer>
+
+
+<script src="../static-assets/highlight.pack.js?v1"></script>
+<script src="../static-assets/docs.dart.js"></script>
+
+</body>
+</html>
+

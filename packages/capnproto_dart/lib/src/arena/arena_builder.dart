@@ -1,0 +1,670 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import '../message/message_copy.dart' show copyMessageRootToBuilder;
+import '../wire/pointer.dart';
+import '../wire/wire_helpers.dart';
+import 'segment_builder.dart';
+
+/// Untyped view of a list's memory inside a writable segment, used by generated list builders.
+///
+/// **Intended users**
+/// * Authors of generated `capnpc_dart` bindings and low-level runtime integrations.
+///
+/// **Primary use cases**
+/// * Supports the typed bindings that map schema declarations to the Cap'n Proto wire layout.
+class RawListBuilder {
+  /// Holds the public [segment] value.
+  final SegmentBuilder segment;
+
+  /// Holds the public [arena] value.
+  final ArenaBuilder arena;
+
+  /// Byte offset within [segment] to the first element.
+  final int dataByteOffset;
+
+  /// Holds the public [elementSize] value.
+  final ListElementSize elementSize;
+
+  /// Holds the public [elementCount] value.
+  final int elementCount;
+
+  /// Per-element data words (composite lists only).
+  final int structDataWords;
+
+  /// Per-element pointer words (composite lists only).
+  final int structPtrWords;
+
+  /// Creates a [RawListBuilder] instance.
+  const RawListBuilder({
+    required this.segment,
+    required this.arena,
+    required this.dataByteOffset,
+    required this.elementSize,
+    required this.elementCount,
+    this.structDataWords = 0,
+    this.structPtrWords = 0,
+  });
+}
+
+/// Untyped view of a struct's memory inside a writable segment, used by generated builders.
+///
+/// The data section occupies words `[dataWordOffset, dataWordOffset + dataWords)`.
+/// The pointer section occupies words `[ptrWordOffset, ptrWordOffset + ptrWords)`.
+///
+/// **Intended users**
+/// * Authors of generated `capnpc_dart` bindings and low-level runtime integrations.
+///
+/// **Primary use cases**
+/// * Supports the typed bindings that map schema declarations to the Cap'n Proto wire layout.
+class RawStructBuilder {
+  /// Holds the public [segment] value.
+  final SegmentBuilder segment;
+
+  /// Holds the public [arena] value.
+  final ArenaBuilder arena;
+
+  /// Holds the public [dataWordOffset] value.
+  final int dataWordOffset;
+
+  /// Holds the public [dataWords] value.
+  final int dataWords;
+
+  /// Holds the public [ptrWordOffset] value.
+  final int ptrWordOffset;
+
+  /// Holds the public [ptrWords] value.
+  final int ptrWords;
+
+  /// Creates a [RawStructBuilder] instance.
+  const RawStructBuilder({
+    required this.segment,
+    required this.arena,
+    required this.dataWordOffset,
+    required this.dataWords,
+    required this.ptrWordOffset,
+    required this.ptrWords,
+  });
+}
+
+/// Manages writable segments for a Cap'n Proto message under construction.
+///
+/// Uses bump allocation within segments. When the current segment is full,
+/// a new segment is added automatically.
+///
+/// **Intended users**
+/// * Authors of generated `capnpc_dart` bindings and low-level runtime integrations.
+///
+/// **Primary use cases**
+/// * Supports the typed bindings that map schema declarations to the Cap'n Proto wire layout.
+class ArenaBuilder {
+  // Measured via CPU profiling (see performance.md): 1024 words (8 KiB, the
+  // originally-chosen value, mirroring capnp-rust's SUGGESTED_FIRST_SEGMENT_WORDS)
+  // spends a disproportionate amount of a typical small message's build time
+  // zeroing bytes it never uses. 256 words (2 KiB) keeps most of that win
+  // (roughly 1.6x throughput on a small, single-segment message) while
+  // costing nothing on large, multi-segment messages — a synthetic 64 KiB
+  // payload benchmarked within noise of the 8 KiB default at this size,
+  // whereas smaller candidates (down to 128 words) measured ~40% slower
+  // than the 8 KiB default on that same large-payload case.
+  static const int _defaultSegmentWords = 256; // 2 KiB
+
+  final List<SegmentBuilder> _segments = [];
+
+  /// Creates a [ArenaBuilder] instance.
+  ArenaBuilder([int initialCapacityWords = _defaultSegmentWords]) {
+    _segments.add(SegmentBuilder(initialCapacityWords, 0));
+  }
+
+  /// Creates an arena whose first segment is backed directly by
+  /// externally-provided [scratchSpace] memory instead of a freshly
+  /// heap-allocated buffer — mirrors capnp-rust's
+  /// `ScratchSpaceHeapAllocator`, avoiding a per-message allocation when
+  /// building many messages in a loop with the same reusable buffer.
+  ///
+  /// Writes go directly into [scratchSpace] until it's full, at which point
+  /// [allocate] falls back to a normal heap-allocated segment exactly as it
+  /// already does when any segment fills up — a message is never size
+  /// limited by [scratchSpace], it's just spared an allocation for the
+  /// common case where it fits.
+  ///
+  /// The arena aliases [scratchSpace] for its entire lifetime. Calling [serialize] returns a snapshot; it does not freeze or invalidate the
+  /// arena, and later builder/reader operations may still access the same
+  /// memory. Do not reuse or mutate [scratchSpace], its backing buffer, or any
+  /// overlapping view while this arena or a derived builder/reader may be used.
+  /// The caller must also prevent concurrent mutation (including from another
+  /// isolate); the runtime does not copy the scratch memory.
+  ArenaBuilder.withScratchSpace(Uint8List scratchSpace) {
+    // The wire format requires the root pointer at word 0 of segment 0 (see
+    // ArenaReader.getRootRaw), and that's always this arena's very first
+    // allocation. A scratch buffer that truncates to 0 whole words couldn't
+    // even hold that one word, which would silently produce an unreadable
+    // message (the root pointer would land in segment 1 instead) — fall
+    // back to a normal heap segment in that case rather than using a
+    // segment 0 that can never actually hold anything.
+    final scratchWords = scratchSpace.lengthInBytes ~/ bytesPerWord;
+    _segments.add(
+      scratchWords > 0
+          ? SegmentBuilder.fromScratch(scratchSpace, 0)
+          : SegmentBuilder(_defaultSegmentWords, 0),
+    );
+  }
+
+  /// Allocates [words] contiguous words, growing into a new segment if needed.
+  /// Returns `(segment, wordOffset)`.
+  ///
+  /// **Example**
+  /// ```dart
+  /// // Given the required message, schema, or raw-layout values:
+  /// final operation = builder.allocate;
+  /// ```
+  (SegmentBuilder, int) allocate(int words) {
+    final seg = _segments.last;
+    final offset = seg.tryAllocate(words);
+    if (offset != null) return (seg, offset);
+
+    // Current segment is full: allocate a new one.
+    final capacity =
+        words > _defaultSegmentWords ? words * 2 : _defaultSegmentWords;
+    final newSeg = SegmentBuilder(capacity, _segments.length);
+    _segments.add(newSeg);
+    return (newSeg, newSeg.tryAllocate(words)!);
+  }
+
+  /// Performs the [getSegment] operation.
+  ///
+  /// **Example**
+  /// ```dart
+  /// // Given the required message, schema, or raw-layout values:
+  /// final result = builder.getSegment(0);
+  /// ```
+  SegmentBuilder getSegment(int id) => _segments[id];
+
+  /// Resets this arena for reuse by a new message build cycle: discards
+  /// every segment after the first (a message this size isn't guaranteed to
+  /// recur, and [allocate] grows into a new one again if needed) and resets
+  /// the first segment's bump pointer back to empty (see
+  /// [SegmentBuilder.reset]).
+  ///
+  /// Every [RawStructBuilder]/[RawListBuilder]/generated builder obtained
+  /// from this arena before calling this describes word offsets this arena
+  /// is about to hand out again for unrelated content — do not use them
+  /// afterward.
+  void reset() {
+    if (_segments.length > 1) {
+      _segments.removeRange(1, _segments.length);
+    }
+    _segments[0].reset();
+  }
+
+  /// Returns the current [segmentCount] value.
+  int get segmentCount => _segments.length;
+
+  /// Imports a pre-built segment (e.g. from another message) into this arena.
+  /// Returns the new segment ID.
+  ///
+  /// **Example**
+  /// ```dart
+  /// // Given the required message, schema, or raw-layout values:
+  /// final operation = builder.importSegmentData;
+  /// ```
+  int importSegmentData(Uint8List data) {
+    final seg = SegmentBuilder.fromData(data, _segments.length);
+    _segments.add(seg);
+    return seg.id;
+  }
+
+  /// Parses [messageBytes] as a standalone Cap'n Proto message and deep-copies
+  /// its root into this arena at [ptrWordOffset] in [ptrSeg].
+  ///
+  /// Delegates to [copyMessageRootToBuilder], which is pointer-aware (it
+  /// resolves and rewrites pointers via an [ArenaReader] rather than
+  /// re-numbering segments by blindly copying their raw bytes), so unlike an
+  /// earlier version of this method, multi-segment source messages are fully
+  /// supported — not just the single-segment case.
+  ///
+  /// **Example**
+  /// ```dart
+  /// // Given the required message, schema, or raw-layout values:
+  /// final operation = builder.writeAnyPointerFromMessage;
+  /// ```
+  void writeAnyPointerFromMessage(
+    SegmentBuilder ptrSeg,
+    int ptrWordOffset,
+    Uint8List messageBytes,
+  ) {
+    copyMessageRootToBuilder(messageBytes, this, ptrSeg, ptrWordOffset);
+  }
+
+  /// Serializes the message into a single [Uint8List] using Cap'n Proto framing.
+  ///
+  /// Framing format (little-endian):
+  /// ```
+  ///   uint32  numSegments - 1
+  ///   uint32  size of segment 0 in words  (repeat for each segment)
+  ///   uint32  padding word (present when numSegments is even)
+  ///   <segment 0 bytes> <segment 1 bytes> ...
+  /// ```
+  ///
+  /// **Example**
+  /// ```dart
+  /// // Given the required message, schema, or raw-layout values:
+  /// final bytes = builder.serialize();
+  /// ```
+  Uint8List serialize() {
+    final numSegments = _segments.length;
+    final headerBytes = (1 + numSegments + (numSegments.isEven ? 1 : 0)) * 4;
+
+    var dataBytes = 0;
+    for (final seg in _segments) {
+      dataBytes += seg.usedWords * bytesPerWord;
+    }
+
+    final output = Uint8List(headerBytes + dataBytes);
+    final hdr = ByteData.view(output.buffer);
+
+    writeUint32(hdr, 0, numSegments - 1);
+    for (var i = 0; i < numSegments; i++) {
+      writeUint32(hdr, 4 + i * 4, _segments[i].usedWords);
+    }
+    // Padding word is automatically 0 (Uint8List is zero-initialized).
+
+    var offset = headerBytes;
+    for (final seg in _segments) {
+      final used = seg.usedData;
+      output.setRange(
+        offset,
+        offset + used.lengthInBytes,
+        used.buffer.asUint8List(used.offsetInBytes, used.lengthInBytes),
+      );
+      offset += used.lengthInBytes;
+    }
+
+    return output;
+  }
+
+  /// Allocates and initialises a struct with the given layout.
+  ///
+  /// Tries to place the struct in the same segment as the pointer. If the
+  /// current segment is full (or the pointer lives in an older segment),
+  /// allocates `1 + totalWords` in a new segment: one landing-pad word
+  /// followed by the struct data, and writes a single-far pointer.
+  ///
+  /// **Example**
+  /// ```dart
+  /// // Given the required message, schema, or raw-layout values:
+  /// final operation = builder.allocateStruct;
+  /// ```
+  RawStructBuilder allocateStruct({
+    required SegmentBuilder ptrSeg,
+    required int ptrWordOffset,
+    required int dataWords,
+    required int ptrWords,
+  }) {
+    final totalWords = dataWords + ptrWords;
+
+    if (totalWords == 0) {
+      // Empty struct: leave the pointer slot as null (already zeroed).
+      return RawStructBuilder(
+        segment: ptrSeg,
+        arena: this,
+        dataWordOffset: 0,
+        dataWords: 0,
+        ptrWordOffset: 0,
+        ptrWords: 0,
+      );
+    }
+
+    // Try same-segment allocation when ptrSeg is the current (last) segment.
+    if (_segments.last.id == ptrSeg.id) {
+      final offset = ptrSeg.tryAllocate(totalWords);
+      if (offset != null) {
+        StructPointer(
+          offset: offset - ptrWordOffset - 1,
+          dataWords: dataWords,
+          ptrWords: ptrWords,
+        ).encode(ptrSeg.data, ptrWordOffset);
+
+        return RawStructBuilder(
+          segment: ptrSeg,
+          arena: this,
+          dataWordOffset: offset,
+          dataWords: dataWords,
+          ptrWordOffset: offset + dataWords,
+          ptrWords: ptrWords,
+        );
+      }
+    }
+
+    // Cross-segment: allocate [landing pad][struct data] together so the
+    // landing-pad word is always within the same allocation as the data.
+    final (dataSeg, landingPadOffset) = allocate(1 + totalWords);
+    final structStart = landingPadOffset + 1;
+
+    FarPointer(
+      isDoubleFar: false,
+      landingPadOffset: landingPadOffset,
+      segmentId: dataSeg.id,
+    ).encode(ptrSeg.data, ptrWordOffset);
+
+    StructPointer(
+      offset: 0,
+      dataWords: dataWords,
+      ptrWords: ptrWords,
+    ).encode(dataSeg.data, landingPadOffset);
+
+    return RawStructBuilder(
+      segment: dataSeg,
+      arena: this,
+      dataWordOffset: structStart,
+      dataWords: dataWords,
+      ptrWordOffset: structStart + dataWords,
+      ptrWords: ptrWords,
+    );
+  }
+
+  // ---- List allocation used by StructBuilder ----
+
+  /// Allocates storage for a list with the given layout and writes the list
+  /// pointer at [ptrWordOffset] in [ptrSeg].
+  ///
+  /// For composite lists ([ListElementSize.composite]) set [structDataWords]
+  /// and [structPtrWords]; [elementCount] is then the number of struct elements.
+  /// For all other element sizes, [structDataWords]/[structPtrWords] are ignored.
+  ///
+  /// **Example**
+  /// ```dart
+  /// // Given the required message, schema, or raw-layout values:
+  /// final operation = builder.allocateList;
+  /// ```
+  RawListBuilder allocateList({
+    required SegmentBuilder ptrSeg,
+    required int ptrWordOffset,
+    required ListElementSize elementSize,
+    required int elementCount,
+    int structDataWords = 0,
+    int structPtrWords = 0,
+  }) {
+    final bool isComposite = elementSize == ListElementSize.composite;
+
+    final int totalDataWords;
+    final int listPointerCount; // elementCountOrWordCount in the list pointer
+    if (isComposite) {
+      totalDataWords = elementCount * (structDataWords + structPtrWords);
+      listPointerCount = totalDataWords; // composite encodes word count
+    } else {
+      totalDataWords = listDataWordCount(elementSize, elementCount);
+      listPointerCount = elementCount;
+    }
+
+    final tagWords = isComposite ? 1 : 0;
+    final allocationWords = tagWords + totalDataWords;
+
+    // Note: allocationWords == 0 (empty non-composite lists, and List(Void)
+    // regardless of element count) is NOT special-cased here. tryAllocate(0)
+    // still returns the current bump position without consuming capacity, so
+    // it falls through the same-segment path below and gets a real (rather
+    // than hardcoded-zero) offset. This matters for canonicalization:
+    // capnp's reference implementation likewise still "allocates" zero-sized
+    // objects at the current bump cursor, so a hardcoded offset of 0 would
+    // produce non-canonical output whenever some other allocation already
+    // advanced the cursor before this empty list was written.
+
+    // Try same-segment allocation when ptrSeg is the current (last) segment.
+    if (_segments.last.id == ptrSeg.id) {
+      final offset = ptrSeg.tryAllocate(allocationWords);
+      if (offset != null) {
+        ListPointer(
+          offset: offset - ptrWordOffset - 1,
+          elementSize: elementSize,
+          elementCountOrWordCount: listPointerCount,
+        ).encode(ptrSeg.data, ptrWordOffset);
+
+        final int dataByteOffset;
+        if (isComposite) {
+          _writeCompositeTag(
+            ptrSeg.data,
+            offset,
+            elementCount,
+            structDataWords,
+            structPtrWords,
+          );
+          dataByteOffset = (offset + 1) * bytesPerWord;
+        } else {
+          dataByteOffset = offset * bytesPerWord;
+        }
+
+        return RawListBuilder(
+          segment: ptrSeg,
+          arena: this,
+          dataByteOffset: dataByteOffset,
+          elementSize: elementSize,
+          elementCount: elementCount,
+          structDataWords: structDataWords,
+          structPtrWords: structPtrWords,
+        );
+      }
+    }
+
+    // Cross-segment: allocate [landing pad][tag?][list data] together.
+    final (dataSeg, landingPadOffset) = allocate(1 + allocationWords);
+    final listStartOffset = landingPadOffset + 1;
+
+    FarPointer(
+      isDoubleFar: false,
+      landingPadOffset: landingPadOffset,
+      segmentId: dataSeg.id,
+    ).encode(ptrSeg.data, ptrWordOffset);
+
+    ListPointer(
+      offset: 0,
+      elementSize: elementSize,
+      elementCountOrWordCount: listPointerCount,
+    ).encode(dataSeg.data, landingPadOffset);
+
+    final int dataByteOffset;
+    if (isComposite) {
+      _writeCompositeTag(
+        dataSeg.data,
+        listStartOffset,
+        elementCount,
+        structDataWords,
+        structPtrWords,
+      );
+      dataByteOffset = (listStartOffset + 1) * bytesPerWord;
+    } else {
+      dataByteOffset = listStartOffset * bytesPerWord;
+    }
+
+    return RawListBuilder(
+      segment: dataSeg,
+      arena: this,
+      dataByteOffset: dataByteOffset,
+      elementSize: elementSize,
+      elementCount: elementCount,
+      structDataWords: structDataWords,
+      structPtrWords: structPtrWords,
+    );
+  }
+
+  // Encodes the tag word for a composite list.
+  // The tag uses struct-pointer format with bits[31:2] = elementCount.
+  void _writeCompositeTag(
+    ByteData data,
+    int wordOffset,
+    int elementCount,
+    int structDataWords,
+    int structPtrWords,
+  ) {
+    StructPointer(
+      offset: elementCount, // "offset" field holds element count in tag words
+      dataWords: structDataWords,
+      ptrWords: structPtrWords,
+    ).encode(data, wordOffset);
+  }
+  // ---- Orphan re-attachment (used by orphan.dart) ----
+
+  /// Writes a pointer at [ptrSeg]/[ptrWordOffset] referring to *already
+  /// allocated* content at word [targetWordOffset] of [targetSeg] — used to
+  /// re-attach an Orphan without copying its bytes. [makePointer] builds the
+  /// content-describing pointer (a [StructPointer] or [ListPointer]) given
+  /// the relative `offset` field value to encode.
+  ///
+  /// Always writes a double-far pointer when crossing segments, rather than
+  /// first trying to land a single-far landing pad in the target segment —
+  /// simpler, and this is already off the hot allocation path (costs at
+  /// most one extra word versus the theoretical optimum).
+  ///
+  /// **Example**
+  /// ```dart
+  /// // Given the required message, schema, or raw-layout values:
+  /// final operation = builder.writePointerToExisting;
+  /// ```
+  void writePointerToExisting({
+    required SegmentBuilder ptrSeg,
+    required int ptrWordOffset,
+    required SegmentBuilder targetSeg,
+    required int targetWordOffset,
+    required WirePointer Function(int offset) makePointer,
+  }) {
+    if (ptrSeg.id == targetSeg.id) {
+      makePointer(
+        targetWordOffset - ptrWordOffset - 1,
+      ).encode(ptrSeg.data, ptrWordOffset);
+      return;
+    }
+
+    // Cross-segment: double-far landing pad — word 0 is a single-far
+    // pointer to the real target, word 1 is a tag carrying the target's
+    // shape (offset field unused/0). Mirrors the double-far landing pad
+    // shape message_copy.dart's _copyPointer already knows how to read.
+    final (tagSeg, tagWordOffset) = allocate(2);
+    FarPointer(
+      isDoubleFar: false,
+      landingPadOffset: targetWordOffset,
+      segmentId: targetSeg.id,
+    ).encode(tagSeg.data, tagWordOffset);
+    makePointer(0).encode(tagSeg.data, tagWordOffset + 1);
+    FarPointer(
+      isDoubleFar: true,
+      landingPadOffset: tagWordOffset,
+      segmentId: tagSeg.id,
+    ).encode(ptrSeg.data, ptrWordOffset);
+  }
+
+  // ---- Pointer field write helpers used by StructBuilder ----
+
+  /// Writes a Text (UTF-8 string) list pointer at [ptrWordOffset] in [ptrSeg].
+  /// A null [value] leaves the pointer slot zeroed (null pointer).
+  ///
+  /// **Example**
+  /// ```dart
+  /// // Given the required message, schema, or raw-layout values:
+  /// final operation = builder.writeTextField;
+  /// ```
+  void writeTextField(SegmentBuilder ptrSeg, int ptrWordOffset, String? value) {
+    if (value == null) return;
+    _writeByteList(
+      ptrSeg,
+      ptrWordOffset,
+      _encodeUtf8(value),
+      includeNullTerminator: true,
+    );
+  }
+
+  // dart:convert's utf8.encode does full multi-byte/surrogate-pair-aware
+  // encoding, which — per CPU profiling of a large-Text-field RPC workload —
+  // is the dominant remaining cost once _writeByteList's copy itself is
+  // bulk. Pure-ASCII code units encode to themselves 1:1 in UTF-8, so this
+  // takes a fast path for that case, bailing out to the fully general (and
+  // fully correct, including for unpaired surrogates) utf8.encode at the
+  // *first* non-ASCII code unit found — a non-ASCII string never pays more
+  // than a partial extra scan (up to wherever the first non-ASCII code unit
+  // is) before falling back, rather than a full one.
+  static Uint8List _encodeUtf8(String value) {
+    final length = value.length;
+    final bytes = Uint8List(length);
+    for (var i = 0; i < length; i++) {
+      final codeUnit = value.codeUnitAt(i);
+      if (codeUnit >= 0x80) return utf8.encode(value);
+      bytes[i] = codeUnit;
+    }
+    return bytes;
+  }
+
+  /// Writes a Data (raw bytes) list pointer at [ptrWordOffset] in [ptrSeg].
+  /// A null [value] leaves the pointer slot zeroed (null pointer).
+  ///
+  /// **Example**
+  /// ```dart
+  /// // Given the required message, schema, or raw-layout values:
+  /// final operation = builder.writeDataField;
+  /// ```
+  void writeDataField(
+    SegmentBuilder ptrSeg,
+    int ptrWordOffset,
+    Uint8List? value,
+  ) {
+    if (value == null) return;
+    _writeByteList(ptrSeg, ptrWordOffset, value, includeNullTerminator: false);
+  }
+
+  void _writeByteList(
+    SegmentBuilder ptrSeg,
+    int ptrWordOffset,
+    Uint8List bytes, {
+    required bool includeNullTerminator,
+  }) {
+    final elementCount = bytes.length + (includeNullTerminator ? 1 : 0);
+    final wordCount = (elementCount + bytesPerWord - 1) ~/ bytesPerWord;
+
+    // Note: wordCount == 0 (an explicitly-set empty Data field; Text always
+    // has wordCount >= 1 for its null terminator) is deliberately not
+    // special-cased — see the comment in allocateList about why a hardcoded
+    // offset of 0 would be non-canonical.
+
+    // Try same-segment allocation.
+    if (_segments.last.id == ptrSeg.id) {
+      final dataOffset = ptrSeg.tryAllocate(wordCount);
+      if (dataOffset != null) {
+        ListPointer(
+          offset: dataOffset - ptrWordOffset - 1,
+          elementSize: ListElementSize.byte,
+          elementCountOrWordCount: elementCount,
+        ).encode(ptrSeg.data, ptrWordOffset);
+
+        _writeBytesBulk(ptrSeg.data, dataOffset * bytesPerWord, bytes);
+        return;
+      }
+    }
+
+    // Cross-segment: allocate [landing pad][list data] together.
+    final (dataSeg, landingPadOffset) = allocate(1 + wordCount);
+    final listDataWordOffset = landingPadOffset + 1;
+
+    FarPointer(
+      isDoubleFar: false,
+      landingPadOffset: landingPadOffset,
+      segmentId: dataSeg.id,
+    ).encode(ptrSeg.data, ptrWordOffset);
+
+    ListPointer(
+      offset: 0,
+      elementSize: ListElementSize.byte,
+      elementCountOrWordCount: elementCount,
+    ).encode(dataSeg.data, landingPadOffset);
+
+    _writeBytesBulk(dataSeg.data, listDataWordOffset * bytesPerWord, bytes);
+  }
+
+  // `ByteData.setUint8` in a per-byte loop costs one bounds-checked call per
+  // byte; going through a `Uint8List` view of the same backing buffer (same
+  // pattern SegmentBuilder.fromData/tryAllocate already use) lets `setRange`
+  // do one bulk memmove instead — measured via CPU profiling to be the
+  // dominant cost (~35% of samples) for large Text/Data fields.
+  static void _writeBytesBulk(ByteData data, int byteStart, Uint8List bytes) {
+    data.buffer
+        .asUint8List(data.offsetInBytes + byteStart, bytes.length)
+        .setRange(0, bytes.length, bytes);
+  }
+}

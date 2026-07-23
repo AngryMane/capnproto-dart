@@ -1,0 +1,110 @@
+name: Crate version compatibility
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Allow manual trigger to test a specific crate version.
+  workflow_dispatch:
+    inputs:
+      capnp_version:
+        description: 'capnp crate minor version (e.g. 0.23)'
+        required: false
+        default: ''
+
+env:
+  # capnp CLI version — must match ARG CAPNP_VERSION in .devcontainer/Dockerfile.
+  CAPNP_CLI_VERSION: "1.0.1"
+  # Dart SDK version — must match ARG DART_VERSION in .devcontainer/Dockerfile.
+  DART_VERSION: "3.7.2"
+
+jobs:
+  dart-stable:
+    name: "Dart latest stable"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+      - name: Analyze and test all Dart packages
+        run: |
+          for package in dev_packages/capnpc-dart dev_packages/capnpc-dart-builder packages/capnproto_dart packages/capnproto_dart_rpc; do
+            (cd "$package" && dart pub get && dart analyze --fatal-infos && dart test)
+          done
+
+  compat-test:
+    name: "capnp crate ${{ matrix.capnp_version }}"
+    runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        capnp_version:
+          - "0.23"   # current baseline
+          - "0.24"
+          - "0.25"
+          - "0.26"   # latest
+
+    steps:
+      # ── checkout ────────────────────────────────────────────────────────────
+      - uses: actions/checkout@v4
+
+      # ── capnp CLI (built from source, same as Dockerfile) ───────────────────
+      - name: Cache capnp CLI build
+        id: cache-capnp
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/bin/capnp
+          key: capnp-cli-${{ env.CAPNP_CLI_VERSION }}-ubuntu24
+
+      - name: Build and install capnp CLI
+        if: steps.cache-capnp.outputs.cache-hit != 'true'
+        run: |
+          wget -q "https://capnproto.org/capnproto-c++-${CAPNP_CLI_VERSION}.tar.gz"
+          tar xf "capnproto-c++-${CAPNP_CLI_VERSION}.tar.gz"
+          cmake -S "capnproto-c++-${CAPNP_CLI_VERSION}" -B capnp-build \
+                -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+          cmake --build capnp-build --parallel "$(nproc)"
+          sudo cmake --install capnp-build
+          rm -rf "capnproto-c++-${CAPNP_CLI_VERSION}" "capnproto-c++-${CAPNP_CLI_VERSION}.tar.gz" capnp-build
+
+      - name: Verify capnp CLI
+        run: capnp --version
+
+      # ── Rust ────────────────────────────────────────────────────────────────
+      - name: Install Rust stable
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-${{ matrix.capnp_version }}-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: cargo-${{ matrix.capnp_version }}-
+
+      # ── Dart SDK ────────────────────────────────────────────────────────────
+      - name: Install Dart SDK ${{ env.DART_VERSION }}
+        run: |
+          wget -q "https://storage.googleapis.com/dart-archive/channels/stable/release/${DART_VERSION}/sdk/dartsdk-linux-x64-release.zip"
+          sudo unzip -q dartsdk-linux-x64-release.zip -d /opt
+          rm dartsdk-linux-x64-release.zip
+          echo "/opt/dart-sdk/bin" >> "$GITHUB_PATH"
+
+      - name: Verify Dart SDK
+        run: dart --version
+
+      # ── Pin capnp crate version ─────────────────────────────────────────────
+      - name: Pin capnp crate to ${{ matrix.capnp_version }}
+        run: |
+          # Use manual trigger version if provided, otherwise use matrix value.
+          VERSION="${{ github.event.inputs.capnp_version || matrix.capnp_version }}"
+          echo "Pinning capnp crate to $VERSION"
+          ci/update-capnp-version.sh "$VERSION"
+
+      # ── Run tests ───────────────────────────────────────────────────────────
+      - name: Run full test suite
+        run: ci/run-tests.sh

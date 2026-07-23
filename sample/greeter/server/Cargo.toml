@@ -1,0 +1,18 @@
+[package]
+name = "greeter-server"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "greeter-server"
+path = "src/main.rs"
+
+[dependencies]
+capnp = "0.26"
+capnp-rpc = "0.26"
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+futures = "0.3"
+
+[build-dependencies]
+capnpc = "0.26"

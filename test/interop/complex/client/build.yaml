@@ -1,0 +1,17 @@
+targets:
+  $default:
+    builders:
+      capnpc_dart_builder|capnp:
+        generate_for:
+          exclude:
+            # A local stub for capnp's built-in `/capnp/stream.capnp`, needed
+            # only so the real `capnp` CLI can resolve the implicit import
+            # behind complex.capnp's `-> stream` method — not a schema of its
+            # own to generate Dart bindings for.
+            - lib/schema/capnp/**
+        options:
+          # Not every `capnp` install ships its own copy of the standard
+          # `/capnp/stream.capnp` at a location `capnp compile` searches by
+          # default (e.g. a from-source CMake build on a CI runner) — point
+          # it at this repo's local stub instead of relying on that.
+          import_paths: ["lib/schema"]
