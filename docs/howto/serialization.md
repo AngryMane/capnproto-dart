@@ -36,7 +36,7 @@ the traversal limit, nesting limit, and max segment count — the defaults guard
 amplification attacks and are usually fine to leave alone. If the bytes are malformed, or
 exceed one of these limits, a `DecodeException` is thrown.
 
-See [`packages/capnproto_dart/doc/external-spec.md`](pathname:///capnproto_dart/external-spec)
+See the [API documentation](https://pub.dev/documentation/capnproto_dart/latest/)
 for the full `MessageBuilder`/`MessageReader`/`MessageReaderOptions` contract and the
 Cap'n Proto → Dart primitive type mapping.
 
@@ -73,8 +73,8 @@ final field = dynStruct?.schema.fieldByName('name');
 ```
 
 This is built on the `SchemaInfo` metadata `capnpc-dart` emits alongside every generated
-struct/enum/interface — see
-[`packages/capnproto_dart/doc/external-spec.md#dynamic-access-and-schema-reflection`](pathname:///capnproto_dart/external-spec#dynamic-access-and-schema-reflection).
+struct/enum/interface — see the [API documentation](https://pub.dev/documentation/capnproto_dart/latest/)
+for the full reflection contract.
 
 ## Text format
 
@@ -93,7 +93,6 @@ final bytes = decodeText('(name = "World")', greetingSchema, registry);
 final g2 = MessageReader.deserialize(bytes).getRoot(greetingFactory);
 ```
 
-See
-[`packages/capnproto_dart/doc/external-spec.md#text-format`](pathname:///capnproto_dart/external-spec#text-format)
+See the [API documentation](https://pub.dev/documentation/capnproto_dart/latest/)
 for the full contract, including what isn't representable (capabilities, untyped
 `AnyPointer`/generic fields).

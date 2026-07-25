@@ -37,10 +37,9 @@ capnp compile -o dart:<output-dir> <schema.capnp...>
 - **Exit code**: `0` on success; non-zero if generation fails (e.g. malformed schema, as
   reported by `capnp` itself before `capnpc-dart` even runs).
 
-See [`packages/capnproto_dart/doc/external-spec.md`](pathname:///capnproto_dart/external-spec#primitive-type-mapping)
-for the Cap'n Proto → Dart type mapping used by the generated code, and
-[`dev_packages/capnpc-dart/doc/external-spec.md`](pathname:///capnpc_dart/external-spec)
-for the full CLI contract.
+See the [`capnproto_dart` API documentation](https://pub.dev/documentation/capnproto_dart/latest/)
+for the Cap'n Proto → Dart type mapping used by the generated code, and the
+[`capnpc_dart` README](https://pub.dev/packages/capnpc_dart) for the full CLI contract.
 
 If the schema contains syntax errors, `capnp` reports them and exits without invoking code
 generation at all.

@@ -9,21 +9,6 @@ const SECTIONS = [
     description: 'Requirements, howto manuals, and how the 3 components relate.',
     to: '/docs/howto/getting-started',
   },
-  {
-    title: 'capnproto_dart',
-    description: 'Serialization Runtime — external spec and internal design.',
-    to: '/capnproto_dart/external-spec',
-  },
-  {
-    title: 'capnproto_dart_rpc',
-    description: 'RPC Runtime — external spec and internal design.',
-    to: '/capnproto_dart_rpc/external-spec',
-  },
-  {
-    title: 'capnpc-dart',
-    description: 'Code generator CLI — external spec and internal design.',
-    to: '/capnpc_dart/external-spec',
-  },
 ];
 
 export default function Home() {

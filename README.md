@@ -8,98 +8,100 @@ A pure Dart implementation of [Cap'n Proto](https://capnproto.org) serialization
 
 The only existing way to use Cap'n Proto from Flutter is to call C++ or Rust libraries via FFI. This approach introduces complex build configurations, hard-to-debug FFI boundaries, and threading mismatches. This repository provides a pure Dart implementation that integrates like any other Dart package.
 
-## Repository Layout
-
-```
-capnproto-dart/
-├── dev_packages/
-│   ├── capnpc-dart/          # Code generator plugin (dart pub global activate)
-│   │   └── doc/               # External spec + internal design for this component
-│   └── capnpc-dart-builder/  # build_runner integration for capnpc-dart
-├── packages/
-│   ├── capnproto_dart/       # Serialization + streaming runtime
-│   │   └── doc/               # External spec + internal design for this component
-│   └── capnproto_dart_rpc/   # RPC runtime (Level 1)
-│       └── doc/               # External spec + internal design for this component
-├── sample/
-│   └── greeter/              # Simple Dart↔Rust greeter (RPC basics)
-├── test/
-│   └── interop/              # Cross-language correctness suites (Dart↔Rust), run by ci/run-tests.sh
-│       ├── complex/               # 29-section RPC interop suite, both directions
-│       ├── schema-evolution/      # Runtime forward/backward-compat cross-check
-│       └── wire-format-golden/    # Wire-format cross-check against the official capnp CLI
-├── ci/                        # Test runner and capnp-version-bump scripts
-├── docs/                     # Requirements, repo-level external spec, and howto guides
-│   └── howto/                 # Task-oriented usage guides
-└── website/                  # Docusaurus site aggregating all of the above (gh-pages)
-```
-
 ## Quick Start
 
-### 1. Install the code generator
+Most apps built on this library talk to another process over RPC — that's
+the path below. If you only need to read/write Cap'n Proto messages
+yourself, with no RPC involved, see [Not using RPC?](#not-using-rpc) at the
+end.
+
+### 1. Install
+
+Add the runtime and the code-generation builder to `pubspec.yaml`:
+
+```yaml
+dependencies:
+  capnproto_dart_rpc: ^0.1.0
+
+dev_dependencies:
+  build_runner: ^2.4.13
+  capnpc_dart_builder: ^0.1.0
+```
 
 ```sh
-dart pub global activate --source path dev_packages/capnpc-dart
+dart pub get
 ```
+
+The official `capnp` compiler must also be installed and on `PATH` —
+`capnpc_dart_builder` shells out to it to parse your schemas.
 
 ### 2. Write a schema
 
+`build_runner` only looks under `lib/`, so put schema files there:
+
 ```capnp
-# hello.capnp
+# lib/schema/hello.capnp
 @0xdeadbeefdeadbeef;
 
-struct Greeting {
-  name @0 :Text;
-  reply @1 :Text;
+interface Greeter {
+  greet @0 (name :Text) -> (reply :Text);
 }
 ```
 
 ### 3. Generate Dart code
 
 ```sh
-capnp compile -o dart:lib/src/generated hello.capnp
+dart run build_runner build
 ```
 
-This produces `lib/src/generated/hello.capnp.dart` with typed reader and builder classes.
+`capnpc_dart_builder` finds every `.capnp` file in your package, runs it
+through `capnp`, and writes `lib/schema/hello.capnp.dart` next to it — with a
+typed client (`GreeterClientFactory`) and a server base class
+(`GreeterServer`). Re-run this command after editing a schema; add
+`--delete-conflicting-outputs` if build_runner complains about stale output.
 
-### 4. Use in Dart
-
-```dart
-import 'package:capnproto_dart/capnproto_dart.dart';
-import 'src/generated/hello.capnp.dart';
-
-void main() {
-  // Build a message
-  final builder = MessageBuilder();
-  final greeting = builder.initRoot(greetingFactory);
-  greeting.name = 'World';
-
-  // Serialize
-  final bytes = builder.serialize();
-
-  // Deserialize
-  final reader = MessageReader.deserialize(bytes);
-  final g = reader.getRoot(greetingFactory);
-  print(g.name); // World
-}
-```
-
-### 5. RPC (optional)
+### 4. Implement a server
 
 ```dart
 import 'package:capnproto_dart_rpc/capnproto_dart_rpc.dart';
-import 'src/generated/greeter.capnp.dart';
+import 'schema/hello.capnp.dart';
+
+class MyGreeter extends GreeterServer {
+  @override
+  Future<DispatchResult> greet(
+    GreeterGreetParamsReader params,
+    List<Capability> paramsCapabilities,
+  ) async {
+    return buildGreetResults((out) => out.reply = 'Hello, ${params.name}!');
+  }
+}
+
+Future<void> main() async {
+  await RpcSystem.serve(Uri.parse('tcp://0.0.0.0:12345'), MyGreeter());
+}
+```
+
+### 5. Call it from a client
+
+```dart
+import 'package:capnproto_dart_rpc/capnproto_dart_rpc.dart';
+import 'schema/hello.capnp.dart';
 
 Future<void> main() async {
   final conn = await RpcSystem.connect(Uri.parse('tcp://127.0.0.1:12345'));
   final greeter = conn.bootstrap(GreeterClientFactory());
 
   final result = await greeter.greet((b) => b.name = 'World');
-  print(result.reply);
+  print(result.reply); // Hello, World!
 
+  await greeter.dispose();
   await conn.close();
 }
 ```
+
+Notice neither side ever touches `MessageBuilder`/`MessageReader` directly —
+the generated client stub and the `buildGreetResults` helper handle
+serialization for you.
 
 ## RPC Support Status
 

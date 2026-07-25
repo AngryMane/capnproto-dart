@@ -4,9 +4,9 @@
 # Usage:
 #   ci/version-docs.sh <version>   e.g.  ci/version-docs.sh 0.2.0
 #
-# Runs `docusaurus docs:version:<id> <version>` for all 4 plugin-content-docs
-# instances declared in website/docusaurus.config.js (root docs/, and each of the 3
-# component doc/ dirs), producing website/<id>_versioned_docs/version-<version>/,
+# Runs `docusaurus docs:version:<id> <version>` for each plugin-content-docs instance
+# declared in website/docusaurus.config.js (currently just root docs/), producing
+# website/<id>_versioned_docs/version-<version>/,
 # website/<id>_versioned_sidebars/version-<version>-sidebars.json, and an updated
 # website/<id>_versions.json for each. Commit the result to publish the snapshot.
 #
@@ -25,9 +25,6 @@ fi
 # Plugin ids declared in website/docusaurus.config.js.
 PLUGIN_IDS=(
   "root"
-  "capnproto-dart"
-  "capnproto-dart-rpc"
-  "capnpc-dart"
 )
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"

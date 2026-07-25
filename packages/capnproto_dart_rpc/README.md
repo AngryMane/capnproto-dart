@@ -1,28 +1,52 @@
 # capnproto_dart_rpc
 
-Pure Dart Cap'n Proto RPC runtime for two-party connections over TCP and
-WebSocket. It implements Cap'n Proto RPC Level 1 — callbacks, promise
-pipelining, tail calls, and Resolve/Disembargo in both directions. Level 2
-(persistent capabilities) and above are out of scope.
+RPC runtime for Cap'n Proto in Dart — connect to a server, call its methods,
+and get typed results back. Use this package when your app talks to another
+process over the network, rather than just reading/writing Cap'n Proto
+messages locally.
 
-The package re-exports `capnproto_dart`, so applications using generated RPC
-code normally need only this import.
+## How the pieces fit together
+
+- [`capnpc_dart`](https://pub.dev/packages/capnpc_dart) generates typed
+  client and server classes from your `.capnp` schema.
+- `capnproto_dart_rpc` (this package) is the runtime those generated classes
+  use to connect, call, and dispatch. It already includes
+  [`capnproto_dart`](https://pub.dev/packages/capnproto_dart) (message
+  serialization), so you don't need to add that separately.
 
 ## Install and generate stubs
 
-```sh
-dart pub add capnproto_dart_rpc
-dart pub global activate capnpc_dart
-capnp compile -o dart:lib/src/generated schema/greeter.capnp
+Add this package and the code-generation builder to `pubspec.yaml`:
+
+```yaml
+dependencies:
+  capnproto_dart_rpc: ^0.1.0
+
+dev_dependencies:
+  build_runner: ^2.4.13
+  capnpc_dart_builder: ^0.1.0
 ```
 
-The official `capnp` CLI must be installed separately.
+```sh
+dart pub get
+```
+
+`build_runner` only looks under `lib/`, so put your schema there, e.g.
+`lib/schema/greeter.capnp`, then generate stubs:
+
+```sh
+dart run build_runner build
+```
+
+This writes `lib/schema/greeter.capnp.dart`. The official `capnp` compiler
+must also be installed and on `PATH` — `capnpc_dart_builder` shells out to it
+to parse your schemas.
 
 ## Connect and call
 
 ```dart
 import 'package:capnproto_dart_rpc/capnproto_dart_rpc.dart';
-import 'src/generated/greeter.capnp.dart';
+import 'schema/greeter.capnp.dart';
 
 Future<void> main() async {
   final connection =
@@ -39,12 +63,20 @@ Future<void> main() async {
 }
 ```
 
-Use `ws://host:port/path` or `wss://host:port/path` instead of `tcp://` for
-WebSocket transport.
+That's the core client workflow: connect, get the remote object
+(`bootstrap`), call its methods like normal Dart methods, and clean up when
+done. Swap `tcp://` for `ws://` or `wss://` to connect over WebSocket
+instead.
 
-## Serve a bootstrap capability
+Always call `dispose()` on capabilities you're finished with, and `close()`
+on the connection — each remote reference stays alive on the server until
+you release it.
 
-Each schema interface generates a `<Name>Server` base class:
+## Serving requests
+
+If your app also needs to accept incoming calls — acting as a server, or
+answering a callback passed to you by one — implement the generated
+`<Name>Server` base class:
 
 ```dart
 class MyGreeter extends GreeterServer {
@@ -53,10 +85,7 @@ class MyGreeter extends GreeterServer {
     GreeterGreetParamsReader params,
     List<Capability> paramsCapabilities,
   ) async {
-    final message = MessageBuilder();
-    final result = message.initRoot(greeterGreetResultsFactory);
-    result.reply = 'Hello, ${params.name}!';
-    return DispatchResult(bytes: message.serialize());
+    return buildGreetResults((out) => out.reply = 'Hello, ${params.name}!');
   }
 }
 
@@ -65,48 +94,15 @@ Future<void> main() async {
     Uri.parse('tcp://0.0.0.0:12345'),
     MyGreeter(),
   );
-
   // Later: await server.close();
 }
 ```
 
-`RpcSystem.serve` also accepts `ws://` and `wss://` addresses. A `wss://`
-server requires a Dart `SecurityContext`. WebSocket request paths are enforced.
+`RpcSystem.serve` also accepts `ws://` and `wss://` addresses.
 
-## Capability lifetime
+## Learn more
 
-Capabilities are live remote references. Dispose clients and capabilities when
-they are no longer needed so the peer can release its export:
-
-```dart
-final session = (await greeter.newSession((p) => p.name = 'Ada')).session;
-try {
-  await session.greet((_) {});
-} finally {
-  await session.dispose();
-}
-```
-
-Closing an `RpcConnection` releases all state owned by that connection. A
-capability must not be used after it or its connection has been disposed.
-
-## Protocol scope
-
-Supported Level 1 functionality includes two-party bootstrap, calls and
-returns, capability parameters/results, callbacks, promise pipelining,
-sender promises, tail calls, Release/Finish, and Resolve/Disembargo flows.
-
-Level 2 (persistent capabilities, `Save`/`Restore`) and Level 3 (three-party
-handoff, `Provide`/`Accept`) are separate, higher protocol levels — not part
-of Level 1 itself — and are out of scope here. Unsupported capability
-descriptors fail the connection explicitly with an `unimplemented` RPC
-error; they are never silently treated as null.
-
-Long-lived services with high capability churn should dispose references
-promptly and test their workload under realistic connection counts. Servers
-can set `maxConnections`; streaming methods use bounded flow control.
-
-See the [RPC guide](https://angrymane.github.io/capnproto-dart/howto/rpc),
-[support matrix](https://github.com/AngryMane/capnproto-dart#rpc-support-status),
-and [API documentation](https://pub.dev/documentation/capnproto_dart_rpc/latest/)
-for more detail.
+See the [RPC guide](https://angrymane.github.io/capnproto-dart/howto/rpc) and
+[API documentation](https://pub.dev/documentation/capnproto_dart_rpc/latest/)
+for promise pipelining, streaming calls, error handling, and the full
+protocol support matrix.

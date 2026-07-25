@@ -1,9 +1,23 @@
 # capnpc_dart
 
-Dart code-generator plugin for the official Cap'n Proto compiler. It generates
-typed readers, builders, schema metadata, and RPC stubs from `.capnp` files.
+Turns your `.capnp` schema files into Dart code — the classes you'll
+actually import and use in your app. This package is a compiler plugin
+invoked by the official `capnp` compiler; your app code never calls it
+directly.
 
-Generated code depends on the matching `capnproto_dart` runtime version.
+Most apps should use [`capnpc_dart_builder`](https://pub.dev/packages/capnpc_dart_builder)
+instead of driving this package by hand — it wraps the same generator in a
+`build_runner` builder, so `dart run build_runner build` regenerates code
+whenever a schema changes. Read on if you want to invoke `capnp compile`
+yourself instead, e.g. from a script or CI step outside build_runner.
+
+## How the pieces fit together
+
+- `capnpc_dart` (this package) generates Dart source from `.capnp` schemas.
+- The generated code depends on
+  [`capnproto_dart`](https://pub.dev/packages/capnproto_dart) (message
+  serialization) and, if your schema declares any interfaces, on
+  [`capnproto_dart_rpc`](https://pub.dev/packages/capnproto_dart_rpc) (RPC).
 
 ## Requirements
 
@@ -22,58 +36,53 @@ capnp --version
 dart pub global activate capnpc_dart
 ```
 
-If Dart's global executable directory is not on `PATH`, follow the instruction
-printed by `dart pub global activate` before running `capnp compile`.
+If Dart's global executable directory is not on `PATH`, follow the
+instruction printed by `dart pub global activate` before running
+`capnp compile`.
 
 ## Generate Dart code
-
-For `schema/hello.capnp`, generate code under `lib/src/generated` with:
 
 ```sh
 capnp compile -o dart:lib/src/generated schema/hello.capnp
 ```
 
-The `capnp` compiler finds the globally activated executable as
-`capnpc-dart`. One file is generated for each input schema, preserving its
-relative path and adding `.dart`; for example:
+This writes `lib/src/generated/schema/hello.capnp.dart`. `capnp` finds the
+generator automatically once it's globally activated as `capnpc-dart` — you
+don't invoke it yourself.
 
-```text
-lib/src/generated/schema/hello.capnp.dart
-```
-
-Compile imported schemas explicitly when their Dart output is also required:
+Compile every schema file whose types you use directly, including imported
+ones:
 
 ```sh
 capnp compile -o dart:lib/src/generated \
   schema/hello.capnp schema/common.capnp
 ```
 
-Add the runtime used by the generated file to the application:
+Then add the runtime the generated code needs:
 
 ```sh
 dart pub add capnproto_dart
 ```
 
-Schemas containing interfaces also require `capnproto_dart_rpc`.
+Add `capnproto_dart_rpc` too if your schema declares any interfaces.
 
-## Compatibility checking
+## Keep versions in sync
 
-The generator can compare a new schema request with an older schema. Because
-`capnp -o` does not forward arbitrary plugin options, pipe the request directly:
+Use the same release line for `capnpc_dart`, `capnproto_dart`, and
+`capnproto_dart_rpc`. Generated code is compiled against runtime APIs and
+isn't guaranteed to work with a mismatched version.
+
+## Also available
+
+Checking whether a schema change is backward-compatible before you ship it:
 
 ```sh
 capnp compile -o- schema/new.capnp \
   | capnpc-dart --check=schema/old.capnp
 ```
 
-Exit status is `0` for compatible changes, `1` for detected incompatibilities,
-and `2` for invocation or processing errors.
-
-## Version compatibility
-
-Use the same release line for `capnpc_dart`, `capnproto_dart`, and
-`capnproto_dart_rpc`. Generated source is compiled against runtime APIs and is
-not guaranteed to work with an older runtime package.
+Exit status is `0` for compatible changes, `1` for detected
+incompatibilities, and `2` for invocation or processing errors.
 
 See the [schema and code-generation guide](https://angrymane.github.io/capnproto-dart/howto/schema-and-codegen)
 for imports, constants, generated names, and current limitations.

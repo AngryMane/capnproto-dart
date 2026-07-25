@@ -35,9 +35,7 @@ class MyGreeterImpl extends GreeterServer {
     GreeterGreetParamsReader params,
     List<Capability> paramsCapabilities,
   ) async {
-    final mb = MessageBuilder();
-    mb.initRoot(greeterGreetResultsFactory).reply = 'Hello, ${params.name}!';
-    return DispatchResult(bytes: mb.serialize(), caps: const []);
+    return buildGreetResults((out) => out.reply = 'Hello, ${params.name}!');
   }
 }
 
@@ -46,6 +44,10 @@ final server = await RpcSystem.serve(
   MyGreeterImpl(),
 );
 ```
+
+`buildGreetResults` — generated on `GreeterServer` alongside every method —
+builds and serializes the results struct for you; server code never needs to
+touch `MessageBuilder` directly.
 
 Every `interface` in your schema generates a `<Name>Server` base class (dispatch
 skeleton) alongside the `<Name>Client`/`<Name>ClientFactory` pair used on the calling
@@ -77,9 +79,7 @@ Here `MyObserverImpl` is a Dart object the client exports to the server; the ser
 notifications work in this library (there is no separate subscribe/callback channel, just
 a capability passed as a normal argument). Note that this dispatch always runs on the
 same isolate that called `RpcSystem.connect`/`serve` — if handling a call is expensive,
-offload the work yourself (e.g. `Isolate.run(...)`) inside the overridden method; see
-[`packages/capnproto_dart_rpc/doc/internal-design.md`](pathname:///capnproto_dart_rpc/internal-design)
-for why.
+offload the work yourself (e.g. `Isolate.run(...)`) inside the overridden method.
 
 ## Promise pipelining
 
@@ -110,8 +110,7 @@ await sink.write((b) => b.chunk = Uint8List.fromList([1, 2, 3]));
 ```
 
 The returned `Future` only completes once the fixed-size flow-control window has room,
-rather than after every chunk round-trips individually — see `FlowController` in
-[`packages/capnproto_dart_rpc/doc/internal-design.md`](pathname:///capnproto_dart_rpc/internal-design).
+rather than after every chunk round-trips individually.
 
 ## Errors
 
@@ -126,6 +125,6 @@ try {
 }
 ```
 
-See [`packages/capnproto_dart_rpc/doc/external-spec.md`](pathname:///capnproto_dart_rpc/external-spec)
+See the [API documentation](https://pub.dev/documentation/capnproto_dart_rpc/latest/)
 for the full type signatures, and [`samples-and-testing.md`](samples-and-testing.md) to
 run a real client/server pair.

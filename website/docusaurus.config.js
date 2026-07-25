@@ -25,12 +25,15 @@ const versionDropdown = (pluginId) =>
     ? [{type: 'docsVersionDropdown', docsPluginId: pluginId, position: 'left'}]
     : [];
 
-// This site aggregates markdown that physically lives scattered across the
-// repo (root docs/, and a doc/ subdirectory inside each of the 3 components)
-// into one site via multiple @docusaurus/plugin-content-docs instances,
-// instead of moving/copying any of it into website/. The preset's built-in
-// `docs` instance is disabled (docs: false below) so every instance is
-// declared explicitly here.
+// This site aggregates markdown that physically lives outside website/ (root
+// docs/) via a single @docusaurus/plugin-content-docs instance, instead of
+// moving/copying any of it into website/. The preset's built-in `docs`
+// instance is disabled (docs: false below) so this instance is declared
+// explicitly here.
+//
+// Per-component doc/ directories (packages/*/doc, dev_packages/*/doc) were
+// removed pre-release; each component now documents itself via README.md
+// only. Re-add plugin-content-docs instances here if those return.
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
@@ -86,39 +89,6 @@ const config = {
         editUrl: `${EDIT_URL_BASE}/docs`,
       }),
     ],
-    [
-      '@docusaurus/plugin-content-docs',
-      /** @type {import('@docusaurus/plugin-content-docs').Options} */
-      ({
-        id: 'capnproto-dart',
-        path: '../packages/capnproto_dart/doc',
-        routeBasePath: 'capnproto_dart',
-        sidebarPath: './sidebars/capnproto-dart.js',
-        editUrl: `${EDIT_URL_BASE}/packages/capnproto_dart/doc`,
-      }),
-    ],
-    [
-      '@docusaurus/plugin-content-docs',
-      /** @type {import('@docusaurus/plugin-content-docs').Options} */
-      ({
-        id: 'capnproto-dart-rpc',
-        path: '../packages/capnproto_dart_rpc/doc',
-        routeBasePath: 'capnproto_dart_rpc',
-        sidebarPath: './sidebars/capnproto-dart-rpc.js',
-        editUrl: `${EDIT_URL_BASE}/packages/capnproto_dart_rpc/doc`,
-      }),
-    ],
-    [
-      '@docusaurus/plugin-content-docs',
-      /** @type {import('@docusaurus/plugin-content-docs').Options} */
-      ({
-        id: 'capnpc-dart',
-        path: '../dev_packages/capnpc-dart/doc',
-        routeBasePath: 'capnpc_dart',
-        sidebarPath: './sidebars/capnpc-dart.js',
-        editUrl: `${EDIT_URL_BASE}/dev_packages/capnpc-dart/doc`,
-      }),
-    ],
   ],
 
   themeConfig:
@@ -138,20 +108,6 @@ const config = {
           {to: '/docs/howto/getting-started', label: 'Guide', position: 'left'},
           ...versionDropdown('root'),
           {
-            to: '/capnproto_dart/external-spec',
-            label: 'capnproto_dart',
-            position: 'left',
-          },
-          ...versionDropdown('capnproto-dart'),
-          {
-            to: '/capnproto_dart_rpc/external-spec',
-            label: 'capnproto_dart_rpc',
-            position: 'left',
-          },
-          ...versionDropdown('capnproto-dart-rpc'),
-          {to: '/capnpc_dart/external-spec', label: 'capnpc-dart', position: 'left'},
-          ...versionDropdown('capnpc-dart'),
-          {
             href: `https://github.com/${ORG}/${REPO}`,
             label: 'GitHub',
             position: 'right',
@@ -166,14 +122,6 @@ const config = {
             items: [
               {label: 'Getting Started', to: '/docs/howto/getting-started'},
               {label: 'Requirements & Scope', to: '/docs/purpose'},
-            ],
-          },
-          {
-            title: 'Components',
-            items: [
-              {label: 'capnproto_dart', to: '/capnproto_dart/external-spec'},
-              {label: 'capnproto_dart_rpc', to: '/capnproto_dart_rpc/external-spec'},
-              {label: 'capnpc-dart', to: '/capnpc_dart/external-spec'},
             ],
           },
           {

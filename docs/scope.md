@@ -12,7 +12,7 @@ Used by developers to generate Dart code from `.capnp` schema files.
 |---|---|---|
 | F-03 | `.capnp` schema parser | Delegated to the official `capnp` compiler via its plugin mechanism. Not implemented in this repository. |
 | F-04 | Dart code generator (`capnpc-dart`) | Receives `CodeGeneratorRequest` from the official compiler via stdin and generates Dart source files. Also handles F-08 via an option flag. Implementation language is not restricted to Dart. |
-| F-08 | Schema compatibility check | Built into `capnpc-dart` as an option mode, invoked as `capnp compile -o- <new.capnp> \| capnpc-dart --check=<old.capnp>` (see `dev_packages/capnpc-dart/doc/external-spec.md`). No separate binary. |
+| F-08 | Schema compatibility check | Built into `capnpc-dart` as an option mode, invoked as `capnp compile -o- <new.capnp> \| capnpc-dart --check=<old.capnp>` (see the [`capnpc_dart` README](https://pub.dev/packages/capnpc_dart)'s "Compatibility checking" section). No separate binary. |
 
 ---
 
@@ -57,7 +57,8 @@ add a separate runtime component or FFI dependency.
   CLIs) — not the application-level IPC use case this repository targets (Component 2/3)
   — and mature implementations already exist in C++ and Rust for anyone who needs it.
   `capnproto_dart` still ships the lower-level building blocks this would sit on top of
-  (`DynamicStructReader`/`DynamicListReader`/`AnyPointerReader`, offset-indexed; see
-  external-spec.md's "Dynamic Access and Schema Reflection"), plus `encodeText`/
-  `decodeText` for the debugging/introspection use case, so adding a full `DynamicValue`
-  later remains possible without disrupting existing code — it just isn't planned.
+  (`DynamicStructReader`/`DynamicListReader`/`AnyPointerReader`, offset-indexed; see the
+  ["Dynamic (schema-less) access" guide](howto/serialization.md#dynamic-schema-less-access)),
+  plus `encodeText`/`decodeText` for the debugging/introspection use case, so adding a
+  full `DynamicValue` later remains possible without disrupting existing code — it just
+  isn't planned.
