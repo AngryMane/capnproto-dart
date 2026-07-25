@@ -50,18 +50,17 @@ class RepositoryImpl extends RepositoryServer {
     List<Capability> paramsCapabilities,
   ) async {
     final entry = _store[_token(_anyPointerBytes(params.key))];
-    final mb = MessageBuilder();
-    final out = mb.initRoot(repositoryGetResultsFactory);
-    if (entry != null) {
-      out.revision = entry.$3;
-      final result = out.initResult();
-      result.setUint16Field(0, 1);
-      result.setAnyPointerFromMessage(0, entry.$2);
-    } else {
-      out.revision = 0;
-      out.initResult().selectNone();
-    }
-    return DispatchResult(payload: RpcPayload.fromBuilder(out));
+    return buildGetResults((out) {
+      if (entry != null) {
+        out.revision = entry.$3;
+        final result = out.initResult();
+        result.setUint16Field(0, 1);
+        result.setAnyPointerFromMessage(0, entry.$2);
+      } else {
+        out.revision = 0;
+        out.initResult().selectNone();
+      }
+    });
   }
 
   @override
@@ -76,17 +75,16 @@ class RepositoryImpl extends RepositoryServer {
     _revision += 1;
     _store[token] = (keyBytes, valueBytes, _revision);
 
-    final mb = MessageBuilder();
-    final out = mb.initRoot(repositoryPutResultsFactory);
-    out.newRevision = _revision;
-    final prev = out.initPrevious();
-    if (previous != null) {
-      prev.setUint16Field(0, 1);
-      prev.setAnyPointerFromMessage(0, previous.$2);
-    } else {
-      prev.selectNone();
-    }
-    return DispatchResult(payload: RpcPayload.fromBuilder(out));
+    return buildPutResults((out) {
+      out.newRevision = _revision;
+      final prev = out.initPrevious();
+      if (previous != null) {
+        prev.setUint16Field(0, 1);
+        prev.setAnyPointerFromMessage(0, previous.$2);
+      } else {
+        prev.selectNone();
+      }
+    });
   }
 
   @override
@@ -96,17 +94,16 @@ class RepositoryImpl extends RepositoryServer {
   ) async {
     final removed = _store.remove(_token(_anyPointerBytes(params.key)));
     _revision += 1;
-    final mb = MessageBuilder();
-    final out = mb.initRoot(repositoryRemoveResultsFactory);
-    out.newRevision = _revision;
-    final removedB = out.initRemoved();
-    if (removed != null) {
-      removedB.setUint16Field(0, 1);
-      removedB.setAnyPointerFromMessage(0, removed.$2);
-    } else {
-      removedB.selectNone();
-    }
-    return DispatchResult(payload: RpcPayload.fromBuilder(out));
+    return buildRemoveResults((out) {
+      out.newRevision = _revision;
+      final removedB = out.initRemoved();
+      if (removed != null) {
+        removedB.setUint16Field(0, 1);
+        removedB.setAnyPointerFromMessage(0, removed.$2);
+      } else {
+        removedB.selectNone();
+      }
+    });
   }
 
   @override
@@ -115,14 +112,13 @@ class RepositoryImpl extends RepositoryServer {
     List<Capability> paramsCapabilities,
   ) async {
     final entries = _store.values.toList();
-    final mb = MessageBuilder();
-    final out = mb.initRoot(repositoryListResultsFactory);
-    final list = out.initEntries(entries.length);
-    for (var i = 0; i < entries.length; i++) {
-      list[i].setAnyPointerFromMessage(0, entries[i].$1);
-      list[i].setAnyPointerFromMessage(1, entries[i].$2);
-    }
-    return DispatchResult(payload: RpcPayload.fromBuilder(out));
+    return buildListResults((out) {
+      final list = out.initEntries(entries.length);
+      for (var i = 0; i < entries.length; i++) {
+        list[i].setAnyPointerFromMessage(0, entries[i].$1);
+        list[i].setAnyPointerFromMessage(1, entries[i].$2);
+      }
+    });
   }
 
   @override
@@ -157,11 +153,10 @@ class GenericCellImpl extends ReadWriteServer {
     ReadableReadParamsReader params,
     List<Capability> paramsCapabilities,
   ) async {
-    final mb = MessageBuilder();
-    final out = mb.initRoot(readableReadResultsFactory);
-    out.revision = _revision;
-    out.setValueMessage(_value);
-    return DispatchResult(payload: RpcPayload.fromBuilder(out));
+    return buildReadResults((out) {
+      out.revision = _revision;
+      out.setValueMessage(_value);
+    });
   }
 
   @override
@@ -171,10 +166,9 @@ class GenericCellImpl extends ReadWriteServer {
   ) async {
     _value = _anyPointerBytes(params.value);
     _revision += 1;
-    final mb = MessageBuilder();
-    final out = mb.initRoot(writableWriteResultsFactory);
-    out.newRevision = _revision;
-    return DispatchResult(payload: RpcPayload.fromBuilder(out));
+    return buildWriteResults((out) {
+      out.newRevision = _revision;
+    });
   }
 
   @override
@@ -186,16 +180,15 @@ class GenericCellImpl extends ReadWriteServer {
     final replacementBytes = _anyPointerBytes(params.replacement);
     final swapped = _bytesEqual(_value, expectedBytes);
 
-    final mb = MessageBuilder();
-    final out = mb.initRoot(readWriteCompareAndSwapResultsFactory);
-    out.swapped = swapped;
-    out.setActualMessage(_value);
-    if (swapped) {
-      _value = replacementBytes;
-      _revision += 1;
-    }
-    out.revision = _revision;
-    return DispatchResult(payload: RpcPayload.fromBuilder(out));
+    return buildCompareAndSwapResults((out) {
+      out.swapped = swapped;
+      out.setActualMessage(_value);
+      if (swapped) {
+        _value = replacementBytes;
+        _revision += 1;
+      }
+      out.revision = _revision;
+    });
   }
 
   @override
@@ -228,11 +221,10 @@ class ByteSinkImpl extends ByteSinkServer {
     for (final b in _chunks) {
       checksum ^= b;
     }
-    final mb = MessageBuilder();
-    final out = mb.initRoot(byteSinkFinishResultsFactory);
-    out.byteCount = _chunks.length;
-    out.checksum = Uint8List.fromList([checksum]);
-    return DispatchResult(payload: RpcPayload.fromBuilder(out));
+    return buildFinishResults((out) {
+      out.byteCount = _chunks.length;
+      out.checksum = Uint8List.fromList([checksum]);
+    });
   }
 
   @override
@@ -272,10 +264,9 @@ class ByteSourceImpl extends ByteSourceServer {
       offset = end;
     }
     final finishResult = await sink.finish((_) {});
-    final mb = MessageBuilder();
-    final out = mb.initRoot(byteSourcePumpToResultsFactory);
-    out.byteCount = finishResult.byteCount;
-    return DispatchResult(payload: RpcPayload.fromBuilder(out));
+    return buildPumpToResults((out) {
+      out.byteCount = finishResult.byteCount;
+    });
   }
 
   @override
@@ -293,10 +284,7 @@ class CapabilityFactoryImpl extends CapabilityFactoryServer {
     List<Capability> paramsCapabilities,
   ) async {
     final cell = GenericCellImpl(_anyPointerBytes(params.initialValue));
-    final mb = MessageBuilder();
-    final out = mb.initRoot(capabilityFactoryNewCellResultsFactory);
-    out.setCell(0);
-    return DispatchResult(payload: RpcPayload.fromBuilder(out), caps: [cell]);
+    return buildNewCellResults((out) => out.setCell(0), caps: [cell]);
   }
 
   @override
@@ -305,10 +293,7 @@ class CapabilityFactoryImpl extends CapabilityFactoryServer {
     List<Capability> paramsCapabilities,
   ) async {
     final cell = GenericCellImpl(null);
-    final mb = MessageBuilder();
-    final out = mb.initRoot(capabilityFactoryNewEmptyCellResultsFactory);
-    out.setCell(0);
-    return DispatchResult(payload: RpcPayload.fromBuilder(out), caps: [cell]);
+    return buildNewEmptyCellResults((out) => out.setCell(0), caps: [cell]);
   }
 
   @override
@@ -317,10 +302,10 @@ class CapabilityFactoryImpl extends CapabilityFactoryServer {
     List<Capability> paramsCapabilities,
   ) async {
     final repo = RepositoryImpl();
-    final mb = MessageBuilder();
-    final out = mb.initRoot(capabilityFactoryNewRepositoryResultsFactory);
-    out.setRepository(0);
-    return DispatchResult(payload: RpcPayload.fromBuilder(out), caps: [repo]);
+    return buildNewRepositoryResults(
+      (out) => out.setRepository(0),
+      caps: [repo],
+    );
   }
 
   @override
@@ -328,11 +313,8 @@ class CapabilityFactoryImpl extends CapabilityFactoryServer {
     CapabilityFactoryEchoCapabilityParamsReader params,
     List<Capability> paramsCapabilities,
   ) async {
-    final mb = MessageBuilder();
-    final out = mb.initRoot(capabilityFactoryEchoCapabilityResultsFactory);
-    out.sameCapability = params.capability;
-    return DispatchResult(
-      payload: RpcPayload.fromBuilder(out),
+    return buildEchoCapabilityResults(
+      (out) => out.sameCapability = params.capability,
       caps: paramsCapabilities,
     );
   }
@@ -344,18 +326,17 @@ class CapabilityFactoryImpl extends CapabilityFactoryServer {
   ) async {
     final name = params.name ?? '';
     print('[dart-server] factory.getUntyped($name)');
-    final mb = MessageBuilder();
-    final out = mb.initRoot(capabilityFactoryGetUntypedResultsFactory);
-    final scalars = out.initValue().initStruct(allScalarsFactory);
-    if (name == 'scalars' || name == 'AllScalars') {
-      scalars.int32Value = 20260717;
-      scalars.uint16Value = 4242;
-      scalars.textValue = 'untyped from Dart';
-    } else {
-      scalars.int32Value = -1;
-      scalars.textValue = 'unknown untyped payload';
-    }
-    return DispatchResult(payload: RpcPayload.fromBuilder(out));
+    return buildGetUntypedResults((out) {
+      final scalars = out.initValue().initStruct(allScalarsFactory);
+      if (name == 'scalars' || name == 'AllScalars') {
+        scalars.int32Value = 20260717;
+        scalars.uint16Value = 4242;
+        scalars.textValue = 'untyped from Dart';
+      } else {
+        scalars.int32Value = -1;
+        scalars.textValue = 'unknown untyped payload';
+      }
+    });
   }
 
   @override
@@ -377,10 +358,7 @@ class DartPipelineTargetImpl extends PipelineTargetServer {
   ) async {
     final payload = params.payload ?? Uint8List(0);
     print('[dart-server] $name.ping(${payload.length} bytes)');
-    final mb = MessageBuilder();
-    final out = mb.initRoot(pipelineTargetPingResultsFactory);
-    out.payload = payload;
-    return DispatchResult(payload: RpcPayload.fromBuilder(out));
+    return buildPingResults((out) => out.payload = payload);
   }
 
   @override
@@ -391,10 +369,7 @@ class DartPipelineTargetImpl extends PipelineTargetServer {
     final childName = params.name ?? '';
     print('[dart-server] $name.getChild("$childName")');
     final child = DartPipelineTargetImpl('$name/$childName');
-    final mb = MessageBuilder();
-    final out = mb.initRoot(pipelineTargetGetChildResultsFactory);
-    out.setChild(0);
-    return DispatchResult(payload: RpcPayload.fromBuilder(out), caps: [child]);
+    return buildGetChildResults((out) => out.setChild(0), caps: [child]);
   }
 
   @override
@@ -404,10 +379,10 @@ class DartPipelineTargetImpl extends PipelineTargetServer {
   ) async {
     print('[dart-server] $name.getRepository()');
     final repo = RepositoryImpl();
-    final mb = MessageBuilder();
-    final out = mb.initRoot(pipelineTargetGetRepositoryResultsFactory);
-    out.setRepository(0);
-    return DispatchResult(payload: RpcPayload.fromBuilder(out), caps: [repo]);
+    return buildGetRepositoryResults(
+      (out) => out.setRepository(0),
+      caps: [repo],
+    );
   }
 
   @override
@@ -428,13 +403,12 @@ class DartComplexServiceImpl extends ComplexTestServiceServer {
     List<Capability> paramsCapabilities,
   ) async {
     print('[dart-server] echo()');
-    final mb = MessageBuilder();
-    final out = mb.initRoot(complexTestServiceEchoResultsFactory);
-    final resp = out.initResponse();
-    resp.accepted = true;
-    resp.status = Status.running;
-    resp.message = 'echo from Dart';
-    return DispatchResult(payload: RpcPayload.fromBuilder(out));
+    return buildEchoResults((out) {
+      final resp = out.initResponse();
+      resp.accepted = true;
+      resp.status = Status.running;
+      resp.message = 'echo from Dart';
+    });
   }
 
   @override
@@ -444,24 +418,23 @@ class DartComplexServiceImpl extends ComplexTestServiceServer {
   ) async {
     final v = params.value;
     print('[dart-server] echoScalars(boolean=${v?.boolean})');
-    final mb = MessageBuilder();
-    final out = mb.initRoot(complexTestServiceEchoScalarsResultsFactory);
-    final value = out.initValue();
-    value.boolean = v?.boolean ?? false;
-    value.int8Value = v?.int8Value ?? 0;
-    value.int16Value = v?.int16Value ?? 0;
-    value.int32Value = v?.int32Value ?? 0;
-    value.int64Value = v?.int64Value ?? 0;
-    value.uint8Value = v?.uint8Value ?? 0;
-    value.uint16Value = v?.uint16Value ?? 0;
-    value.uint32Value = v?.uint32Value ?? 0;
-    value.uint64Value = v?.uint64Value ?? 0;
-    value.float32Value = v?.float32Value ?? 0.0;
-    value.float64Value = v?.float64Value ?? 0.0;
-    value.textValue = v?.textValue;
-    value.dataValue = v?.dataValue;
-    if (v?.color != null) value.color = v!.color!;
-    return DispatchResult(payload: RpcPayload.fromBuilder(out));
+    return buildEchoScalarsResults((out) {
+      final value = out.initValue();
+      value.boolean = v?.boolean ?? false;
+      value.int8Value = v?.int8Value ?? 0;
+      value.int16Value = v?.int16Value ?? 0;
+      value.int32Value = v?.int32Value ?? 0;
+      value.int64Value = v?.int64Value ?? 0;
+      value.uint8Value = v?.uint8Value ?? 0;
+      value.uint16Value = v?.uint16Value ?? 0;
+      value.uint32Value = v?.uint32Value ?? 0;
+      value.uint64Value = v?.uint64Value ?? 0;
+      value.float32Value = v?.float32Value ?? 0.0;
+      value.float64Value = v?.float64Value ?? 0.0;
+      value.textValue = v?.textValue;
+      value.dataValue = v?.dataValue;
+      if (v?.color != null) value.color = v!.color!;
+    });
   }
 
   @override
@@ -470,10 +443,9 @@ class DartComplexServiceImpl extends ComplexTestServiceServer {
     List<Capability> paramsCapabilities,
   ) async {
     print('[dart-server] echoLists()');
-    final mb = MessageBuilder();
-    final out = mb.initRoot(complexTestServiceEchoListsResultsFactory);
-    out.setAnyPointerField(0, params.getAnyPointerField(0));
-    return DispatchResult(payload: RpcPayload.fromBuilder(out));
+    return buildEchoListsResults(
+      (out) => out.setAnyPointerField(0, params.getAnyPointerField(0)),
+    );
   }
 
   @override
@@ -482,10 +454,9 @@ class DartComplexServiceImpl extends ComplexTestServiceServer {
     List<Capability> paramsCapabilities,
   ) async {
     print('[dart-server] echoUnion()');
-    final mb = MessageBuilder();
-    final out = mb.initRoot(complexTestServiceEchoUnionResultsFactory);
-    out.setAnyPointerField(0, params.getAnyPointerField(0));
-    return DispatchResult(payload: RpcPayload.fromBuilder(out));
+    return buildEchoUnionResults(
+      (out) => out.setAnyPointerField(0, params.getAnyPointerField(0)),
+    );
   }
 
   @override
@@ -494,11 +465,8 @@ class DartComplexServiceImpl extends ComplexTestServiceServer {
     List<Capability> paramsCapabilities,
   ) async {
     print('[dart-server] echoAnyPointer()');
-    final mb = MessageBuilder();
-    final out = mb.initRoot(complexTestServiceEchoAnyPointerResultsFactory);
-    out.value = params.value;
-    return DispatchResult(
-      payload: RpcPayload.fromBuilder(out),
+    return buildEchoAnyPointerResults(
+      (out) => out.value = params.value,
       caps: paramsCapabilities,
     );
   }
@@ -511,10 +479,10 @@ class DartComplexServiceImpl extends ComplexTestServiceServer {
     final depth = params.depth;
     print('[dart-server] makePipeline(depth=$depth)');
     final target = DartPipelineTargetImpl('dart-root(depth=$depth)');
-    final mb = MessageBuilder();
-    final out = mb.initRoot(complexTestServiceMakePipelineResultsFactory);
-    out.setTarget(0);
-    return DispatchResult(payload: RpcPayload.fromBuilder(out), caps: [target]);
+    return buildMakePipelineResults(
+      (out) => out.setTarget(0),
+      caps: [target],
+    );
   }
 
   @override
@@ -530,10 +498,7 @@ class DartComplexServiceImpl extends ComplexTestServiceServer {
       await observer?.onNext((b) => b.sequence = i);
     }
     await observer?.onComplete((_) {});
-    final mb = MessageBuilder();
-    final out = mb.initRoot(complexTestServiceCallObserverResultsFactory);
-    out.delivered = count;
-    return DispatchResult(payload: RpcPayload.fromBuilder(out));
+    return buildCallObserverResults((out) => out.delivered = count);
   }
 
   @override
@@ -549,30 +514,26 @@ class DartComplexServiceImpl extends ComplexTestServiceServer {
     );
 
     final caps = <Capability>[];
-    final mb = MessageBuilder();
-    final out = mb.initRoot(
-      complexTestServiceExchangeCapabilitiesResultsFactory,
-    );
-    final outBundle = out.initBundle();
+    return buildExchangeCapabilitiesResults((out) {
+      final outBundle = out.initBundle();
 
-    if (primary != null) {
-      outBundle.setPrimary(caps.length);
-      caps.add(primary.capability);
-    }
+      if (primary != null) {
+        outBundle.setPrimary(caps.length);
+        caps.add(primary.capability);
+      }
 
-    final tLen = targets?.length ?? 0;
-    if (tLen > 0) {
-      final tgts = outBundle.initTargets(tLen);
-      for (int i = 0; i < tLen; i++) {
-        final t = targets![i];
-        if (t != null) {
-          tgts[i] = caps.length;
-          caps.add(t.capability);
+      final tLen = targets?.length ?? 0;
+      if (tLen > 0) {
+        final tgts = outBundle.initTargets(tLen);
+        for (int i = 0; i < tLen; i++) {
+          final t = targets![i];
+          if (t != null) {
+            tgts[i] = caps.length;
+            caps.add(t.capability);
+          }
         }
       }
-    }
-
-    return DispatchResult(payload: RpcPayload.fromBuilder(out), caps: caps);
+    }, caps: caps);
   }
 
   @override
@@ -582,10 +543,10 @@ class DartComplexServiceImpl extends ComplexTestServiceServer {
   ) async {
     print('[dart-server] getRepository()');
     final repo = RepositoryImpl();
-    final mb = MessageBuilder();
-    final out = mb.initRoot(complexTestServiceGetRepositoryResultsFactory);
-    out.setRepository(0);
-    return DispatchResult(payload: RpcPayload.fromBuilder(out), caps: [repo]);
+    return buildGetRepositoryResults(
+      (out) => out.setRepository(0),
+      caps: [repo],
+    );
   }
 
   @override
@@ -595,11 +556,8 @@ class DartComplexServiceImpl extends ComplexTestServiceServer {
   ) async {
     print('[dart-server] getFactory()');
     final factory = CapabilityFactoryImpl();
-    final mb = MessageBuilder();
-    final out = mb.initRoot(complexTestServiceGetFactoryResultsFactory);
-    out.setFactory(0);
-    return DispatchResult(
-      payload: RpcPayload.fromBuilder(out),
+    return buildGetFactoryResults(
+      (out) => out.setFactory(0),
       caps: [factory],
     );
   }
@@ -619,10 +577,7 @@ class DartComplexServiceImpl extends ComplexTestServiceServer {
       b.leftValue = value;
       b.rightValue = value;
     });
-    final mb = MessageBuilder();
-    final out = mb.initRoot(complexTestServiceUseDiamondResultsFactory);
-    out.result = result.sum;
-    return DispatchResult(payload: RpcPayload.fromBuilder(out));
+    return buildUseDiamondResults((out) => out.result = result.sum);
   }
 
   @override
@@ -637,12 +592,9 @@ class DartComplexServiceImpl extends ComplexTestServiceServer {
       throw const RpcException('probePipelineTarget: target is null');
     }
     final pingResult = await target.ping((b) => b.payload = payload);
-    final mb = MessageBuilder();
-    final out = mb.initRoot(
-      complexTestServiceProbePipelineTargetResultsFactory,
+    return buildProbePipelineTargetResults(
+      (out) => out.payload = pingResult.payload,
     );
-    out.payload = pingResult.payload;
-    return DispatchResult(payload: RpcPayload.fromBuilder(out));
   }
 
   @override
@@ -658,12 +610,10 @@ class DartComplexServiceImpl extends ComplexTestServiceServer {
         () => DartPipelineTargetImpl('dart-promised(delay=$delayMs)'),
       ),
     );
-    final mb = MessageBuilder();
-    final out = mb.initRoot(
-      complexTestServiceMakePromisedPipelineResultsFactory,
+    return buildMakePromisedPipelineResults(
+      (out) => out.setTarget(0),
+      caps: [target],
     );
-    out.setTarget(0);
-    return DispatchResult(payload: RpcPayload.fromBuilder(out), caps: [target]);
   }
 
   @override
@@ -680,13 +630,8 @@ class DartComplexServiceImpl extends ComplexTestServiceServer {
     final promised = DeferredCapability(
       Future.delayed(Duration(milliseconds: delayMs), () => target.capability),
     );
-    final mb = MessageBuilder();
-    final out = mb.initRoot(
-      complexTestServiceEchoPipelineTargetLaterResultsFactory,
-    );
-    out.setTarget(0);
-    return DispatchResult(
-      payload: RpcPayload.fromBuilder(out),
+    return buildEchoPipelineTargetLaterResults(
+      (out) => out.setTarget(0),
       caps: [promised],
     );
   }
@@ -698,10 +643,7 @@ class DartComplexServiceImpl extends ComplexTestServiceServer {
   ) async {
     print('[dart-server] openUpload()');
     final sink = ByteSinkImpl();
-    final mb = MessageBuilder();
-    final out = mb.initRoot(complexTestServiceOpenUploadResultsFactory);
-    out.setSink(0);
-    return DispatchResult(payload: RpcPayload.fromBuilder(out), caps: [sink]);
+    return buildOpenUploadResults((out) => out.setSink(0), caps: [sink]);
   }
 
   @override
@@ -723,10 +665,7 @@ class DartComplexServiceImpl extends ComplexTestServiceServer {
     }
     print('[dart-server] openDownload(${data.length} bytes)');
     final source = ByteSourceImpl(data);
-    final mb = MessageBuilder();
-    final out = mb.initRoot(complexTestServiceOpenDownloadResultsFactory);
-    out.setSource(0);
-    return DispatchResult(payload: RpcPayload.fromBuilder(out), caps: [source]);
+    return buildOpenDownloadResults((out) => out.setSource(0), caps: [source]);
   }
 
   @override

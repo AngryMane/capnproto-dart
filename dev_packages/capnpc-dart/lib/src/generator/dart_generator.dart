@@ -963,6 +963,15 @@ void _writeServerStub(
         '  Future<DispatchResult> ${methodName}WithContext(${paramsName}Reader params, List<Capability> paramsCapabilities, DispatchContext context) =>',
       );
       sb.writeln('      $methodName(params, paramsCapabilities);');
+
+      final resultsName = _dartClassName(resultsNode?.displayName ?? 'Unknown');
+      sb.writeln();
+      sb.writeln(
+        '  DispatchResult build${_ucfirst(methodName)}Results(void Function(${resultsName}Builder) build, {List<Capability> caps = const []}) =>',
+      );
+      sb.writeln(
+        '      buildDispatchResult(${_lcfirst(resultsName)}Factory, build, caps: caps);',
+      );
     }
   }
 

@@ -36,6 +36,23 @@ class DispatchResult {
   );
 }
 
+/// Builds a [DispatchResult] by initializing [factory]'s root in a fresh
+/// [MessageBuilder] and handing it to [build]. Covers the common RPC-server
+/// case of returning a freshly-built, standalone results struct — see
+/// [RpcPayload.fromBuilder] for why the builder is wrapped directly rather
+/// than serialized. [caps] is forwarded to [DispatchResult.caps] unchanged,
+/// for methods that return capabilities (see generated `set<Field>(index)`
+/// calls, whose index must match [caps]'s order).
+DispatchResult buildDispatchResult<R extends StructReader, B extends StructBuilder>(
+  StructFactory<R, B> factory,
+  void Function(B results) build, {
+  List<Capability> caps = const [],
+}) {
+  final results = MessageBuilder().initRoot(factory);
+  build(results);
+  return DispatchResult(payload: RpcPayload.fromBuilder(results), caps: caps);
+}
+
 /// Describes a tail call: the entire result of the current dispatch should
 /// be exactly the result of calling [target]'s [interfaceId]/[methodId]
 /// method with [paramsBytes]/[paramsCapabilities].

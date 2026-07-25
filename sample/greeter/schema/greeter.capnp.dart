@@ -354,6 +354,9 @@ abstract class GreetSessionServer extends Capability {
   Future<DispatchResult> greetWithContext(GreetSessionGreetParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
       greet(params, paramsCapabilities);
 
+  DispatchResult buildGreetResults(void Function(GreetSessionGreetResultsBuilder) build, {List<Capability> caps = const []}) =>
+      buildDispatchResult(greetSessionGreetResultsFactory, build, caps: caps);
+
   @override
   Future<DispatchResult> dispatch(int interfaceId, int methodId, RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
@@ -466,9 +469,15 @@ abstract class GreeterServer extends Capability {
   Future<DispatchResult> greetWithContext(GreeterGreetParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
       greet(params, paramsCapabilities);
 
+  DispatchResult buildGreetResults(void Function(GreeterGreetResultsBuilder) build, {List<Capability> caps = const []}) =>
+      buildDispatchResult(greeterGreetResultsFactory, build, caps: caps);
+
   Future<DispatchResult> newSession(GreeterNewSessionParamsReader params, List<Capability> paramsCapabilities);
   Future<DispatchResult> newSessionWithContext(GreeterNewSessionParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
       newSession(params, paramsCapabilities);
+
+  DispatchResult buildNewSessionResults(void Function(GreeterNewSessionResultsBuilder) build, {List<Capability> caps = const []}) =>
+      buildDispatchResult(greeterNewSessionResultsFactory, build, caps: caps);
 
   @override
   Future<DispatchResult> dispatch(int interfaceId, int methodId, RpcPayload params, {

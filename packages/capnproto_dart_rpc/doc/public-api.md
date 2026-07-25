@@ -1,4 +1,4 @@
-# `capnproto_dart_rpc` Public Symbol Reference
+# Public Symbol Reference
 
 This document catalogs the RPC-specific symbols exported by the public library `package:capnproto_dart_rpc/capnproto_dart_rpc.dart`.  
 In the Consumers column,  
@@ -6,7 +6,6 @@ In the Consumers column,
 * "Generated code" refers to interface clients, server bases, and helpers produced by `capnpc_dart`;  
 * "App" refers to applications that establish connections, obtain capabilities, and make typed calls;  
 * "Server implementation" refers to application code implementing generated server bases;  
-* "RPC runtime" refers to this package's connection and wire-protocol implementation;  
 * "Both" means client-side App code and Server implementation code together. A symbol primarily used by generated code or the RPC runtime keeps that narrower label even when advanced applications can use it directly.  
 
 ## Connections and Servers
@@ -26,7 +25,7 @@ In the Consumers column,
 | `Capability` | Abstract class | Base abstraction for a callable Cap'n Proto object reference, including ordinary, streaming, pipelined, builder-based, and cancellable dispatch. | Generated code | Base for generated server implementations and the untyped target wrapped by generated client stubs. |
 | `CapabilityFactory<T>` | Abstract class | Converts an untyped `Capability` into a generated typed capability client. | Generated code | Supplying a factory to bootstrap lookup, interface-field decoding, and generic capability decoding. |
 | `CapabilityAnyPointerCodec<T>` | Final class | Encodes and decodes capabilities passed through generic `AnyPointer` values, using a capability table and an optional typed factory. | Generated code | Implementing generic RPC methods whose type parameter is an interface. |
-| `DeferredCapability` | Class | Defers calls until a `Future<Capability>` resolves and exposes that resolution for sender-promise handling. | Server implementation / RPC runtime | Returning a capability that will resolve asynchronously, and providing the local pipelining fallback. |
+| `DeferredCapability` | Class | Defers calls until a `Future<Capability>` resolves and exposes that resolution for sender-promise handling. | Server implementation | Returning a capability that will resolve asynchronously, and providing the local pipelining fallback. |
 
 ### Calls and Dispatch
 

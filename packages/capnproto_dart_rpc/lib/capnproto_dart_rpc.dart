@@ -17,6 +17,7 @@ export 'src/capability/capability.dart'
         DispatchContext,
         DispatchResult,
         TailCall,
+        buildDispatchResult,
         requireCapabilityFromResult,
         vendCapabilityHandle;
 export 'src/capability/capability_any_pointer_codec.dart';

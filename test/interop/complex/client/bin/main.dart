@@ -43,10 +43,7 @@ class _DiamondImpl extends DiamondServer {
     ParentGetNameParamsReader params,
     List<Capability> paramsCapabilities,
   ) async {
-    final mb = MessageBuilder();
-    final out = mb.initRoot(parentGetNameResultsFactory);
-    out.name = 'dart-diamond';
-    return DispatchResult(payload: RpcPayload.fromBuilder(out));
+    return buildGetNameResults((out) => out.name = 'dart-diamond');
   }
 
   @override
@@ -54,10 +51,9 @@ class _DiamondImpl extends DiamondServer {
     LeftLeftParamsReader params,
     List<Capability> paramsCapabilities,
   ) async {
-    final mb = MessageBuilder();
-    final out = mb.initRoot(leftLeftResultsFactory);
-    out.result = params.getInt32Field(0) + 10;
-    return DispatchResult(payload: RpcPayload.fromBuilder(out));
+    return buildLeftResults(
+      (out) => out.result = params.getInt32Field(0) + 10,
+    );
   }
 
   @override
@@ -65,10 +61,9 @@ class _DiamondImpl extends DiamondServer {
     RightRightParamsReader params,
     List<Capability> paramsCapabilities,
   ) async {
-    final mb = MessageBuilder();
-    final out = mb.initRoot(rightRightResultsFactory);
-    out.result = params.getInt32Field(0) + 20;
-    return DispatchResult(payload: RpcPayload.fromBuilder(out));
+    return buildRightResults(
+      (out) => out.result = params.getInt32Field(0) + 20,
+    );
   }
 
   @override
@@ -76,10 +71,9 @@ class _DiamondImpl extends DiamondServer {
     DiamondBothParamsReader params,
     List<Capability> paramsCapabilities,
   ) async {
-    final mb = MessageBuilder();
-    final b = mb.initRoot(diamondBothResultsFactory);
-    b.sum = params.leftValue + params.rightValue;
-    return DispatchResult(payload: RpcPayload.fromBuilder(b));
+    return buildBothResults(
+      (b) => b.sum = params.leftValue + params.rightValue,
+    );
   }
 }
 
@@ -101,11 +95,10 @@ class _CollectingByteSink extends ByteSinkServer {
     List<Capability> paramsCapabilities,
   ) async {
     final checksum = data.fold<int>(0, (acc, b) => acc ^ b);
-    final mb = MessageBuilder();
-    final result = mb.initRoot(byteSinkFinishResultsFactory);
-    result.byteCount = data.length;
-    result.checksum = Uint8List.fromList([checksum]);
-    return DispatchResult(payload: RpcPayload.fromBuilder(result));
+    return buildFinishResults((result) {
+      result.byteCount = data.length;
+      result.checksum = Uint8List.fromList([checksum]);
+    });
   }
 
   @override
@@ -127,10 +120,10 @@ class _PipelineTargetImpl extends PipelineTargetServer {
     PipelineTargetGetChildParamsReader params,
     List<Capability> paramsCapabilities,
   ) async {
-    final mb = MessageBuilder();
-    final out = mb.initRoot(pipelineTargetGetChildResultsFactory);
-    out.setCapabilityField(0, 0);
-    return DispatchResult(payload: RpcPayload.fromBuilder(out), caps: [this]);
+    return buildGetChildResults(
+      (out) => out.setCapabilityField(0, 0),
+      caps: [this],
+    );
   }
 
   @override
@@ -146,10 +139,7 @@ class _PipelineTargetImpl extends PipelineTargetServer {
   ) async {
     pingCount++;
     lastPayload = params.payload;
-    final mb = MessageBuilder();
-    final out = mb.initRoot(pipelineTargetPingResultsFactory);
-    out.payload = params.payload;
-    return DispatchResult(payload: RpcPayload.fromBuilder(out));
+    return buildPingResults((out) => out.payload = params.payload);
   }
 }
 
