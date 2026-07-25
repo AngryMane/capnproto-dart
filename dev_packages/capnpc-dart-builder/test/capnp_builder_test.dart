@@ -1,5 +1,5 @@
 import 'package:build/build.dart';
-import 'package:capnpc_dart_builder/builder.dart';
+import 'package:capnpc_dart_builder/capnpc_dart_builder.dart';
 import 'package:test/test.dart';
 
 void main() {
