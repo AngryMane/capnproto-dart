@@ -11,9 +11,15 @@ import 'capability_factory.dart';
 /// capability table and optionally wraps it in a generated client factory.
 final class CapabilityAnyPointerCodec<T extends Capability>
     implements AnyPointerCodec<T> {
+  /// Wraps a decoded capability in a generated client stub, if provided.
   final CapabilityFactory<T>? factory;
+
+  /// Unwraps a generated client stub back to its underlying [Capability]
+  /// before encoding, if provided.
   final Capability Function(T value)? toCapability;
 
+  /// Creates a codec, optionally converting through a generated client stub
+  /// via [factory]/[toCapability].
   const CapabilityAnyPointerCodec([this.factory, this.toCapability]);
 
   @override

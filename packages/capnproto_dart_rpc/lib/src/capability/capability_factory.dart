@@ -13,5 +13,6 @@ import 'capability.dart';
 /// }
 /// ```
 abstract class CapabilityFactory<T extends Capability> {
+  /// Wraps the underlying capability reference [cap] in a typed stub.
   T fromCapability(Capability cap);
 }

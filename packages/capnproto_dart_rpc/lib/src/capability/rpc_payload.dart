@@ -24,11 +24,14 @@ final class RpcPayload {
   final AnyPointerReader? _envelopeContent;
   final RawStructBuilder? _builderRoot;
 
+  /// Wraps a standalone, already-serialized message.
   const RpcPayload.fromBytes(Uint8List bytes)
     : _bytes = bytes,
       _envelopeContent = null,
       _builderRoot = null;
 
+  /// Wraps a live view into an already-parsed RPC envelope's
+  /// `Payload.content`, without deep-copying or re-parsing.
   const RpcPayload.fromEnvelope(AnyPointerReader content)
     : _bytes = null,
       _envelopeContent = content,
@@ -76,7 +79,7 @@ final class RpcPayload {
   /// when the caller can consume a reader directly — this forces the same
   /// cost [RpcPayload] exists to let RPC dispatch avoid.
   ///
-  /// For a builder-backed payload, this assumes [builderRoot] (see
+  /// For a builder-backed payload, this assumes the wrapped builder (see
   /// [RpcPayload.fromBuilder]) is that builder's own message root — true for
   /// the intended use (wrapping a fresh `MessageBuilder().initRoot(...)`
   /// directly), but not meaningful for an arbitrary nested struct builder.

@@ -23,8 +23,14 @@ final Future<void> _neverCanceledFuture = Completer<void>().future;
 /// the answer is discarded before a Return can be sent (the connection
 /// closed, or a Finish canceled it first) — disposes them itself.
 class DispatchResult {
+  /// The method results — see [RpcPayload].
   final RpcPayload payload;
+
+  /// Capabilities returned by the method, in capTable order.
   final List<Capability> caps;
+
+  /// Creates a dispatch result wrapping [payload], with any returned
+  /// capabilities in [caps].
   DispatchResult({required this.payload, this.caps = const []});
 
   /// Pre-built 16-byte message: single segment, null root pointer.
@@ -55,7 +61,7 @@ DispatchResult buildDispatchResult<R extends StructReader, B extends StructBuild
 
 /// Describes a tail call: the entire result of the current dispatch should
 /// be exactly the result of calling [target]'s [interfaceId]/[methodId]
-/// method with [paramsBytes]/[paramsCapabilities].
+/// method with [params]/[paramsCapabilities].
 ///
 /// Returned by [Capability.tryTailCall]. When [target] is a capability
 /// imported from the same peer connection that is asking for the current
@@ -65,11 +71,23 @@ DispatchResult buildDispatchResult<R extends StructReader, B extends StructBuild
 /// Otherwise this is a transparent pass-through with no special wire
 /// behavior — semantically identical, just without the optimization.
 class TailCall {
+  /// The capability the current dispatch's result should be taken from.
   final Capability target;
+
+  /// The interface id to call on [target].
   final int interfaceId;
+
+  /// The method id to call on [target].
   final int methodId;
+
+  /// The params to pass to [target]'s method.
   final RpcPayload params;
+
+  /// Capabilities referenced by [params], in capTable order.
   final List<Capability> paramsCapabilities;
+
+  /// Creates a tail call describing a dispatch to [target]'s
+  /// [interfaceId]/[methodId] method with [params]/[paramsCapabilities].
   const TailCall(
     this.target,
     this.interfaceId,
@@ -85,6 +103,8 @@ class TailCall {
 /// [throwIfCanceled] at await points to stop work after the caller sends
 /// `Finish` or the connection closes.
 class DispatchContext {
+  /// A context that never reports cancellation — for dispatch paths that
+  /// don't track it.
   static final DispatchContext neverCanceled = DispatchContext._never();
 
   final Completer<void>? _canceledCompleter;
@@ -253,8 +273,8 @@ abstract class Capability {
   ///
   /// The default implementation is for local (non-networked) capabilities:
   /// it builds into its own standalone [MessageBuilder] and reads it back
-  /// via a zero-copy builder→reader view (skipping even [MessageBuilder.
-  /// serialize]'s framing step) before calling [dispatch].
+  /// via a zero-copy builder→reader view (skipping even
+  /// [MessageBuilder.serialize]'s framing step) before calling [dispatch].
   Future<DispatchResult> dispatchBuilding(
     int interfaceId,
     int methodId,
@@ -295,8 +315,8 @@ class _DeferredCapCall implements CapCall {
 /// [RpcException] that preserves why the pipeline target could not resolve.
 ///
 /// Used for *local*, single-hop pipelining where [ptrIndex] is a
-/// schema-known constant baked into generated code — [_DeferredCapCall],
-/// [_FutureCapCall], [_ErrorCapCall], and `_AsyncWireCapCall`'s
+/// schema-known constant baked into generated code — `_DeferredCapCall`,
+/// `_FutureCapCall`, `_ErrorCapCall`, and `_AsyncWireCapCall`'s
 /// already-settled fallback in the RPC layer. Wire-level `receiverAnswer`/
 /// `promisedAnswer` targets instead go through
 /// [requireCapabilityFromResultPath], since those can name a capability
@@ -580,6 +600,7 @@ class DeferredCapability extends Capability {
   bool _disposed = false;
   Future<void>? _disposeFuture;
 
+  /// Creates a capability that defers to whatever [future] resolves to.
   DeferredCapability(Future<Capability> future) : _future = future {
     future.ignore();
   }

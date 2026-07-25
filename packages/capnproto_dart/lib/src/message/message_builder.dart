@@ -85,8 +85,8 @@ class MessageBuilder {
   /// Allocates the root pointer slot as a schema-less [AnyPointerBuilder],
   /// for callers that don't know (or don't want to commit to) the root's
   /// type until a later point — e.g. an RPC layer building call params
-  /// directly into a caller-supplied destination via [AnyPointerBuilder.
-  /// initStruct] instead of [initRoot].
+  /// directly into a caller-supplied destination via
+  /// [AnyPointerBuilder.initStruct] instead of [initRoot].
   ///
   /// **Example**
   /// ```dart
@@ -169,7 +169,7 @@ class MessageBuilder {
   }
 
   /// Resets this builder for reuse by a new message, avoiding a fresh
-  /// [ArenaBuilder]/[SegmentBuilder]/backing-buffer allocation for each
+  /// [ArenaBuilder]/`SegmentBuilder`/backing-buffer allocation for each
   /// message built in a hot loop (e.g. an RPC server building many
   /// short-lived response messages) — see [ArenaBuilder.reset].
   ///

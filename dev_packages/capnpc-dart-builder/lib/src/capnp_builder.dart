@@ -29,8 +29,11 @@ import 'package:path/path.dart' as p;
 ///           import_paths: ["../shared_schemas"]
 /// ```
 class CapnpBuilder implements Builder {
+  /// Extra `-I` search roots for resolving `.capnp` imports outside this
+  /// package, from the `import_paths` builder option.
   final List<String> extraImportPaths;
 
+  /// Creates a builder configured from `build.yaml`'s builder [options].
   CapnpBuilder(BuilderOptions options)
     : extraImportPaths =
           (options.config['import_paths'] as List?)?.cast<String>() ??
@@ -124,9 +127,14 @@ List<String> extractRelativeCapnpImports(String source) => [
 /// Thrown when the `capnp` subprocess exits non-zero — most commonly a
 /// schema syntax error, or `capnp` not being installed/on PATH.
 class CapnpCompileException implements Exception {
+  /// The path of the `.capnp` schema file that failed to compile.
   final String inputPath;
+
+  /// The `capnp` subprocess's stderr output.
   final String stderr;
 
+  /// Creates an exception reporting that compiling [inputPath] failed with
+  /// the given [stderr] output.
   const CapnpCompileException(this.inputPath, this.stderr);
 
   @override

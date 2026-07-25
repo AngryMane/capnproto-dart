@@ -218,7 +218,7 @@ final class AnyPointerReader {
   /// Resolves the struct at this AnyPointer, treating an unset (null or
   /// out-of-range) pointer as an empty struct — the same convention
   /// [MessageReader.getRootRaw] uses for a message's root pointer. Unlike
-  /// [asStruct]/[asStructWithCapabilities], never returns null; for callers
+  /// [asStruct]/[asDynamicStruct], never returns null; for callers
   /// (like RPC dispatch) that need to build their own reader — e.g. with a
   /// capabilities table not known until after this reader was constructed —
   /// without losing that "absent means default" convention.
@@ -1407,8 +1407,8 @@ final class AnyPointerBuilder {
   }
 
   /// Reads back the content at this AnyPointer as an [AnyPointerReader], in
-  /// place — no copy, no serialize/re-parse. Mirrors [StructBuilder.
-  /// rawToReader]: the returned reader shares the same underlying buffer as
+  /// place — no copy, no serialize/re-parse. Mirrors
+  /// [StructBuilder.rawToReader]: the returned reader shares the same underlying buffer as
   /// this builder, so it reflects whatever has been written so far and any
   /// further writes through this builder remain visible through it.
   ///
