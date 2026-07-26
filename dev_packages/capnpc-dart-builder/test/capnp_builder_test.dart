@@ -53,4 +53,12 @@ void main() {
       expect(exception.toString(), contains('parse error'));
     });
   });
+
+  group('CapnpNotFoundException', () {
+    test('toString explains capnp is missing and must be installed', () {
+      const exception = CapnpNotFoundException();
+      expect(exception.toString(), contains('not installed'));
+      expect(exception.toString(), contains('install it yourself'));
+    });
+  });
 }

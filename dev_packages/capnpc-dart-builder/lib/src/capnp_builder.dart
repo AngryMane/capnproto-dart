@@ -60,13 +60,18 @@ class CapnpBuilder implements Builder {
     // instead of `complex.capnp:Color`).
     final schemaDir = p.dirname(p.join(projectRoot, inputId.path));
     final basename = p.basename(inputId.path);
-    final result = await Process.run('capnp', [
-      'compile',
-      '-o-',
-      for (final importPath in extraImportPaths)
-        '-I${p.join(projectRoot, importPath)}',
-      basename,
-    ], workingDirectory: schemaDir, stdoutEncoding: null);
+    final ProcessResult result;
+    try {
+      result = await Process.run('capnp', [
+        'compile',
+        '-o-',
+        for (final importPath in extraImportPaths)
+          '-I${p.join(projectRoot, importPath)}',
+        basename,
+      ], workingDirectory: schemaDir, stdoutEncoding: null);
+    } on ProcessException {
+      throw const CapnpNotFoundException();
+    }
 
     if (result.exitCode != 0) {
       throw CapnpCompileException(inputId.path, result.stderr.toString());
@@ -124,8 +129,24 @@ List<String> extractRelativeCapnpImports(String source) => [
     match.group(1)!,
 ].where((path) => !path.startsWith('/')).toList();
 
+/// Thrown when the `capnp` executable can't be found on `PATH`.
+///
+/// This package only shells out to the official `capnp` compiler — it does
+/// not bundle or install it. Install it yourself (see
+/// https://capnproto.org/install.html) and make sure it's on `PATH`.
+class CapnpNotFoundException implements Exception {
+  const CapnpNotFoundException();
+
+  @override
+  String toString() =>
+      'capnp compile failed: the `capnp` command-line compiler is not '
+      'installed (or not on PATH). This package only invokes `capnp`, it '
+      "doesn't install it — install it yourself, see "
+      'https://capnproto.org/install.html, then try again.';
+}
+
 /// Thrown when the `capnp` subprocess exits non-zero — most commonly a
-/// schema syntax error, or `capnp` not being installed/on PATH.
+/// schema syntax error.
 class CapnpCompileException implements Exception {
   /// The path of the `.capnp` schema file that failed to compile.
   final String inputPath;

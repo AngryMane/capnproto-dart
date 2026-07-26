@@ -1,23 +1,17 @@
 # capnpc_dart
 
-Turns your `.capnp` schema files into Dart code — the classes you'll
-actually import and use in your app. This package is a compiler plugin
-invoked by the official `capnp` compiler; your app code never calls it
-directly.
+Turns your `.capnp` schema files into Dart code.  
 
-Most apps should use [`capnpc_dart_builder`](https://pub.dev/packages/capnpc_dart_builder)
-instead of driving this package by hand — it wraps the same generator in a
-`build_runner` builder, so `dart run build_runner build` regenerates code
-whenever a schema changes. Read on if you want to invoke `capnp compile`
-yourself instead, e.g. from a script or CI step outside build_runner.
+This package is a compiler plugin invoked by the official `capnp` compiler.  
+Most apps should use [`capnpc_dart_builder`](https://pub.dev/packages/capnpc_dart_builder) instead of driving this package by hand.  
+Read on if you want to invoke `capnp compile` yourself instead, e.g. from a script or CI step outside build_runner.  
 
 ## How the pieces fit together
 
-- `capnpc_dart` (this package) generates Dart source from `.capnp` schemas.
-- The generated code depends on
-  [`capnproto_dart`](https://pub.dev/packages/capnproto_dart) (message
-  serialization) and, if your schema declares any interfaces, on
-  [`capnproto_dart_rpc`](https://pub.dev/packages/capnproto_dart_rpc) (RPC).
+- `capnpc_dart` (this package)  
+  generates Dart source from `.capnp` schemas.  
+- The generated code  
+  depends on [`capnproto_dart`](https://pub.dev/packages/capnproto_dart).  
 
 ## Requirements
 
@@ -30,15 +24,24 @@ Check the compiler installation with:
 capnp --version
 ```
 
+`capnpc-dart` itself is invoked by `capnp`, so if `capnp` isn't installed you'll
+see a shell error (e.g. `capnp: command not found`) before `capnpc-dart` ever
+runs. The one exception is `--check` mode (below), which shells out to `capnp`
+itself and fails with:
+
+```
+capnpc-dart: check mode error: Exception: capnp is not installed (or not on
+PATH). This package only invokes `capnp`, it doesn't install it — install it
+yourself, see https://capnproto.org/install.html, then try again.
+```
+
 ## Install
 
 ```sh
 dart pub global activate capnpc_dart
 ```
 
-If Dart's global executable directory is not on `PATH`, follow the
-instruction printed by `dart pub global activate` before running
-`capnp compile`.
+If Dart's global executable directory is not on `PATH`, follow the instruction printed by `dart pub global activate` before running `capnp compile`.  
 
 ## Generate Dart code
 
@@ -46,12 +49,10 @@ instruction printed by `dart pub global activate` before running
 capnp compile -o dart:lib/src/generated schema/hello.capnp
 ```
 
-This writes `lib/src/generated/schema/hello.capnp.dart`. `capnp` finds the
-generator automatically once it's globally activated as `capnpc-dart` — you
-don't invoke it yourself.
+This writes `lib/src/generated/schema/hello.capnp.dart`.  
+`capnp` finds the generator automatically once it's globally activated as `capnpc-dart` — you don't invoke it yourself.  
 
-Compile every schema file whose types you use directly, including imported
-ones:
+Compile every schema file whose types you use directly, including imported ones:  
 
 ```sh
 capnp compile -o dart:lib/src/generated \

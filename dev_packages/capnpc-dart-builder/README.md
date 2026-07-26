@@ -1,18 +1,13 @@
 # capnpc_dart_builder
 
 `build_runner` integration for [`capnpc_dart`](https://pub.dev/packages/capnpc_dart).
-Add it as a dev dependency to generate `.capnp.dart` files from `.capnp` schemas via
-`dart run build_runner build`, instead of invoking `capnp compile` yourself.
 
 ## How the pieces fit together
 
-- `capnpc_dart_builder` (this package) wraps
-  [`capnpc_dart`](https://pub.dev/packages/capnpc_dart)'s generator in a
-  `build_runner` builder.
-- The generated code depends on
-  [`capnproto_dart`](https://pub.dev/packages/capnproto_dart) (message
-  serialization) and, if your schema declares any interfaces, on
-  [`capnproto_dart_rpc`](https://pub.dev/packages/capnproto_dart_rpc) (RPC).
+- `capnpc_dart_builder` (this package)  
+  wraps [`capnpc_dart`](https://pub.dev/packages/capnpc_dart)'s generator in a `build_runner` builder.  
+- The generated code 
+  depends on [`capnproto_dart`](https://pub.dev/packages/capnproto_dart)
 
 ## Install
 
@@ -26,9 +21,7 @@ dev_dependencies:
 dart pub get
 ```
 
-The official `capnp` compiler must also be installed and on `PATH` — this
-package shells out to it to parse your schemas; it does not parse `.capnp`
-syntax itself.
+The official `capnp` compiler must also be installed and on `PATH`. it does not parse `.capnp` syntax itself.  
 
 ## Generate Dart code
 
@@ -48,16 +41,13 @@ struct Greeting {
 dart run build_runner build
 ```
 
-This writes `lib/schema/hello.capnp.dart` next to your schema. Re-run after
-editing a schema; add `--delete-conflicting-outputs` if build_runner
-complains about stale output.
+This writes `lib/schema/hello.capnp.dart` next to your schema.  
+Re-run after editing a schema; add `--delete-conflicting-outputs` if build_runner complains about stale output.  
 
 ## Custom import paths
 
-Schemas that `import` a file outside their own package (capnp's
-`-I`-rooted imports) need an extra search root, since `build_runner` can
-only see files inside the package being built. Add one via the builder's
-`import_paths` option in your own `build.yaml`:
+Schemas that `import` a file outside their own package (capnp's `-I`-rooted imports) need an extra search root,  
+since `build_runner` can only see files inside the package being built. Add one via the builder's `import_paths` option in your own `build.yaml`:  
 
 ```yaml
 targets:

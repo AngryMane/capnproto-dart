@@ -36,13 +36,21 @@ Future<CodeGeneratorRequest> _capture(
   final srcPrefix = oldFile.parent.path;
 
   // capnp invokes captureScript (absolute path) as the plugin.
-  final result = await Process.run('capnp', [
-    'compile',
-    '--src-prefix=$srcPrefix',
-    '-o',
-    captureScript.path,
-    oldFile.path,
-  ]);
+  final ProcessResult result;
+  try {
+    result = await Process.run('capnp', [
+      'compile',
+      '--src-prefix=$srcPrefix',
+      '-o',
+      captureScript.path,
+      oldFile.path,
+    ]);
+  } on ProcessException {
+    throw Exception(
+        'capnp is not installed (or not on PATH). This package only '
+        "invokes `capnp`, it doesn't install it — install it yourself, "
+        'see https://capnproto.org/install.html, then try again.');
+  }
 
   if (result.exitCode != 0) {
     throw Exception(

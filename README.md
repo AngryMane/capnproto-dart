@@ -6,14 +6,14 @@ A pure Dart implementation of [Cap'n Proto](https://capnproto.org) serialization
 
 ## Why
 
-The only existing way to use Cap'n Proto from Flutter is to call C++ or Rust libraries via FFI. This approach introduces complex build configurations, hard-to-debug FFI boundaries, and threading mismatches. This repository provides a pure Dart implementation that integrates like any other Dart package.
+The only existing way to use Cap'n Proto from Flutter is to call C++ or Rust libraries via FFI.  
+This approach introduces complex build configurations, hard-to-debug FFI boundaries.  
+
+This repository provides a pure Dart implementation that integrates like any other Dart package.  
 
 ## Quick Start
 
-Most apps built on this library talk to another process over RPC — that's
-the path below. If you only need to read/write Cap'n Proto messages
-yourself, with no RPC involved, see [Not using RPC?](#not-using-rpc) at the
-end.
+Most apps built on this library talk to another process over RPC — that's the path below.  
 
 ### 1. Install
 
@@ -32,8 +32,7 @@ dev_dependencies:
 dart pub get
 ```
 
-The official `capnp` compiler must also be installed and on `PATH` —
-`capnpc_dart_builder` shells out to it to parse your schemas.
+The official `capnp` compiler must also be installed and on `PATH` — `capnpc_dart_builder` shells out to it to parse your schemas.  
 
 ### 2. Write a schema
 
@@ -54,11 +53,8 @@ interface Greeter {
 dart run build_runner build
 ```
 
-`capnpc_dart_builder` finds every `.capnp` file in your package, runs it
-through `capnp`, and writes `lib/schema/hello.capnp.dart` next to it — with a
-typed client (`GreeterClientFactory`) and a server base class
-(`GreeterServer`). Re-run this command after editing a schema; add
-`--delete-conflicting-outputs` if build_runner complains about stale output.
+`capnpc_dart_builder` finds every `.capnp` file in your package, runs it through `capnp`, and writes `lib/schema/hello.capnp.dart` next to it.  
+Re-run this command after editing a schema; add `--delete-conflicting-outputs` if build_runner complains about stale output.
 
 ### 4. Implement a server
 
@@ -99,10 +95,6 @@ Future<void> main() async {
 }
 ```
 
-Notice neither side ever touches `MessageBuilder`/`MessageReader` directly —
-the generated client stub and the `buildGreetResults` helper handle
-serialization for you.
-
 ## RPC Support Status
 
 This library implements **Cap'n Proto RPC Level 1** for two-party connections:
@@ -119,14 +111,9 @@ This library implements **Cap'n Proto RPC Level 1** for two-party connections:
 | Persistent capabilities (Level 2) | **Not in scope** |
 | Reference equality / Join (Level 4) | **Not in scope** |
 
-Level 2 (persistent capabilities), Level 3 (three-party handoff), and Level 4
-(Join) are separate, higher protocol levels defined by `rpc.capnp` — not part
-of Level 1 itself — and none of them are implemented. Weak capability
-references, batch Release, `releaseParamCaps`, and `noFinishNeeded` (all
-Level 1 optimizations, not correctness requirements) are also not
-implemented. Applications with long-lived connections and high capability
-churn should release capabilities promptly and should validate their
-workload against the lifecycle/stress tests in this repository.
+Level 2 (persistent capabilities), Level 3 (three-party handoff), and Level 4 (Join) are not implemented.  
+Weak capability references, batch Release, `releaseParamCaps`, and `noFinishNeeded` (all Level 1 optimizations, not correctness requirements) are also not implemented.  
+Applications with long-lived connections and high capability churn should release capabilities promptly and should validate their workload against the lifecycle/stress tests in this repository.
 
 The RPC layer is tested for interoperability with Rust servers/clients using the [`capnp`](https://crates.io/crates/capnp) crate (versions 0.23–0.26).
 
@@ -200,35 +187,8 @@ ci/run-tests.sh
 
 ### CI
 
-The GitHub Actions workflow (`.github/workflows/compat.yml`) runs analysis and tests with both the minimum supported Dart SDK (3.7.2) and the latest stable SDK. It also runs the full interoperability suite against capnp crate versions 0.23 through 0.26 on every push to `main`.
-
-## Documentation
-
-The full documentation is also published as a [Docusaurus site](website/) (see
-`website/README` for how to build it locally; gh-pages hosting is set up but must be
-enabled once in the repo's Pages settings).
-
-### Repository-level: requirements and howto
-
-| File | Contents |
-|---|---|
-| [`docs/purpose.md`](docs/purpose.md) | Problem statement and motivation |
-| [`docs/scope.md`](docs/scope.md) | Feature scope and out-of-scope items |
-| [`docs/constraint.md`](docs/constraint.md) | Design constraints |
-| [`docs/global-design.md`](docs/global-design.md) | How the 3 components relate to each other and to external systems |
-| [`docs/howto/getting-started.md`](docs/howto/getting-started.md) | Install, generate code, first message, first RPC call |
-| [`docs/howto/schema-and-codegen.md`](docs/howto/schema-and-codegen.md) | Writing schemas, running `capnpc-dart`, compatibility checks |
-| [`docs/howto/serialization.md`](docs/howto/serialization.md) | Building/reading messages, packed encoding, streaming, dynamic access |
-| [`docs/howto/rpc.md`](docs/howto/rpc.md) | Connecting, bootstrap, capabilities, promise pipelining, streaming calls |
-| [`docs/howto/samples-and-testing.md`](docs/howto/samples-and-testing.md) | Running `sample/greeter` and the `test/interop/*` suites |
-
-### Per-component: external spec and internal design
-
-| Component | External spec | Internal design |
-|---|---|---|
-| CLI Tool (`capnpc-dart`) | [`dev_packages/capnpc-dart/doc/external-spec.md`](dev_packages/capnpc-dart/doc/external-spec.md) | [`dev_packages/capnpc-dart/doc/internal-design.md`](dev_packages/capnpc-dart/doc/internal-design.md) *(stub)* |
-| Serialization Runtime (`capnproto_dart`) | [`packages/capnproto_dart/doc/external-spec.md`](packages/capnproto_dart/doc/external-spec.md) | [`packages/capnproto_dart/doc/internal-design.md`](packages/capnproto_dart/doc/internal-design.md) |
-| RPC Runtime (`capnproto_dart_rpc`) | [`packages/capnproto_dart_rpc/doc/external-spec.md`](packages/capnproto_dart_rpc/doc/external-spec.md) | [`packages/capnproto_dart_rpc/doc/internal-design.md`](packages/capnproto_dart_rpc/doc/internal-design.md) |
+The GitHub Actions workflow (`.github/workflows/compat.yml`) runs analysis and tests with various Dart SDK.  
+It also runs the full interoperability suite against capnp crate versions 0.23 through 0.26 on every push to `main`.  
 
 ## License
 

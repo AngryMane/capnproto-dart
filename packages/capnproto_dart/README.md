@@ -1,24 +1,17 @@
 # capnproto_dart
 
-Reads and writes Cap'n Proto messages in Dart — this is the package that
-turns your `.capnp` schema types into Dart objects you can build, and turns
-those objects back into bytes you can send or save.
-
-If you're building an app that only talks to other processes over RPC, you
-usually don't need to depend on this package directly — install
-[`capnproto_dart_rpc`](https://pub.dev/packages/capnproto_dart_rpc) instead,
-which already includes everything here. Use `capnproto_dart` directly when
-you're reading or writing Cap'n Proto messages without RPC, e.g. saving state
-to a file or sending messages over your own transport.
+Reads and writes Cap'n Proto messages in Dart.  
+If you're building an app with Capn' Proto RPC, you usually don't need to depend on this package directly — see [`capnproto_dart_rpc`](https://pub.dev/packages/capnproto_dart_rpc).  
+Use `capnproto_dart` directly when you're reading or writing Cap'n Proto messages without RPC.  
 
 ## How the pieces fit together
 
-- [`capnpc_dart`](https://pub.dev/packages/capnpc_dart) is a compiler plugin
-  that turns your `.capnp` schema into Dart classes.
-- `capnproto_dart` (this package) is the runtime those generated classes use
-  to serialize and deserialize.
-- [`capnproto_dart_rpc`](https://pub.dev/packages/capnproto_dart_rpc) adds
-  networked RPC (calling methods on a remote object) on top of both.
+- [`capnpc_dart`](https://pub.dev/packages/capnpc_dart)  
+  a compiler plugin that turns your `.capnp` schema into Dart classes.  
+- `capnproto_dart` (this package)  
+  the runtime generated classes use to serialize and deserialize.  
+- [`capnproto_dart_rpc`](https://pub.dev/packages/capnproto_dart_rpc)  
+  adds networked RPC (calling methods on a remote object) on top of both.
 
 ## Install
 
@@ -37,14 +30,11 @@ dev_dependencies:
 dart pub get
 ```
 
-The official `capnp` compiler must also be installed and on `PATH` —
-`capnpc_dart_builder` shells out to it to parse your schemas.
+The official `capnp` compiler must also be installed and on `PATH` — `capnpc_dart_builder` shells out to it to parse your schemas.  
 
 ## Build and read a message
 
-`build_runner` only looks under `lib/`, so put your schema at, say,
-`lib/schema/hello.capnp`, then run `dart run build_runner build` to generate
-`lib/schema/hello.capnp.dart`:
+`build_runner` only looks under `lib/`, so put your schema at, say, `lib/schema/hello.capnp`, then run `dart run build_runner build` to generate `lib/schema/hello.capnp.dart`:  
 
 ```dart
 import 'package:capnproto_dart/capnproto_dart.dart';
@@ -63,23 +53,20 @@ void main() {
 }
 ```
 
-That's the core workflow: build a message, serialize it to bytes, and read
-it back. The generated factory is always named `<StructName>Factory` (lower
-camelCase), one per struct in your schema.
+That's the core workflow: build a message, serialize it to bytes, and read it back.  
+The generated factory is always named `<StructName>Factory` (lower camelCase), one per struct in your schema.  
 
 ## Also available
 
 You likely won't need these on day one, but they're here when you do:
 
-- **Packed encoding** (`serializePacked`/`deserializePacked`) — a smaller
-  wire format for the same messages.
-- **Message streams** (`MessageStream`) — read or write several messages
-  back-to-back over a socket or file.
-- **Text format** (`encodeText`/`decodeText`) — human-readable output, handy
-  for debugging or test fixtures.
-- **Dynamic access** — inspect a message without knowing its schema type at
-  compile time.
+- Packed encoding (`serializePacked`/`deserializePacked`)  
+  a smaller wire format for the same messages.
+- Message streams (`MessageStream`)  
+  read or write several messages back-to-back over a socket or file.  
+- Text format (`encodeText`/`decodeText`)  
+  human-readable output, handy for debugging or test fixtures.  
+- Dynamic access  
+  inspect a message without knowing its schema type at compile time.  
 
-See the [serialization guide](https://angrymane.github.io/capnproto-dart/howto/serialization)
-and [API documentation](https://pub.dev/documentation/capnproto_dart/latest/)
-for details on all of the above.
+See the [serialization guide](https://angrymane.github.io/capnproto-dart/howto/serialization) and [API documentation](https://pub.dev/documentation/capnproto_dart/latest/) for details on all of the above.  

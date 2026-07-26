@@ -1,18 +1,14 @@
 # capnproto_dart_rpc
 
-RPC runtime for Cap'n Proto in Dart — connect to a server, call its methods,
-and get typed results back. Use this package when your app talks to another
-process over the network, rather than just reading/writing Cap'n Proto
-messages locally.
+RPC runtime for Cap'n Proto in Dart.  
 
 ## How the pieces fit together
 
-- [`capnpc_dart`](https://pub.dev/packages/capnpc_dart) generates typed
-  client and server classes from your `.capnp` schema.
-- `capnproto_dart_rpc` (this package) is the runtime those generated classes
-  use to connect, call, and dispatch. It already includes
-  [`capnproto_dart`](https://pub.dev/packages/capnproto_dart) (message
-  serialization), so you don't need to add that separately.
+- [`capnpc_dart`](https://pub.dev/packages/capnpc_dart)  
+  generates typed client and server classes from your `.capnp` schema.  
+- `capnproto_dart_rpc` (this package)  
+  the runtime generated classes use to connect, call, and dispatch. It already includes [`capnproto_dart`](https://pub.dev/packages/capnproto_dart) (message
+  serialization)
 
 ## Install and generate stubs
 
@@ -38,9 +34,7 @@ dart pub get
 dart run build_runner build
 ```
 
-This writes `lib/schema/greeter.capnp.dart`. The official `capnp` compiler
-must also be installed and on `PATH` — `capnpc_dart_builder` shells out to it
-to parse your schemas.
+This writes `lib/schema/greeter.capnp.dart`. **The official `capnp` compiler must also be installed and on `PATH`.**  
 
 ## Connect and call
 
@@ -63,20 +57,14 @@ Future<void> main() async {
 }
 ```
 
-That's the core client workflow: connect, get the remote object
-(`bootstrap`), call its methods like normal Dart methods, and clean up when
-done. Swap `tcp://` for `ws://` or `wss://` to connect over WebSocket
-instead.
+That's the core client workflow: connect, get the remote object(`bootstrap`), call its methods like normal Dart methods, and clean up when done.  
+Swap `tcp://` for `ws://` or `wss://` to connect over WebSocket instead.  
 
-Always call `dispose()` on capabilities you're finished with, and `close()`
-on the connection — each remote reference stays alive on the server until
-you release it.
+Always call `dispose()` on capabilities you're finished with, and `close()` on the connection — each remote reference stays alive on the server until you release it.  
 
 ## Serving requests
 
-If your app also needs to accept incoming calls — acting as a server, or
-answering a callback passed to you by one — implement the generated
-`<Name>Server` base class:
+If your app also needs to accept incoming calls — acting as a server, or answering a callback passed to you by one — implement the generated `<Name>Server` base class:
 
 ```dart
 class MyGreeter extends GreeterServer {
@@ -102,7 +90,4 @@ Future<void> main() async {
 
 ## Learn more
 
-See the [RPC guide](https://angrymane.github.io/capnproto-dart/howto/rpc) and
-[API documentation](https://pub.dev/documentation/capnproto_dart_rpc/latest/)
-for promise pipelining, streaming calls, error handling, and the full
-protocol support matrix.
+See the [RPC guide](https://angrymane.github.io/capnproto-dart/howto/rpc) and [API documentation](https://pub.dev/documentation/capnproto_dart_rpc/latest/) for promise pipelining, streaming calls, error handling, and the full protocol support matrix.  
