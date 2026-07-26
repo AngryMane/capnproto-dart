@@ -6,7 +6,7 @@ export 'src/capnp_builder.dart'
     show
         CapnpBuilder,
         CapnpCompileException,
-        CapnpNotFoundException,
+        CapnpLaunchException,
         extractRelativeCapnpImports;
 
 /// Builder factory referenced from `build.yaml`. See [CapnpBuilder].

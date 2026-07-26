@@ -7,8 +7,8 @@ import '../schema/schema_reader.dart';
 /// Compiles [capnpFilePath] via the `capnp` binary and returns its
 /// [CodeGeneratorRequest].
 ///
-/// Throws an [Exception] if `capnp` is not available, the file does not exist,
-/// or compilation fails.
+/// Throws a [CapnpLaunchException] if `capnp` could not be launched, or an
+/// [Exception] if the file does not exist or compilation fails.
 Future<CodeGeneratorRequest> captureOldSchema(String capnpFilePath) async {
   final tempDir = await Directory.systemTemp.createTemp('capnpc_dart_check_');
   try {
@@ -45,11 +45,8 @@ Future<CodeGeneratorRequest> _capture(
       captureScript.path,
       oldFile.path,
     ]);
-  } on ProcessException {
-    throw Exception(
-        'capnp is not installed (or not on PATH). This package only '
-        "invokes `capnp`, it doesn't install it — install it yourself, "
-        'see https://capnproto.org/install.html, then try again.');
+  } on ProcessException catch (e) {
+    throw CapnpLaunchException(e);
   }
 
   if (result.exitCode != 0) {
@@ -65,4 +62,28 @@ Future<CodeGeneratorRequest> _capture(
 
   final bytes = await outputFile.readAsBytes();
   return readCodeGeneratorRequest(Uint8List.fromList(bytes));
+}
+
+/// Thrown when the `capnp` subprocess couldn't be launched at all.
+///
+/// [cause] is the underlying [ProcessException] — most commonly because
+/// `capnp` isn't installed or isn't on `PATH`, but it can also be a
+/// permissions error or another OS-level launch failure, so this isn't
+/// exclusively a "not installed" signal.
+///
+/// This package only shells out to the official `capnp` compiler — it does
+/// not bundle or install it. Install it yourself (see
+/// https://capnproto.org/install.html) and make sure it's on `PATH`.
+class CapnpLaunchException implements Exception {
+  /// The [ProcessException] raised when starting the `capnp` process failed.
+  final ProcessException cause;
+
+  const CapnpLaunchException(this.cause);
+
+  @override
+  String toString() =>
+      'capnp could not be launched: ${cause.message}. This usually means '
+      '`capnp` is not installed or not on PATH — install it yourself, see '
+      'https://capnproto.org/install.html — but could also be a permissions '
+      'or other OS-level launch failure. Underlying error: $cause';
 }

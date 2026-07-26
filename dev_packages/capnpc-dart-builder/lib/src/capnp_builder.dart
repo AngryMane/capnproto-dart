@@ -69,8 +69,8 @@ class CapnpBuilder implements Builder {
           '-I${p.join(projectRoot, importPath)}',
         basename,
       ], workingDirectory: schemaDir, stdoutEncoding: null);
-    } on ProcessException {
-      throw const CapnpNotFoundException();
+    } on ProcessException catch (e) {
+      throw CapnpLaunchException(e);
     }
 
     if (result.exitCode != 0) {
@@ -129,20 +129,29 @@ List<String> extractRelativeCapnpImports(String source) => [
     match.group(1)!,
 ].where((path) => !path.startsWith('/')).toList();
 
-/// Thrown when the `capnp` executable can't be found on `PATH`.
+/// Thrown when the `capnp` subprocess couldn't be launched at all.
+///
+/// [cause] is the underlying [ProcessException] — most commonly because
+/// `capnp` isn't installed or isn't on `PATH`, but it can also be a
+/// permissions error or another OS-level launch failure, so this isn't
+/// exclusively a "not installed" signal.
 ///
 /// This package only shells out to the official `capnp` compiler — it does
 /// not bundle or install it. Install it yourself (see
 /// https://capnproto.org/install.html) and make sure it's on `PATH`.
-class CapnpNotFoundException implements Exception {
-  const CapnpNotFoundException();
+class CapnpLaunchException implements Exception {
+  /// The [ProcessException] raised when starting the `capnp` process failed.
+  final ProcessException cause;
+
+  const CapnpLaunchException(this.cause);
 
   @override
   String toString() =>
-      'capnp compile failed: the `capnp` command-line compiler is not '
-      'installed (or not on PATH). This package only invokes `capnp`, it '
-      "doesn't install it — install it yourself, see "
-      'https://capnproto.org/install.html, then try again.';
+      'capnp compile failed: could not launch the `capnp` command-line '
+      'compiler (${cause.message}). This usually means `capnp` is not '
+      'installed or not on PATH — install it yourself, see '
+      'https://capnproto.org/install.html — but could also be a permissions '
+      'or other OS-level launch failure. Underlying error: $cause';
 }
 
 /// Thrown when the `capnp` subprocess exits non-zero — most commonly a

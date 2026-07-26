@@ -27,12 +27,16 @@ capnp --version
 `capnpc-dart` itself is invoked by `capnp`, so if `capnp` isn't installed you'll
 see a shell error (e.g. `capnp: command not found`) before `capnpc-dart` ever
 runs. The one exception is `--check` mode (below), which shells out to `capnp`
-itself and fails with:
+itself and fails with a `CapnpLaunchException` if `capnp` can't be launched
+(not installed, not on `PATH`, or a permissions issue):
 
 ```
-capnpc-dart: check mode error: Exception: capnp is not installed (or not on
-PATH). This package only invokes `capnp`, it doesn't install it — install it
-yourself, see https://capnproto.org/install.html, then try again.
+capnpc-dart: check mode error: capnp could not be launched: No such file or
+directory. This usually means `capnp` is not installed or not on PATH —
+install it yourself, see https://capnproto.org/install.html — but could also
+be a permissions or other OS-level launch failure. Underlying error:
+ProcessException: No such file or directory
+  Command: capnp compile ...
 ```
 
 ## Install

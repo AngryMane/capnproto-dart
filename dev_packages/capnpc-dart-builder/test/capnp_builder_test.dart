@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:build/build.dart';
 import 'package:capnpc_dart_builder/capnpc_dart_builder.dart';
 import 'package:test/test.dart';
@@ -54,11 +56,16 @@ void main() {
     });
   });
 
-  group('CapnpNotFoundException', () {
-    test('toString explains capnp is missing and must be installed', () {
-      const exception = CapnpNotFoundException();
-      expect(exception.toString(), contains('not installed'));
+  group('CapnpLaunchException', () {
+    test('toString explains capnp could not be launched and preserves the '
+        'underlying ProcessException', () {
+      final cause = const ProcessException('capnp', ['compile'],
+          'No such file or directory');
+      final exception = CapnpLaunchException(cause);
+      expect(exception.cause, same(cause));
+      expect(exception.toString(), contains('could not launch'));
       expect(exception.toString(), contains('install it yourself'));
+      expect(exception.toString(), contains('No such file or directory'));
     });
   });
 }

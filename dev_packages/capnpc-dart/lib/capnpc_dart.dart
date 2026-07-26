@@ -6,5 +6,6 @@ export 'src/generator/dart_generator.dart'
     show generateDartFile, capnpToDartOutputPath;
 export 'src/codegen.dart'
     show readSchemaRequest, generateDartFiles, parseCheckFileArg;
-export 'src/compat/schema_capture.dart' show captureOldSchema;
+export 'src/compat/schema_capture.dart'
+    show captureOldSchema, CapnpLaunchException;
 export 'src/compat/compat_checker.dart' show checkCompatibility;

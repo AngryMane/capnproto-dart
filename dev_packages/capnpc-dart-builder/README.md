@@ -23,6 +23,18 @@ dart pub get
 
 The official `capnp` compiler must also be installed and on `PATH`. it does not parse `.capnp` syntax itself.  
 
+If `capnp` can't be launched (not installed, not on `PATH`, or a permissions
+issue), the build fails with a `CapnpLaunchException`:
+
+```
+capnp compile failed: could not launch the `capnp` command-line compiler
+(No such file or directory). This usually means `capnp` is not installed or
+not on PATH — install it yourself, see https://capnproto.org/install.html —
+but could also be a permissions or other OS-level launch failure. Underlying
+error: ProcessException: No such file or directory
+  Command: capnp compile ...
+```
+
 ## Generate Dart code
 
 `build_runner` only looks under `lib/`, so put schema files there:
