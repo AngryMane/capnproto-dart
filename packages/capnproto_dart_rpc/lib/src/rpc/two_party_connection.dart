@@ -61,6 +61,9 @@ class TwoPartyRpcConnection implements RpcConnection {
   final int _streamWindowSize;
   final Duration? _disembargoTimeout;
   final bool _preFramed;
+  StreamSubscription<Uint8List>? _incomingSubscription;
+  StreamSubscription<Uint8List>? _incomingSourceSubscription;
+  StreamController<Uint8List>? _decoderInput;
 
   // Exports: capabilities we have sent to the peer.
   // Key = export ID; value tracks the remote reference count so we know
@@ -133,6 +136,18 @@ class TwoPartyRpcConnection implements RpcConnection {
     this._preFramed,
   ) {
     _runMessageLoop(incoming);
+    _outgoing.done
+        .then(
+          (_) {
+            if (_closedError == null) _tearDown(null);
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            if (_closedError == null) {
+              _tearDown(error, stackTrace: stackTrace);
+            }
+          },
+        )
+        .ignore();
   }
 
   /// Default value for [TwoPartyRpcConnection.client]/`.server`'s
@@ -753,6 +768,18 @@ class TwoPartyRpcConnection implements RpcConnection {
   // ---------------------------------------------------------------------------
 
   void _runMessageLoop(Stream<Uint8List> incoming) {
+    final decoderInput = StreamController<Uint8List>(sync: true);
+    _decoderInput = decoderInput;
+    final sourceSubscription = incoming.listen(
+      decoderInput.add,
+      onError: decoderInput.addError,
+      onDone: decoderInput.close,
+    );
+    _incomingSourceSubscription = sourceSubscription;
+    if (_closedError != null) {
+      _incomingSourceSubscription = null;
+      sourceSubscription.cancel().ignore();
+    }
     // Use raw-bytes stream so the Unimplemented handler can echo the
     // original. `_preFramed` transports (WebSocket) already deliver one
     // complete message per event, so they skip the generic byte-buffering
@@ -760,9 +787,9 @@ class TwoPartyRpcConnection implements RpcConnection {
     // it.
     final rawMessages =
         _preFramed
-            ? MessageStream.deserializeFramedStreamRaw(incoming)
-            : MessageStream.deserializeStreamRaw(incoming);
-    rawMessages.listen(
+            ? MessageStream.deserializeFramedStreamRaw(decoderInput.stream)
+            : MessageStream.deserializeStreamRaw(decoderInput.stream);
+    final subscription = rawMessages.listen(
       (rawBytes) {
         // Wrap in try/catch: parseRpcMessage() or _handleIncomingMessage() can
         // throw synchronously (e.g. malformed message). A synchronous throw from
@@ -787,6 +814,11 @@ class TwoPartyRpcConnection implements RpcConnection {
               _tearDown(error, stackTrace: stackTrace),
       onDone: () => _tearDown(null),
     );
+    _incomingSubscription = subscription;
+    if (_closedError != null) {
+      _incomingSubscription = null;
+      subscription.cancel().ignore();
+    }
   }
 
   void _handleIncomingMessage(RpcMessage msg, Uint8List rawBytes) {
@@ -1715,6 +1747,28 @@ class TwoPartyRpcConnection implements RpcConnection {
   Future<void> _tearDown(Object? error, {StackTrace? stackTrace}) async {
     if (_closedError != null) return;
     _closedError = error ?? 'closed';
+
+    final incomingSourceSubscription = _incomingSourceSubscription;
+    _incomingSourceSubscription = null;
+    if (incomingSourceSubscription != null) {
+      try {
+        incomingSourceSubscription.cancel().ignore();
+      } catch (_) {}
+    }
+    final decoderInput = _decoderInput;
+    _decoderInput = null;
+    if (decoderInput != null) {
+      try {
+        decoderInput.close().ignore();
+      } catch (_) {}
+    }
+    final incomingSubscription = _incomingSubscription;
+    _incomingSubscription = null;
+    if (incomingSubscription != null) {
+      try {
+        incomingSubscription.cancel().ignore();
+      } catch (_) {}
+    }
 
     final err =
         error != null

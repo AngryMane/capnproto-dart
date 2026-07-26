@@ -7,6 +7,31 @@ import 'package:capnproto_dart_rpc/src/rpc/rpc_proto.dart';
 import 'package:capnproto_dart_rpc/src/rpc/two_party_connection.dart';
 import 'package:test/test.dart';
 
+class _SynchronousThrowingSink implements StreamSink<Uint8List> {
+  final Completer<void> _done = Completer<void>();
+
+  @override
+  void add(Uint8List data) => throw StateError('deliberate sink failure');
+
+  @override
+  void addError(Object error, [StackTrace? stackTrace]) {}
+
+  @override
+  Future<void> addStream(Stream<Uint8List> stream) async {
+    await for (final data in stream) {
+      add(data);
+    }
+  }
+
+  @override
+  Future<void> close() async {
+    if (!_done.isCompleted) _done.complete();
+  }
+
+  @override
+  Future<void> get done => _done.future;
+}
+
 // ---------------------------------------------------------------------------
 // Minimal in-memory schema: Echo interface
 //   method echo(message :Text) -> (reply :Text)
@@ -3384,26 +3409,65 @@ void main() {
       await clientToServer.close();
     });
 
+    test(
+      'close cancels an independently-owned input stream subscription',
+      () async {
+        final inputCanceled = Completer<void>();
+        final incoming = StreamController<Uint8List>(
+          onCancel: inputCanceled.complete,
+        );
+        final outgoing = StreamController<Uint8List>()..stream.listen((_) {});
+
+        final connection = TwoPartyRpcConnection.client(
+          incoming: incoming.stream,
+          outgoing: outgoing.sink,
+        );
+
+        await connection.close();
+        await inputCanceled.future.timeout(const Duration(milliseconds: 100));
+        expect(incoming.hasListener, isFalse);
+        await incoming.close();
+      },
+    );
+
+    test(
+      'outgoing sink completion tears down the connection even when input stays open',
+      () async {
+        final inputCanceled = Completer<void>();
+        final incoming = StreamController<Uint8List>(
+          onCancel: inputCanceled.complete,
+        );
+        final outgoing = StreamController<Uint8List>()..stream.listen((_) {});
+
+        final connection = TwoPartyRpcConnection.client(
+          incoming: incoming.stream,
+          outgoing: outgoing.sink,
+        );
+        final bootstrap = connection.bootstrap(EchoClientFactory());
+        expect(connection.debugPendingQuestionCount, equals(1));
+
+        await outgoing.close();
+        await connection.done.timeout(const Duration(milliseconds: 100));
+        await inputCanceled.future.timeout(const Duration(milliseconds: 100));
+        expect(connection.debugPendingQuestionCount, equals(0));
+        await expectLater(
+          bootstrap.echo('after-output-close'),
+          throwsA(anything),
+        );
+        await incoming.close();
+      },
+    );
+
     test('a synchronous throw from the outgoing sink tears the connection '
         'down instead of leaking as an unhandled error', () async {
       final clientToServer = StreamController<Uint8List>();
-      // StreamController.close() never completes without a listener
-      // (there's no "done" for a subscription that never existed) —
-      // attach a no-op one so the close() below can actually finish.
-      final serverToClient =
-          StreamController<Uint8List>()..stream.listen((_) {});
+      final serverToClient = _SynchronousThrowingSink();
 
       final serverConn = TwoPartyRpcConnection.server(
         incoming: clientToServer.stream,
-        outgoing: serverToClient.sink,
+        outgoing: serverToClient,
         bootstrap: EchoServer(),
       );
-
-      // Close the outgoing sink out from under the connection, so the
-      // next _sendRaw() call hits StreamController's synchronous "Cannot
-      // add event after closing" throw rather than a normal asynchronous
-      // sink failure (reported via the sink's `done` future).
-      await serverToClient.close();
 
       Object? doneError;
       serverConn.done.catchError((Object e) => doneError = e);

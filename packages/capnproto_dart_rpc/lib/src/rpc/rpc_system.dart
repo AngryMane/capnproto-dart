@@ -108,6 +108,8 @@ class RpcSystem {
         InternetAddress.tryParse(address.host) ?? InternetAddress.loopbackIPv4;
     final connections = <TwoPartyRpcConnection>{};
     var pendingWebSocketUpgrades = 0;
+    var closing = false;
+    final upgradeTasks = <Future<void>>{};
     final expectedWebSocketPath = address.path.isEmpty ? '/' : address.path;
 
     void track(TwoPartyRpcConnection conn) {
@@ -171,7 +173,7 @@ class RpcSystem {
                   securityContext!,
                 )
                 : await HttpServer.bind(host, address.port);
-        httpServer.listen((request) async {
+        Future<void> handleRequest(HttpRequest request) async {
           if (!WebSocketTransformer.isUpgradeRequest(request)) {
             request.response.statusCode = HttpStatus.badRequest;
             await request.response.close();
@@ -190,6 +192,10 @@ class RpcSystem {
           pendingWebSocketUpgrades++;
           try {
             final ws = await WebSocketTransformer.upgrade(request);
+            if (closing) {
+              await ws.close();
+              return;
+            }
             track(
               TwoPartyRpcConnection.server(
                 incoming: _webSocketIncoming(ws),
@@ -210,12 +216,23 @@ class RpcSystem {
           } finally {
             pendingWebSocketUpgrades--;
           }
+        }
+
+        httpServer.listen((request) {
+          late final Future<void> task;
+          task = handleRequest(request)
+              .catchError((Object _) {})
+              .whenComplete(() => upgradeTasks.remove(task));
+          upgradeTasks.add(task);
+          task.ignore();
         });
-        return _ListenerRpcServer(
-          () => httpServer.port,
-          httpServer.close,
-          connections,
-        );
+        return _ListenerRpcServer(() => httpServer.port, () async {
+          closing = true;
+          await httpServer.close();
+          while (upgradeTasks.isNotEmpty) {
+            await Future.wait(upgradeTasks.toList());
+          }
+        }, connections);
 
       default:
         throw RpcException('unsupported scheme: ${address.scheme}');
