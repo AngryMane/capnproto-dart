@@ -121,14 +121,19 @@ The RPC layer is tested for interoperability with Rust servers/clients using the
 
 ### `sample/greeter` — Simple greeter
 
-A minimal Dart client + Rust server demonstrating basic RPC calls and session capabilities.
+A minimal Rust server plus two clients — a console Dart client and a Flutter
+(Linux desktop) GUI client — demonstrating basic RPC calls and session
+capabilities.
 
 ```sh
 # Terminal 1: start the Rust server
 cargo run --manifest-path sample/greeter/server/Cargo.toml
 
-# Terminal 2: run the Dart client
+# Terminal 2: run the console Dart client ...
 dart run sample/greeter/client/bin/main.dart
+
+# ... or the Flutter GUI client
+cd sample/greeter/flutter_client && flutter run -d linux
 ```
 
 ## Cross-Language Interop Tests
@@ -161,7 +166,7 @@ Independent of RPC: checks that this library's serialized bytes are byte-for-byt
 
 A ready-to-use dev container is provided (`.devcontainer/`). It sets up Ubuntu 24.04 with:
 - Cap'n Proto CLI built from source (v1.0.1)
-- Dart SDK 3.7.2 (the minimum supported version; CI also tests latest stable)
+- Flutter SDK (bundles a newer Dart than the `^3.7.2` minimum these packages declare; CI tests against 3.7.2 as the floor separately — see `.github/workflows/compat.yml`)
 - Rust via rustup
 
 ```sh

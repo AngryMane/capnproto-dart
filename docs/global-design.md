@@ -11,7 +11,7 @@ This document describes the overall relationship between this repository and ext
 | **Cap'n Proto Specification** | Defines the binary encoding format and RPC protocol. All three components must conform to this specification. |
 | **Application Developer** | Uses the CLI Tool to generate Dart code from schemas, links the Serialization Runtime for encoding/decoding, and optionally adds the RPC Runtime when RPC is needed. |
 | **Flutter/Dart Application** | The end product that embeds the Serialization Runtime (and, if RPC is used, the RPC Runtime) plus the generated Dart code. |
-| **pub.dev** | The Dart package registry. Currently only the Serialization Runtime (`capnproto_dart`) is published there; the CLI Tool and RPC Runtime have `publish_to: none` and are consumed within this repo. |
+| **pub.dev** | The Dart package registry. All four packages (`capnproto_dart`, `capnproto_dart_rpc`, `capnpc_dart`, `capnpc_dart_builder`) are published there via `ci/publish-packages.sh`. |
 | **capnpc (reference implementation)** | The official Cap'n Proto compiler. Used as a reference for understanding schema syntax and binary format. No FFI dependency on it. |
 
 ## Relationship Diagram
@@ -71,7 +71,7 @@ graph TD
 - Implements Cap'n Proto RPC (client stubs and server skeletons).
 - Depends on the Serialization Runtime for message encoding.
 - Only needed by applications that use RPC; not required for pure serialization use cases.
-- Not yet published to pub.dev (`publish_to: none`); consumed as a path dependency within this repo.
+- Published as a Dart package on pub.dev and shipped with the application.
 
 ## Notes
 

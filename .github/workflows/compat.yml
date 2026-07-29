@@ -16,7 +16,9 @@ on:
 env:
   # capnp CLI version — must match ARG CAPNP_VERSION in .devcontainer/Dockerfile.
   CAPNP_CLI_VERSION: "1.0.1"
-  # Dart SDK version — must match ARG DART_VERSION in .devcontainer/Dockerfile.
+  # Dart SDK version — the minimum supported version declared by every package's
+  # `sdk: ^3.7.2` constraint. The devcontainer installs a newer Dart bundled with
+  # Flutter (for the Flutter sample), so this pins the floor CI verifies separately.
   DART_VERSION: "3.7.2"
 
 jobs:

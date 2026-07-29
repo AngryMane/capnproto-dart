@@ -17,11 +17,28 @@
   // back to file storage by default when no OS keyring is available (e.g. this
   // Linux container), but a macOS host may need one `claude login` / `codex login`
   // inside the container the first time if it was using Keychain-backed storage.
+
+  // Forward the host's display sockets so GUI apps (e.g. `flutter run -d linux`)
+  // can show a window on the host's screen. Assumes a native Linux host with
+  // XDG_RUNTIME_DIR set (true for any normal login session). The container
+  // runs as root, so it can open the host user's Wayland/X11 socket files
+  // even though it doesn't share the host user's UID — this stops working if
+  // a non-root remoteUser is ever added here without also matching UIDs.
+  "containerEnv": {
+    "DISPLAY": "${localEnv:DISPLAY}",
+    "WAYLAND_DISPLAY": "${localEnv:WAYLAND_DISPLAY}",
+    "XDG_RUNTIME_DIR": "${localEnv:XDG_RUNTIME_DIR}"
+  },
+
   "mounts": [
     "source=capnproto-dart-cargo-registry,target=/usr/local/cargo/registry,type=volume",
     "source=capnproto-dart-cargo-git,target=/usr/local/cargo/git,type=volume",
     "source=${localEnv:HOME}/.claude,target=/root/.claude,type=bind",
-    "source=${localEnv:HOME}/.codex,target=/root/.codex,type=bind"
+    "source=${localEnv:HOME}/.codex,target=/root/.codex,type=bind",
+    // Wayland compositor socket (native rendering) and the X11 socket dir
+    // (XWayland fallback for any tool that only speaks X11).
+    "source=${localEnv:XDG_RUNTIME_DIR},target=${localEnv:XDG_RUNTIME_DIR},type=bind",
+    "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind"
   ],
 
   // 3000: Docusaurus dev server (website/, `npm run start`).

@@ -1,0 +1,38 @@
+name: greeter_flutter_client
+description: Sample Flutter (Linux desktop) client demonstrating Dart↔Rust Cap'n Proto RPC interop.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  capnproto_dart_rpc:
+    git:
+      url: https://github.com/AngryMane/capnproto-dart.git
+      path: packages/capnproto_dart_rpc
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  build_runner: ^2.4.13
+  capnpc_dart_builder:
+    git:
+      url: https://github.com/AngryMane/capnproto-dart.git
+      path: dev_packages/capnpc-dart-builder
+
+dependency_overrides:
+  capnproto_dart:
+    path: ../../../packages/capnproto_dart
+  capnproto_dart_rpc:
+    path: ../../../packages/capnproto_dart_rpc
+  capnpc_dart:
+    path: ../../../dev_packages/capnpc-dart
+  capnpc_dart_builder:
+    path: ../../../dev_packages/capnpc-dart-builder
+
+flutter:
+  uses-material-design: true

@@ -5,7 +5,10 @@ FROM ubuntu:24.04
 # capnp/capnp-rpc crate versions are NOT managed here — see Cargo.toml and
 # ci/update-capnp-version.sh for the version-matrix workflow.
 ARG CAPNP_VERSION=1.0.1
-ARG DART_VERSION=3.7.2
+# Flutter includes the matching Dart SDK. Keep the Flutter release pinned so
+# local development and CI do not silently change when a new stable is
+# published.
+ARG FLUTTER_VERSION=3.44.4
 # Node.js: only needed to build/preview the Docusaurus docs site under website/.
 ARG NODE_VERSION=24.18.0
 
@@ -14,12 +17,19 @@ ENV DEBIAN_FRONTEND=noninteractive
 # ── System dependencies ─────────────────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
+        clang \
         cmake \
         curl \
         ca-certificates \
         git \
+        libglu1-mesa \
+        libgtk-3-dev \
+        liblzma-dev \
+        ninja-build \
+        pkg-config \
         unzip \
         wget \
+        xz-utils \
         valgrind \
         linux-tools-common \
         linux-tools-generic \
@@ -45,12 +55,21 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
     | sh -s -- -y --default-toolchain stable --no-modify-path \
     && chmod -R a+w /usr/local/rustup /usr/local/cargo
 
-# ── Dart SDK ────────────────────────────────────────────────────────────────
-RUN wget -q "https://storage.googleapis.com/dart-archive/channels/stable/release/${DART_VERSION}/sdk/dartsdk-linux-x64-release.zip" \
-    && unzip -q dartsdk-linux-x64-release.zip -d /opt \
-    && rm dartsdk-linux-x64-release.zip
+# ── Flutter SDK (includes the matching Dart SDK) ────────────────────────────
+# Install the Linux desktop toolchain even though the devcontainer does not
+# launch GUI applications: it lets contributors create, analyze, test, and
+# build Flutter samples entirely inside the container.
+RUN wget -q \
+        "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${FLUTTER_VERSION}-stable.tar.xz" \
+        -O flutter.tar.xz \
+    && tar xf flutter.tar.xz -C /opt \
+    && rm flutter.tar.xz \
+    && ln -s /opt/flutter/bin/cache/dart-sdk /opt/dart-sdk \
+    && git config --system --add safe.directory /opt/flutter \
+    && /opt/flutter/bin/flutter config --no-analytics --enable-linux-desktop \
+    && /opt/flutter/bin/flutter precache --linux
 
-ENV PATH=/opt/dart-sdk/bin:${PATH}
+ENV PATH=/opt/flutter/bin:/opt/flutter/bin/cache/dart-sdk/bin:${PATH}
 
 # ── Node.js (for the Docusaurus docs site under website/) ───────────────────
 RUN wget -q "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
