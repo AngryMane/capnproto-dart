@@ -16,7 +16,8 @@ import '../capability/capability.dart'
         capabilityFromResultPath,
         requireCapabilityFromResult,
         requireCapabilityFromResultPath,
-        unwrapVendedCapability;
+        unwrapVendedCapability,
+        vendCapabilityHandle;
 import '../capability/capability_factory.dart';
 import '../capability/rpc_payload.dart';
 import 'flow_controller.dart';
@@ -1069,7 +1070,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     // Register the bootstrap answer so pipelined calls targeting
     // {receiverAnswer: {questionId: msg.questionId, transform: []}} can
     // resolve ptr[0] → the bootstrap capability.
-    final bootstrapCap = exportEntry?.capability;
+    final bootstrapCap = exportEntry?.identity;
     if (bootstrapCap != null) {
       _answerCaps[msg.questionId] = _ResolvedAnswer(_bootstrapResultBytes, [
         bootstrapCap,
@@ -1093,7 +1094,7 @@ class TwoPartyRpcConnection implements RpcConnection {
       );
       return;
     }
-    _dispatchToCapability(msg, entry.capability);
+    _dispatchToCapability(msg, entry.identity);
   }
 
   void _handlePipelinedCall(RpcMessage msg) {
@@ -1639,18 +1640,22 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// Core effect of releasing [referenceCount] references to the export
   /// tracked by [entry] (whose ID is [exportId]): decrements
   /// `remoteRefCount` and, once it reaches zero, drops the export and
-  /// disposes the underlying capability. Shared by [_handleRelease] (after
-  /// its protocol-violation checks against a real incoming Release) and
-  /// [_awaitReturn]'s handling of `Return.releaseParamCaps` (no checks
-  /// needed there — the count released is exactly what this vat itself put
-  /// in the matching Call's capTable, per [_recordParamExportIds]).
+  /// disposes this export's own reference to the underlying capability
+  /// (see [_ExportEntry.ownedReference] — this only tears the capability
+  /// down for real once every other outstanding [vendCapabilityHandle]
+  /// reference to it, held anywhere else, has also been disposed). Shared
+  /// by [_handleRelease] (after its protocol-violation checks against a
+  /// real incoming Release) and [_awaitReturn]'s handling of
+  /// `Return.releaseParamCaps` (no checks needed there — the count released
+  /// is exactly what this vat itself put in the matching Call's capTable,
+  /// per [_recordParamExportIds]).
   void _releaseExportRef(int exportId, _ExportEntry entry, int referenceCount) {
     entry.remoteRefCount -= referenceCount;
     if (entry.remoteRefCount <= 0) {
       _exports.remove(exportId);
-      _exportIds.remove(entry.capability);
+      _exportIds.remove(entry.identity);
       _senderPromiseResolves.remove(exportId);
-      _disposeIgnoringErrors(entry.capability);
+      _disposeIgnoringErrors(entry.ownedReference);
     }
   }
 
@@ -1802,27 +1807,41 @@ class TwoPartyRpcConnection implements RpcConnection {
     return true;
   }
 
-  /// Returns the existing export ID for [cap] (incrementing its remote ref
-  /// count), or allocates a new export ID if this is the first export.
-  int _getOrCreateExportId(Capability cap) {
-    final existing = _exportIds[cap];
+  /// Returns the existing export ID for [identity] (incrementing its remote
+  /// ref count), or allocates a new export ID — with its own
+  /// [vendCapabilityHandle] [_ExportEntry.ownedReference] — if this is the
+  /// first export. [identity] must already be unwrapped (see
+  /// [unwrapVendedCapability]): every caller of this method unwraps first,
+  /// so that two different vended handles for the same underlying
+  /// capability dedupe to the same export instead of each creating their
+  /// own.
+  int _getOrCreateExportId(Capability identity) {
+    final existing = _exportIds[identity];
     if (existing != null) {
       _exports[existing]!.remoteRefCount++;
       return existing;
     }
     final eid = _nextExportId++;
-    _exports[eid] = _ExportEntry(cap);
-    _exportIds[cap] = eid;
+    _exports[eid] = _ExportEntry(identity);
+    _exportIds[identity] = eid;
     return eid;
   }
 
+  /// [cap] may be a [vendCapabilityHandle] handle — e.g. an application's
+  /// dispatch handler read a capability out of another call's result via
+  /// [requireCapabilityFromResult] and is now returning that same handle as
+  /// part of its own result (or relaying it into a call on a different
+  /// connection's — see [_ExportEntry.ownedReference]'s doc comment) —
+  /// so it's unwrapped to its real identity before being used as the
+  /// [_getOrCreateExportId] dedup key.
   RpcCapDescriptor _returnCapDescriptor(Capability cap) {
-    if (cap is DeferredCapability) {
-      final promiseId = _getOrCreateExportId(cap);
-      _scheduleSenderPromiseResolve(promiseId, cap);
+    final identity = unwrapVendedCapability(cap);
+    if (identity is DeferredCapability) {
+      final promiseId = _getOrCreateExportId(identity);
+      _scheduleSenderPromiseResolve(promiseId, identity);
       return RpcCapDescriptor.senderPromise(promiseId);
     }
-    return RpcCapDescriptor.senderHosted(_getOrCreateExportId(cap));
+    return RpcCapDescriptor.senderHosted(_getOrCreateExportId(identity));
   }
 
   void _scheduleSenderPromiseResolve(
@@ -1883,36 +1902,40 @@ class TwoPartyRpcConnection implements RpcConnection {
 
   bool _isStillExportedPromise(int promiseId, DeferredCapability promise) {
     final entry = _exports[promiseId];
-    return entry != null && identical(entry.capability, promise);
+    return entry != null && identical(entry.identity, promise);
   }
 
+  /// See [_returnCapDescriptor]'s doc comment — [cap] is unwrapped to its
+  /// real identity first for the same reason.
   Future<RpcCapDescriptor> _resolveDescriptorForCapability(
     Capability cap,
   ) async {
-    if (cap is _ImportedCapability && cap._conn == this) {
-      final id = await cap._importIdFuture;
+    final identity = unwrapVendedCapability(cap);
+    if (identity is _ImportedCapability && identity._conn == this) {
+      final id = await identity._importIdFuture;
       _throwIfImportBroken(id);
       return RpcCapDescriptor.receiverHosted(id);
     }
-    if (cap is DeferredCapability) {
-      final nestedPromiseId = _getOrCreateExportId(cap);
-      _scheduleSenderPromiseResolve(nestedPromiseId, cap);
+    if (identity is DeferredCapability) {
+      final nestedPromiseId = _getOrCreateExportId(identity);
+      _scheduleSenderPromiseResolve(nestedPromiseId, identity);
       return RpcCapDescriptor.senderPromise(nestedPromiseId);
     }
-    return RpcCapDescriptor.senderHosted(_getOrCreateExportId(cap));
+    return RpcCapDescriptor.senderHosted(_getOrCreateExportId(identity));
   }
 
-  /// Decrements the remote ref count for [eid] and disposes the capability
-  /// if no remote references remain.
+  /// Decrements the remote ref count for [eid] and, once no remote
+  /// references remain, disposes this export's own reference to the
+  /// underlying capability — see [_releaseExportRef]'s matching doc comment.
   void _releaseExport(int eid) {
     final entry = _exports[eid];
     if (entry == null) return;
     entry.remoteRefCount--;
     if (entry.remoteRefCount <= 0) {
       _exports.remove(eid);
-      _exportIds.remove(entry.capability);
+      _exportIds.remove(entry.identity);
       _senderPromiseResolves.remove(eid);
-      _disposeIgnoringErrors(entry.capability);
+      _disposeIgnoringErrors(entry.ownedReference);
     }
   }
 
@@ -1981,7 +2004,7 @@ class TwoPartyRpcConnection implements RpcConnection {
         return _ImportedCapability.fromState(this, state);
       case 3: // receiverHosted: we (the receiver) export this cap
         final hosted = _exports[descriptor.id];
-        return hosted?.capability ?? NullCapability();
+        return hosted?.identity ?? NullCapability();
       case 4: // receiverAnswer: capability in one of our outstanding answers
         return _ReceiverAnswerCapability(
           this,
@@ -2107,9 +2130,10 @@ class TwoPartyRpcConnection implements RpcConnection {
     }
     _dispatchCancellations.clear();
 
-    // Dispose all exported capabilities.
+    // Dispose all exported capabilities (each export's own owned
+    // reference — see _ExportEntry's doc comment).
     for (final entry in _exports.values) {
-      _disposeIgnoringErrors(entry.capability);
+      _disposeIgnoringErrors(entry.ownedReference);
     }
     _exports.clear();
     _exportIds.clear();
@@ -2202,11 +2226,30 @@ class TwoPartyRpcConnection implements RpcConnection {
 // ---------------------------------------------------------------------------
 
 class _ExportEntry {
-  final Capability capability;
+  /// The real, unwrapped capability this export refers to — used as the
+  /// [TwoPartyRpcConnection._exportIds] identity key and for dispatching
+  /// incoming calls. Never disposed directly; see [ownedReference].
+  final Capability identity;
+
+  /// A [vendCapabilityHandle] reference this export table owns for
+  /// [identity], sharing the same refcount as any other handle another
+  /// piece of code may still hold for it — e.g. when [identity] was
+  /// obtained from a different connection (or from this same connection's
+  /// own result-reading helpers) and relayed here while the code that
+  /// vended it is still holding its own handle. Disposing *this* reference
+  /// (instead of [identity] itself) once the peer's references reach zero
+  /// ensures [identity] is only really torn down once every other
+  /// outstanding reference to it is gone too — see vendCapabilityHandle's
+  /// doc comment for the shared-refcount mechanism this participates in.
+  final Capability ownedReference;
+
   // How many times the peer holds a reference to this export.
   // Incremented on every export (or re-export); decremented on Release.
   int remoteRefCount;
-  _ExportEntry(this.capability) : remoteRefCount = 1;
+
+  _ExportEntry(this.identity)
+    : ownedReference = vendCapabilityHandle(identity),
+      remoteRefCount = 1;
 }
 
 class _ImportState {

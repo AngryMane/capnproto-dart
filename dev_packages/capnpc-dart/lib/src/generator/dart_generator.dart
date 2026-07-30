@@ -595,11 +595,11 @@ void _writeClientMethod(
   final capsList = effectiveCapParams.map((p) => p.$2).join(', ');
   final buildParamType =
       usesCapTableParam
-          ? 'void Function(${paramsName}Builder, List<Object?> capTable)'
+          ? 'void Function(${paramsName}Builder, CapabilityTableBuilder capTable)'
           : 'void Function(${paramsName}Builder)';
   final dispatchCaps =
       usesCapTableParam
-          ? ', paramsCapabilities: capTable.cast<Capability>()'
+          ? ', paramsCapabilities: capTable.capabilities'
           : (effectiveCapParams.isEmpty
               ? ''
               : ', paramsCapabilities: [$capsList]');
@@ -619,7 +619,7 @@ void _writeClientMethod(
     );
     sb.writeln('    final mb = MessageBuilder();');
     if (usesCapTableParam) {
-      sb.writeln('    final capTable = <Object?>[];');
+      sb.writeln('    final capTable = CapabilityTableBuilder();');
       sb.writeln(
         '    build(mb.initRoot(${_lcfirst(paramsName)}Factory), capTable);',
       );
@@ -669,7 +669,7 @@ void _writeClientMethod(
     '  Future<$asyncReturnType> $methodName($buildParamType build$namedParams) async {',
   );
   if (usesCapTableParam) {
-    sb.writeln('    final capTable = <Object?>[];');
+    sb.writeln('    final capTable = CapabilityTableBuilder();');
     sb.writeln(
       '    final result = await _cap.dispatchBuilding($ifaceId, $ordinal, (anyPtr) => build(anyPtr.initStruct(${_lcfirst(paramsName)}Factory), capTable)$dispatchCaps);',
     );
@@ -707,7 +707,7 @@ void _writeClientMethod(
     );
     sb.writeln('    final mb = MessageBuilder();');
     if (usesCapTableParam) {
-      sb.writeln('    final capTable = <Object?>[];');
+      sb.writeln('    final capTable = CapabilityTableBuilder();');
       sb.writeln(
         '    build(mb.initRoot(${_lcfirst(paramsName)}Factory), capTable);',
       );
@@ -2113,11 +2113,10 @@ void _writeBuilderPointerField(
     sb.writeln('  }');
     sb.writeln();
     sb.writeln(
-      '  void set${ucfname}Typed(${capIfaceName}Client cap, List<Object?> capTable) {',
+      '  void set${ucfname}Typed(${capIfaceName}Client cap, CapabilityTableBuilder capTable) {',
     );
     if (hasDisc) sb.write(setDisc);
-    sb.writeln('    capTable.add(cap.capability);');
-    sb.writeln('    setCapabilityField($offset, capTable.length - 1);');
+    sb.writeln('    setCapabilityField($offset, capTable.add(cap.capability));');
     sb.writeln('  }');
   }
 }
@@ -2146,13 +2145,12 @@ void _writeListBuilderField(
     );
     sb.writeln();
     sb.writeln(
-      '  void set${ucfname}Typed(List<${ifaceName}Client> caps, List<Object?> capTable) {',
+      '  void set${ucfname}Typed(List<${ifaceName}Client> caps, CapabilityTableBuilder capTable) {',
     );
     if (hasDisc) sb.write(setDisc);
     sb.writeln('    final builder = initCapabilityListField($offset, caps.length);');
     sb.writeln('    for (int i = 0; i < caps.length; i++) {');
-    sb.writeln('      capTable.add(caps[i].capability);');
-    sb.writeln('      builder[i] = capTable.length - 1;');
+    sb.writeln('      builder[i] = capTable.add(caps[i].capability);');
     sb.writeln('    }');
     sb.writeln('  }');
   }

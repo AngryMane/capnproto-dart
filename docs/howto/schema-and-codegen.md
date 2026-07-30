@@ -93,6 +93,61 @@ consts can't be Dart `const` since building them involves a function call, so th
 — they're skipped with a comment in the generated file rather than emitting broken code.
 Every other const kind (scalars, `Text`, `Data`, enum, struct) is supported.
 
+## Capability parameters nested inside structs/lists
+
+A method's params struct doesn't have to reference a capability directly — the
+capability can be nested inside another struct field, a `group`, or a
+`List(SomeInterface)`:
+
+```capnp
+struct Bundle {
+  primary @0 :SomeInterface;
+  targets @1 :List(SomeInterface);
+}
+
+interface Foo {
+  exchange @0 (bundle :Bundle) -> (bundle :Bundle);
+}
+```
+
+The generated client method for `exchange` detects this and switches its
+`build` callback to take a second parameter — a `CapabilityTableBuilder`
+(from `capnproto_dart_rpc`) accumulator shared by every `setXxxTyped(cap,
+capTable)` helper the callback calls, however deeply nested:
+
+```dart
+await client.exchange((b, capTable) {
+  final bundle = b.initBundle();
+  bundle.setPrimaryTyped(someCap, capTable);
+  bundle.setTargetsTyped([someCap, otherCap], capTable);
+});
+```
+
+Methods whose params only ever reference a capability directly (not nested)
+keep the simpler `required Capability x` named-parameter form instead — the
+two-parameter `build` callback is only generated when it's actually needed.
+
+**Not supported: a capability nested inside a generic instantiation.**
+Detection does not descend into generic struct instantiations (any
+`StructRefType` with type arguments), so a capability reachable only through
+one of these is not picked up by the accumulator mechanism above:
+
+```capnp
+struct Bundle {
+  observer @0 :Optional(SomeInterface);          # not detected
+  result   @1 :Result(SomeInterface, ErrorInfo);  # not detected
+}
+```
+
+For a params struct like this, the generated client method has no `capTable`
+parameter at all, and there is currently no supported way to send
+`observer`/`result`'s capability through the generated API — sending one
+requires either restructuring the schema to avoid the generic wrapper, or
+building and dispatching the call by hand. Extending detection to walk
+through generic type arguments (substituting `StructRefType.typeArgs` into
+the referenced struct's `TypeParameterRefType` fields) is tracked as future
+work.
+
 ## Checking backward/forward compatibility
 
 When a schema evolves, you can ask `capnpc-dart` to diff the new schema against a

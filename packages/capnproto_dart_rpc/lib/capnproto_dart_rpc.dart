@@ -13,6 +13,7 @@ export 'src/capability/capability.dart'
     show
         CapCall,
         Capability,
+        CapabilityTableBuilder,
         DeferredCapability,
         DispatchContext,
         DispatchResult,

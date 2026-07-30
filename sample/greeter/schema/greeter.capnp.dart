@@ -273,9 +273,8 @@ final class GreeterNewSessionResultsBuilder extends StructBuilder {
     setCapabilityField(0, capTableIndex);
   }
 
-  void setSessionTyped(GreetSessionClient cap, List<Object?> capTable) {
-    capTable.add(cap.capability);
-    setCapabilityField(0, capTable.length - 1);
+  void setSessionTyped(GreetSessionClient cap, CapabilityTableBuilder capTable) {
+    setCapabilityField(0, capTable.add(cap.capability));
   }
 }
 

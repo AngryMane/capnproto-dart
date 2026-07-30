@@ -760,6 +760,57 @@ class _TrackedCapability extends Capability {
   }
 }
 
+// Returns [vended] as caps[0] on `_pipelineMethodId`, matching
+// PipelineServer's result-encoding convention above.
+class _CapVendingServer extends Capability {
+  final Capability vended;
+  _CapVendingServer(this.vended);
+
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    RpcPayload params, {
+    List<Capability> paramsCapabilities = const [],
+  }) async {
+    if (methodId == _pipelineMethodId) {
+      final mb = MessageBuilder();
+      final root = mb.initRoot(_TextParamFactory());
+      root.setCapabilityField(0, 0);
+      return DispatchResult(
+        payload: RpcPayload.fromBuilder(root),
+        caps: [vended],
+      );
+    }
+    throw RpcException('unknown method: $methodId');
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
+// Disposes every params capability it receives, simulating a peer that's
+// done with a relayed capability the moment its call completes.
+class _DisposingReceiver extends Capability {
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    RpcPayload params, {
+    List<Capability> paramsCapabilities = const [],
+  }) async {
+    for (final c in paramsCapabilities) {
+      await c.dispose();
+    }
+    return DispatchResult(
+      payload: RpcPayload.fromBytes(_buildEchoParams('ok')),
+    );
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
 class CapReceivingServer extends Capability {
   List<Capability> lastParams = const [];
 
@@ -4223,6 +4274,77 @@ void main() {
       );
     },
   );
+
+  group('ownership: capability relayed across two different connections', () {
+    test(
+      'a peer B releasing a relayed capability does not invalidate the '
+      'relay\'s own still-held handle to it, and vat A only sees a Release '
+      'once the relay disposes that handle too',
+      () async {
+        // peer A → relay → peer B, per three-vat relay diagrams: vat A vends
+        // `probe`; the relay reads it (vendCapabilityHandle'd handle `h`),
+        // forwards it to vat B as a params capability of a call on a
+        // completely different TwoPartyRpcConnection, and vat B immediately
+        // releases its own reference to it. Before the _ExportEntry
+        // identity/ownedReference split, the relay's connection-B export
+        // table disposed the *raw* underlying capability directly on that
+        // Release — invalidating `h` out from under the relay even though
+        // the relay never disposed it itself.
+        final probe = EchoServer();
+        final (relayToA, vatAConn) = _makePipe(_CapVendingServer(probe));
+        final vatABootstrap = relayToA.bootstrap(EchoClientFactory()).cap;
+
+        final vendResult = await vatABootstrap.dispatch(
+          _echoInterfaceId,
+          _pipelineMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('')),
+        );
+        final h = requireCapabilityFromResult(vendResult, 0);
+
+        final (relayToB, vatBConn) = _makePipe(_DisposingReceiver());
+        final vatBBootstrap = relayToB.bootstrap(EchoClientFactory()).cap;
+        await vatBBootstrap.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('')),
+          paramsCapabilities: [h],
+        );
+        // Let vat B's Release of its params capability reach the relay's
+        // connection-B export table.
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        // The relay's own handle `h` must still be live: neither disposed
+        // nor failing subsequent calls.
+        final echoViaH = await h.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('still alive')),
+        );
+        expect(
+          _parseEchoResult(echoViaH.payload),
+          equals('echo: still alive'),
+        );
+
+        // Vat A must not have seen a Release yet for `probe`'s export — the
+        // relay hasn't disposed its own handle. (2, not 1: the bootstrap
+        // capability itself is also export 0 on this connection.)
+        expect(vatAConn.debugExportCount, equals(2));
+
+        // Now the relay disposes its own handle: only *now* should vat A's
+        // export of `probe` be released and the underlying capability torn
+        // down — leaving only the still-live bootstrap export behind.
+        await h.dispose();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(vatAConn.debugExportCount, equals(1));
+
+        await relayToA.close();
+        await vatAConn.close();
+        await relayToB.close();
+        await vatBConn.close();
+      },
+    );
+  });
 
   group('TwoPartyRpcConnection — RPC-007 Unimplemented for unknown messages', () {
     test(

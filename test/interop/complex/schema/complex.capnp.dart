@@ -3943,9 +3943,8 @@ final class RepositoryOpenCursorResultsBuilder extends StructBuilder {
     setCapabilityField(0, capTableIndex);
   }
 
-  void setCursorTyped(CursorClient cap, List<Object?> capTable) {
-    capTable.add(cap.capability);
-    setCapabilityField(0, capTable.length - 1);
+  void setCursorTyped(CursorClient cap, CapabilityTableBuilder capTable) {
+    setCapabilityField(0, capTable.add(cap.capability));
   }
 }
 
@@ -4005,9 +4004,8 @@ final class RepositoryWatchParamsBuilder extends StructBuilder {
     setCapabilityField(0, capTableIndex);
   }
 
-  void setObserverTyped(ObserverClient cap, List<Object?> capTable) {
-    capTable.add(cap.capability);
-    setCapabilityField(0, capTable.length - 1);
+  void setObserverTyped(ObserverClient cap, CapabilityTableBuilder capTable) {
+    setCapabilityField(0, capTable.add(cap.capability));
   }
 }
 
@@ -4067,9 +4065,8 @@ final class RepositoryWatchResultsBuilder extends StructBuilder {
     setCapabilityField(0, capTableIndex);
   }
 
-  void setSubscriptionTyped(SubscriptionClient cap, List<Object?> capTable) {
-    capTable.add(cap.capability);
-    setCapabilityField(0, capTable.length - 1);
+  void setSubscriptionTyped(SubscriptionClient cap, CapabilityTableBuilder capTable) {
+    setCapabilityField(0, capTable.add(cap.capability));
   }
 }
 
@@ -4415,9 +4412,8 @@ final class ByteSourcePumpToParamsBuilder extends StructBuilder {
     setCapabilityField(0, capTableIndex);
   }
 
-  void setSinkTyped(ByteSinkClient cap, List<Object?> capTable) {
-    capTable.add(cap.capability);
-    setCapabilityField(0, capTable.length - 1);
+  void setSinkTyped(ByteSinkClient cap, CapabilityTableBuilder capTable) {
+    setCapabilityField(0, capTable.add(cap.capability));
   }
 
   set chunkSize(int v) {
@@ -4618,9 +4614,8 @@ final class CapabilityFactoryNewCellResultsBuilder extends StructBuilder {
     setCapabilityField(0, capTableIndex);
   }
 
-  void setCellTyped(ReadWriteClient cap, List<Object?> capTable) {
-    capTable.add(cap.capability);
-    setCapabilityField(0, capTable.length - 1);
+  void setCellTyped(ReadWriteClient cap, CapabilityTableBuilder capTable) {
+    setCapabilityField(0, capTable.add(cap.capability));
   }
 }
 
@@ -4720,9 +4715,8 @@ final class CapabilityFactoryNewEmptyCellResultsBuilder extends StructBuilder {
     setCapabilityField(0, capTableIndex);
   }
 
-  void setCellTyped(ReadWriteClient cap, List<Object?> capTable) {
-    capTable.add(cap.capability);
-    setCapabilityField(0, capTable.length - 1);
+  void setCellTyped(ReadWriteClient cap, CapabilityTableBuilder capTable) {
+    setCapabilityField(0, capTable.add(cap.capability));
   }
 }
 
@@ -4822,9 +4816,8 @@ final class CapabilityFactoryNewRepositoryResultsBuilder extends StructBuilder {
     setCapabilityField(0, capTableIndex);
   }
 
-  void setRepositoryTyped(RepositoryClient cap, List<Object?> capTable) {
-    capTable.add(cap.capability);
-    setCapabilityField(0, capTable.length - 1);
+  void setRepositoryTyped(RepositoryClient cap, CapabilityTableBuilder capTable) {
+    setCapabilityField(0, capTable.add(cap.capability));
   }
 }
 
@@ -5629,9 +5622,8 @@ final class PipelineTargetGetChildResultsBuilder extends StructBuilder {
     setCapabilityField(0, capTableIndex);
   }
 
-  void setChildTyped(PipelineTargetClient cap, List<Object?> capTable) {
-    capTable.add(cap.capability);
-    setCapabilityField(0, capTable.length - 1);
+  void setChildTyped(PipelineTargetClient cap, CapabilityTableBuilder capTable) {
+    setCapabilityField(0, capTable.add(cap.capability));
   }
 }
 
@@ -5729,9 +5721,8 @@ final class PipelineTargetGetRepositoryResultsBuilder extends StructBuilder {
     setCapabilityField(0, capTableIndex);
   }
 
-  void setRepositoryTyped(RepositoryClient cap, List<Object?> capTable) {
-    capTable.add(cap.capability);
-    setCapabilityField(0, capTable.length - 1);
+  void setRepositoryTyped(RepositoryClient cap, CapabilityTableBuilder capTable) {
+    setCapabilityField(0, capTable.add(cap.capability));
   }
 }
 
@@ -5905,9 +5896,8 @@ final class CapabilityBundleBuilder extends StructBuilder {
     setCapabilityField(0, capTableIndex);
   }
 
-  void setPrimaryTyped(PipelineTargetClient cap, List<Object?> capTable) {
-    capTable.add(cap.capability);
-    setCapabilityField(0, capTable.length - 1);
+  void setPrimaryTyped(PipelineTargetClient cap, CapabilityTableBuilder capTable) {
+    setCapabilityField(0, capTable.add(cap.capability));
   }
 
   OptionalBuilder initOptionalObserver() {
@@ -5921,11 +5911,10 @@ final class CapabilityBundleBuilder extends StructBuilder {
     return initCapabilityListField(2, length);
   }
 
-  void setTargetsTyped(List<PipelineTargetClient> caps, List<Object?> capTable) {
+  void setTargetsTyped(List<PipelineTargetClient> caps, CapabilityTableBuilder capTable) {
     final builder = initCapabilityListField(2, caps.length);
     for (int i = 0; i < caps.length; i++) {
-      capTable.add(caps[i].capability);
-      builder[i] = capTable.length - 1;
+      builder[i] = capTable.add(caps[i].capability);
     }
   }
 
@@ -5933,11 +5922,10 @@ final class CapabilityBundleBuilder extends StructBuilder {
     return initCapabilityListField(3, length);
   }
 
-  void setRepositoriesTyped(List<RepositoryClient> caps, List<Object?> capTable) {
+  void setRepositoriesTyped(List<RepositoryClient> caps, CapabilityTableBuilder capTable) {
     final builder = initCapabilityListField(3, caps.length);
     for (int i = 0; i < caps.length; i++) {
-      capTable.add(caps[i].capability);
-      builder[i] = capTable.length - 1;
+      builder[i] = capTable.add(caps[i].capability);
     }
   }
 }
@@ -6307,9 +6295,8 @@ final class ComplexResponseBuilder extends StructBuilder {
     setCapabilityField(4, capTableIndex);
   }
 
-  void setServerCapabilityTyped(PipelineTargetClient cap, List<Object?> capTable) {
-    capTable.add(cap.capability);
-    setCapabilityField(4, capTable.length - 1);
+  void setServerCapabilityTyped(PipelineTargetClient cap, CapabilityTableBuilder capTable) {
+    setCapabilityField(4, capTable.add(cap.capability));
   }
 
   AnyPointerBuilder initExtra() {
@@ -7276,9 +7263,8 @@ final class ComplexTestServiceCallObserverParamsBuilder extends StructBuilder {
     setCapabilityField(0, capTableIndex);
   }
 
-  void setObserverTyped(ObserverClient cap, List<Object?> capTable) {
-    capTable.add(cap.capability);
-    setCapabilityField(0, capTable.length - 1);
+  void setObserverTyped(ObserverClient cap, CapabilityTableBuilder capTable) {
+    setCapabilityField(0, capTable.add(cap.capability));
   }
 
   ListBuilder<PersonBuilder> initEvents(int length) {
@@ -7454,9 +7440,8 @@ final class ComplexTestServiceMakePipelineResultsBuilder extends StructBuilder {
     setCapabilityField(0, capTableIndex);
   }
 
-  void setTargetTyped(PipelineTargetClient cap, List<Object?> capTable) {
-    capTable.add(cap.capability);
-    setCapabilityField(0, capTable.length - 1);
+  void setTargetTyped(PipelineTargetClient cap, CapabilityTableBuilder capTable) {
+    setCapabilityField(0, capTable.add(cap.capability));
   }
 }
 
@@ -7582,9 +7567,8 @@ final class ComplexTestServiceOpenUploadResultsBuilder extends StructBuilder {
     setCapabilityField(0, capTableIndex);
   }
 
-  void setSinkTyped(ByteSinkClient cap, List<Object?> capTable) {
-    capTable.add(cap.capability);
-    setCapabilityField(0, capTable.length - 1);
+  void setSinkTyped(ByteSinkClient cap, CapabilityTableBuilder capTable) {
+    setCapabilityField(0, capTable.add(cap.capability));
   }
 }
 
@@ -7701,9 +7685,8 @@ final class ComplexTestServiceOpenDownloadResultsBuilder extends StructBuilder {
     setCapabilityField(0, capTableIndex);
   }
 
-  void setSourceTyped(ByteSourceClient cap, List<Object?> capTable) {
-    capTable.add(cap.capability);
-    setCapabilityField(0, capTable.length - 1);
+  void setSourceTyped(ByteSourceClient cap, CapabilityTableBuilder capTable) {
+    setCapabilityField(0, capTable.add(cap.capability));
   }
 
   ListBuilder<KeyValueBuilder> initMetadata(int length) {
@@ -7813,9 +7796,8 @@ final class ComplexTestServiceGetRepositoryResultsBuilder extends StructBuilder 
     setCapabilityField(0, capTableIndex);
   }
 
-  void setRepositoryTyped(RepositoryClient cap, List<Object?> capTable) {
-    capTable.add(cap.capability);
-    setCapabilityField(0, capTable.length - 1);
+  void setRepositoryTyped(RepositoryClient cap, CapabilityTableBuilder capTable) {
+    setCapabilityField(0, capTable.add(cap.capability));
   }
 }
 
@@ -7913,9 +7895,8 @@ final class ComplexTestServiceGetFactoryResultsBuilder extends StructBuilder {
     setCapabilityField(0, capTableIndex);
   }
 
-  void setFactoryTyped(CapabilityFactoryClient cap, List<Object?> capTable) {
-    capTable.add(cap.capability);
-    setCapabilityField(0, capTable.length - 1);
+  void setFactoryTyped(CapabilityFactoryClient cap, CapabilityTableBuilder capTable) {
+    setCapabilityField(0, capTable.add(cap.capability));
   }
 }
 
@@ -7977,9 +7958,8 @@ final class ComplexTestServiceUseDiamondParamsBuilder extends StructBuilder {
     setCapabilityField(0, capTableIndex);
   }
 
-  void setDiamondTyped(DiamondClient cap, List<Object?> capTable) {
-    capTable.add(cap.capability);
-    setCapabilityField(0, capTable.length - 1);
+  void setDiamondTyped(DiamondClient cap, CapabilityTableBuilder capTable) {
+    setCapabilityField(0, capTable.add(cap.capability));
   }
 
   set value(int v) {
@@ -8285,9 +8265,8 @@ final class ComplexTestServiceProbePipelineTargetParamsBuilder extends StructBui
     setCapabilityField(0, capTableIndex);
   }
 
-  void setTargetTyped(PipelineTargetClient cap, List<Object?> capTable) {
-    capTable.add(cap.capability);
-    setCapabilityField(0, capTable.length - 1);
+  void setTargetTyped(PipelineTargetClient cap, CapabilityTableBuilder capTable) {
+    setCapabilityField(0, capTable.add(cap.capability));
   }
 
   set payload(Uint8List? v) {
@@ -8463,9 +8442,8 @@ final class ComplexTestServiceMakePromisedPipelineResultsBuilder extends StructB
     setCapabilityField(0, capTableIndex);
   }
 
-  void setTargetTyped(PipelineTargetClient cap, List<Object?> capTable) {
-    capTable.add(cap.capability);
-    setCapabilityField(0, capTable.length - 1);
+  void setTargetTyped(PipelineTargetClient cap, CapabilityTableBuilder capTable) {
+    setCapabilityField(0, capTable.add(cap.capability));
   }
 }
 
@@ -8527,9 +8505,8 @@ final class ComplexTestServiceEchoPipelineTargetLaterParamsBuilder extends Struc
     setCapabilityField(0, capTableIndex);
   }
 
-  void setTargetTyped(PipelineTargetClient cap, List<Object?> capTable) {
-    capTable.add(cap.capability);
-    setCapabilityField(0, capTable.length - 1);
+  void setTargetTyped(PipelineTargetClient cap, CapabilityTableBuilder capTable) {
+    setCapabilityField(0, capTable.add(cap.capability));
   }
 
   set delayMs(int v) {
@@ -8601,9 +8578,8 @@ final class ComplexTestServiceEchoPipelineTargetLaterResultsBuilder extends Stru
     setCapabilityField(0, capTableIndex);
   }
 
-  void setTargetTyped(PipelineTargetClient cap, List<Object?> capTable) {
-    capTable.add(cap.capability);
-    setCapabilityField(0, capTable.length - 1);
+  void setTargetTyped(PipelineTargetClient cap, CapabilityTableBuilder capTable) {
+    setCapabilityField(0, capTable.add(cap.capability));
   }
 }
 
@@ -11437,17 +11413,17 @@ class ComplexTestServiceClient extends Capability {
   ComplexTestServiceClient(this._cap);
   Capability get capability => _cap;
 
-  Future<ComplexTestServiceEchoResultsReader> echo(void Function(ComplexTestServiceEchoParamsBuilder, List<Object?> capTable) build) async {
-    final capTable = <Object?>[];
-    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 0, (anyPtr) => build(anyPtr.initStruct(complexTestServiceEchoParamsFactory), capTable), paramsCapabilities: capTable.cast<Capability>());
+  Future<ComplexTestServiceEchoResultsReader> echo(void Function(ComplexTestServiceEchoParamsBuilder, CapabilityTableBuilder capTable) build) async {
+    final capTable = CapabilityTableBuilder();
+    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 0, (anyPtr) => build(anyPtr.initStruct(complexTestServiceEchoParamsFactory), capTable), paramsCapabilities: capTable.capabilities);
     return result.payload.getTyped(complexTestServiceEchoResultsFactory, capabilities: result.caps);
   }
 
-  ComplexTestServiceEchoPipeline echoPipeline(void Function(ComplexTestServiceEchoParamsBuilder, List<Object?> capTable) build) {
+  ComplexTestServiceEchoPipeline echoPipeline(void Function(ComplexTestServiceEchoParamsBuilder, CapabilityTableBuilder capTable) build) {
     final mb = MessageBuilder();
-    final capTable = <Object?>[];
+    final capTable = CapabilityTableBuilder();
     build(mb.initRoot(complexTestServiceEchoParamsFactory), capTable);
-    return ComplexTestServiceEchoPipeline._(_cap.beginDispatch(0xd7fb0472c16375ee, 0, RpcPayload.fromBytes(mb.serialize()), paramsCapabilities: capTable.cast<Capability>()));
+    return ComplexTestServiceEchoPipeline._(_cap.beginDispatch(0xd7fb0472c16375ee, 0, RpcPayload.fromBytes(mb.serialize()), paramsCapabilities: capTable.capabilities));
   }
 
   Future<ComplexTestServiceEchoScalarsResultsReader> echoScalars(void Function(ComplexTestServiceEchoScalarsParamsBuilder) build) async {
@@ -11480,17 +11456,17 @@ class ComplexTestServiceClient extends Capability {
     return result.getValueTyped(valueCodec);
   }
 
-  Future<ComplexTestServiceExchangeCapabilitiesResultsReader> exchangeCapabilities(void Function(ComplexTestServiceExchangeCapabilitiesParamsBuilder, List<Object?> capTable) build) async {
-    final capTable = <Object?>[];
-    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 5, (anyPtr) => build(anyPtr.initStruct(complexTestServiceExchangeCapabilitiesParamsFactory), capTable), paramsCapabilities: capTable.cast<Capability>());
+  Future<ComplexTestServiceExchangeCapabilitiesResultsReader> exchangeCapabilities(void Function(ComplexTestServiceExchangeCapabilitiesParamsBuilder, CapabilityTableBuilder capTable) build) async {
+    final capTable = CapabilityTableBuilder();
+    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 5, (anyPtr) => build(anyPtr.initStruct(complexTestServiceExchangeCapabilitiesParamsFactory), capTable), paramsCapabilities: capTable.capabilities);
     return result.payload.getTyped(complexTestServiceExchangeCapabilitiesResultsFactory, capabilities: result.caps);
   }
 
-  ComplexTestServiceExchangeCapabilitiesPipeline exchangeCapabilitiesPipeline(void Function(ComplexTestServiceExchangeCapabilitiesParamsBuilder, List<Object?> capTable) build) {
+  ComplexTestServiceExchangeCapabilitiesPipeline exchangeCapabilitiesPipeline(void Function(ComplexTestServiceExchangeCapabilitiesParamsBuilder, CapabilityTableBuilder capTable) build) {
     final mb = MessageBuilder();
-    final capTable = <Object?>[];
+    final capTable = CapabilityTableBuilder();
     build(mb.initRoot(complexTestServiceExchangeCapabilitiesParamsFactory), capTable);
-    return ComplexTestServiceExchangeCapabilitiesPipeline._(_cap.beginDispatch(0xd7fb0472c16375ee, 5, RpcPayload.fromBytes(mb.serialize()), paramsCapabilities: capTable.cast<Capability>()));
+    return ComplexTestServiceExchangeCapabilitiesPipeline._(_cap.beginDispatch(0xd7fb0472c16375ee, 5, RpcPayload.fromBytes(mb.serialize()), paramsCapabilities: capTable.capabilities));
   }
 
   Future<ComplexTestServiceCallObserverResultsReader> callObserver(void Function(ComplexTestServiceCallObserverParamsBuilder) build, {required Capability observer}) async {

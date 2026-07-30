@@ -642,7 +642,34 @@ fi
 # results/exception union and exceptions go through a separate builder.
 
 run_section "RPC flags golden: Dart encodes -> capnp CLI decodes"
-RPC_SCHEMA=/usr/local/include/capnp/rpc.capnp
+# /usr/local/include is where this repo's own CI (compat.yml) and the
+# devcontainer build capnp from source into, but a local dev machine's capnp
+# — installed via a system package manager, Homebrew, Nix, etc. — commonly
+# ships rpc.capnp somewhere else entirely. CAPNP_RPC_SCHEMA lets any of those
+# setups override the path explicitly; otherwise fall back to checking each
+# common install location in turn.
+if [[ -n "${CAPNP_RPC_SCHEMA:-}" ]]; then
+  RPC_SCHEMA="$CAPNP_RPC_SCHEMA"
+else
+  RPC_SCHEMA=""
+  for candidate in \
+    /usr/local/include/capnp/rpc.capnp \
+    /usr/include/capnp/rpc.capnp \
+    /opt/homebrew/include/capnp/rpc.capnp \
+    /opt/local/include/capnp/rpc.capnp
+  do
+    if [[ -f "$candidate" ]]; then
+      RPC_SCHEMA="$candidate"
+      break
+    fi
+  done
+fi
+if [[ -z "$RPC_SCHEMA" || ! -f "$RPC_SCHEMA" ]]; then
+  echo "error: could not find capnp's own rpc.capnp schema (looked at the" >&2
+  echo "usual install locations). Set CAPNP_RPC_SCHEMA=/path/to/rpc.capnp" >&2
+  echo "to point at your capnp installation's copy." >&2
+  exit 1
+fi
 RPCFLAGS_TMP="$(mktemp -d)"
 trap 'rm -rf "$RPCFLAGS_TMP"' EXIT
 rpcflags_dart() { (cd packages/capnproto_dart_rpc && dart run tool/rpc_flags_golden_check.dart "$@"); }

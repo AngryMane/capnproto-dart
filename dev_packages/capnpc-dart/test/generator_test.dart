@@ -465,11 +465,10 @@ void main() {
       expect(
         src,
         contains(
-          'void setSessionsTyped(List<SessionClient> caps, List<Object?> capTable)',
+          'void setSessionsTyped(List<SessionClient> caps, CapabilityTableBuilder capTable)',
         ),
       );
-      expect(src, contains('capTable.add(caps[i].capability)'));
-      expect(src, contains('builder[i] = capTable.length - 1'));
+      expect(src, contains('builder[i] = capTable.add(caps[i].capability)'));
     });
 
     test('interface field builder exposes raw setter and typed setter', () {
@@ -490,10 +489,10 @@ void main() {
       expect(
         src,
         contains(
-          'void setSessionTyped(SessionClient cap, List<Object?> capTable)',
+          'void setSessionTyped(SessionClient cap, CapabilityTableBuilder capTable)',
         ),
       );
-      expect(src, contains('capTable.add(cap.capability)'));
+      expect(src, contains('setCapabilityField(0, capTable.add(cap.capability))'));
     });
   });
 
@@ -1949,6 +1948,309 @@ void main() {
             'inner = FooGetBarPipeline_${coincidentStructId.toRadixString(16)}(call, [...const <int>[], 0])',
           ),
         );
+      },
+    );
+  });
+
+  group('generateDartFile — nested capability params (GEN, params-side)', () {
+    // Shared fixture ids/helpers for the cases below: interface `Session`
+    // (the capability type being nested), and a `Svc.get` method whose
+    // params struct id/shape varies per test.
+    const sessionIfaceId2 = 9001;
+    const svcIfaceId = 9002;
+    const paramsId2 = 9003;
+    const resultsId2 = 9004;
+
+    SchemaNode session2() => interfaceNode(sessionIfaceId2, 'Session', []);
+    SchemaNode emptyResults() => structNode(resultsId2, 'GetResults', 0, 0, []);
+
+    String generateFor(SchemaNode paramsNode, {List<SchemaNode> extra = const []}) {
+      final iface = interfaceNode(svcIfaceId, 'Svc', [
+        SchemaMethod(
+          name: 'get',
+          ordinal: 0,
+          paramStructTypeId: paramsId2,
+          resultStructTypeId: resultsId2,
+        ),
+      ]);
+      final file = fileNode(1, [
+        SchemaNestedNode(name: 'Session', id: sessionIfaceId2),
+        SchemaNestedNode(name: 'Svc', id: svcIfaceId),
+      ]);
+      return generateDartFile(file, [
+        file,
+        paramsNode,
+        emptyResults(),
+        session2(),
+        iface,
+        ...extra,
+      ]);
+    }
+
+    test('direct Interface field only: named-parameter API, no capTable', () {
+      final paramsNode = structNode(paramsId2, 'GetParams', 0, 1, [
+        ptrField('session', 0, 0, InterfaceRefType(sessionIfaceId2)),
+      ]);
+      final s = generateFor(paramsNode);
+      expect(
+        s,
+        contains(
+          'Future<GetResultsReader> get(void Function(GetParamsBuilder) build, {required Capability session}) async {',
+        ),
+      );
+      // The per-field setSessionTyped(cap, CapabilityTableBuilder) helper is
+      // still generated on GetParamsBuilder (it's generated for every
+      // Interface-typed struct field, independent of params-role) — only
+      // the *client method*'s own build-callback signature is asserted
+      // above to confirm it stays on the simpler named-parameter form.
+      expect(
+        s,
+        isNot(
+          contains(
+            'void Function(GetParamsBuilder, CapabilityTableBuilder capTable) build',
+          ),
+        ),
+      );
+    });
+
+    test('Interface nested inside a struct field: two-arg build callback', () {
+      const bundleId = 9010;
+      final bundleNode = structNode(bundleId, 'Bundle', 0, 1, [
+        ptrField('session', 0, 0, InterfaceRefType(sessionIfaceId2)),
+      ]);
+      final paramsNode = structNode(paramsId2, 'GetParams', 0, 1, [
+        ptrField('bundle', 0, 0, StructRefType(bundleId)),
+      ]);
+      final s = generateFor(paramsNode, extra: [bundleNode]);
+      expect(
+        s,
+        contains(
+          'Future<GetResultsReader> get(void Function(GetParamsBuilder, CapabilityTableBuilder capTable) build) async {',
+        ),
+      );
+      expect(s, contains('final capTable = CapabilityTableBuilder();'));
+      expect(s, contains('paramsCapabilities: capTable.capabilities'));
+    });
+
+    test('Interface nested inside a group field: two-arg build callback', () {
+      const groupId = 9011;
+      final groupNode = structNode(groupId, 'MyGroup', 0, 1, [
+        ptrField('session', 0, 0, InterfaceRefType(sessionIfaceId2)),
+      ], isGroup: true);
+      final paramsNode = structNode(paramsId2, 'GetParams', 0, 1, [
+        SchemaField(
+          name: 'myGroup',
+          codeOrder: 0,
+          ordinal: 0,
+          discriminantValue: 0xFFFF,
+          body: GroupField(typeId: groupId),
+        ),
+      ]);
+      final s = generateFor(paramsNode, extra: [groupNode]);
+      expect(
+        s,
+        contains(
+          'Future<GetResultsReader> get(void Function(GetParamsBuilder, CapabilityTableBuilder capTable) build) async {',
+        ),
+      );
+    });
+
+    test('List(Interface) field directly on params: two-arg build callback', () {
+      final paramsNode = structNode(paramsId2, 'GetParams', 0, 1, [
+        ptrField(
+          'sessions',
+          0,
+          0,
+          ListType(InterfaceRefType(sessionIfaceId2)),
+        ),
+      ]);
+      final s = generateFor(paramsNode);
+      expect(
+        s,
+        contains(
+          'Future<GetResultsReader> get(void Function(GetParamsBuilder, CapabilityTableBuilder capTable) build) async {',
+        ),
+      );
+    });
+
+    test(
+      'direct + nested capability mixed on the same params struct: both '
+      'collapse into the capTable accumulator, not the named-parameter form',
+      () {
+        const bundleId = 9012;
+        final bundleNode = structNode(bundleId, 'Bundle', 0, 1, [
+          ptrField('session', 0, 0, InterfaceRefType(sessionIfaceId2)),
+        ]);
+        final paramsNode = structNode(paramsId2, 'GetParams', 0, 2, [
+          ptrField('direct', 0, 0, InterfaceRefType(sessionIfaceId2)),
+          ptrField('bundle', 1, 1, StructRefType(bundleId)),
+        ]);
+        final s = generateFor(paramsNode, extra: [bundleNode]);
+        expect(
+          s,
+          contains(
+            'Future<GetResultsReader> get(void Function(GetParamsBuilder, CapabilityTableBuilder capTable) build) async {',
+          ),
+        );
+        // Not the named-Capability-parameter sugar for `direct` — that would
+        // conflict with the capTable-assigned index for the same field's
+        // setDirect(int) call.
+        expect(s, isNot(contains('required Capability direct')));
+      },
+    );
+
+    test(
+      'capability reachable only through a generic struct instantiation is '
+      'not detected — no capTable parameter is generated (documented '
+      'limitation, see docs/howto/schema-and-codegen.md)',
+      () {
+        const optionalId = 9013;
+        // Optional(Session)-shaped struct: a generic instantiation
+        // (non-empty typeArgs) wrapping the capability.
+        final optionalNode = structNode(optionalId, 'Optional', 0, 1, [
+          ptrField('some', 0, 0, InterfaceRefType(sessionIfaceId2)),
+        ], parameters: const ['T']);
+        final paramsNode = structNode(paramsId2, 'GetParams', 0, 1, [
+          ptrField(
+            'observer',
+            0,
+            0,
+            StructRefType(optionalId, typeArgs: [InterfaceRefType(sessionIfaceId2)]),
+          ),
+        ]);
+        final s = generateFor(paramsNode, extra: [optionalNode]);
+        expect(
+          s,
+          contains(
+            'Future<GetResultsReader> get(void Function(GetParamsBuilder) build) async {',
+          ),
+        );
+        // Same caveat as the "direct Interface field only" test: `Optional`
+        // itself still gets a per-field setSomeTyped(cap,
+        // CapabilityTableBuilder) helper (generated for any Interface-typed
+        // struct field, regardless of reachability from a method's params);
+        // what's under test is that `get`'s own build callback — asserted
+        // above — doesn't gain one.
+      },
+    );
+
+    test(
+      'a self-referential struct with a capability reachable only through '
+      'the cyclic field does not hang and is not detected',
+      () {
+        const nodeId = 9014;
+        // struct Node { next: Node; session: Session; } — `session` is only
+        // reachable by first following the cyclic `next` field forever, so
+        // (mirroring _structContainsCapability's cycle handling) it must
+        // terminate and report "no capability" rather than hang.
+        final selfRefNode = structNode(nodeId, 'Node', 0, 2, [
+          ptrField('next', 0, 0, StructRefType(nodeId)),
+        ]);
+        final paramsNode = structNode(paramsId2, 'GetParams', 0, 1, [
+          ptrField('node', 0, 0, StructRefType(nodeId)),
+        ]);
+        final s = generateFor(paramsNode, extra: [selfRefNode]);
+        expect(
+          s,
+          contains(
+            'Future<GetResultsReader> get(void Function(GetParamsBuilder) build) async {',
+          ),
+        );
+      },
+    );
+
+    test('`-> stream` method with a nested capability param uses the capTable '
+        'accumulator with dispatchStreaming', () {
+      const bundleId = 9015;
+      final bundleNode = structNode(bundleId, 'Bundle', 0, 1, [
+        ptrField('session', 0, 0, InterfaceRefType(sessionIfaceId2)),
+      ]);
+      final paramsNode = structNode(paramsId2, 'UploadParams', 0, 1, [
+        ptrField('bundle', 0, 0, StructRefType(bundleId)),
+      ]);
+      final iface = interfaceNode(svcIfaceId, 'Svc', [
+        SchemaMethod(
+          name: 'upload',
+          ordinal: 0,
+          paramStructTypeId: paramsId2,
+          // 0x995f9a3377c0b16e == dart_generator.dart's streamResultTypeId.
+          resultStructTypeId: 0x995f9a3377c0b16e,
+        ),
+      ]);
+      final file = fileNode(1, [
+        SchemaNestedNode(name: 'Session', id: sessionIfaceId2),
+        SchemaNestedNode(name: 'Svc', id: svcIfaceId),
+      ]);
+      final s = generateDartFile(file, [
+        file,
+        paramsNode,
+        bundleNode,
+        session2(),
+        iface,
+      ]);
+      expect(
+        s,
+        contains(
+          'Future<void> upload(void Function(UploadParamsBuilder, CapabilityTableBuilder capTable) build) async {',
+        ),
+      );
+      expect(
+        s,
+        contains(
+          'dispatchStreaming(',
+        ),
+      );
+      expect(s, contains('paramsCapabilities: capTable.capabilities'));
+    });
+
+    test(
+      'a capability-returning method with a nested capability param also '
+      'generates a xxxPipeline() using the capTable accumulator with '
+      'beginDispatch',
+      () {
+        const bundleId = 9016;
+        final bundleNode = structNode(bundleId, 'Bundle', 0, 1, [
+          ptrField('session', 0, 0, InterfaceRefType(sessionIfaceId2)),
+        ]);
+        final paramsNode = structNode(paramsId2, 'GetParams', 0, 1, [
+          ptrField('bundle', 0, 0, StructRefType(bundleId)),
+        ]);
+        final resultsNode = structNode(resultsId2, 'GetResults', 0, 1, [
+          ptrField('session', 0, 0, InterfaceRefType(sessionIfaceId2)),
+        ]);
+        final iface = interfaceNode(svcIfaceId, 'Svc', [
+          SchemaMethod(
+            name: 'get',
+            ordinal: 0,
+            paramStructTypeId: paramsId2,
+            resultStructTypeId: resultsId2,
+          ),
+        ]);
+        final file = fileNode(1, [
+          SchemaNestedNode(name: 'Session', id: sessionIfaceId2),
+          SchemaNestedNode(name: 'Svc', id: svcIfaceId),
+        ]);
+        final s = generateDartFile(file, [
+          file,
+          paramsNode,
+          bundleNode,
+          resultsNode,
+          session2(),
+          iface,
+        ]);
+        expect(
+          s,
+          contains(
+            'SvcGetPipeline getPipeline(void Function(GetParamsBuilder, CapabilityTableBuilder capTable) build) {',
+          ),
+        );
+        expect(
+          s,
+          contains(
+            'beginDispatch(',
+          ),
+        );
+        expect(s, contains('paramsCapabilities: capTable.capabilities'));
       },
     );
   });
