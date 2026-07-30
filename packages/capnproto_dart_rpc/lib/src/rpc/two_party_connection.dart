@@ -862,6 +862,11 @@ class TwoPartyRpcConnection implements RpcConnection {
     }
   }
 
+  /// The returned Future always completes successfully (never with an
+  /// error), and does so even if the underlying sink fails partway through
+  /// the batched flush — see [_flushPendingReleases]'s doc comment for why.
+  /// Callers (only [_ImportedCapability.dispose]) can therefore always
+  /// `await` it without a `try`/`catch`.
   Future<void> _releaseImport(int importId) {
     final count = _importRefCounts[importId];
     if (count == null || count <= 0) return Future.value();
@@ -873,12 +878,25 @@ class TwoPartyRpcConnection implements RpcConnection {
 
   /// Sends one batched Release per import ID accumulated in
   /// [_pendingReleaseCounts] since the last flush — see [_releaseImport].
+  ///
+  /// Never throws, and never leaves a Release permanently un-sent while the
+  /// connection is still usable: [_sendRaw] catches any synchronous sink
+  /// failure itself and tears the connection down (setting [_closedError])
+  /// rather than propagating it here, so this loop can't partially fail in
+  /// a way callers would need to react to. Once torn down, this loop stops
+  /// calling [_sendRaw] for the remaining entries instead of trying (and
+  /// silently no-op'ing on) each one — deliberately dropping them
+  /// unsent, not retrying later: a torn-down connection means the peer
+  /// discards every export it held for this vat anyway (matching this
+  /// vat's own [_tearDown] clearing its side symmetrically), so there is no
+  /// longer anything for a Release to reconcile.
   void _flushPendingReleases() {
     _releaseFlushFuture = null;
     if (_pendingReleaseCounts.isEmpty) return;
     final pending = Map<int, int>.of(_pendingReleaseCounts);
     _pendingReleaseCounts.clear();
     for (final entry in pending.entries) {
+      if (_closedError != null) return;
       _sendRaw(buildReleaseMessage(entry.key, entry.value));
     }
   }
@@ -2113,6 +2131,14 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// released — this should settle back to zero once every import that
   /// ever broke has also been fully released.
   int get debugBrokenImportCount => _brokenImports.length;
+
+  /// Number of import IDs with a Release batched but not yet flushed to the
+  /// wire (see [_releaseImport]/[_flushPendingReleases]). Always zero
+  /// between microtasks — it's only ever non-zero for the duration of a
+  /// single, already-scheduled flush, and [_flushPendingReleases] clears it
+  /// up front before that flush sends anything (so a mid-flush sink failure
+  /// never leaves it non-empty either).
+  int get debugPendingReleaseCount => _pendingReleaseCounts.length;
 
   /// Number of incoming calls with some tracked answer-lifecycle state:
   /// dispatch in flight ([_pendingCaps]), a resolved-but-not-yet-finished

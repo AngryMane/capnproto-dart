@@ -32,6 +32,42 @@ class _SynchronousThrowingSink implements StreamSink<Uint8List> {
   Future<void> get done => _done.future;
 }
 
+// Forwards every message to [_inner] except the [throwOnReleaseNumber]-th
+// Release message (1-based, counting only RpcMessageType.release), which
+// throws instead of forwarding — for exercising a batched flush
+// (_flushPendingReleases) that fails partway through.
+class _ThrowOnNthReleaseSink implements StreamSink<Uint8List> {
+  final StreamSink<Uint8List> _inner;
+  final int throwOnReleaseNumber;
+  int _releasesSeen = 0;
+
+  _ThrowOnNthReleaseSink(this._inner, this.throwOnReleaseNumber);
+
+  @override
+  void add(Uint8List data) {
+    if (parseRpcMessage(data).type == RpcMessageType.release) {
+      _releasesSeen++;
+      if (_releasesSeen == throwOnReleaseNumber) {
+        throw StateError('deliberate failure on release #$_releasesSeen');
+      }
+    }
+    _inner.add(data);
+  }
+
+  @override
+  void addError(Object error, [StackTrace? stackTrace]) =>
+      _inner.addError(error, stackTrace);
+
+  @override
+  Future<void> addStream(Stream<Uint8List> stream) => _inner.addStream(stream);
+
+  @override
+  Future<void> close() => _inner.close();
+
+  @override
+  Future<void> get done => _inner.done;
+}
+
 // ---------------------------------------------------------------------------
 // Minimal in-memory schema: Echo interface
 //   method echo(message :Text) -> (reply :Text)
@@ -4646,6 +4682,71 @@ void main() {
 
       await clientToServer.close();
       await server.done;
+    });
+
+    test('Release batching: a sink failure partway through a flush tears the '
+        'connection down cleanly instead of hanging or leaking bookkeeping — '
+        'the flush Future still resolves, the pending-release map ends up '
+        'empty, and every import is released regardless of which Release '
+        'messages actually made it out', () async {
+      final input = StreamController<Uint8List>();
+      final realOutput = StreamController<Uint8List>();
+      realOutput.stream.listen((_) {});
+      // Throws once _sendRaw's add() delivers the *second* Release
+      // message of the batch — exercising both "a send failure partway
+      // through the flush loop" and "the flush must stop trying the
+      // remaining entries once torn down" (see _flushPendingReleases).
+      final throwingSink = _ThrowOnNthReleaseSink(realOutput.sink, 2);
+
+      final capReceiver = CapReceivingServer();
+      final conn = TwoPartyRpcConnection.server(
+        incoming: input.stream,
+        outgoing: throwingSink,
+        bootstrap: capReceiver,
+      );
+
+      // One incoming Call hands the server three imports at once, so
+      // disposing all three below batches into a single flush.
+      input.add(
+        buildCallMessage(
+          questionId: 1,
+          targetImportId: 0,
+          interfaceId: _echoInterfaceId,
+          methodId: _echoMethodId,
+          paramsBytes: _buildEchoParams(''),
+          capTableDescriptors: const [
+            RpcCapDescriptor.senderHosted(20),
+            RpcCapDescriptor.senderHosted(21),
+            RpcCapDescriptor.senderHosted(22),
+          ],
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(capReceiver.lastParams, hasLength(3));
+      expect(conn.debugImportCount, equals(3));
+
+      // Dispose all three without awaiting in between: each dispose()
+      // only yields at its own `await _importIdFuture` (already resolved,
+      // so a pure microtask hop), and every one of those continuations
+      // runs before the flush microtask they schedule — so all three
+      // Release sends land in the same _flushPendingReleases call.
+      final disposals = Future.wait(
+        capReceiver.lastParams.map((cap) => cap.dispose()),
+      );
+
+      // Must resolve on its own (never hang, never surface the sink's
+      // error) even though the batched flush failed partway through.
+      await disposals.timeout(const Duration(seconds: 2));
+
+      expect(conn.debugPendingReleaseCount, equals(0));
+      expect(conn.debugImportCount, equals(0));
+      expect(conn.debugBrokenImportCount, equals(0));
+
+      // The connection is torn down as a result (matching every other
+      // _sendRaw failure) — done completes, carrying the sink's error.
+      await expectLater(conn.done, throwsA(isA<StateError>()));
+
+      await input.close();
     });
 
     test(
