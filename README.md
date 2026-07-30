@@ -7,7 +7,7 @@ A pure Dart implementation of [Cap'n Proto](https://capnproto.org) serialization
 ## Why
 
 The only existing way to use Cap'n Proto from Flutter is to call C++ or Rust libraries via FFI.  
-This approach introduces complex build configurations, hard-to-debug FFI boundaries.  
+This approach introduces complex build configurations and hard-to-debug FFI boundaries.  
 
 This repository provides a pure Dart implementation that integrates like any other Dart package.  
 
@@ -107,13 +107,19 @@ This library implements **Cap'n Proto RPC Level 1** for two-party connections:
 | Tail calls (`Capability.tryTailCall`) | Supported |
 | Receiving `Resolve` / `Disembargo` from peer | Supported |
 | Sending `Resolve` / `Disembargo` from Dart vat | Supported |
+| Non-owning capability references (`WeakCapabilityRef`) | Supported |
+| Batched `Release` messages | Supported |
+| `Return.releaseParamCaps` | Supported |
+| `Return.noFinishNeeded` | Supported |
 | Three-party handoff (Level 3) | **Not in scope** |
 | Persistent capabilities (Level 2) | **Not in scope** |
 | Reference equality / Join (Level 4) | **Not in scope** |
 
 Level 2 (persistent capabilities), Level 3 (three-party handoff), and Level 4 (Join) are not implemented.  
-Weak capability references, batch Release, `releaseParamCaps`, and `noFinishNeeded` (all Level 1 optimizations, not correctness requirements) are also not implemented.  
-Applications with long-lived connections and high capability churn should release capabilities promptly and should validate their workload against the lifecycle/stress tests in this repository.
+The implementation also supports the following optional Level 1 lifecycle optimizations:
+Weak capability references, batched `Release` messages, `Return.releaseParamCaps`, and
+`Return.noFinishNeeded`.  
+Applications with long-lived connections and high capability churn should still release capabilities promptly and validate their workload against the lifecycle/stress tests in this repository.
 
 The RPC layer is tested for interoperability with Rust servers/clients using the [`capnp`](https://crates.io/crates/capnp) crate (versions 0.23–0.26).
 

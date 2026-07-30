@@ -338,6 +338,12 @@ class TwoPartyRpcConnection implements RpcConnection {
       paramsBytes: paramsBytes,
       paramsCapabilities: paramsCapabilities,
     ).catchError((Object e, StackTrace st) {
+      // _buildAndSendCall only ever completes its Future with an error
+      // before _sendRaw has run (nothing after that point in its body can
+      // throw) — see _rollbackQuestionParamExports's doc comment — so any
+      // params export refs _resolveCapTable already bumped for this qid
+      // never actually reached the peer and must be rolled back here.
+      _rollbackQuestionParamExports(qid);
       _questions.remove(qid);
       _questionSent.remove(qid);
       if (!sentCompleter.isCompleted) sentCompleter.completeError(e, st);
@@ -389,6 +395,11 @@ class TwoPartyRpcConnection implements RpcConnection {
     }
 
     void onError(Object e, StackTrace st) {
+      // Same invariant as _startCall's catchError: every path below that
+      // reaches onError does so before _sendRaw ever runs (both the sync
+      // branch and the async IIFE only call onSent(), never onError(), once
+      // _sendRaw succeeds) — see _rollbackQuestionParamExports's doc comment.
+      _rollbackQuestionParamExports(qid);
       _questions.remove(qid);
       _questionSent.remove(qid);
       if (!sentCompleter.isCompleted) sentCompleter.completeError(e, st);
@@ -436,24 +447,34 @@ class TwoPartyRpcConnection implements RpcConnection {
     int? qid,
   }) async {
     final capEntries = <RpcCapDescriptor>[];
-    for (final cap in paramsCapabilities) {
-      if (cap is _ImportedCapability && cap._conn == this) {
-        final id = await cap._importIdFuture;
-        _throwIfImportBroken(id);
-        capEntries.add(RpcCapDescriptor.receiverHosted(id));
-      } else if (cap is _WirePipelinedCapability &&
-          cap._conn == this &&
-          !cap._hasResolved) {
-        capEntries.add(
-          RpcCapDescriptor.receiverAnswer(cap._parentQid, cap._transformPath),
-        );
-      } else {
-        capEntries.add(
-          RpcCapDescriptor.senderHosted(_getOrCreateExportId(cap)),
-        );
+    // try/finally, not a plain trailing call: a broken import or a rejected
+    // _importIdFuture partway through this loop (_throwIfImportBroken/await
+    // above) must still record whatever senderHosted/senderPromise exports
+    // _getOrCreateExportId already created for entries processed *before*
+    // that point — otherwise their refcount bump would never be visible to
+    // _rollbackQuestionParamExports and would leak. See that method's doc
+    // comment for the failure this guards against.
+    try {
+      for (final cap in paramsCapabilities) {
+        if (cap is _ImportedCapability && cap._conn == this) {
+          final id = await cap._importIdFuture;
+          _throwIfImportBroken(id);
+          capEntries.add(RpcCapDescriptor.receiverHosted(id));
+        } else if (cap is _WirePipelinedCapability &&
+            cap._conn == this &&
+            !cap._hasResolved) {
+          capEntries.add(
+            RpcCapDescriptor.receiverAnswer(cap._parentQid, cap._transformPath),
+          );
+        } else {
+          capEntries.add(
+            RpcCapDescriptor.senderHosted(_getOrCreateExportId(cap)),
+          );
+        }
       }
+    } finally {
+      if (qid != null) _recordParamExportIds(qid, capEntries);
     }
-    if (qid != null) _recordParamExportIds(qid, capEntries);
     return capEntries;
   }
 
@@ -494,24 +515,30 @@ class TwoPartyRpcConnection implements RpcConnection {
     if (needsAsync) return _resolveCapTable(paramsCapabilities, qid: qid);
 
     final capEntries = <RpcCapDescriptor>[];
-    for (final cap in paramsCapabilities) {
-      if (cap is _ImportedCapability && cap._conn == this) {
-        final id = cap._cachedState!.importId;
-        _throwIfImportBroken(id);
-        capEntries.add(RpcCapDescriptor.receiverHosted(id));
-      } else if (cap is _WirePipelinedCapability &&
-          cap._conn == this &&
-          !cap._hasResolved) {
-        capEntries.add(
-          RpcCapDescriptor.receiverAnswer(cap._parentQid, cap._transformPath),
-        );
-      } else {
-        capEntries.add(
-          RpcCapDescriptor.senderHosted(_getOrCreateExportId(cap)),
-        );
+    // See _resolveCapTable's matching comment: try/finally so a broken
+    // import discovered partway through still records whatever exports
+    // earlier entries in this loop already created.
+    try {
+      for (final cap in paramsCapabilities) {
+        if (cap is _ImportedCapability && cap._conn == this) {
+          final id = cap._cachedState!.importId;
+          _throwIfImportBroken(id);
+          capEntries.add(RpcCapDescriptor.receiverHosted(id));
+        } else if (cap is _WirePipelinedCapability &&
+            cap._conn == this &&
+            !cap._hasResolved) {
+          capEntries.add(
+            RpcCapDescriptor.receiverAnswer(cap._parentQid, cap._transformPath),
+          );
+        } else {
+          capEntries.add(
+            RpcCapDescriptor.senderHosted(_getOrCreateExportId(cap)),
+          );
+        }
       }
+    } finally {
+      if (qid != null) _recordParamExportIds(qid, capEntries);
     }
-    if (qid != null) _recordParamExportIds(qid, capEntries);
     return capEntries;
   }
 
@@ -614,6 +641,9 @@ class TwoPartyRpcConnection implements RpcConnection {
       buildParams: buildParams,
       paramsCapabilities: paramsCapabilities,
     ).catchError((Object e, StackTrace st) {
+      // Same invariant as _startCall's catchError, for
+      // _buildAndSendCallBuilding instead — see _rollbackQuestionParamExports.
+      _rollbackQuestionParamExports(qid);
       _questions.remove(qid);
       _questionSent.remove(qid);
       if (!sentCompleter.isCompleted) sentCompleter.completeError(e, st);
@@ -1249,6 +1279,15 @@ class TwoPartyRpcConnection implements RpcConnection {
       paramsCapabilities: tailCall.paramsCapabilities,
       sendResultsToYourself: true,
     ).catchError((Object e, StackTrace st) {
+      // Same invariant as _startCall's catchError — see
+      // _rollbackQuestionParamExports. Usually a no-op here: tailCall's
+      // params are almost always _ImportedCapability from this same
+      // connection, which _resolveCapTable categorizes as receiverHosted
+      // (no export created) — but a receiverHosted-descriptor param on the
+      // *original* incoming call resolves to this vat's own capability
+      // object (see _capabilityFromDescriptor's disc-3 case), which *does*
+      // get a fresh senderHosted export when forwarded here.
+      _rollbackQuestionParamExports(qid);
       _questions.remove(qid);
       _questionSent.remove(qid);
       if (!sentCompleter.isCompleted) sentCompleter.completeError(e, st);
@@ -1573,6 +1612,24 @@ class TwoPartyRpcConnection implements RpcConnection {
       final entry = _exports[id];
       if (entry != null) _releaseExportRef(id, entry, 1);
     }
+  }
+
+  /// Undoes [_recordParamExportIds]/`_getOrCreateExportId`'s refcount bump
+  /// for [qid]'s params capabilities when the Call itself never reached
+  /// [_sendRaw] — e.g. `importIdFuture` rejects, or a broken-import check
+  /// throws, after cap table resolution already ran. The peer never
+  /// received anything in that case, so there is no reference for it to
+  /// `Release`; a real one from `Return.releaseParamCaps` would go through
+  /// [_applyReleaseParamCaps] instead, once a Return can even exist. Callers
+  /// (the `catchError`/`onError` handlers alongside every `_buildAndSendCall`
+  /// / `_buildAndSendCallBuilding` / `_startResolvedImportCall` attempt) only
+  /// ever run for a build/send that failed before committing anything to the
+  /// wire — see each call site's own doc comment for why that invariant
+  /// holds — so this is safe to call unconditionally there, with no separate
+  /// "was it actually sent" flag to track.
+  void _rollbackQuestionParamExports(int qid) {
+    final ids = _questionParamExportIds.remove(qid);
+    if (ids != null) _applyReleaseParamCaps(ids);
   }
 
   void _handleResolve(RpcMessage msg) {

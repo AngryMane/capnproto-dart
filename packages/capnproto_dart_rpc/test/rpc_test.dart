@@ -712,6 +712,18 @@ class ListCapsServer extends Capability {
 // CapReceivingServer — captures paramsCapabilities for inspection
 // ---------------------------------------------------------------------------
 
+// A capability with no behavior of its own beyond tracking whether
+// dispose() was called — used to observe whether a rolled-back/released
+// export reference actually disposed the underlying capability.
+class _TrackedCapability extends Capability {
+  bool disposed = false;
+
+  @override
+  Future<void> dispose() async {
+    disposed = true;
+  }
+}
+
 class CapReceivingServer extends Capability {
   List<Capability> lastParams = const [];
 
@@ -4513,6 +4525,127 @@ void main() {
 
       await input.close();
       await conn.done;
+    });
+
+    test('a Call whose params-capTable resolution fails partway through rolls '
+        'back the export refcount bump(s) already made, for both a '
+        'brand-new export and an already-existing one — instead of leaking '
+        'them because the Call itself never reached the wire', () async {
+      final clientToServer = StreamController<Uint8List>();
+      final serverToClient = StreamController<Uint8List>();
+      final captured = <Uint8List>[];
+      serverToClient.stream.listen(captured.add);
+
+      final capReceiver = CapReceivingServer();
+      final server = TwoPartyRpcConnection.server(
+        incoming: clientToServer.stream,
+        outgoing: serverToClient.sink,
+        bootstrap: capReceiver,
+      );
+
+      // One incoming Call hands the server two imports: a plain
+      // senderHosted one (id=20, the "target" this test dispatches
+      // through — stays healthy throughout) and a senderPromise one
+      // (id=10, broken below) — used as a params capability whose
+      // resolution fails mid-loop.
+      clientToServer.add(
+        buildCallMessage(
+          questionId: 1,
+          targetImportId: 0,
+          interfaceId: _echoInterfaceId,
+          methodId: _echoMethodId,
+          paramsBytes: _buildEchoParams(''),
+          capTableDescriptors: const [
+            RpcCapDescriptor.senderHosted(20),
+            RpcCapDescriptor.senderPromise(10),
+          ],
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(capReceiver.lastParams, hasLength(2));
+      final target = capReceiver.lastParams[0]; // import 20
+      final brokenParam = capReceiver.lastParams[1]; // import 10
+
+      clientToServer.add(
+        buildResolveExceptionMessage(promiseId: 10, reason: 'deliberate'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(server.debugBrokenImportCount, equals(1));
+
+      final baselineExportCount = server.debugExportCount; // bootstrap only
+
+      // --- Case 1: a brand-new export, created then rolled back -----------
+      //
+      // dispatch()'s params list is processed in order: freshCap (not an
+      // import) creates a fresh export first, *then* brokenParam's
+      // _throwIfImportBroken throws — exercising _resolveCapTableMaybeSync's
+      // partial-list-then-throw path.
+      final freshCap = _TrackedCapability();
+      await expectLater(
+        target.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('x')),
+          paramsCapabilities: [freshCap, brokenParam],
+        ),
+        throwsA(isA<RpcException>()),
+      );
+      // No export leaked: back to just the bootstrap export.
+      expect(server.debugExportCount, equals(baselineExportCount));
+      // The rollback's refcount decrement reached zero for a
+      // never-referenced-elsewhere export, so it disposed freshCap too —
+      // same as a real Release would.
+      expect(freshCap.disposed, isTrue);
+
+      // --- Case 2: an existing export, refcount rolled back (not removed) -
+      //
+      // reusedCap is first exported for real via a call that actually
+      // completes (so its export legitimately has remoteRefCount == 1),
+      // then reused as a param of a second, failing call — the rollback
+      // must bring remoteRefCount back to 1, not 0: this reference is
+      // still live and must not be disposed as a side effect.
+      final reusedCap = _TrackedCapability();
+      final successFuture = target.dispatch(
+        _echoInterfaceId,
+        _echoMethodId,
+        RpcPayload.fromBytes(_buildEchoParams('first')),
+        paramsCapabilities: [reusedCap],
+      );
+      final firstCall = await _waitForMessageType(
+        captured,
+        RpcMessageType.call,
+      );
+      clientToServer.add(
+        buildReturnResultsMessageFromReader(
+          answerId: firstCall.questionId,
+          resultsRoot:
+              MessageReader.deserialize(_buildEchoParams('ok')).getRootRaw(),
+          // Simulates a peer that still holds reusedCap's reference after
+          // this call — the default (true) would have this vat release it
+          // immediately (correctly — see the releaseParamCaps feature this
+          // rollback complements), which would defeat this case's whole
+          // point of exercising an *existing, still-live* export.
+          releaseParamCaps: false,
+        ),
+      );
+      await successFuture;
+      final exportCountAfterFirst = server.debugExportCount;
+      expect(exportCountAfterFirst, equals(baselineExportCount + 1));
+
+      await expectLater(
+        target.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('y')),
+          paramsCapabilities: [reusedCap, brokenParam],
+        ),
+        throwsA(isA<RpcException>()),
+      );
+      expect(server.debugExportCount, equals(exportCountAfterFirst));
+      expect(reusedCap.disposed, isFalse);
+
+      await clientToServer.close();
+      await server.done;
     });
 
     test(
