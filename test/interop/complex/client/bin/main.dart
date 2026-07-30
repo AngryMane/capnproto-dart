@@ -51,9 +51,7 @@ class _DiamondImpl extends DiamondServer {
     LeftLeftParamsReader params,
     List<Capability> paramsCapabilities,
   ) async {
-    return buildLeftResults(
-      (out) => out.result = params.getInt32Field(0) + 10,
-    );
+    return buildLeftResults((out) => out.result = params.getInt32Field(0) + 10);
   }
 
   @override
@@ -2038,22 +2036,26 @@ Future<void> _s22_errorHandling(ComplexTestServiceClient svc) async {
 Future<void> _s23_nullValues(ComplexTestServiceClient svc) async {
   section(23, 'Null and Unset Values');
 
-  // 23a: Unset text field → null (schema default not applied in Dart codegen)
-  // AllScalars.textValue has a default but XOR masking for defaults is not implemented.
-  // The field returns null when unset, which is consistent with pointer-null behavior.
+  // 23a: Unset text field → the schema-declared default value.
+  // AllScalars.textValue defaults to `.defaultGreeting`; an unset Text field
+  // is a null pointer on the wire, and per the Cap'n Proto default-value
+  // spec, a null Text pointer falls back to the schema default rather than
+  // reading as empty/null.
   final r1 = await svc.echoScalars((b) => b.initValue());
   check(
-    'unset text returns null (no default XOR in Dart codegen)',
-    r1.value!.textValue == null,
+    'unset text returns schema default',
+    r1.value!.textValue == defaultGreeting,
   );
 
-  // 23b: Null text set explicitly
+  // 23b: Text explicitly set to null — clears the pointer the same as never
+  // setting it at all, so it round-trips to the schema default too, not to
+  // null.
   final r2 = await svc.echoScalars((b) {
     b.initValue().textValue = null;
   });
   check(
-    'null text round-trips as null',
-    r2.value!.textValue == null || r2.value!.textValue!.isEmpty,
+    'null text round-trips to schema default',
+    r2.value!.textValue == defaultGreeting,
   );
 
   // 23c: Unset pointer field (data) → null

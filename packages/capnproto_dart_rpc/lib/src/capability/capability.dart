@@ -489,6 +489,29 @@ Capability vendCapabilityHandle(Capability target) {
   return _CapabilityHandle(target, refCount);
 }
 
+/// Unwraps any number of [vendCapabilityHandle] proxy layers around [cap],
+/// returning the real underlying capability.
+///
+/// Callers that need to recognize what [cap] *actually is* — e.g. the RPC
+/// connection layer deciding whether a params capability is an import from
+/// the very peer it's being sent back to (and should therefore be encoded
+/// as a cheap `receiverHosted` reference instead of a brand-new export) —
+/// must unwrap it first: generated client stubs commonly vend a fresh
+/// [_CapabilityHandle] every time their underlying capability is accessed
+/// (e.g. a `.capability` getter backed by [requireCapabilityFromResult]),
+/// so an `is _ImportedCapability`-style check against the un-unwrapped
+/// value never matches, even though the same identity checks the wire
+/// encoding relies on (e.g. `_exportIds[cap]`) still need every vended
+/// handle for one underlying capability to resolve to that single shared
+/// identity.
+Capability unwrapVendedCapability(Capability cap) {
+  var current = cap;
+  while (current is _CapabilityHandle) {
+    current = current._target;
+  }
+  return current;
+}
+
 class _CapabilityHandle extends Capability {
   final Capability _target;
   final _CapabilityRefCount _refCount;

@@ -625,6 +625,77 @@ if [[ -z "${goto_summary5:-}" ]]; then
   trap - EXIT
 fi
 
+# ── 7. RPC Level 1 optimization flags: golden test against capnp CLI ────────
+#
+# `Return.releaseParamCaps`/`Return.noFinishNeeded` (rpc.capnp) both default
+# to non-zero-byte values (true/false respectively, but releaseParamCaps'
+# *wire* default is the unusual one — a Cap'n Proto bool field defaulting to
+# true is stored inverted, so the all-zero byte an *omitted* field leaves
+# behind decodes as true, not false), so an off-by-one in this library's own
+# bit-offset math (packages/capnproto_dart_rpc/lib/src/rpc/rpc_proto.dart)
+# could easily read back correctly against its own encoder while still being
+# wrong relative to the spec. This cross-checks both directions against the
+# real `capnp` CLI decoding/encoding the actual rpc.capnp Message/Return
+# schema — not just this library's own round-trip — for all four
+# omitted/explicit-true/explicit-false combinations.
+
+run_section "RPC flags golden: Dart encodes -> capnp CLI decodes"
+RPC_SCHEMA=/usr/local/include/capnp/rpc.capnp
+RPCFLAGS_TMP="$(mktemp -d)"
+trap 'rm -rf "$RPCFLAGS_TMP"' EXIT
+rpcflags_dart() { (cd packages/capnproto_dart_rpc && dart run tool/rpc_flags_golden_check.dart "$@"); }
+
+check_encode_direction() {
+  local rp=$1 nfn=$2 expected=$3
+  rpcflags_dart encode "$rp" "$nfn" "$RPCFLAGS_TMP/out.bin"
+  local actual
+  actual=$(capnp decode --short "$RPC_SCHEMA" Message < "$RPCFLAGS_TMP/out.bin")
+  if [[ "$actual" == "$expected" ]]; then
+    pass "RPC flags golden: Dart releaseParamCaps=$rp noFinishNeeded=$nfn -> capnp decode matches"
+  else
+    fail "RPC flags golden: Dart releaseParamCaps=$rp noFinishNeeded=$nfn -> capnp decode (got: $actual)"
+  fi
+}
+
+# releaseParamCaps omitted (this library's own default) must wire-encode
+# identically to explicitly passing true — the whole point of the "inverted
+# default" trap this section guards against.
+check_encode_direction true false \
+  "(return = (answerId = 5, releaseParamCaps = true, results = (), noFinishNeeded = false))"
+check_encode_direction false false \
+  "(return = (answerId = 5, releaseParamCaps = false, results = (), noFinishNeeded = false))"
+check_encode_direction true true \
+  "(return = (answerId = 5, releaseParamCaps = true, results = (), noFinishNeeded = true))"
+
+run_section "RPC flags golden: capnp CLI encodes -> Dart decodes"
+check_decode_direction() {
+  local literal=$1 expected=$2 label=$3
+  echo "$literal" | capnp encode "$RPC_SCHEMA" Message > "$RPCFLAGS_TMP/in.bin"
+  local actual
+  actual=$(rpcflags_dart decode "$RPCFLAGS_TMP/in.bin")
+  if [[ "$actual" == "$expected" ]]; then
+    pass "RPC flags golden: capnp-encoded $label -> Dart decode matches"
+  else
+    fail "RPC flags golden: capnp-encoded $label -> Dart decode (got: $actual)"
+  fi
+}
+
+check_decode_direction \
+  '(return = (answerId = 5))' \
+  'releaseParamCaps=true noFinishNeeded=false' \
+  'both flags omitted'
+check_decode_direction \
+  '(return = (answerId = 5, releaseParamCaps = false))' \
+  'releaseParamCaps=false noFinishNeeded=false' \
+  'releaseParamCaps explicitly false'
+check_decode_direction \
+  '(return = (answerId = 5, noFinishNeeded = true))' \
+  'releaseParamCaps=true noFinishNeeded=true' \
+  'noFinishNeeded explicitly true'
+
+rm -rf "$RPCFLAGS_TMP"
+trap - EXIT
+
 # ── Summary ─────────────────────────────────────────────────────────────────
 
 printf '\n══════════════════════════════════════\n'

@@ -15,7 +15,8 @@ import '../capability/capability.dart'
         TailCall,
         capabilityFromResultPath,
         requireCapabilityFromResult,
-        requireCapabilityFromResultPath;
+        requireCapabilityFromResultPath,
+        unwrapVendedCapability;
 import '../capability/capability_factory.dart';
 import '../capability/rpc_payload.dart';
 import 'flow_controller.dart';
@@ -455,7 +456,17 @@ class TwoPartyRpcConnection implements RpcConnection {
     // _rollbackQuestionParamExports and would leak. See that method's doc
     // comment for the failure this guards against.
     try {
-      for (final cap in paramsCapabilities) {
+      for (final rawCap in paramsCapabilities) {
+        // Generated client stubs commonly hand out a fresh
+        // vendCapabilityHandle wrapper every time their underlying
+        // capability is accessed (e.g. a `.capability` getter), so an `is
+        // _ImportedCapability`/`is _WirePipelinedCapability` check against
+        // the wrapper itself never matches even when it's genuinely an
+        // import/pipeline from this same connection — unwrap first. See
+        // unwrapVendedCapability's doc comment for the concrete failure
+        // this avoids (a receiverHosted hand-back gets mis-encoded as a
+        // brand-new senderHosted export instead).
+        final cap = unwrapVendedCapability(rawCap);
         if (cap is _ImportedCapability && cap._conn == this) {
           final id = await cap._importIdFuture;
           _throwIfImportBroken(id);
@@ -463,6 +474,16 @@ class TwoPartyRpcConnection implements RpcConnection {
         } else if (cap is _WirePipelinedCapability &&
             cap._conn == this &&
             !cap._hasResolved) {
+          // The parent Call (cap._parentQid) must reach the wire before this
+          // receiverAnswer descriptor referencing it does — otherwise the
+          // peer sees a question id it hasn't been told about yet and
+          // rejects it (e.g. capnp-rust's "invalid 'receiver answer'").
+          // Mirrors the promisedAnswer-*target* guard in
+          // _buildAndSendCall/_buildAndSendCallBuilding, but for a param
+          // capability referencing another question instead of this call's
+          // own target.
+          final parentSent = _questionSent[cap._parentQid];
+          if (parentSent != null) await parentSent.future;
           capEntries.add(
             RpcCapDescriptor.receiverAnswer(cap._parentQid, cap._transformPath),
           );
@@ -506,12 +527,19 @@ class TwoPartyRpcConnection implements RpcConnection {
     int? qid,
   }) {
     if (paramsCapabilities.isEmpty) return const [];
-    final needsAsync = paramsCapabilities.any(
-      (cap) =>
-          cap is _ImportedCapability &&
-          cap._conn == this &&
-          cap._cachedState == null,
-    );
+    final needsAsync = paramsCapabilities.any((rawCap) {
+      final cap = unwrapVendedCapability(rawCap);
+      return (cap is _ImportedCapability &&
+              cap._conn == this &&
+              cap._cachedState == null) ||
+          // A not-yet-sent parent Call means the receiverAnswer branch below
+          // would need to await it (see _resolveCapTable's matching
+          // comment) — fall through to the async path instead of racing it.
+          (cap is _WirePipelinedCapability &&
+              cap._conn == this &&
+              !cap._hasResolved &&
+              _questionSent[cap._parentQid] != null);
+    });
     if (needsAsync) return _resolveCapTable(paramsCapabilities, qid: qid);
 
     final capEntries = <RpcCapDescriptor>[];
@@ -519,7 +547,10 @@ class TwoPartyRpcConnection implements RpcConnection {
     // import discovered partway through still records whatever exports
     // earlier entries in this loop already created.
     try {
-      for (final cap in paramsCapabilities) {
+      for (final rawCap in paramsCapabilities) {
+        // See _resolveCapTable's matching comment on why this unwraps
+        // vendCapabilityHandle wrappers before checking the concrete type.
+        final cap = unwrapVendedCapability(rawCap);
         if (cap is _ImportedCapability && cap._conn == this) {
           final id = cap._cachedState!.importId;
           _throwIfImportBroken(id);
@@ -527,6 +558,9 @@ class TwoPartyRpcConnection implements RpcConnection {
         } else if (cap is _WirePipelinedCapability &&
             cap._conn == this &&
             !cap._hasResolved) {
+          // Safe to encode without waiting here: needsAsync above already
+          // routed any case where the parent Call hasn't been sent yet
+          // through _resolveCapTable's async (awaiting) version instead.
           capEntries.add(
             RpcCapDescriptor.receiverAnswer(cap._parentQid, cap._transformPath),
           );
