@@ -52,11 +52,19 @@ jobs:
       - uses: actions/checkout@v4
 
       # ── capnp CLI (built from source, same as Dockerfile) ───────────────────
+      # Must cache the schema headers (ci/run-tests.sh reads
+      # /usr/local/include/capnp/rpc.capnp for the RPC flags golden test) and
+      # the shared libs, not just the binary — otherwise a cache hit skips
+      # the install step below and leaves those files missing.
       - name: Cache capnp CLI build
         id: cache-capnp
         uses: actions/cache@v4
         with:
-          path: /usr/local/bin/capnp
+          path: |
+            /usr/local/bin/capnp
+            /usr/local/include/capnp
+            /usr/local/lib/libcapnp*
+            /usr/local/lib/libkj*
           key: capnp-cli-${{ env.CAPNP_CLI_VERSION }}-ubuntu24
 
       - name: Build and install capnp CLI

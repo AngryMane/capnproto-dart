@@ -4,15 +4,17 @@
 // which the plain `dart test` CI job does not install).
 //
 // Usage:
-//   dart run tool/rpc_flags_golden_check.dart encode <releaseParamCaps> <noFinishNeeded> <outFile>
+//   dart run tool/rpc_flags_golden_check.dart encode <results|exception> <releaseParamCaps> <noFinishNeeded> <outFile>
 //   dart run tool/rpc_flags_golden_check.dart decode <inFile>
 //
-// `encode` builds a minimal Return(results) message with the given flags and
-// writes its raw bytes to <outFile>, for the official `capnp decode` to read
-// back. `decode` parses a Return(results) message from <inFile> — typically
-// produced by `capnp encode` from a hand-written literal — and prints the
-// flags this library's own parser recovered from it, for the caller to
-// compare against what it asked `capnp encode` to set.
+// `encode` builds a minimal Return(results) or Return(exception) message
+// with the given flags and writes its raw bytes to <outFile>, for the
+// official `capnp decode` to read back. `decode` parses a Return message
+// from <inFile> — typically produced by `capnp encode` from a hand-written
+// literal, either variant — and prints the flags this library's own parser
+// recovered from it, for the caller to compare against what it asked
+// `capnp encode` to set. The flags live outside the results/exception union,
+// so `decode` doesn't need to know which variant it's reading.
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -31,15 +33,25 @@ final _emptyResultBytes = Uint8List.fromList([
 void main(List<String> args) {
   switch (args.first) {
     case 'encode':
-      final releaseParamCaps = args[1] == 'true';
-      final noFinishNeeded = args[2] == 'true';
-      final outFile = args[3];
-      final bytes = buildReturnResultsMessageFromReader(
-        answerId: 5,
-        resultsRoot: MessageReader.deserialize(_emptyResultBytes).getRootRaw(),
-        releaseParamCaps: releaseParamCaps,
-        noFinishNeeded: noFinishNeeded,
-      );
+      final kind = args[1];
+      final releaseParamCaps = args[2] == 'true';
+      final noFinishNeeded = args[3] == 'true';
+      final outFile = args[4];
+      final bytes = switch (kind) {
+        'results' => buildReturnResultsMessageFromReader(
+          answerId: 5,
+          resultsRoot: MessageReader.deserialize(_emptyResultBytes).getRootRaw(),
+          releaseParamCaps: releaseParamCaps,
+          noFinishNeeded: noFinishNeeded,
+        ),
+        'exception' => buildReturnExceptionMessage(
+          answerId: 5,
+          reason: 'golden-test-exception',
+          releaseParamCaps: releaseParamCaps,
+          noFinishNeeded: noFinishNeeded,
+        ),
+        _ => throw ArgumentError('unknown encode kind: $kind'),
+      };
       File(outFile).writeAsBytesSync(bytes);
     case 'decode':
       final bytes = File(args[1]).readAsBytesSync();

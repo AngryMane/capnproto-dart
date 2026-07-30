@@ -636,8 +636,10 @@ fi
 # could easily read back correctly against its own encoder while still being
 # wrong relative to the spec. This cross-checks both directions against the
 # real `capnp` CLI decoding/encoding the actual rpc.capnp Message/Return
-# schema — not just this library's own round-trip — for all four
-# omitted/explicit-true/explicit-false combinations.
+# schema — not just this library's own round-trip — covering all four
+# releaseParamCaps x noFinishNeeded combinations (both omitted/explicit, per
+# direction) plus a Return(exception) case, since the flags live outside the
+# results/exception union and exceptions go through a separate builder.
 
 run_section "RPC flags golden: Dart encodes -> capnp CLI decodes"
 RPC_SCHEMA=/usr/local/include/capnp/rpc.capnp
@@ -646,26 +648,33 @@ trap 'rm -rf "$RPCFLAGS_TMP"' EXIT
 rpcflags_dart() { (cd packages/capnproto_dart_rpc && dart run tool/rpc_flags_golden_check.dart "$@"); }
 
 check_encode_direction() {
-  local rp=$1 nfn=$2 expected=$3
-  rpcflags_dart encode "$rp" "$nfn" "$RPCFLAGS_TMP/out.bin"
+  local kind=$1 rp=$2 nfn=$3 expected=$4
+  rpcflags_dart encode "$kind" "$rp" "$nfn" "$RPCFLAGS_TMP/out.bin"
   local actual
   actual=$(capnp decode --short "$RPC_SCHEMA" Message < "$RPCFLAGS_TMP/out.bin")
   if [[ "$actual" == "$expected" ]]; then
-    pass "RPC flags golden: Dart releaseParamCaps=$rp noFinishNeeded=$nfn -> capnp decode matches"
+    pass "RPC flags golden: Dart ($kind) releaseParamCaps=$rp noFinishNeeded=$nfn -> capnp decode matches"
   else
-    fail "RPC flags golden: Dart releaseParamCaps=$rp noFinishNeeded=$nfn -> capnp decode (got: $actual)"
+    fail "RPC flags golden: Dart ($kind) releaseParamCaps=$rp noFinishNeeded=$nfn -> capnp decode (got: $actual)"
   fi
 }
 
 # releaseParamCaps omitted (this library's own default) must wire-encode
 # identically to explicitly passing true — the whole point of the "inverted
-# default" trap this section guards against.
-check_encode_direction true false \
+# default" trap this section guards against. All four releaseParamCaps x
+# noFinishNeeded combinations are covered, plus one Return(exception) case
+# since the flags live outside the results/exception union and exception
+# Returns go through a separate builder (buildReturnExceptionMessage).
+check_encode_direction results true false \
   "(return = (answerId = 5, releaseParamCaps = true, results = (), noFinishNeeded = false))"
-check_encode_direction false false \
+check_encode_direction results false false \
   "(return = (answerId = 5, releaseParamCaps = false, results = (), noFinishNeeded = false))"
-check_encode_direction true true \
+check_encode_direction results true true \
   "(return = (answerId = 5, releaseParamCaps = true, results = (), noFinishNeeded = true))"
+check_encode_direction results false true \
+  "(return = (answerId = 5, releaseParamCaps = false, results = (), noFinishNeeded = true))"
+check_encode_direction exception false true \
+  '(return = (answerId = 5, releaseParamCaps = false, exception = (reason = "golden-test-exception", obsoleteIsCallersFault = false, obsoleteDurability = 0, type = failed), noFinishNeeded = true))'
 
 run_section "RPC flags golden: capnp CLI encodes -> Dart decodes"
 check_decode_direction() {
@@ -692,6 +701,14 @@ check_decode_direction \
   '(return = (answerId = 5, noFinishNeeded = true))' \
   'releaseParamCaps=true noFinishNeeded=true' \
   'noFinishNeeded explicitly true'
+check_decode_direction \
+  '(return = (answerId = 5, releaseParamCaps = false, noFinishNeeded = true))' \
+  'releaseParamCaps=false noFinishNeeded=true' \
+  'both flags explicitly non-default'
+check_decode_direction \
+  '(return = (answerId = 5, releaseParamCaps = false, exception = (reason = "boom", type = failed), noFinishNeeded = true))' \
+  'releaseParamCaps=false noFinishNeeded=true' \
+  'both flags non-default on a Return(exception)'
 
 rm -rf "$RPCFLAGS_TMP"
 trap - EXIT
