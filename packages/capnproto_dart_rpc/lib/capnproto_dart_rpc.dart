@@ -17,6 +17,7 @@ export 'src/capability/capability.dart'
         DispatchContext,
         DispatchResult,
         TailCall,
+        WeakCapabilityRef,
         buildDispatchResult,
         requireCapabilityFromResult,
         vendCapabilityHandle;

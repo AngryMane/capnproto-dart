@@ -111,6 +111,8 @@ const int _opGetPtrField = 2;
 //   bytes 8-11: union data slot (UInt32, for takeFromOtherQuestion @6)
 //   ptr 0: union ptr slot (Payload for results / Exception for exception)
 const int _returnAnswerId = 0;
+const int _returnReleaseParamCaps = 32; // bit index = byte 4 * 8 + bit 0
+const int _returnNoFinishNeeded = 33; // bit index = byte 4 * 8 + bit 1
 const int _returnDisc = 6;
 const int _returnTakeFromOtherQuestionOff = 8;
 
@@ -410,6 +412,10 @@ class _CapDescBuilder extends StructBuilder {
 class _ReturnReader extends StructReader {
   _ReturnReader(super.raw);
   int get answerId => getUint32Field(_returnAnswerId);
+  bool get releaseParamCaps =>
+      getBoolField(_returnReleaseParamCaps, defaultValue: true);
+  bool get noFinishNeeded =>
+      getBoolField(_returnNoFinishNeeded, defaultValue: false);
   int get disc => getUint16Field(_returnDisc);
   _PayloadReader? get results => getStructFieldWith(0, _PayloadReader.new);
   _ExceptionReader? get exception =>
@@ -423,6 +429,10 @@ class _ReturnBuilder extends StructBuilder {
   @override
   StructReader asReader() => throw UnsupportedError('internal');
   void setAnswerId(int v) => setUint32Field(_returnAnswerId, v);
+  void setReleaseParamCaps({bool value = true}) =>
+      setBoolField(_returnReleaseParamCaps, value, defaultValue: true);
+  void setNoFinishNeeded({bool value = false}) =>
+      setBoolField(_returnNoFinishNeeded, value, defaultValue: false);
   void setDiscResults() => setUint16Field(_returnDisc, _retResults);
   void setDiscException() => setUint16Field(_returnDisc, _retException);
   void setDiscRaw(int disc) => setUint16Field(_returnDisc, disc);
@@ -627,6 +637,14 @@ final class RpcMessage {
 
   // return
   final int answerId;
+  // Return.releaseParamCaps/noFinishNeeded — only meaningful (and only
+  // decoded; see parseRpcMessageFromReader) for isReturnResults/
+  // isReturnException, matching the two Return variants that can legally
+  // carry param-capability/answer-bookkeeping optimizations. Other Return
+  // variants (canceled/resultsSentElsewhere/takeFromOtherQuestion/
+  // acceptFromThirdParty) always report the wire defaults (true/false).
+  final bool returnReleaseParamCaps;
+  final bool returnNoFinishNeeded;
   final bool isReturnResults;
   final bool isReturnException;
   // Raw Return.disc (0=results, 1=exception, 2=canceled,
@@ -687,6 +705,8 @@ final class RpcMessage {
     this.paramsCapTable = const [],
     this.sendResultsToDisc = 0,
     this.answerId = 0,
+    this.returnReleaseParamCaps = true,
+    this.returnNoFinishNeeded = false,
     this.isReturnResults = false,
     this.isReturnException = false,
     this.returnDisc = _retResults,
@@ -759,10 +779,9 @@ Uint8List buildCallMessage({
   targetTransformPath: targetTransformPath,
   interfaceId: interfaceId,
   methodId: methodId,
-  buildParams: (anyPtr) => anyPtr.setMessageBytes(
-    paramsBytes,
-    preserveCapabilityPointers: true,
-  ),
+  buildParams:
+      (anyPtr) =>
+          anyPtr.setMessageBytes(paramsBytes, preserveCapabilityPointers: true),
   descriptors:
       capTableDescriptors ??
       capTableEntries
@@ -945,6 +964,8 @@ Uint8List buildReturnResultsMessageFromReader({
   required int answerId,
   required RawStructReader resultsRoot,
   List<RpcCapDescriptor> descriptors = const [],
+  bool releaseParamCaps = true,
+  bool noFinishNeeded = false,
 }) {
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
@@ -953,6 +974,8 @@ Uint8List buildReturnResultsMessageFromReader({
   msg.setDisc(_msgReturn);
   final ret = msg.initReturn();
   ret.setAnswerId(answerId);
+  ret.setReleaseParamCaps(value: releaseParamCaps);
+  ret.setNoFinishNeeded(value: noFinishNeeded);
   ret.setDiscResults();
   final payload = ret.initResults();
   payload.setContentFromRawStruct(resultsRoot);
@@ -971,6 +994,8 @@ Uint8List buildReturnResultsWithCapsMessage({
   required int answerId,
   required Uint8List resultsBytes,
   required List<int> exportIds,
+  bool releaseParamCaps = true,
+  bool noFinishNeeded = false,
 }) {
   return buildReturnResultsWithCapDescriptorsMessage(
     answerId: answerId,
@@ -978,6 +1003,8 @@ Uint8List buildReturnResultsWithCapsMessage({
     descriptors: exportIds
         .map(RpcCapDescriptor.senderHosted)
         .toList(growable: false),
+    releaseParamCaps: releaseParamCaps,
+    noFinishNeeded: noFinishNeeded,
   );
 }
 
@@ -1003,10 +1030,14 @@ Uint8List buildReturnResultsWithCapDescriptorsMessage({
   required int answerId,
   required Uint8List resultsBytes,
   required List<RpcCapDescriptor> descriptors,
+  bool releaseParamCaps = true,
+  bool noFinishNeeded = false,
 }) => buildReturnResultsMessageFromReader(
   answerId: answerId,
   resultsRoot: MessageReader.deserialize(resultsBytes).getRootRaw(),
   descriptors: descriptors,
+  releaseParamCaps: releaseParamCaps,
+  noFinishNeeded: noFinishNeeded,
 );
 
 /// Serializes a Resolve message resolving [promiseId] to [capDisc]/[capId].
@@ -1105,6 +1136,16 @@ Uint8List buildReturnExceptionMessage({
   required int answerId,
   required String reason,
   ErrorKind kind = ErrorKind.failed,
+  bool releaseParamCaps = true,
+  // Exceptions never carry a results payload/capTable, so it's always
+  // *wire-format*-safe to set this — but the sender must also make sure it
+  // doesn't need the peer's Finish for its own answer-table bookkeeping
+  // (see two_party_connection.dart's _runDispatch, the only call site that
+  // passes true) before opting in. Defaults to false so every other call
+  // site (unknown-export-id/pipelining-error/tail-call-error Returns, which
+  // still rely on Finish to clear their `_answers` entry) keeps its
+  // existing behavior unchanged.
+  bool noFinishNeeded = false,
 }) {
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
@@ -1113,6 +1154,8 @@ Uint8List buildReturnExceptionMessage({
   msg.setDisc(_msgReturn);
   final ret = msg.initReturn();
   ret.setAnswerId(answerId);
+  ret.setReleaseParamCaps(value: releaseParamCaps);
+  ret.setNoFinishNeeded(value: noFinishNeeded);
   ret.setDiscException();
   final exc = ret.initException();
   exc.setType(kind.index);
@@ -1362,6 +1405,8 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
         return RpcMessage._(
           type: RpcMessageType.return_,
           answerId: ret?.answerId ?? 0,
+          returnReleaseParamCaps: ret?.releaseParamCaps ?? true,
+          returnNoFinishNeeded: ret?.noFinishNeeded ?? false,
           isReturnResults: true,
           returnDisc: retDisc,
           resultsContent: payload?.content,
@@ -1374,6 +1419,8 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
         return RpcMessage._(
           type: RpcMessageType.return_,
           answerId: ret?.answerId ?? 0,
+          returnReleaseParamCaps: ret?.releaseParamCaps ?? true,
+          returnNoFinishNeeded: ret?.noFinishNeeded ?? false,
           isReturnException: true,
           returnDisc: retDisc,
           exceptionReason: exc?.reason ?? 'unknown error',

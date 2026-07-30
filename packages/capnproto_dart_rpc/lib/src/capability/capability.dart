@@ -49,7 +49,8 @@ class DispatchResult {
 /// than serialized. [caps] is forwarded to [DispatchResult.caps] unchanged,
 /// for methods that return capabilities (see generated `set<Field>(index)`
 /// calls, whose index must match [caps]'s order).
-DispatchResult buildDispatchResult<R extends StructReader, B extends StructBuilder>(
+DispatchResult
+buildDispatchResult<R extends StructReader, B extends StructBuilder>(
   StructFactory<R, B> factory,
   void Function(B results) build, {
   List<Capability> caps = const [],
@@ -295,6 +296,27 @@ abstract class Capability {
   Future<void> dispose();
 }
 
+/// A non-owning reference to a [Capability] that does not keep it (or its
+/// underlying RPC import/export state) alive, and does not require calling
+/// [Capability.dispose] itself.
+///
+/// Useful for holding onto a capability a peer handed you as a long-lived
+/// callback/observer (e.g. appended to a subscriber list) without that
+/// reference alone forcing the capability to stay reachable, and without
+/// creating an uncollectable cycle when the referent transitively holds a
+/// strong reference back to whoever is holding this. [target] returns null
+/// once the referenced capability has been garbage collected; the RPC
+/// runtime's own dispose/release bookkeeping for it is unaffected either
+/// way — this only changes whether *this reference* keeps it reachable.
+final class WeakCapabilityRef<T extends Capability> {
+  final WeakReference<T> _ref;
+
+  WeakCapabilityRef(T capability) : _ref = WeakReference(capability);
+
+  /// The referenced capability, or null if it has been garbage collected.
+  T? get target => _ref.target;
+}
+
 class _DeferredCapCall implements CapCall {
   @override
   final Future<DispatchResult> result;
@@ -395,7 +417,9 @@ Capability requireCapabilityFromResultPath(
     for (var i = 0; i < path.length - 1; i++) {
       final idx = path[i];
       if (idx < 0 || idx >= raw.ptrWords) {
-        throw RpcException('pointer slot $idx in transform path is out of range');
+        throw RpcException(
+          'pointer slot $idx in transform path is out of range',
+        );
       }
       final next = raw.arena.resolveOptionalStructAt(
         raw.segment,
@@ -611,12 +635,18 @@ class DeferredCapability extends Capability {
 
   Future<Capability> _resolveForCall() async {
     if (_disposed) {
-      throw const RpcException('capability is disposed', kind: ErrorKind.disconnected);
+      throw const RpcException(
+        'capability is disposed',
+        kind: ErrorKind.disconnected,
+      );
     }
     final cap = await _future;
     if (_disposed) {
       await cap.dispose();
-      throw const RpcException('capability is disposed', kind: ErrorKind.disconnected);
+      throw const RpcException(
+        'capability is disposed',
+        kind: ErrorKind.disconnected,
+      );
     }
     return cap;
   }
@@ -681,7 +711,10 @@ class DeferredCapability extends Capability {
     if (_disposed) {
       return _DeferredCapCall(
         Future<DispatchResult>.error(
-          const RpcException('capability is disposed', kind: ErrorKind.disconnected),
+          const RpcException(
+            'capability is disposed',
+            kind: ErrorKind.disconnected,
+          ),
         ),
       );
     }

@@ -81,6 +81,13 @@ class TwoPartyRpcConnection implements RpcConnection {
   // their Call arrives AFTER the parent Call.
   final Map<int, Completer<void>> _questionSent = {};
   int _nextQuestionId = 0;
+  // senderHosted/senderPromise export IDs this vat put in a given outgoing
+  // Call's own capTable (its params capabilities), keyed by question ID —
+  // only questions with at least one such entry get one. Consulted by
+  // _awaitReturn when the peer's Return sets releaseParamCaps=true, to
+  // apply the same local effect an explicit Release(id, 1) for each would
+  // have had, without the peer needing to actually send one.
+  final Map<int, List<int>> _questionParamExportIds = {};
 
   // Imports: remote capabilities we hold. Key = import ID (= peer's export ID).
   // We track refcounts to know when to send Release.
@@ -90,6 +97,19 @@ class TwoPartyRpcConnection implements RpcConnection {
   // these promise/import IDs fail locally instead of becoming null capability
   // calls that hide the original failure.
   final Map<int, RpcException> _brokenImports = {};
+
+  // Batches Release sends: _releaseImport() decrements the local refcount
+  // immediately but only records the count here, deferring the actual wire
+  // send to a microtask. Several dispose() calls issued without an
+  // intervening await (e.g. disposing a whole observer list in one
+  // synchronous pass, or `Future.wait([...].map((c) => c.dispose()))`)
+  // therefore coalesce into a single Release per import ID with
+  // referenceCount > 1, instead of one wire message each. Sequential
+  // `await`ed dispose() calls are unaffected — each already resumes after
+  // the previous flush has run, so every Release still carries
+  // referenceCount == 1 as before.
+  final Map<int, int> _pendingReleaseCounts = {};
+  Future<void>? _releaseFlushFuture;
 
   // Answers: incoming calls whose Return has been sent.
   // Key = question ID from the peer; value = export IDs included in the Return.
@@ -382,7 +402,8 @@ class TwoPartyRpcConnection implements RpcConnection {
         interfaceId: interfaceId,
         methodId: methodId,
         buildParams: buildParams,
-        resolveDescriptors: () => _resolveCapTableMaybeSync(paramsCapabilities),
+        resolveDescriptors:
+            () => _resolveCapTableMaybeSync(paramsCapabilities, qid: qid),
       );
       if (builtOrFuture is Future<Uint8List>) {
         () async {
@@ -407,10 +428,13 @@ class TwoPartyRpcConnection implements RpcConnection {
 
   /// Canonical async capTable resolution shared by [_buildAndSendCall],
   /// [_buildAndSendCallBuilding], and (via [_resolveCapTableMaybeSync])
-  /// [_startResolvedImportCall].
+  /// [_startResolvedImportCall]. When [qid] is given, records every
+  /// senderHosted/senderPromise export ID produced (this call's own params
+  /// capabilities) against it — see [_recordParamExportIds].
   Future<List<RpcCapDescriptor>> _resolveCapTable(
-    List<Capability> paramsCapabilities,
-  ) async {
+    List<Capability> paramsCapabilities, {
+    int? qid,
+  }) async {
     final capEntries = <RpcCapDescriptor>[];
     for (final cap in paramsCapabilities) {
       if (cap is _ImportedCapability && cap._conn == this) {
@@ -429,7 +453,22 @@ class TwoPartyRpcConnection implements RpcConnection {
         );
       }
     }
+    if (qid != null) _recordParamExportIds(qid, capEntries);
     return capEntries;
+  }
+
+  /// Records the senderHosted/senderPromise export IDs among [capEntries]
+  /// (an outgoing Call's own capTable — this vat's params capabilities)
+  /// against [qid], so [_awaitReturn] can apply `Return.releaseParamCaps`
+  /// locally once the matching Return arrives. A call with no such entries
+  /// (no capability params, or every one an import/promisedAnswer pass-
+  /// through) records nothing — nothing to release either way.
+  void _recordParamExportIds(int qid, List<RpcCapDescriptor> capEntries) {
+    final ids = <int>[
+      for (final d in capEntries)
+        if (d.disc == 1 || d.disc == 2) d.id,
+    ];
+    if (ids.isNotEmpty) _questionParamExportIds[qid] = ids;
   }
 
   /// Synchronous variant of [_resolveCapTable] for [_startResolvedImportCall]:
@@ -442,8 +481,9 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// on every call), avoids resolving some entries synchronously and then
   /// re-resolving the whole list again through [_resolveCapTable].
   FutureOr<List<RpcCapDescriptor>> _resolveCapTableMaybeSync(
-    List<Capability> paramsCapabilities,
-  ) {
+    List<Capability> paramsCapabilities, {
+    int? qid,
+  }) {
     if (paramsCapabilities.isEmpty) return const [];
     final needsAsync = paramsCapabilities.any(
       (cap) =>
@@ -451,7 +491,7 @@ class TwoPartyRpcConnection implements RpcConnection {
           cap._conn == this &&
           cap._cachedState == null,
     );
-    if (needsAsync) return _resolveCapTable(paramsCapabilities);
+    if (needsAsync) return _resolveCapTable(paramsCapabilities, qid: qid);
 
     final capEntries = <RpcCapDescriptor>[];
     for (final cap in paramsCapabilities) {
@@ -471,6 +511,7 @@ class TwoPartyRpcConnection implements RpcConnection {
         );
       }
     }
+    if (qid != null) _recordParamExportIds(qid, capEntries);
     return capEntries;
   }
 
@@ -496,7 +537,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     // Categorize each capability param:
     //   - Imported cap from this same peer → receiverHosted
     //   - Everything else → senderHosted export
-    final capEntries = await _resolveCapTable(paramsCapabilities);
+    final capEntries = await _resolveCapTable(paramsCapabilities, qid: qid);
 
     if (targetPromisedAnswerQid != null) {
       _sendRaw(
@@ -606,7 +647,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     // buildParams has run (see this method's doc comment) by living inside
     // resolveCapTable instead of running up front.
     Future<List<RpcCapDescriptor>> resolveCapTable() =>
-        _resolveCapTable(paramsCapabilities);
+        _resolveCapTable(paramsCapabilities, qid: qid);
 
     if (targetPromisedAnswerQid != null) {
       _sendRaw(
@@ -646,8 +687,31 @@ class TwoPartyRpcConnection implements RpcConnection {
     int qid,
     Completer<RpcMessage> completer,
   ) async {
-    final ret = await completer.future;
-    _sendRaw(buildFinishMessage(qid, releaseResultCaps: false));
+    final RpcMessage ret;
+    final List<int>? paramExportIds;
+    try {
+      ret = await completer.future;
+    } finally {
+      // Whether or not a params-caps entry was ever recorded for this qid
+      // (see _recordParamExportIds), drop it now — nothing past this point
+      // reads _questionParamExportIds[qid] again, on any path (success,
+      // exception, or completer failing before a Return ever arrived).
+      // Captured into a local first so the success path below still has it
+      // even though `finally` runs before that code does.
+      paramExportIds = _questionParamExportIds.remove(qid);
+    }
+
+    // Only Return-results/Return-exception ever legitimately carry these —
+    // see RpcMessage.returnReleaseParamCaps/returnNoFinishNeeded's doc
+    // comment. releaseParamCaps applying to an exception Return, not just
+    // results, mirrors buildReturnExceptionMessage's own support for it.
+    final answersCall = ret.isReturnResults || ret.isReturnException;
+    if (answersCall && ret.returnReleaseParamCaps && paramExportIds != null) {
+      _applyReleaseParamCaps(paramExportIds);
+    }
+    if (!(answersCall && ret.returnNoFinishNeeded)) {
+      _sendRaw(buildFinishMessage(qid, releaseResultCaps: false));
+    }
 
     if (ret.isReturnException) {
       throw RpcException(
@@ -750,7 +814,13 @@ class TwoPartyRpcConnection implements RpcConnection {
     0,
   ]);
 
-  Future<void> _releaseImport(int importId) async {
+  /// Decrements [importId]'s local refcount and drops its import bookkeeping
+  /// once it reaches zero — without sending a wire Release. Split out of
+  /// [_releaseImport] so a deferred caller ([_ImportedCapability]'s
+  /// params-capability release sink, see [_dispatchToCapability]) can apply
+  /// the local effect immediately while leaving the wire notification to be
+  /// folded into `Return.releaseParamCaps` instead of an explicit Release.
+  void _decrementImportRefcount(int importId) {
     final count = _importRefCounts[importId];
     if (count == null || count <= 0) return;
     if (count == 1) {
@@ -760,7 +830,51 @@ class TwoPartyRpcConnection implements RpcConnection {
     } else {
       _importRefCounts[importId] = count - 1;
     }
-    _sendRaw(buildReleaseMessage(importId, 1));
+  }
+
+  Future<void> _releaseImport(int importId) {
+    final count = _importRefCounts[importId];
+    if (count == null || count <= 0) return Future.value();
+    _decrementImportRefcount(importId);
+    _pendingReleaseCounts[importId] =
+        (_pendingReleaseCounts[importId] ?? 0) + 1;
+    return _releaseFlushFuture ??= Future.microtask(_flushPendingReleases);
+  }
+
+  /// Sends one batched Release per import ID accumulated in
+  /// [_pendingReleaseCounts] since the last flush — see [_releaseImport].
+  void _flushPendingReleases() {
+    _releaseFlushFuture = null;
+    if (_pendingReleaseCounts.isEmpty) return;
+    final pending = Map<int, int>.of(_pendingReleaseCounts);
+    _pendingReleaseCounts.clear();
+    for (final entry in pending.entries) {
+      _sendRaw(buildReleaseMessage(entry.key, entry.value));
+    }
+  }
+
+  /// Ends [tracker]'s deferred-release window (a no-op, returning `true`,
+  /// for a null/empty tracker — no capability params means nothing to
+  /// release) and decides `Return.releaseParamCaps`: `true` when every
+  /// params capability freshly imported for the call was disposed before it
+  /// settled — their wire Release was already folded into the refcount
+  /// decrement done by [_ImportedCapability]'s deferred sink and none needs
+  /// sending — otherwise flushes an explicit Release for just the ones that
+  /// were disposed and returns `false`. Either way, clears each wrapper's
+  /// sink so a *later* dispose() of one that's still outstanding goes
+  /// through the normal (non-deferred) [_releaseImport] path.
+  bool _finalizeParamCapsTracker(_ParamCapsReleaseTracker? tracker) {
+    if (tracker == null) return true;
+    for (final wrapper in tracker.wrappers) {
+      wrapper._deferredReleaseSink = null;
+    }
+    if (tracker.disposedImportIds.length == tracker.wrappers.length) {
+      return true;
+    }
+    for (final id in tracker.disposedImportIds) {
+      _sendRaw(buildReleaseMessage(id, 1));
+    }
+    return false;
   }
 
   // ---------------------------------------------------------------------------
@@ -1167,6 +1281,30 @@ class TwoPartyRpcConnection implements RpcConnection {
     final cancellation = DispatchCancellationController();
     _dispatchCancellations[qid] = cancellation;
 
+    // Params capabilities freshly imported for this call (see
+    // _dispatchToCapability/_capabilityFromDescriptor — every senderHosted/
+    // senderPromise entry in the incoming Call's capTable creates a brand
+    // new _ImportedCapability wrapper) get a deferred release sink for the
+    // lifetime of this dispatch, so Return.releaseParamCaps can be set
+    // without an extra wire Release when the callee turns out not to need
+    // them past the call — see _finalizeParamCapsTracker.
+    final paramImportWrappers = paramsCapabilities
+        .whereType<_ImportedCapability>()
+        .where((c) => c._conn == this)
+        .toList(growable: false);
+    final paramCapsTracker =
+        paramImportWrappers.isEmpty
+            ? null
+            : _ParamCapsReleaseTracker(paramImportWrappers);
+    if (paramCapsTracker != null) {
+      for (final wrapper in paramImportWrappers) {
+        wrapper._deferredReleaseSink = (id) {
+          _decrementImportRefcount(id);
+          paramCapsTracker.disposedImportIds.add(id);
+        };
+      }
+    }
+
     final dispatchFuture = Future.sync(
       () => cap.dispatchWithContext(
         interfaceId,
@@ -1199,6 +1337,7 @@ class TwoPartyRpcConnection implements RpcConnection {
           // otherwise never be disposed — dispose them here instead.
           if (_closedError != null) {
             _disposeResultCapabilities(result);
+            _finalizeParamCapsTracker(paramCapsTracker);
             return;
           }
           if (_finishedAnswers.remove(qid)) {
@@ -1206,6 +1345,7 @@ class TwoPartyRpcConnection implements RpcConnection {
             _answerErrors.remove(qid);
             _answers.remove(qid);
             _disposeResultCapabilities(result);
+            _finalizeParamCapsTracker(paramCapsTracker);
             return;
           }
           _answerCaps[qid] = _ResolvedAnswer(result.payload.bytes, result.caps);
@@ -1221,6 +1361,10 @@ class TwoPartyRpcConnection implements RpcConnection {
             // Finish must only drop bookkeeping here, not dispose result.caps.
             _sendRaw(buildReturnResultsSentElsewhereMessage(answerId: qid));
             _answers[qid] = const [];
+            // No Return field exists on this variant to carry
+            // releaseParamCaps, so just flush any deferred params releases
+            // as ordinary Release messages.
+            _finalizeParamCapsTracker(paramCapsTracker);
             return;
           }
 
@@ -1228,6 +1372,13 @@ class TwoPartyRpcConnection implements RpcConnection {
           for (final c in result.caps) {
             resultDescriptors.add(_returnCapDescriptor(c));
           }
+          final releaseParamCaps = _finalizeParamCapsTracker(paramCapsTracker);
+          // No capabilities anywhere in the results means no wire-level
+          // pipelined call against this answer could ever resolve to
+          // anything but "not a capability" — so it's safe to tell the peer
+          // no Finish is needed and immediately drop the answer's
+          // pipelining bookkeeping ourselves, instead of waiting for it.
+          final noFinishNeeded = resultDescriptors.isEmpty;
           // getRootRaw() resolves in place for an envelope- or
           // builder-backed payload (no serialize-then-reparse round trip;
           // see RpcPayload/buildReturnResultsMessageFromReader) and only
@@ -1237,39 +1388,57 @@ class TwoPartyRpcConnection implements RpcConnection {
               answerId: qid,
               resultsRoot: result.payload.getRootRaw(),
               descriptors: resultDescriptors,
+              releaseParamCaps: releaseParamCaps,
+              noFinishNeeded: noFinishNeeded,
             ),
           );
-          _answers[qid] = [
-            for (final d in resultDescriptors)
-              if (d.disc == 1 || d.disc == 2) d.id,
-          ];
+          if (noFinishNeeded) {
+            _answerCaps.remove(qid);
+          } else {
+            _answers[qid] = [
+              for (final d in resultDescriptors)
+                if (d.disc == 1 || d.disc == 2) d.id,
+            ];
+          }
         })
         .catchError((Object err) {
           _pendingCaps.remove(qid);
           _dispatchCancellations.remove(qid);
           _answerCaps.remove(qid);
           // See the matching comment in the success branch above.
-          if (_closedError != null) return;
+          if (_closedError != null) {
+            _finalizeParamCapsTracker(paramCapsTracker);
+            return;
+          }
           if (_finishedAnswers.remove(qid)) {
             _answerErrors.remove(qid);
             _answers.remove(qid);
+            _finalizeParamCapsTracker(paramCapsTracker);
             return;
           }
           final rpcError =
               err is CapnpException
                   ? err
                   : RpcException(err.toString(), kind: ErrorKind.failed);
-          _answerErrors[qid] = rpcError;
-          _answers[qid] = const [];
           if (sendResultsToYourself) {
+            _answerErrors[qid] = rpcError;
+            _answers[qid] = const [];
             _sendRaw(buildReturnResultsSentElsewhereMessage(answerId: qid));
+            _finalizeParamCapsTracker(paramCapsTracker);
             return;
           }
+          final releaseParamCaps = _finalizeParamCapsTracker(paramCapsTracker);
+          // An exception Return never carries a results payload/capTable,
+          // so — same reasoning as the noFinishNeeded branch above — no
+          // Finish is ever needed for it, and _answerErrors/_answers can be
+          // dropped immediately instead of waiting for one.
           _sendRaw(
             buildReturnExceptionMessage(
               answerId: qid,
               reason: rpcError.message,
               kind: rpcError.kind,
+              releaseParamCaps: releaseParamCaps,
+              noFinishNeeded: true,
             ),
           );
         });
@@ -1373,12 +1542,36 @@ class TwoPartyRpcConnection implements RpcConnection {
       );
       return;
     }
-    entry.remoteRefCount -= msg.referenceCount;
+    _releaseExportRef(msg.releaseId, entry, msg.referenceCount);
+  }
+
+  /// Core effect of releasing [referenceCount] references to the export
+  /// tracked by [entry] (whose ID is [exportId]): decrements
+  /// `remoteRefCount` and, once it reaches zero, drops the export and
+  /// disposes the underlying capability. Shared by [_handleRelease] (after
+  /// its protocol-violation checks against a real incoming Release) and
+  /// [_awaitReturn]'s handling of `Return.releaseParamCaps` (no checks
+  /// needed there — the count released is exactly what this vat itself put
+  /// in the matching Call's capTable, per [_recordParamExportIds]).
+  void _releaseExportRef(int exportId, _ExportEntry entry, int referenceCount) {
+    entry.remoteRefCount -= referenceCount;
     if (entry.remoteRefCount <= 0) {
-      _exports.remove(msg.releaseId);
+      _exports.remove(exportId);
       _exportIds.remove(entry.capability);
-      _senderPromiseResolves.remove(msg.releaseId);
+      _senderPromiseResolves.remove(exportId);
       _disposeIgnoringErrors(entry.capability);
+    }
+  }
+
+  /// Applies `Return.releaseParamCaps` locally: for each export ID this vat
+  /// put in the answered Call's own capTable (its params capabilities, from
+  /// [_recordParamExportIds]), releases exactly one reference — the same
+  /// effect an explicit `Release(id, 1)` from the peer would have had, without
+  /// the peer needing to actually send one.
+  void _applyReleaseParamCaps(List<int> exportIds) {
+    for (final id in exportIds) {
+      final entry = _exports[id];
+      if (entry != null) _releaseExportRef(id, entry, 1);
     }
   }
 
@@ -1920,6 +2113,22 @@ class _ImportState {
   }
 }
 
+/// Tracks a single [TwoPartyRpcConnection._runDispatch] call's params-caps
+/// deferred-release window — see [TwoPartyRpcConnection._finalizeParamCapsTracker].
+/// [wrappers] are every freshly-imported `_ImportedCapability` created for
+/// this call's params (one per senderHosted/senderPromise capTable entry);
+/// [disposedImportIds] accumulates the import ID each time one of them is
+/// disposed while the window is open (see [_ImportedCapability]'s
+/// `_deferredReleaseSink`) — as a `List`, not a `Set`, so a duplicate
+/// import ID appearing more than once among the params (two distinct
+/// wrapper objects for the same underlying capability) is still counted
+/// once per wrapper, matching the refcount contribution each one made.
+class _ParamCapsReleaseTracker {
+  final List<_ImportedCapability> wrappers;
+  final List<int> disposedImportIds = [];
+  _ParamCapsReleaseTracker(this.wrappers);
+}
+
 // ---------------------------------------------------------------------------
 // _ImportedCapability: client-side proxy for a remote capability
 // ---------------------------------------------------------------------------
@@ -1927,6 +2136,16 @@ class _ImportState {
 class _ImportedCapability extends Capability {
   final TwoPartyRpcConnection _conn;
   bool _disposed = false;
+
+  // Set only for a call's freshly-imported params capabilities (see
+  // _runDispatch/_ParamCapsReleaseTracker), for the window between dispatch
+  // starting and its Return being sent. While set, dispose() defers the
+  // wire Release entirely to the tracker instead of sending one itself, so
+  // the connection can fold it into `Return.releaseParamCaps` when every
+  // params capability created for the call turns out to have been disposed
+  // by the time the call settles. Cleared once that window ends (Return
+  // sent), so a dispose() after that point behaves exactly as normal.
+  void Function(int importId)? _deferredReleaseSink;
 
   // Resolves to the import ID once the bootstrap handshake completes.
   final Future<int> _importIdFuture;
@@ -2012,8 +2231,10 @@ class _ImportedCapability extends Capability {
       state.importId,
       interfaceId,
       methodId,
-      (anyPtr) =>
-          anyPtr.setMessageBytes(params.bytes, preserveCapabilityPointers: true),
+      (anyPtr) => anyPtr.setMessageBytes(
+        params.bytes,
+        preserveCapabilityPointers: true,
+      ),
       paramsCapabilities,
     );
     return future;
@@ -2206,7 +2427,13 @@ class _ImportedCapability extends Capability {
     if (_disposed) return;
     _disposed = true;
     final id = await _importIdFuture.catchError((_) => -1);
-    if (id >= 0) await _conn._releaseImport(id);
+    if (id < 0) return;
+    final sink = _deferredReleaseSink;
+    if (sink != null) {
+      sink(id);
+      return;
+    }
+    await _conn._releaseImport(id);
   }
 }
 
