@@ -132,7 +132,7 @@ packages:
       path: "../../../../packages/capnproto_dart_rpc"
       relative: true
     source: path
-    version: "0.1.0"
+    version: "0.1.1"
   checked_yaml:
     dependency: transitive
     description:

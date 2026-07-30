@@ -1280,7 +1280,7 @@ Future<void> _s11_complexEcho(ComplexTestServiceClient svc) async {
   section(11, 'Complex Request/Response');
 
   // 11a: Send a ComplexRequest and get a ComplexResponse back
-  final r = await svc.echo((b) {
+  final r = await svc.echo((b, _) {
     final req = b.initRequest();
     // Set requestId
     req.initRequestId().textual = 'req-001';
@@ -1470,35 +1470,17 @@ Future<void> _s14_capsInStructs(ComplexTestServiceClient svc) async {
   );
 
   // 14g: List(Interface) RPC round-trip via exchangeCapabilities
-  // Uses raw dispatch because the generated stub does not expose paramsCapabilities
-  // for capabilities nested inside a CapabilityBundle struct parameter.
   try {
     final r1 = await svc.makePipeline((b) => b.depth = 1);
     final target14g_1 = r1.target;
     final r2 = await svc.makePipeline((b) => b.depth = 2);
     final target14g_2 = r2.target;
 
-    final mb = MessageBuilder();
-    final paramsRoot = mb.initRoot(
-      complexTestServiceExchangeCapabilitiesParamsFactory,
-    );
-    final bundleBuilder = paramsRoot.initBundle();
-    bundleBuilder.setPrimary(0); // cap index 0 → target14g_1
-    final tgts = bundleBuilder.initTargets(2);
-    tgts[0] = 0; // cap index 0 → target14g_1
-    tgts[1] = 1; // cap index 1 → target14g_2
-
-    final rawResult = await svc.capability.dispatch(
-      0xd7fb0472c16375ee, // ComplexTestService interface ID
-      5, // exchangeCapabilities method ID
-      RpcPayload.fromBuilder(paramsRoot),
-      paramsCapabilities: [target14g_1.capability, target14g_2.capability],
-    );
-
-    final resultReader = rawResult.payload.getTyped(
-      complexTestServiceExchangeCapabilitiesResultsFactory,
-      capabilities: rawResult.caps,
-    );
+    final resultReader = await svc.exchangeCapabilities((b, capTable) {
+      final bundleBuilder = b.initBundle();
+      bundleBuilder.setPrimaryTyped(target14g_1, capTable);
+      bundleBuilder.setTargetsTyped([target14g_1, target14g_2], capTable);
+    });
     final bundle = resultReader.bundle;
     check('exchangeCapabilities returns bundle', bundle != null);
 
@@ -2020,7 +2002,7 @@ Future<void> _s22_errorHandling(ComplexTestServiceClient svc) async {
 
   // 22c: Calling not-implemented methods returns error
   try {
-    await svc.exchangeCapabilities((_) {});
+    await svc.exchangeCapabilities((_, _) {});
     fail('exchangeCapabilities should fail');
   } catch (e) {
     pass('not-implemented method returns error');

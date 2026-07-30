@@ -574,13 +574,35 @@ void _writeClientMethod(
     pipelineContainsMemo,
   );
 
+  // A capability reachable only through a nested struct/group/List(Interface)
+  // field can't be expressed as a fixed compile-time cap-table index the way
+  // a direct top-level Interface field can (see _collectCapParams) — its
+  // index depends on how many capabilities the caller's `build` callback
+  // happens to add, in what order, which isn't known until build time. When
+  // that's the case, the whole method switches to an accumulator `capTable`
+  // threaded into `build` as a second parameter, and any direct top-level
+  // Interface fields fall back to being set the same way (via their
+  // already-generated `setXxxTyped(cap, capTable)` helper) rather than mixing
+  // the two indexing schemes in one params struct.
+  final usesCapTableParam = _paramsHasNestedCapability(paramsNode, nodeMap);
+  final effectiveCapParams =
+      usesCapTableParam ? const <(int, String, int)>[] : capParams;
+
   final namedParams =
-      capParams.isEmpty
+      effectiveCapParams.isEmpty
           ? ''
-          : ', {${capParams.map((p) => 'required Capability ${p.$2}').join(', ')}}';
-  final capsList = capParams.map((p) => p.$2).join(', ');
+          : ', {${effectiveCapParams.map((p) => 'required Capability ${p.$2}').join(', ')}}';
+  final capsList = effectiveCapParams.map((p) => p.$2).join(', ');
+  final buildParamType =
+      usesCapTableParam
+          ? 'void Function(${paramsName}Builder, List<Object?> capTable)'
+          : 'void Function(${paramsName}Builder)';
   final dispatchCaps =
-      capParams.isEmpty ? '' : ', paramsCapabilities: [$capsList]';
+      usesCapTableParam
+          ? ', paramsCapabilities: capTable.cast<Capability>()'
+          : (effectiveCapParams.isEmpty
+              ? ''
+              : ', paramsCapabilities: [$capsList]');
 
   sb.writeln();
 
@@ -593,14 +615,19 @@ void _writeClientMethod(
     // variant is, when the params struct has generic type parameters (see
     // _writeTypedClientMethod's isStreaming branch).
     sb.writeln(
-      '  Future<void> $methodName(void Function(${paramsName}Builder) build$namedParams) async {',
+      '  Future<void> $methodName($buildParamType build$namedParams) async {',
     );
     sb.writeln('    final mb = MessageBuilder();');
-    if (capParams.isEmpty) {
+    if (usesCapTableParam) {
+      sb.writeln('    final capTable = <Object?>[];');
+      sb.writeln(
+        '    build(mb.initRoot(${_lcfirst(paramsName)}Factory), capTable);',
+      );
+    } else if (effectiveCapParams.isEmpty) {
       sb.writeln('    build(mb.initRoot(${_lcfirst(paramsName)}Factory));');
     } else {
       sb.writeln('    final b = mb.initRoot(${_lcfirst(paramsName)}Factory);');
-      for (final (_, fname, capIdx) in capParams) {
+      for (final (_, fname, capIdx) in effectiveCapParams) {
         sb.writeln('    b.set${_ucfirst(fname)}($capIdx);');
       }
       sb.writeln('    build(b);');
@@ -639,9 +666,14 @@ void _writeClientMethod(
           ? '$ifaceName${_ucfirst(methodName)}Result'
           : '${resultsName}Reader';
   sb.writeln(
-    '  Future<$asyncReturnType> $methodName(void Function(${paramsName}Builder) build$namedParams) async {',
+    '  Future<$asyncReturnType> $methodName($buildParamType build$namedParams) async {',
   );
-  if (capParams.isEmpty) {
+  if (usesCapTableParam) {
+    sb.writeln('    final capTable = <Object?>[];');
+    sb.writeln(
+      '    final result = await _cap.dispatchBuilding($ifaceId, $ordinal, (anyPtr) => build(anyPtr.initStruct(${_lcfirst(paramsName)}Factory), capTable)$dispatchCaps);',
+    );
+  } else if (effectiveCapParams.isEmpty) {
     sb.writeln(
       '    final result = await _cap.dispatchBuilding($ifaceId, $ordinal, (anyPtr) => build(anyPtr.initStruct(${_lcfirst(paramsName)}Factory))$dispatchCaps);',
     );
@@ -650,7 +682,7 @@ void _writeClientMethod(
       '    final result = await _cap.dispatchBuilding($ifaceId, $ordinal, (anyPtr) {',
     );
     sb.writeln('      final b = anyPtr.initStruct(${_lcfirst(paramsName)}Factory);');
-    for (final (_, fname, capIdx) in capParams) {
+    for (final (_, fname, capIdx) in effectiveCapParams) {
       sb.writeln('      b.set${_ucfirst(fname)}($capIdx);');
     }
     sb.writeln('      build(b);');
@@ -671,14 +703,19 @@ void _writeClientMethod(
     final pipelineName = '$ifaceName${_ucfirst(methodName)}Pipeline';
     sb.writeln();
     sb.writeln(
-      '  $pipelineName ${methodName}Pipeline(void Function(${paramsName}Builder) build$namedParams) {',
+      '  $pipelineName ${methodName}Pipeline($buildParamType build$namedParams) {',
     );
     sb.writeln('    final mb = MessageBuilder();');
-    if (capParams.isEmpty) {
+    if (usesCapTableParam) {
+      sb.writeln('    final capTable = <Object?>[];');
+      sb.writeln(
+        '    build(mb.initRoot(${_lcfirst(paramsName)}Factory), capTable);',
+      );
+    } else if (effectiveCapParams.isEmpty) {
       sb.writeln('    build(mb.initRoot(${_lcfirst(paramsName)}Factory));');
     } else {
       sb.writeln('    final b = mb.initRoot(${_lcfirst(paramsName)}Factory);');
-      for (final (_, fname, capIdx) in capParams) {
+      for (final (_, fname, capIdx) in effectiveCapParams) {
         sb.writeln('    b.set${_ucfirst(fname)}($capIdx);');
       }
       sb.writeln('    build(b);');
@@ -913,6 +950,111 @@ List<(int, String, int)> _collectCapParams(SchemaNode? paramsNode) {
     }
   }
   return result;
+}
+
+/// Whether [paramsNode]'s fields reach a capability through a nested
+/// struct-pointer, group, or `List(Interface)` field — i.e. a capability
+/// that [_collectCapParams]'s direct-top-level-field scan can't see. When
+/// true, [_writeClientMethod] switches the whole method to the
+/// accumulator-based `capTable` build signature instead of the plain
+/// named-Capability-parameter sugar, so nested/listed capabilities set via
+/// the per-field `setXxxTyped(cap, capTable)` helpers (already generated for
+/// every Interface/List(Interface) struct field — see the [InterfaceRefType]
+/// and [ListType] branches of the builder-field writer) get collected too.
+///
+/// Skips generic struct instantiations, matching
+/// [_structContainsCapability]'s existing restriction — capability
+/// propagation through generics isn't supported by this generator yet.
+bool _paramsHasNestedCapability(
+  SchemaNode? paramsNode,
+  Map<int, SchemaNode> nodeMap,
+) {
+  if (paramsNode == null) return false;
+  final body = paramsNode.body;
+  if (body is! StructBody) return false;
+
+  final memo = <int, bool>{};
+  for (final field in body.fields) {
+    final fieldBody = field.body;
+    if (fieldBody is GroupField) {
+      if (_structContainsCapabilityEager(fieldBody.typeId, nodeMap, memo)) {
+        return true;
+      }
+      continue;
+    }
+    if (fieldBody is! SlotField) continue;
+    // A direct top-level Interface field is already handled by
+    // _collectCapParams's simpler named-Capability-parameter path.
+    if (fieldBody.type is InterfaceRefType) continue;
+    if (_typeContainsCapabilityEager(fieldBody.type, nodeMap, memo, <int>{})) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// Eager variant of [_structContainsCapability]: also descends into
+/// `List(...)` field element types (via [_typeContainsCapabilityEager]),
+/// since this is used for build-time capTable collection — unlike
+/// [_structContainsCapability], which only counts struct-pointer hops
+/// because it's answering a `PromisedAnswer.transform`-reachability
+/// question for pipelining.
+bool _structContainsCapabilityEager(
+  int typeId,
+  Map<int, SchemaNode> nodeMap,
+  Map<int, bool> memo, [
+  Set<int>? visiting,
+]) {
+  final cached = memo[typeId];
+  if (cached != null) return cached;
+  final visitSet = visiting ?? <int>{};
+  if (visitSet.contains(typeId)) return false;
+
+  final body = nodeMap[typeId]?.body;
+  if (body is! StructBody) return false;
+
+  visitSet.add(typeId);
+  var found = false;
+  for (final field in body.fields) {
+    final fieldBody = field.body;
+    if (fieldBody is GroupField) {
+      found = _structContainsCapabilityEager(
+        fieldBody.typeId,
+        nodeMap,
+        memo,
+        visitSet,
+      );
+    } else if (fieldBody is SlotField) {
+      found = _typeContainsCapabilityEager(
+        fieldBody.type,
+        nodeMap,
+        memo,
+        visitSet,
+      );
+    }
+    if (found) break;
+  }
+  visitSet.remove(typeId);
+  memo[typeId] = found;
+  return found;
+}
+
+/// Whether [type] itself is an interface, or (for lists/non-generic
+/// structs) transitively contains one — see [_structContainsCapabilityEager].
+bool _typeContainsCapabilityEager(
+  SchemaType type,
+  Map<int, SchemaNode> nodeMap,
+  Map<int, bool> memo,
+  Set<int> visiting,
+) {
+  if (type is InterfaceRefType) return true;
+  if (type is ListType) {
+    return _typeContainsCapabilityEager(type.elementType, nodeMap, memo, visiting);
+  }
+  if (type is StructRefType && type.typeArgs.isEmpty) {
+    return _structContainsCapabilityEager(type.typeId, nodeMap, memo, visiting);
+  }
+  return false;
 }
 
 /// Returns true if [resultsNode] represents an effectively-void result struct.

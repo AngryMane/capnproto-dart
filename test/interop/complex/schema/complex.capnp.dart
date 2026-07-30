@@ -11437,15 +11437,17 @@ class ComplexTestServiceClient extends Capability {
   ComplexTestServiceClient(this._cap);
   Capability get capability => _cap;
 
-  Future<ComplexTestServiceEchoResultsReader> echo(void Function(ComplexTestServiceEchoParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 0, (anyPtr) => build(anyPtr.initStruct(complexTestServiceEchoParamsFactory)));
+  Future<ComplexTestServiceEchoResultsReader> echo(void Function(ComplexTestServiceEchoParamsBuilder, List<Object?> capTable) build) async {
+    final capTable = <Object?>[];
+    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 0, (anyPtr) => build(anyPtr.initStruct(complexTestServiceEchoParamsFactory), capTable), paramsCapabilities: capTable.cast<Capability>());
     return result.payload.getTyped(complexTestServiceEchoResultsFactory, capabilities: result.caps);
   }
 
-  ComplexTestServiceEchoPipeline echoPipeline(void Function(ComplexTestServiceEchoParamsBuilder) build) {
+  ComplexTestServiceEchoPipeline echoPipeline(void Function(ComplexTestServiceEchoParamsBuilder, List<Object?> capTable) build) {
     final mb = MessageBuilder();
-    build(mb.initRoot(complexTestServiceEchoParamsFactory));
-    return ComplexTestServiceEchoPipeline._(_cap.beginDispatch(0xd7fb0472c16375ee, 0, RpcPayload.fromBytes(mb.serialize())));
+    final capTable = <Object?>[];
+    build(mb.initRoot(complexTestServiceEchoParamsFactory), capTable);
+    return ComplexTestServiceEchoPipeline._(_cap.beginDispatch(0xd7fb0472c16375ee, 0, RpcPayload.fromBytes(mb.serialize()), paramsCapabilities: capTable.cast<Capability>()));
   }
 
   Future<ComplexTestServiceEchoScalarsResultsReader> echoScalars(void Function(ComplexTestServiceEchoScalarsParamsBuilder) build) async {
@@ -11478,15 +11480,17 @@ class ComplexTestServiceClient extends Capability {
     return result.getValueTyped(valueCodec);
   }
 
-  Future<ComplexTestServiceExchangeCapabilitiesResultsReader> exchangeCapabilities(void Function(ComplexTestServiceExchangeCapabilitiesParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 5, (anyPtr) => build(anyPtr.initStruct(complexTestServiceExchangeCapabilitiesParamsFactory)));
+  Future<ComplexTestServiceExchangeCapabilitiesResultsReader> exchangeCapabilities(void Function(ComplexTestServiceExchangeCapabilitiesParamsBuilder, List<Object?> capTable) build) async {
+    final capTable = <Object?>[];
+    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 5, (anyPtr) => build(anyPtr.initStruct(complexTestServiceExchangeCapabilitiesParamsFactory), capTable), paramsCapabilities: capTable.cast<Capability>());
     return result.payload.getTyped(complexTestServiceExchangeCapabilitiesResultsFactory, capabilities: result.caps);
   }
 
-  ComplexTestServiceExchangeCapabilitiesPipeline exchangeCapabilitiesPipeline(void Function(ComplexTestServiceExchangeCapabilitiesParamsBuilder) build) {
+  ComplexTestServiceExchangeCapabilitiesPipeline exchangeCapabilitiesPipeline(void Function(ComplexTestServiceExchangeCapabilitiesParamsBuilder, List<Object?> capTable) build) {
     final mb = MessageBuilder();
-    build(mb.initRoot(complexTestServiceExchangeCapabilitiesParamsFactory));
-    return ComplexTestServiceExchangeCapabilitiesPipeline._(_cap.beginDispatch(0xd7fb0472c16375ee, 5, RpcPayload.fromBytes(mb.serialize())));
+    final capTable = <Object?>[];
+    build(mb.initRoot(complexTestServiceExchangeCapabilitiesParamsFactory), capTable);
+    return ComplexTestServiceExchangeCapabilitiesPipeline._(_cap.beginDispatch(0xd7fb0472c16375ee, 5, RpcPayload.fromBytes(mb.serialize()), paramsCapabilities: capTable.cast<Capability>()));
   }
 
   Future<ComplexTestServiceCallObserverResultsReader> callObserver(void Function(ComplexTestServiceCallObserverParamsBuilder) build, {required Capability observer}) async {
