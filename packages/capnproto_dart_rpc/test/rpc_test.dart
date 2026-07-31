@@ -178,6 +178,47 @@ Uint8List _callWithCapDescriptorDisc(int disc) {
   return result;
 }
 
+// Same byte-patching trick as _callWithCapDescriptorDisc, but for a
+// two-entry capTable whose *first* entry is a real, valid
+// receiverHosted(0) descriptor and whose *second* entry's disc byte is
+// patched to [disc] — used to probe cleanup when a later entry fails to
+// decode after an earlier one already succeeded.
+Uint8List _callWithReceiverHostedThenCapDescriptorDisc(int disc) {
+  final paramsBuilder = MessageBuilder();
+  paramsBuilder.initRoot(_TextParamFactory());
+  final params = paramsBuilder.serialize();
+  final withNoneSecond = buildCallMessage(
+    questionId: 1,
+    targetImportId: 0,
+    interfaceId: _echoInterfaceId,
+    methodId: _echoMethodId,
+    paramsBytes: params,
+    capTableDescriptors: const [
+      RpcCapDescriptor.receiverHosted(0),
+      RpcCapDescriptor.none(),
+    ],
+  );
+  final withSenderHostedSecond = buildCallMessage(
+    questionId: 1,
+    targetImportId: 0,
+    interfaceId: _echoInterfaceId,
+    methodId: _echoMethodId,
+    paramsBytes: params,
+    capTableDescriptors: const [
+      RpcCapDescriptor.receiverHosted(0),
+      RpcCapDescriptor.senderHosted(0),
+    ],
+  );
+  final differences = <int>[
+    for (var i = 0; i < withNoneSecond.length; i++)
+      if (withNoneSecond[i] != withSenderHostedSecond[i]) i,
+  ];
+  expect(differences, hasLength(1));
+  final result = Uint8List.fromList(withNoneSecond);
+  result[differences.single] = disc;
+  return result;
+}
+
 class _TextParamReader extends StructReader {
   _TextParamReader(super.raw);
 }
@@ -4389,6 +4430,211 @@ void main() {
     },
   );
 
+  group('_capabilityFromDescriptor: receiverHosted validation', () {
+    test(
+      'a receiverHosted descriptor naming an export id we never exported '
+      'fails only that one call with Return.exception, and does not tear '
+      'down the connection',
+      () async {
+        // Regression test: _capabilityFromDescriptor's receiverHosted case
+        // (disc=3) used to silently map an unknown export id to
+        // NullCapability instead of treating it as the protocol violation
+        // it is (a well-behaved peer, honoring the protocol's causal
+        // ordering guarantees, never references an export id it wasn't
+        // actually given) — conflating "the schema says this field is
+        // legitimately absent" (disc=0/none) with "the peer referenced
+        // something that was never exported to it".
+        final serverInput = StreamController<Uint8List>();
+        final serverOutput = StreamController<Uint8List>();
+        final receivedMessages = <RpcMessage>[];
+        serverOutput.stream.listen((bytes) {
+          receivedMessages.add(parseRpcMessage(bytes));
+        });
+        TwoPartyRpcConnection.server(
+          incoming: serverInput.stream,
+          outgoing: serverOutput.sink,
+          bootstrap: EchoServer(),
+        );
+
+        // A Call targeting bootstrap (export 0, always valid), carrying a
+        // receiverHosted capTable entry naming an export id this vat never
+        // actually exported.
+        serverInput.add(
+          buildCallMessage(
+            questionId: 1,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _echoMethodId,
+            paramsBytes: _buildEchoParams(''),
+            capTableDescriptors: const [RpcCapDescriptor.receiverHosted(99999)],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(receivedMessages, hasLength(1));
+        expect(
+          receivedMessages.single.isReturnException,
+          isTrue,
+          reason:
+              'expected only the offending call to fail with '
+              'Return.exception, got: ${receivedMessages.single.type}',
+        );
+
+        // The connection itself must still be alive and able to serve
+        // further calls — unlike a genuinely unimplemented descriptor
+        // (disc >= 5; see the "tears down the connection" test above), a
+        // receiverHosted descriptor naming an unknown export id is only
+        // this one call's problem.
+        serverInput.add(
+          buildCallMessage(
+            questionId: 2,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _echoMethodId,
+            paramsBytes: _buildEchoParams('ok'),
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(receivedMessages, hasLength(2));
+        expect(receivedMessages[1].isReturnResults, isTrue);
+
+        await serverInput.close();
+      },
+    );
+
+    test(
+      'a descriptor that fails partway through a multi-entry capTable does '
+      'not leak the capabilities that resolved successfully before it',
+      () async {
+        // Regression test: when _capabilityFromDescriptor throws partway
+        // through decoding a Call's capTable, everything already decoded
+        // before the failing entry (an import refcount bump, in this
+        // case) used to just sit in the local `paramsCapabilities` list
+        // forever — nothing ever disposed it, since the call itself never
+        // reaches a real dispatch. A peer could repeat this (a valid
+        // senderHosted entry followed by an invalid one) to leak import
+        // refcounts indefinitely.
+        final serverInput = StreamController<Uint8List>();
+        final serverOutput = StreamController<Uint8List>();
+        final receivedMessages = <RpcMessage>[];
+        serverOutput.stream.listen((bytes) {
+          receivedMessages.add(parseRpcMessage(bytes));
+        });
+        final serverConn = TwoPartyRpcConnection.server(
+          incoming: serverInput.stream,
+          outgoing: serverOutput.sink,
+          bootstrap: EchoServer(),
+        );
+
+        serverInput.add(
+          buildCallMessage(
+            questionId: 1,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _echoMethodId,
+            paramsBytes: _buildEchoParams(''),
+            capTableDescriptors: const [
+              RpcCapDescriptor.senderHosted(10),
+              RpcCapDescriptor.receiverHosted(99999),
+            ],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        final returns = receivedMessages.where((m) => m.isReturnException);
+        expect(returns, hasLength(1));
+        expect(
+          returns.single.returnReleaseParamCaps,
+          isFalse,
+          reason:
+              'an explicit Release for the already-resolved '
+              'senderHosted(10) import is sent separately (checked below) '
+              '— releaseParamCaps: true here too would tell the peer to '
+              'also decrement its own export refcount for it a second '
+              'time',
+        );
+
+        expect(
+          serverConn.debugImportCount,
+          equals(0),
+          reason:
+              'the senderHosted(10) import resolved before the failing '
+              'descriptor was never disposed',
+        );
+
+        final releases = receivedMessages.where(
+          (m) => m.type == RpcMessageType.release,
+        );
+        expect(releases, hasLength(1));
+        expect(releases.single.releaseId, equals(10));
+        expect(releases.single.referenceCount, equals(1));
+
+        await serverInput.close();
+      },
+    );
+
+    test(
+      'after an error Return from a mid-capTable decode failure, the peer '
+      'reusing the same question id before Finish is rejected as a '
+      'protocol violation instead of being processed as a fresh call',
+      () async {
+        // Regression test: the error Return sent for a mid-capTable decode
+        // failure used to leave `qid` registered in none of
+        // _pendingCaps/_answerCaps/_answers/_finishedAnswers, so
+        // _rejectDuplicateQuestionId (which checks exactly those tables)
+        // couldn't distinguish a peer illegally reusing that same question
+        // id before sending Finish for it from a legitimate fresh call.
+        final serverInput = StreamController<Uint8List>();
+        final serverOutput = StreamController<Uint8List>();
+        serverOutput.stream.listen((_) {});
+        final serverConn = TwoPartyRpcConnection.server(
+          incoming: serverInput.stream,
+          outgoing: serverOutput.sink,
+          bootstrap: EchoServer(),
+        );
+
+        final doneExpectation = expectLater(
+          serverConn.done,
+          throwsA(
+            isA<RpcException>().having(
+              (e) => e.message,
+              'message',
+              contains('duplicate incoming question ID 1'),
+            ),
+          ),
+        );
+
+        serverInput.add(
+          buildCallMessage(
+            questionId: 1,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _echoMethodId,
+            paramsBytes: _buildEchoParams(''),
+            capTableDescriptors: const [RpcCapDescriptor.receiverHosted(99999)],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        // Reuses qid=1 before ever sending Finish for the first (failed)
+        // attempt — a well-behaved peer never does this; a malformed or
+        // hostile one might.
+        serverInput.add(
+          buildCallMessage(
+            questionId: 1,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _echoMethodId,
+            paramsBytes: _buildEchoParams(''),
+          ),
+        );
+
+        await doneExpectation;
+      },
+    );
+  });
+
   group('ownership: capability relayed across two different connections', () {
     test(
       'a peer B releasing a relayed capability does not invalidate the '
@@ -5137,6 +5383,68 @@ void main() {
         await serverOutput.close();
       },
     );
+
+    test(
+      'an entry that resolved before an unimplemented descriptor is still '
+      'disposed before the connection tears down',
+      () async {
+        // Regression test: the unimplemented rethrow used to skip the
+        // dispose loop entirely (it ran only in the per-call-failure
+        // branch below it) — any capTable entry that had already resolved
+        // successfully before the unimplemented one (e.g. a receiverHosted
+        // descriptor vending a fresh handle to bootstrap/an export) was
+        // simply abandoned. _tearDown only ever disposes each export's own
+        // single `ownedReference` — it has no way to know about this
+        // *additional* vended handle, so the shared refcount for that
+        // identity never actually reached zero, and the real capability's
+        // own dispose() never ran even though the connection (and every
+        // other reference to it) was long gone.
+        final bootstrap = CountingCapability();
+        final serverInput = StreamController<Uint8List>();
+        final serverOutput = StreamController<Uint8List>();
+        serverOutput.stream.listen((_) {});
+        final server = TwoPartyRpcConnection.server(
+          incoming: serverInput.stream,
+          outgoing: serverOutput.sink,
+          bootstrap: bootstrap,
+        );
+
+        final doneExpectation = expectLater(
+          server.done,
+          throwsA(
+            isA<RpcException>().having(
+              (error) => error.cause,
+              'cause',
+              isA<RpcException>().having(
+                (cause) => cause.kind,
+                'kind',
+                ErrorKind.unimplemented,
+              ),
+            ),
+          ),
+        );
+
+        // [0] receiverHosted(0) — resolves successfully, vending a fresh
+        // handle to bootstrap (export 0) in addition to the export's own
+        // ownedReference. [1] disc=5 (thirdPartyHosted) — unimplemented.
+        serverInput.add(_callWithReceiverHostedThenCapDescriptorDisc(5));
+        await doneExpectation;
+
+        expect(
+          bootstrap.disposeCount,
+          equals(1),
+          reason:
+              'the extra handle vended for the receiverHosted(0) entry '
+              'was never disposed, so the shared refcount for bootstrap '
+              'never reached zero even after teardown released the '
+              "export's own reference",
+        );
+
+        await serverInput.close();
+        await serverOutput.close();
+      },
+    );
+
     test(
       'server sends Unimplemented when it receives a message with unknown disc',
       () async {
