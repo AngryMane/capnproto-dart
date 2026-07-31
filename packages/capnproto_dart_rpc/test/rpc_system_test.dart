@@ -63,6 +63,29 @@ void main() {
         throwsA(isA<ArgumentError>()),
       );
     });
+
+    test(
+      'serve() actually attempts to resolve/bind a non-IP-literal host '
+      'instead of silently falling back to 127.0.0.1',
+      () async {
+        // Regression test: serve() used to compute its bind address as
+        // `InternetAddress.tryParse(address.host) ?? InternetAddress.loopbackIPv4`
+        // — any host that wasn't a literal IP address (a real hostname, a
+        // container name, ...) silently became 127.0.0.1, with no error
+        // and no indication the caller's actual host was ignored.
+        // '.invalid' is a reserved TLD (RFC 2606) guaranteed to never
+        // resolve, so under that old behavior this call would have quietly
+        // *succeeded* anyway (bound to loopback instead) rather than
+        // surfacing the bogus hostname as the resolution failure it is.
+        await expectLater(
+          RpcSystem.serve(
+            Uri.parse('tcp://this-host-does-not-exist.invalid:0'),
+            NullCapability(),
+          ),
+          throwsA(anything),
+        );
+      },
+    );
   });
 
   group('RpcSystem.serve / RpcSystem.connect (TCP)', () {

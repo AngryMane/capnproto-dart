@@ -104,7 +104,7 @@ This library implements **Cap'n Proto RPC Level 1** for two-party connections:
 | Object-capability references | Supported |
 | Promise pipelining | Supported |
 | Bidirectional RPC (callbacks) | Supported |
-| Tail calls (`Capability.tryTailCall`) | Supported |
+| Tail calls (`Capability.tryTailCall`) | Supported[^tail-call-pipelining] |
 | Receiving `Resolve` / `Disembargo` from peer | Supported |
 | Sending `Resolve` / `Disembargo` from Dart vat | Supported |
 | Non-owning capability references (`WeakCapabilityRef`) | Supported |
@@ -120,6 +120,8 @@ The implementation also supports the following optional Level 1 lifecycle optimi
 Weak capability references, batched `Release` messages, `Return.releaseParamCaps`, and
 `Return.noFinishNeeded`.  
 Applications with long-lived connections and high capability churn should still release capabilities promptly and validate their workload against the lifecycle/stress tests in this repository.
+
+[^tail-call-pipelining]: Promise pipelining and tail calls are each fully supported individually, but not in combination: when a call is answered via the tail-call wire optimization (`Return.takeFromOtherQuestion`), the original call's own question id cannot itself be pipelined off of — the real answer lives under the forwarded call's own question id instead. A pipelined call that tries anyway fails with an explicit `unknown promisedAnswer questionId` error (not a silent/incorrect result). See `TwoPartyRpcConnection._dispatchTailCall`'s doc comment for the underlying reason.
 
 The RPC layer is tested for interoperability with Rust servers/clients using the [`capnp`](https://crates.io/crates/capnp) crate (versions 0.23–0.26).
 

@@ -115,8 +115,19 @@ class RpcSystem {
         'must be non-negative or null',
       );
     }
-    final host =
-        InternetAddress.tryParse(address.host) ?? InternetAddress.loopbackIPv4;
+    // Passed straight through to ServerSocket.bind/HttpServer.bind(Secure),
+    // which both accept a bare hostname (resolving it themselves) just as
+    // readily as an InternetAddress literal — unlike the previous
+    // `InternetAddress.tryParse(address.host) ?? InternetAddress.loopbackIPv4`,
+    // which silently fell back to 127.0.0.1 for *any* non-literal host
+    // (a real hostname, a container name, ...) instead of actually binding
+    // what the caller asked for. `connect()` above already hands
+    // `address.host` straight to `Socket.connect`/`WebSocket.connect` the
+    // same way; only an empty host component (no host in `address` at all)
+    // gets an explicit default, matching that being the one case with
+    // nothing meaningful to resolve.
+    final Object host =
+        address.host.isEmpty ? InternetAddress.loopbackIPv4 : address.host;
     final connections = <TwoPartyRpcConnection>{};
     var pendingWebSocketUpgrades = 0;
     var closing = false;

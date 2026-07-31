@@ -4389,6 +4389,80 @@ void main() {
     },
   );
 
+  group('_capabilityFromDescriptor: receiverHosted validation', () {
+    test(
+      'a receiverHosted descriptor naming an export id we never exported '
+      'fails only that one call with Return.exception, and does not tear '
+      'down the connection',
+      () async {
+        // Regression test: _capabilityFromDescriptor's receiverHosted case
+        // (disc=3) used to silently map an unknown export id to
+        // NullCapability instead of treating it as the protocol violation
+        // it is (a well-behaved peer, honoring the protocol's causal
+        // ordering guarantees, never references an export id it wasn't
+        // actually given) — conflating "the schema says this field is
+        // legitimately absent" (disc=0/none) with "the peer referenced
+        // something that was never exported to it".
+        final serverInput = StreamController<Uint8List>();
+        final serverOutput = StreamController<Uint8List>();
+        final receivedMessages = <RpcMessage>[];
+        serverOutput.stream.listen((bytes) {
+          receivedMessages.add(parseRpcMessage(bytes));
+        });
+        TwoPartyRpcConnection.server(
+          incoming: serverInput.stream,
+          outgoing: serverOutput.sink,
+          bootstrap: EchoServer(),
+        );
+
+        // A Call targeting bootstrap (export 0, always valid), carrying a
+        // receiverHosted capTable entry naming an export id this vat never
+        // actually exported.
+        serverInput.add(
+          buildCallMessage(
+            questionId: 1,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _echoMethodId,
+            paramsBytes: _buildEchoParams(''),
+            capTableDescriptors: const [RpcCapDescriptor.receiverHosted(99999)],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(receivedMessages, hasLength(1));
+        expect(
+          receivedMessages.single.isReturnException,
+          isTrue,
+          reason:
+              'expected only the offending call to fail with '
+              'Return.exception, got: ${receivedMessages.single.type}',
+        );
+
+        // The connection itself must still be alive and able to serve
+        // further calls — unlike a genuinely unimplemented descriptor
+        // (disc >= 5; see the "tears down the connection" test above), a
+        // receiverHosted descriptor naming an unknown export id is only
+        // this one call's problem.
+        serverInput.add(
+          buildCallMessage(
+            questionId: 2,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _echoMethodId,
+            paramsBytes: _buildEchoParams('ok'),
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(receivedMessages, hasLength(2));
+        expect(receivedMessages[1].isReturnResults, isTrue);
+
+        await serverInput.close();
+      },
+    );
+  });
+
   group('ownership: capability relayed across two different connections', () {
     test(
       'a peer B releasing a relayed capability does not invalidate the '

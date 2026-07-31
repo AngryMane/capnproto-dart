@@ -1226,8 +1226,23 @@ class TwoPartyRpcConnection implements RpcConnection {
     // silently treating them as null loses information and can change the
     // meaning of an otherwise valid call.
     final paramsCapabilities = <Capability>[];
-    for (final descriptor in msg.capTableDescriptors) {
-      paramsCapabilities.add(_capabilityFromDescriptor(descriptor));
+    try {
+      for (final descriptor in msg.capTableDescriptors) {
+        paramsCapabilities.add(_capabilityFromDescriptor(descriptor));
+      }
+    } on RpcException catch (error) {
+      // A disc this vat doesn't implement at all (e.g. thirdPartyHosted) is
+      // a bigger deal than a single bad call — see the `default` case in
+      // _capabilityFromDescriptor and the "tears down the connection as
+      // unimplemented" test for this exact behavior — so let that kind keep
+      // propagating to this listener's own outer try/catch, which tears the
+      // whole connection down. Every other decode failure here (e.g. a
+      // receiverHosted descriptor naming an export id we don't have) is
+      // just this one call's problem: fail only it, with a normal
+      // Return.exception, and keep serving the connection.
+      if (error.kind == ErrorKind.unimplemented) rethrow;
+      _sendRaw(buildReturnExceptionMessage(answerId: qid, reason: error.message));
+      return;
     }
 
     // sendResultsTo=yourself: the peer is asking us to forward this call's
@@ -2082,9 +2097,18 @@ class TwoPartyRpcConnection implements RpcConnection {
         // comment; this is the same discipline every other decode path
         // (requireCapabilityFromResult et al.) already requires.
         final hosted = _exports[descriptor.id];
-        return hosted == null
-            ? NullCapability()
-            : vendCapabilityHandle(hosted.identity);
+        if (hosted == null) {
+          // A well-behaved peer, honoring the protocol's causal ordering
+          // guarantees, never references an export id we haven't actually
+          // exported to it — this is a genuine protocol violation (a buggy
+          // or malicious peer), not a legitimate race. Silently mapping it
+          // to NullCapability would conflate it with a schema-level `none`
+          // descriptor (disc 0), losing that distinction and, per
+          // _dispatchToCapability's own doc comment on this same class of
+          // decision, changing the meaning of an otherwise valid call.
+          throw RpcException('unknown receiverHosted export id: ${descriptor.id}');
+        }
+        return vendCapabilityHandle(hosted.identity);
       case 4: // receiverAnswer: capability in one of our outstanding answers
         return _ReceiverAnswerCapability(
           this,
