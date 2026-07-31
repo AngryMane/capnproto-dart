@@ -226,6 +226,12 @@ class TwoPartyRpcConnection implements RpcConnection {
   ///
   /// See [TwoPartyRpcConnection.client] for [onDisposeError],
   /// [streamWindowSize], [disembargoTimeout], and [preFramed].
+  ///
+  /// [bootstrap]'s ownership transfers to this connection: it's disposed
+  /// (via its export's [_ExportEntry.ownedReference] — see that field's doc
+  /// comment) once every remote reference to it has been released and,
+  /// failing that, when the connection itself is torn down. Callers must
+  /// not separately dispose it themselves.
   factory TwoPartyRpcConnection.server({
     required Stream<Uint8List> incoming,
     required StreamSink<Uint8List> outgoing,
@@ -245,6 +251,14 @@ class TwoPartyRpcConnection implements RpcConnection {
       disembargoTimeout,
       preFramed,
     );
+    // Unwrap first, like every _getOrCreateExportId caller — bootstrap is
+    // registered as export 0 through the same _exportIds/_ExportEntry
+    // machinery, so its identity must satisfy the same "always unwrapped"
+    // invariant those rely on for deduplication (e.g. this same underlying
+    // capability being handed back to _getOrCreateExportId again later,
+    // via a normal export, must dedupe against this entry instead of
+    // creating a redundant second export for it).
+    final bootstrapIdentity = unwrapVendedCapability(bootstrap);
     // Register bootstrap as export 0. Its remoteRefCount starts at 0 (not 1,
     // unlike the _ExportEntry constructor's default for _getOrCreateExportId
     // callers): the entry needs to exist now so _handleCall/_handleBootstrap
@@ -252,8 +266,17 @@ class TwoPartyRpcConnection implements RpcConnection {
     // it sends a Bootstrap request — _handleBootstrap increments this on
     // every one it answers, matching how _getOrCreateExportId increments on
     // every ordinary export vend.
-    conn._exports[0] = _ExportEntry(bootstrap)..remoteRefCount = 0;
-    conn._exportIds[bootstrap] = 0;
+    conn._exports[0] = _ExportEntry(bootstrapIdentity)..remoteRefCount = 0;
+    conn._exportIds[bootstrapIdentity] = 0;
+    // bootstrap's ownership transfers to this connection (see doc comment
+    // above) — the entry just created its own ownedReference for
+    // bootstrapIdentity, so if the caller passed an already-vended handle
+    // rather than a bare capability, that handle is now redundant with it
+    // and must be released, or its outstanding share of bootstrapIdentity's
+    // refcount would never be balanced.
+    if (!identical(bootstrap, bootstrapIdentity)) {
+      conn._disposeIgnoringErrors(bootstrap);
+    }
     return conn;
   }
 
@@ -1834,14 +1857,29 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// connection's — see [_ExportEntry.ownedReference]'s doc comment) —
   /// so it's unwrapped to its real identity before being used as the
   /// [_getOrCreateExportId] dedup key.
+  ///
+  /// `DispatchResult.caps` transfers ownership of [cap] to this connection
+  /// — [_getOrCreateExportId] establishes (or reuses) this connection's own
+  /// owning reference to [identity], so if [cap] was itself a distinct
+  /// vended handle, it's now redundant with that owning reference and is
+  /// disposed here: otherwise its share of [identity]'s refcount (see
+  /// [vendCapabilityHandle]) would never be released, leaking the
+  /// underlying capability even after every other reference to it —
+  /// including this connection's own owning one — is properly disposed.
   RpcCapDescriptor _returnCapDescriptor(Capability cap) {
     final identity = unwrapVendedCapability(cap);
+    final RpcCapDescriptor descriptor;
     if (identity is DeferredCapability) {
       final promiseId = _getOrCreateExportId(identity);
       _scheduleSenderPromiseResolve(promiseId, identity);
-      return RpcCapDescriptor.senderPromise(promiseId);
+      descriptor = RpcCapDescriptor.senderPromise(promiseId);
+    } else {
+      descriptor = RpcCapDescriptor.senderHosted(_getOrCreateExportId(identity));
     }
-    return RpcCapDescriptor.senderHosted(_getOrCreateExportId(identity));
+    if (!identical(cap, identity)) {
+      _disposeIgnoringErrors(cap);
+    }
+    return descriptor;
   }
 
   void _scheduleSenderPromiseResolve(
@@ -1906,22 +1944,34 @@ class TwoPartyRpcConnection implements RpcConnection {
   }
 
   /// See [_returnCapDescriptor]'s doc comment — [cap] is unwrapped to its
-  /// real identity first for the same reason.
+  /// real identity first, and a redundant vended [cap] is disposed at the
+  /// end, for the same ownership-transfer reason (this resolves a promise
+  /// a [DeferredCapability] returned from `DispatchResult.caps` settled
+  /// to, which transfers ownership exactly like an already-settled result
+  /// capability does). The `receiverHosted` branch establishes no owning
+  /// reference of its own locally (it's just handing the peer back its own
+  /// capability) — [cap] disposal is what releases its share of
+  /// [identity]'s refcount there, since nothing else will.
   Future<RpcCapDescriptor> _resolveDescriptorForCapability(
     Capability cap,
   ) async {
     final identity = unwrapVendedCapability(cap);
+    final RpcCapDescriptor descriptor;
     if (identity is _ImportedCapability && identity._conn == this) {
       final id = await identity._importIdFuture;
       _throwIfImportBroken(id);
-      return RpcCapDescriptor.receiverHosted(id);
-    }
-    if (identity is DeferredCapability) {
+      descriptor = RpcCapDescriptor.receiverHosted(id);
+    } else if (identity is DeferredCapability) {
       final nestedPromiseId = _getOrCreateExportId(identity);
       _scheduleSenderPromiseResolve(nestedPromiseId, identity);
-      return RpcCapDescriptor.senderPromise(nestedPromiseId);
+      descriptor = RpcCapDescriptor.senderPromise(nestedPromiseId);
+    } else {
+      descriptor = RpcCapDescriptor.senderHosted(_getOrCreateExportId(identity));
     }
-    return RpcCapDescriptor.senderHosted(_getOrCreateExportId(identity));
+    if (!identical(cap, identity)) {
+      _disposeIgnoringErrors(cap);
+    }
+    return descriptor;
   }
 
   /// Decrements the remote ref count for [eid] and, once no remote
@@ -2003,8 +2053,24 @@ class TwoPartyRpcConnection implements RpcConnection {
         final state = _retainImport(descriptor.id, isPromise: true);
         return _ImportedCapability.fromState(this, state);
       case 3: // receiverHosted: we (the receiver) export this cap
+        // A fresh vendCapabilityHandle, not the export's own identity/
+        // ownedReference directly: this capability is handed to
+        // application code (a call's paramsCapabilities, a Return's result
+        // caps, or a resolved promise replacement), which routinely
+        // disposes params/result capabilities it's done with — that must
+        // decrement the shared refcount (see vendCapabilityHandle) rather
+        // than tearing down the export's identity directly, which would
+        // invalidate the export's own still-live ownedReference (and any
+        // other outstanding reference to the same identity) out from under
+        // it. Code that needs to recognize the concrete capability this
+        // wraps (e.g. an `is`/identity check against a locally-known
+        // object) must unwrap it first — see unwrapVendedCapability's doc
+        // comment; this is the same discipline every other decode path
+        // (requireCapabilityFromResult et al.) already requires.
         final hosted = _exports[descriptor.id];
-        return hosted?.identity ?? NullCapability();
+        return hosted == null
+            ? NullCapability()
+            : vendCapabilityHandle(hosted.identity);
       case 4: // receiverAnswer: capability in one of our outstanding answers
         return _ReceiverAnswerCapability(
           this,

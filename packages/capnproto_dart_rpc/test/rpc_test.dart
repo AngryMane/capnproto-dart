@@ -4208,9 +4208,16 @@ void main() {
             paramsCapabilities: [bootstrapCap.cap],
           );
 
-          // The server should have received its own capability (identity check).
+          // The server should have received its own capability (identity
+          // check) — through a fresh vendCapabilityHandle, per the
+          // cross-connection/receiverHosted ownership fix (disposing a
+          // received params capability must not be able to tear down the
+          // export's own still-live reference to the same identity), so
+          // the check unwraps first, exactly as any code that needs to
+          // recognize a possibly-vended capability's concrete identity
+          // must (see unwrapVendedCapability's doc comment).
           expect(server.lastParams, hasLength(1));
-          expect(server.lastParams[0], same(server));
+          expect(unwrapVendedCapability(server.lastParams[0]), same(server));
 
           await client.close();
           await serverConn.close();
@@ -4342,6 +4349,173 @@ void main() {
         await vatAConn.close();
         await relayToB.close();
         await vatBConn.close();
+      },
+    );
+
+    test(
+      'a vended handle returned in DispatchResult.caps does not leak vat '
+      'A\'s export once the recipient releases it',
+      () async {
+        // Same peer A → relay → peer C shape as the params-forwarding test
+        // above, but this time relay forwards `h` as its own *result*
+        // capability (DispatchResult.caps) instead of a call parameter —
+        // the ownership-transfer contract there means relay's dispatch
+        // handler does *not* separately dispose `h` itself; the runtime is
+        // solely responsible for it from that point on. Before
+        // _returnCapDescriptor disposed a redundant vended `cap` once its
+        // own owning export reference was established, `h` was simply
+        // dropped — leaking its share of the underlying identity's
+        // refcount forever, so vat A's export never actually cleared even
+        // after C released its own reference to the result.
+        final probe = EchoServer();
+        final (relayToA, vatAConn) = _makePipe(_CapVendingServer(probe));
+        final vatABootstrap = relayToA.bootstrap(EchoClientFactory()).cap;
+
+        final vendResult = await vatABootstrap.dispatch(
+          _echoInterfaceId,
+          _pipelineMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('')),
+        );
+        final h = requireCapabilityFromResult(vendResult, 0);
+
+        // Relay is the SERVER for connection C: its dispatch handler hands
+        // off `h` as its own result capability without disposing it itself.
+        final (cClient, relayConnForC) = _makePipe(_CapVendingServer(h));
+        final cBootstrap = cClient.bootstrap(EchoClientFactory()).cap;
+        final resultForC = await cBootstrap.dispatch(
+          _echoInterfaceId,
+          _pipelineMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('')),
+        );
+        final cHandle = requireCapabilityFromResult(resultForC, 0);
+
+        expect(vatAConn.debugExportCount, equals(2));
+
+        await cHandle.dispose();
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+
+        // Vat A's export of `probe` must now be gone — the redundant `h`
+        // reference the runtime silently inherited via DispatchResult.caps
+        // no longer keeps it pinned forever.
+        expect(vatAConn.debugExportCount, equals(1));
+
+        await relayToA.close();
+        await vatAConn.close();
+        await cClient.close();
+        await relayConnForC.close();
+      },
+    );
+
+    test(
+      'disposing a receiverHosted params capability does not corrupt an '
+      'existing, still-referenced export of the same identity',
+      () async {
+        // peer A → relay → peer B, then B hands the *same* capability back
+        // to relay as a params capability of a further call — wire-encoded
+        // as receiverHosted, since it's relay's own export as far as B's
+        // connection is concerned. Before _capabilityFromDescriptor's
+        // receiverHosted case vended a fresh handle instead of returning
+        // the export's raw identity directly, relay's dispatch handler
+        // disposing that received params capability tore down the shared
+        // underlying identity directly — invalidating vatB's own,
+        // still-live, never-released reference to the same capability out
+        // from under it.
+        final probe = EchoServer();
+        final (relayToA, vatAConn) = _makePipe(_CapVendingServer(probe));
+        final vatABootstrap = relayToA.bootstrap(EchoClientFactory()).cap;
+
+        final vendResult = await vatABootstrap.dispatch(
+          _echoInterfaceId,
+          _pipelineMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('')),
+        );
+        final h = requireCapabilityFromResult(vendResult, 0);
+
+        // Relay forwards both `h` and a callback capability (playing
+        // relay's own dispatch handler for the "B sends it back" leg) to
+        // vatB in one call, creating relay's own export for `h`'s identity
+        // on relayToB.
+        final vatB = CapReceivingServer();
+        final (relayToB, vatBConn) = _makePipe(vatB);
+        final vatBBootstrap = relayToB.bootstrap(EchoClientFactory()).cap;
+        await vatBBootstrap.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('')),
+          paramsCapabilities: [h, _DisposingReceiver()],
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(vatB.lastParams, hasLength(2));
+        final vatBsT = vatB.lastParams[0]; // vatB's own import of the relayed capability
+        final vatBsDisposer = vatB.lastParams[1]; // vatB's own import of relay's disposer
+
+        // vatB "sends it back" to relay by using it as a params capability
+        // of a call targeting the disposer callback — both are vatB's own
+        // imports on vatBConn, so this is encoded as receiverHosted on the
+        // wire. The disposer (relay's own dispatch handler for this call)
+        // disposes it immediately, per the usual "done with this param"
+        // pattern.
+        await vatBsDisposer.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('')),
+          paramsCapabilities: [vatBsT],
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        // vatB never disposed or released its own reference — it must
+        // still work.
+        final stillWorks = await vatBsT.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('still alive')),
+        );
+        expect(
+          _parseEchoResult(stillWorks.payload),
+          equals('echo: still alive'),
+        );
+
+        await relayToA.close();
+        await vatAConn.close();
+        await relayToB.close();
+        await vatBConn.close();
+      },
+    );
+  });
+
+  group('ownership: bootstrap capability identity normalization', () {
+    test(
+      'a bootstrap capability passed as an already-vended handle normalizes '
+      'to its unwrapped identity, so a later export of the same underlying '
+      'capability dedupes against it instead of creating a redundant export',
+      () async {
+        final rawServer = PipelineServer();
+        final vendedBootstrap = vendCapabilityHandle(rawServer);
+        final (client, serverConn) = _makePipe(vendedBootstrap);
+
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        await bootstrapCap.echo('warmup');
+        expect(serverConn.debugExportCount, equals(1));
+
+        // PipelineServer's _pipelineMethodId returns `caps: [this]`, i.e.
+        // `rawServer` itself (unwrapped) — a second, ordinary export of the
+        // exact same underlying capability bootstrap was registered with.
+        await bootstrapCap.cap.dispatch(
+          _echoInterfaceId,
+          _pipelineMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('')),
+        );
+
+        // If bootstrap's identity had not been normalized (unwrapped) at
+        // registration time, `_exportIds` would have been keyed by the
+        // vended handle instead of `rawServer`, so this second export
+        // wouldn't dedupe against export 0 and would show up as a second,
+        // redundant entry.
+        expect(serverConn.debugExportCount, equals(1));
+
+        await client.close();
+        await serverConn.close();
       },
     );
   });
