@@ -900,6 +900,44 @@ class ReceiverAnswerProbeServer extends Capability {
   }
 }
 
+// Records whether dispose() ever runs while a dispatch() call through this
+// same capability is still in flight — used to empirically check whether
+// _ReceiverAnswerCapability's dispose() can tear down its resolved target
+// out from under a still-running dispatch() (see the
+// "does not dispose the resolved target while a call is in flight" test
+// below). dispatch() blocks on `dispatchGate` until released, giving a wide
+// window for a concurrent dispose() to land.
+class DisposeOrderProbeCapability extends Capability {
+  Completer<void> dispatchGate = Completer<void>();
+  int _dispatchInFlight = 0;
+  bool disposedWhileDispatchInFlight = false;
+  int disposeCount = 0;
+
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    RpcPayload params, {
+    List<Capability> paramsCapabilities = const [],
+  }) async {
+    _dispatchInFlight++;
+    try {
+      await dispatchGate.future;
+      return DispatchResult(
+        payload: RpcPayload.fromBytes(_buildEchoParams('ok')),
+      );
+    } finally {
+      _dispatchInFlight--;
+    }
+  }
+
+  @override
+  Future<void> dispose() async {
+    disposeCount++;
+    if (_dispatchInFlight > 0) disposedWhileDispatchInFlight = true;
+  }
+}
+
 // #53: tail calls. On _tailCallMethodId, redirects the entire dispatch to
 // paramsCapabilities[0]'s echo method instead of running its own dispatch.
 const int _tailCallMethodId = 8;
@@ -4618,13 +4656,12 @@ void main() {
     );
   });
 
-  group('vendCapabilityHandle: reuse after a prior cycle fully disposed', () {
+  group('vendCapabilityHandle: rejects vending after disposal was triggered', () {
     test(
-      'the same capability instance can be vended again in a fresh cycle '
-      'after an earlier one fully disposed — e.g. a shared bootstrap '
-      'capability RpcSystem.serve registers again for every newly accepted '
-      'connection, including ones whose own reference to it has already '
-      'drained — and that later cycle correctly disposes the target again',
+      'vending again after a prior cycle already fully disposed throws — '
+      'unconditionally, not just in debug/test builds — instead of silently '
+      'starting a fresh cycle that can never truly resurrect the '
+      'already-torn-down target',
       () async {
         final target = CountingCapability();
 
@@ -4632,48 +4669,32 @@ void main() {
         await h1.dispose();
         expect(target.disposeCount, equals(1));
 
-        // A second, independent cycle for the same underlying instance:
-        // must not be corrupted by (or itself corrupt) the first cycle's
-        // already-completed refcount/dispose bookkeeping.
-        final h2 = vendCapabilityHandle(target);
-        await h2.dispose();
-        expect(target.disposeCount, equals(2));
+        // The target itself is already torn down for real — vending a
+        // "fresh" handle for it now would be a lie (it would look live but
+        // dispatch through it would just hit whatever broken state
+        // target.dispose() already left behind).
+        expect(() => vendCapabilityHandle(target), throwsA(isA<StateError>()));
       },
     );
 
     test(
-      'a handle vended while the previous cycle\'s dispose() is still in '
-      'flight (not yet actually finished) joins that same cycle instead of '
-      'starting a premature fresh one',
+      'vending while the previous cycle\'s dispose() is still in flight '
+      '(not yet actually finished) also throws, rather than racing a fresh '
+      'handle against a disposal that could finish tearing the target down '
+      'at any moment',
       () async {
         final target = SlowDisposeCapability();
 
         final h1 = vendCapabilityHandle(target);
         // Don't await yet — dispose() is blocked on the gate, so this cycle
-        // is "started" (disposeFuture assigned) but not yet finished.
+        // is "triggered" (disposeFuture assigned) but not yet finished.
         final h1DisposeFuture = h1.dispose();
 
-        // Vended *during* that still-in-flight window: must join the same
-        // cycle (share its eventual dispose), not be treated as a fresh,
-        // fully-live reference to an object that's mid-teardown.
-        final h2 = vendCapabilityHandle(target);
+        expect(() => vendCapabilityHandle(target), throwsA(isA<StateError>()));
 
         target.releaseDispose();
         await h1DisposeFuture;
-        // h2 is still outstanding (joined the cycle) — target.dispose()
-        // must only have run once so far, and h2 must still work.
         expect(target.disposeCount, equals(1));
-
-        await h2.dispose();
-        // h2 joining the cycle must not trigger a second, redundant
-        // target.dispose() call.
-        expect(target.disposeCount, equals(1));
-
-        // Now that both handles are gone, vending again is a genuinely
-        // fresh cycle.
-        final h3 = vendCapabilityHandle(target);
-        await h3.dispose();
-        expect(target.disposeCount, equals(2));
       },
     );
   });
@@ -4763,6 +4784,256 @@ void main() {
         // leaking a fresh one each) means this single dispose() call is
         // enough to release the last remaining reference for real.
         expect(leaf.disposeCount, equals(1));
+
+        await clientToServer.close();
+      },
+    );
+
+    test(
+      'dispose() does not tear down the resolved target while a dispatch() '
+      'call through the same receiverAnswer capability is still in flight',
+      () async {
+        // Empirical check for a reviewed concern: unlike _WirePipelinedCapability
+        // (which defers disposing its resolved target until every pipelined
+        // call made *before* resolution has settled — see
+        // _WirePipelinedCapability's _pendingPipelinedCalls),
+        // _ReceiverAnswerCapability's dispose() has no equivalent tracking at
+        // all. This drives a dispatch() call all the way to actually blocking
+        // inside the resolved target (DisposeOrderProbeCapability, gated on
+        // dispatchGate) and then disposes the receiverAnswer capability while
+        // that call is still pending, to see whether the shared resolved
+        // handle's real target.dispose() actually runs concurrently with it.
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        serverToClient.stream.listen((_) {});
+
+        final leaf = DisposeOrderProbeCapability();
+        final probe = ReceiverAnswerProbeServer(leaf);
+        TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: probe,
+        );
+
+        clientToServer.add(
+          buildCallMessage(
+            questionId: 1,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _pipelineMethodId,
+            paramsBytes: _buildEchoParams(''),
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        clientToServer.add(
+          buildCallMessage(
+            questionId: 2,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _echoMethodId,
+            paramsBytes: _buildEchoParams(''),
+            capTableDescriptors: [RpcCapDescriptor.receiverAnswer(1, [0])],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(probe.lastParams, hasLength(1));
+        final receiverAnswerCap = probe.lastParams[0];
+
+        // Start a call and let it actually enter DisposeOrderProbeCapability
+        // .dispatch(), where it now sits blocked on dispatchGate.
+        final dispatchFuture = receiverAnswerCap.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('x')),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        // Release the other outstanding reference to `leaf` (answer #1's own
+        // export), same as the test above, so receiverAnswerCap's handle is
+        // the last one left.
+        clientToServer.add(buildFinishMessage(1, releaseResultCaps: true));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        // Dispose while the dispatch() above is still blocked mid-call.
+        final disposeFuture = receiverAnswerCap.dispose();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(
+          leaf.disposedWhileDispatchInFlight,
+          isFalse,
+          reason:
+              'dispose() tore down the resolved target while a dispatch() '
+              'call through the same capability was still in flight',
+        );
+
+        leaf.dispatchGate.complete();
+        await dispatchFuture;
+        await disposeFuture;
+
+        await clientToServer.close();
+      },
+    );
+
+    test(
+      'dispose() itself does not resolve until the resolved target\'s real '
+      'dispose() has actually completed — not merely been scheduled — when '
+      'disposed while a call through the same capability is still in flight',
+      () async {
+        // Reviewed concern about the fix above: tracking in-flight calls so
+        // the real target isn't disposed while one is still running is
+        // necessary but not sufficient on its own — dispose()'s own
+        // returned Future must also not resolve until that deferred real
+        // disposal has actually finished (Capability.dispose()'s own doc
+        // comment: "frees any associated resources"), not merely been
+        // scheduled to run once the last pending call drains.
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        serverToClient.stream.listen((_) {});
+
+        final leaf = DisposeOrderProbeCapability();
+        final probe = ReceiverAnswerProbeServer(leaf);
+        TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: probe,
+        );
+
+        clientToServer.add(
+          buildCallMessage(
+            questionId: 1,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _pipelineMethodId,
+            paramsBytes: _buildEchoParams(''),
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        clientToServer.add(
+          buildCallMessage(
+            questionId: 2,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _echoMethodId,
+            paramsBytes: _buildEchoParams(''),
+            capTableDescriptors: [RpcCapDescriptor.receiverAnswer(1, [0])],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(probe.lastParams, hasLength(1));
+        final receiverAnswerCap = probe.lastParams[0];
+
+        final dispatchFuture = receiverAnswerCap.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('x')),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        clientToServer.add(buildFinishMessage(1, releaseResultCaps: true));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        var disposeCompleted = false;
+        final disposeFuture = receiverAnswerCap.dispose().whenComplete(() {
+          disposeCompleted = true;
+        });
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(
+          disposeCompleted,
+          isFalse,
+          reason:
+              'dispose() resolved before the in-flight dispatch() call — '
+              'and therefore the resolved target\'s real dispose() — ever '
+              'settled',
+        );
+
+        leaf.dispatchGate.complete();
+        await dispatchFuture;
+        await disposeFuture;
+
+        expect(disposeCompleted, isTrue);
+        expect(leaf.disposeCount, equals(1));
+
+        await clientToServer.close();
+      },
+    );
+
+    test(
+      'a failure from the resolved target\'s own dispose() propagates '
+      'through receiverAnswerCap.dispose() itself, instead of being '
+      'silently reported as success',
+      () async {
+        // Reviewed concern about the fix above: the deferred real disposal
+        // used to be forwarded to _disposeCompleter via whenComplete(...),
+        // which runs identically on success *and* failure and can't tell
+        // them apart — so a real failure from the resolved target's own
+        // dispose() was always reported as a successful dispose() to
+        // receiverAnswerCap's own caller, silently discarding it. That
+        // directly contradicts Capability.dispose()'s own doc comment
+        // ("frees any associated resources") — a caller awaiting dispose()
+        // has no way to learn cleanup actually failed.
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        serverToClient.stream.listen((_) {});
+
+        final leaf = ThrowingDisposeCapability();
+        final probe = ReceiverAnswerProbeServer(leaf);
+        TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: probe,
+        );
+
+        clientToServer.add(
+          buildCallMessage(
+            questionId: 1,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _pipelineMethodId,
+            paramsBytes: _buildEchoParams(''),
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        clientToServer.add(
+          buildCallMessage(
+            questionId: 2,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _echoMethodId,
+            paramsBytes: _buildEchoParams(''),
+            capTableDescriptors: [RpcCapDescriptor.receiverAnswer(1, [0])],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(probe.lastParams, hasLength(1));
+        final receiverAnswerCap = probe.lastParams[0];
+
+        // Forces resolution (ThrowingDisposeCapability.dispatch() itself
+        // just rejects — irrelevant here, only resolving matters).
+        await expectLater(
+          receiverAnswerCap.dispatch(
+            _echoInterfaceId,
+            _echoMethodId,
+            RpcPayload.fromBytes(_buildEchoParams('x')),
+          ),
+          throwsA(isA<UnsupportedError>()),
+        );
+
+        // Release the other outstanding reference to `leaf` (answer #1's
+        // own export), so receiverAnswerCap's handle is the last one left —
+        // its dispose() below is what actually tears `leaf` down for real.
+        clientToServer.add(buildFinishMessage(1, releaseResultCaps: true));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        await expectLater(
+          receiverAnswerCap.dispose(),
+          throwsA(isA<StateError>()),
+        );
 
         await clientToServer.close();
       },

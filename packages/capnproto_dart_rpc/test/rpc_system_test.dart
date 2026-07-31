@@ -12,6 +12,23 @@ class _RawCapabilityFactory extends CapabilityFactory<Capability> {
   Capability fromCapability(Capability cap) => cap;
 }
 
+class _CountingBootstrap extends Capability {
+  int disposeCount = 0;
+
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    RpcPayload params, {
+    List<Capability> paramsCapabilities = const [],
+  }) => Future.error(const RpcException('unsupported'));
+
+  @override
+  Future<void> dispose() async {
+    disposeCount++;
+  }
+}
+
 // Minimal validly-framed message (1 segment, 1 word, null root pointer) —
 // enough to get past decoding so the call reaches NullCapability.dispatch(),
 // which is what's actually under test here.
@@ -95,6 +112,205 @@ void main() {
 
       await client.close();
     });
+
+    test(
+      'the bootstrap capability is not disposed while the server is still '
+      'running, even after every currently-connected client disconnects — '
+      'only server.close() finally releases it',
+      () async {
+        // Regression test: every accepted connection is handed the same
+        // `bootstrap` instance and (per TwoPartyRpcConnection.server's
+        // ownership contract) disposes its own reference on close. With
+        // connections coming and going sequentially (not all simultaneously
+        // alive) rather than a fresh handle per connection, the *last*
+        // connection open at any moment closing would previously drop the
+        // shared refcount to zero and trigger real disposal of `bootstrap`
+        // — even with other clients yet to connect and reuse it.
+        final bootstrap = _CountingBootstrap();
+        final server = await RpcSystem.serve(
+          Uri.parse('tcp://127.0.0.1:0'),
+          bootstrap,
+        );
+        addTearDown(server.close);
+
+        final client1 = await RpcSystem.connect(
+          Uri.parse('tcp://127.0.0.1:${server.port}'),
+        );
+        await expectLater(
+          client1
+              .bootstrap(_RawCapabilityFactory())
+              .dispatch(0, 0, RpcPayload.fromBytes(_emptyParams)),
+          throwsA(isA<RpcException>()),
+        );
+        await client1.close();
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+
+        // No client is connected right now, but the server itself is still
+        // running — bootstrap must still be alive.
+        expect(bootstrap.disposeCount, equals(0));
+
+        // A second, later connection must still be able to use it.
+        final client2 = await RpcSystem.connect(
+          Uri.parse('tcp://127.0.0.1:${server.port}'),
+        );
+        await expectLater(
+          client2
+              .bootstrap(_RawCapabilityFactory())
+              .dispatch(0, 0, RpcPayload.fromBytes(_emptyParams)),
+          throwsA(isA<RpcException>()),
+        );
+        expect(bootstrap.disposeCount, equals(0));
+
+        await client2.close();
+        await server.close();
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+
+        expect(bootstrap.disposeCount, equals(1));
+      },
+    );
+
+    test(
+      'passing an already-vended handle as bootstrap still keeps the '
+      'underlying identity alive across sequential connections, not just a '
+      'wrapper around a wrapper',
+      () async {
+        // Regression test: serve() used to vend serverBootstrapRef directly
+        // from whatever `bootstrap` argument it was given, without
+        // unwrapping first. vendCapabilityHandle() is itself public API, so
+        // a caller can legitimately pass an already-vended handle (rather
+        // than a bare capability) as bootstrap — vending *that* creates a
+        // second, disconnected refcount cycle keyed on the handle object
+        // instead of on the real underlying identity every connection's own
+        // export ends up sharing, so serverBootstrapRef ends up protecting
+        // nothing real: the underlying identity's shared refcount could
+        // still drop to zero between sequential connections exactly like
+        // before the original fix.
+        final bootstrap = _CountingBootstrap();
+        final wrapped = vendCapabilityHandle(bootstrap);
+        final server = await RpcSystem.serve(
+          Uri.parse('tcp://127.0.0.1:0'),
+          wrapped,
+        );
+        addTearDown(server.close);
+
+        final client1 = await RpcSystem.connect(
+          Uri.parse('tcp://127.0.0.1:${server.port}'),
+        );
+        await expectLater(
+          client1
+              .bootstrap(_RawCapabilityFactory())
+              .dispatch(0, 0, RpcPayload.fromBytes(_emptyParams)),
+          throwsA(isA<RpcException>()),
+        );
+        await client1.close();
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+
+        expect(bootstrap.disposeCount, equals(0));
+
+        final client2 = await RpcSystem.connect(
+          Uri.parse('tcp://127.0.0.1:${server.port}'),
+        );
+        await expectLater(
+          client2
+              .bootstrap(_RawCapabilityFactory())
+              .dispatch(0, 0, RpcPayload.fromBytes(_emptyParams)),
+          throwsA(isA<RpcException>()),
+        );
+        expect(bootstrap.disposeCount, equals(0));
+
+        await client2.close();
+        await server.close();
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+
+        expect(bootstrap.disposeCount, equals(1));
+      },
+    );
+
+    test(
+      'a serve() call that fails before ever binding (an unsupported '
+      'scheme) does not touch bootstrap at all — matching serve()\'s own '
+      'doc comment, the same bootstrap can be reused for a later, '
+      'successful call',
+      () async {
+        // Regression test: serve() used to vend its server-lifetime
+        // bootstrap reference *before* scheme validation / listener
+        // binding, unconditionally disposing it (via the caller's own
+        // handle-release step, or the shared refcount it created) on any
+        // failure afterward — including scheme validation, which happens
+        // before anything is bound and touches nothing else. That
+        // permanently disposed the real bootstrap identity even though
+        // serve() never actually took ownership of it, directly
+        // contradicting this method's own doc comment ("If this call
+        // throws instead ... bootstrap is left exactly as it was passed
+        // in").
+        final bootstrap = _CountingBootstrap();
+
+        await expectLater(
+          RpcSystem.serve(Uri.parse('bogus://127.0.0.1:0'), bootstrap),
+          throwsA(isA<RpcException>()),
+        );
+
+        expect(bootstrap.disposeCount, equals(0));
+
+        // The same instance — untouched by the failed call above — must
+        // still be usable for a real server.
+        final server = await RpcSystem.serve(
+          Uri.parse('tcp://127.0.0.1:0'),
+          bootstrap,
+        );
+        addTearDown(server.close);
+        final client = await RpcSystem.connect(
+          Uri.parse('tcp://127.0.0.1:${server.port}'),
+        );
+        await expectLater(
+          client
+              .bootstrap(_RawCapabilityFactory())
+              .dispatch(0, 0, RpcPayload.fromBytes(_emptyParams)),
+          throwsA(isA<RpcException>()),
+        );
+        await client.close();
+      },
+    );
+
+    test(
+      'a serve() call that fails only after successfully binding the '
+      'listener — because bootstrap itself is unusable (e.g. already fully '
+      'disposed through a prior vendCapabilityHandle cycle) — still closes '
+      'that listener, instead of leaking an open port',
+      () async {
+        // Learn a currently-free port, then release it immediately — used
+        // only to give the failing serve() call below a specific port
+        // number to bind (rather than an ephemeral 0), so a subsequent
+        // successful bind to that exact same port number can prove the
+        // first call's listener socket was actually closed, not merely
+        // abandoned.
+        final probe = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+        final port = probe.port;
+        await probe.close();
+
+        final spentBootstrap = _CountingBootstrap();
+        // Triggers disposal for spentBootstrap's identity — any later
+        // vendCapabilityHandle(spentBootstrap) throws (see that function's
+        // own doc comment).
+        await vendCapabilityHandle(spentBootstrap).dispose();
+        expect(spentBootstrap.disposeCount, equals(1));
+
+        await expectLater(
+          RpcSystem.serve(Uri.parse('tcp://127.0.0.1:$port'), spentBootstrap),
+          throwsA(anything),
+        );
+
+        // Only possible if the failed call above actually closed the
+        // listener it had already bound on `port`, rather than leaking it
+        // open forever.
+        final server = await RpcSystem.serve(
+          Uri.parse('tcp://127.0.0.1:$port'),
+          _CountingBootstrap(),
+        );
+        addTearDown(server.close);
+        expect(server.port, equals(port));
+      },
+    );
 
     test(
       'a malformed/aborted connection does not surface as an unhandled '
