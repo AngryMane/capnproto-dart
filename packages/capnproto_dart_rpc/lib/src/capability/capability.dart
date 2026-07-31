@@ -34,8 +34,8 @@ final Future<void> _neverCanceledFuture = Completer<void>().future;
 /// capability it wrapped — for anything *after* returning it here is a
 /// use-after-ownership-transfer bug: if every reference to the underlying
 /// capability happens to have been released by then, [vendCapabilityHandle]
-/// catches the reuse itself (in debug/test builds) rather than silently
-/// handing back a handle to an already-torn-down object.
+/// catches the reuse itself rather than silently handing back a handle to
+/// an already-torn-down object.
 class DispatchResult {
   /// The method results — see [RpcPayload].
   final RpcPayload payload;
@@ -543,16 +543,19 @@ final Expando<_CapabilityRefCount> _capabilityRefCounts =
 /// (by identity). [target] itself is only disposed once every handle vended
 /// for it has been disposed.
 ///
-/// In debug/test builds (this uses [assert], stripped from `--release`
-/// builds), throws if disposal for [target] has already been *triggered*
-/// (its shared count already reached zero at least once — see
+/// Throws a [StateError] — unconditionally, in every build mode, not just
+/// debug/test builds — if disposal for [target] has already been
+/// *triggered* (its shared count already reached zero at least once — see
 /// [_CapabilityHandle.dispose] — whether or not `target.dispose()` itself
 /// has actually finished running yet). Vending a new handle at that point
 /// would either resurrect an already-torn-down capability, or race a fresh
 /// handle against a still in-flight disposal that could finish tearing
 /// [target] down at any moment — neither is safe, so this is treated as a
 /// caller bug rather than something to silently paper over with a second,
-/// independent refcount cycle.
+/// independent refcount cycle. This is a capability-lifecycle safety
+/// invariant, not a debugging aid, so it's checked unconditionally — the
+/// cost of one extra field comparison is negligible next to the object
+/// allocation this function already does on every call.
 ///
 /// This means a [Capability] meant to be exported repeatedly over a long
 /// lifetime — e.g. [RpcSystem.serve]'s own `bootstrap`, handed to a fresh
@@ -564,20 +567,21 @@ final Expando<_CapabilityRefCount> _capabilityRefCounts =
 /// trigger `bootstrap`'s real disposal on its own.
 Capability vendCapabilityHandle(Capability target) {
   final refCount = _capabilityRefCounts[target] ??= _CapabilityRefCount();
-  assert(
-    refCount.disposeFuture == null,
-    'vendCapabilityHandle($target): disposal for this capability has '
-    'already been triggered (every previously vended handle for it has '
-    'been disposed) — vending a new handle now would either resurrect an '
-    'already-torn-down capability or race a fresh handle against a still '
-    'in-flight disposal. This usually means a reference to it was held '
-    'onto and reused after ownership of it should have been considered '
-    'transferred away (see DispatchResult\'s doc comment) — or, for a '
-    'capability meant to be exported repeatedly over a long lifetime, that '
-    'its owner should hold its own persistent vended handle for that whole '
-    'lifetime instead of letting this shared count ever reach zero while '
-    'still in use (see this function\'s own doc comment).',
-  );
+  if (refCount.disposeFuture != null) {
+    throw StateError(
+      'vendCapabilityHandle($target): disposal for this capability has '
+      'already been triggered (every previously vended handle for it has '
+      'been disposed) — vending a new handle now would either resurrect an '
+      'already-torn-down capability or race a fresh handle against a still '
+      'in-flight disposal. This usually means a reference to it was held '
+      'onto and reused after ownership of it should have been considered '
+      'transferred away (see DispatchResult\'s doc comment) — or, for a '
+      'capability meant to be exported repeatedly over a long lifetime, that '
+      'its owner should hold its own persistent vended handle for that whole '
+      'lifetime instead of letting this shared count ever reach zero while '
+      'still in use (see this function\'s own doc comment).',
+    );
+  }
   return _CapabilityHandle(target, refCount);
 }
 
@@ -701,7 +705,7 @@ class _CapabilityHandle extends Capability {
     if (_refCount.count <= 0) {
       // Assigning disposeFuture here — synchronously, before this await
       // suspends — is itself what permanently marks this identity as
-      // "disposal triggered" for vendCapabilityHandle's assert, regardless
+      // "disposal triggered" for vendCapabilityHandle's check, regardless
       // of whether target.dispose() ultimately succeeds or throws: a
       // failed disposal is still treated as terminal (matching
       // _disposeIgnoringErrors' "report, don't retry" handling elsewhere),

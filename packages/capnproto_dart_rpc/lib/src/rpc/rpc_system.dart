@@ -67,6 +67,17 @@ class RpcSystem {
   /// Starts a Cap'n Proto RPC server at [address] and serves [bootstrap]
   /// to incoming clients.
   ///
+  /// [bootstrap]'s ownership transfers to the returned [RpcServer] the
+  /// moment this call returns successfully (mirroring
+  /// [TwoPartyRpcConnection.server]'s own contract, which this delegates
+  /// to per accepted connection): only the returned server's own
+  /// [RpcServer.close] disposes it from then on, once every connection's own
+  /// reference has also been released — callers must not separately dispose
+  /// [bootstrap] themselves, nor reuse it for anything else afterward. If
+  /// this call throws instead (invalid arguments, a bind failure, an
+  /// unsupported scheme), no such transfer happened and [bootstrap] is left
+  /// exactly as it was passed in.
+  ///
   /// [securityContext], when given, upgrades a `wss://` server to TLS via
   /// [HttpServer.bindSecure]; a `wss://` address without one is rejected,
   /// since silently falling back to plaintext `ws://` would violate what
@@ -112,14 +123,26 @@ class RpcSystem {
     final upgradeTasks = <Future<void>>{};
     final expectedWebSocketPath = address.path.isEmpty ? '/' : address.path;
 
-    // Every accepted connection is handed the same `bootstrap` instance and
-    // (per TwoPartyRpcConnection.server's ownership contract) disposes its
-    // own reference to it on close — with connections coming and going over
-    // the server's lifetime (not all simultaneously alive), the *last*
+    // [bootstrap] as given might itself already be a [vendCapabilityHandle]
+    // handle (that function is public API, so a caller could pass one in
+    // directly) rather than a bare capability — unwrap first, the same way
+    // TwoPartyRpcConnection.server itself does, so serverBootstrapRef below
+    // is vended against the true underlying identity. Vending against
+    // `bootstrap` as-is when it's itself a handle would create a second,
+    // disconnected refcount cycle keyed on that handle object rather than on
+    // the identity every connection's own export ends up sharing — leaving
+    // serverBootstrapRef holding a reference to nothing that actually keeps
+    // the real bootstrap identity alive.
+    final bootstrapIdentity = unwrapVendedCapability(bootstrap);
+
+    // Every accepted connection is handed `bootstrapIdentity` and (per
+    // TwoPartyRpcConnection.server's ownership contract) disposes its own
+    // reference to it on close — with connections coming and going over the
+    // server's lifetime (not all simultaneously alive), the *last*
     // connection open at any given moment closing would otherwise drop the
     // shared refcount (see vendCapabilityHandle) to zero and trigger real
     // disposal, even though the server itself is still accepting new
-    // connections that will go on to reuse the same `bootstrap` object (and
+    // connections that will go on to reuse the same identity (and
     // vendCapabilityHandle deliberately refuses to vend a fresh handle for
     // an identity whose disposal has already been triggered — see its own
     // doc comment — so that reuse would fail loudly instead of silently
@@ -127,136 +150,159 @@ class RpcSystem {
     // Holding this server-lifetime reference for as long as `serve()`'s own
     // returned RpcServer is open keeps the shared refcount above zero
     // throughout, so no individual connection closing can ever trigger
-    // `bootstrap`'s real disposal while the server is still running — only
-    // this server's own close() (below) does, once every connection's own
-    // reference has also been released.
-    final serverBootstrapRef = vendCapabilityHandle(bootstrap);
+    // bootstrapIdentity's real disposal while the server is still running —
+    // only this server's own close() (below) does, once every connection's
+    // own reference has also been released.
+    //
+    // Vended *before* releasing the caller's own handle (below) so the
+    // shared refcount never has a window where it could pass through zero
+    // during this handoff.
+    final serverBootstrapRef = vendCapabilityHandle(bootstrapIdentity);
+    try {
+      if (!identical(bootstrap, bootstrapIdentity)) {
+        // The caller passed an already-vended handle rather than a bare
+        // capability — serverBootstrapRef above now holds an equivalent
+        // reference to the same identity, so this one is redundant and must
+        // be released, or its share of bootstrapIdentity's refcount would
+        // never be balanced.
+        await bootstrap.dispose();
+      }
 
-    void track(TwoPartyRpcConnection conn) {
-      connections.add(conn);
-      // `conn.done` completes with an error for a connection that was torn
-      // down abnormally (malformed peer data, reset, etc.) — TwoPartyRpcConnection
-      // itself already calls `.ignore()` on that completer before erroring it
-      // specifically so an unobserved `.done` doesn't print as an unhandled
-      // error. `.whenComplete()` observes the future but replays the same
-      // error onto the future it returns; without also silencing *that* one,
-      // a single malformed/aborted connection (e.g. a stray TCP probe) would
-      // surface as a top-level unhandled exception instead of just being
-      // logged via `onDisposeError` like every other per-connection failure.
-      conn.done.whenComplete(() => connections.remove(conn)).ignore();
-    }
+      void track(TwoPartyRpcConnection conn) {
+        connections.add(conn);
+        // `conn.done` completes with an error for a connection that was torn
+        // down abnormally (malformed peer data, reset, etc.) — TwoPartyRpcConnection
+        // itself already calls `.ignore()` on that completer before erroring it
+        // specifically so an unobserved `.done` doesn't print as an unhandled
+        // error. `.whenComplete()` observes the future but replays the same
+        // error onto the future it returns; without also silencing *that* one,
+        // a single malformed/aborted connection (e.g. a stray TCP probe) would
+        // surface as a top-level unhandled exception instead of just being
+        // logged via `onDisposeError` like every other per-connection failure.
+        conn.done.whenComplete(() => connections.remove(conn)).ignore();
+      }
 
-    bool atCapacity() =>
-        maxConnections != null &&
-        connections.length + pendingWebSocketUpgrades >= maxConnections;
+      bool atCapacity() =>
+          maxConnections != null &&
+          connections.length + pendingWebSocketUpgrades >= maxConnections;
 
-    switch (address.scheme) {
-      case 'tcp':
-        final serverSocket = await ServerSocket.bind(host, address.port);
-        serverSocket.listen((socket) {
-          if (atCapacity()) {
-            socket.destroy();
-            return;
-          }
-          track(
-            TwoPartyRpcConnection.server(
-              incoming: socket.cast<Uint8List>(),
-              outgoing: _SocketSink(socket),
-              bootstrap: bootstrap,
-              onDisposeError: onDisposeError,
-              streamWindowSize: streamWindowSize,
-            ),
-          );
-        });
-        // Tracked so close() can tear down already-accepted connections, not
-        // just stop accepting new ones — closing only the listening socket
-        // would otherwise leave every client connected at the time of
-        // close() running (and its underlying TCP socket open) indefinitely.
-        return _ListenerRpcServer(
-          () => serverSocket.port,
-          serverSocket.close,
-          connections,
-          serverBootstrapRef,
-        );
-
-      case 'ws':
-      case 'wss':
-        if (address.scheme == 'wss' && securityContext == null) {
-          throw RpcException(
-            'wss:// server requires a securityContext (see RpcSystem.serve)',
-          );
-        }
-        final httpServer =
-            address.scheme == 'wss'
-                ? await HttpServer.bindSecure(
-                  host,
-                  address.port,
-                  securityContext!,
-                )
-                : await HttpServer.bind(host, address.port);
-        Future<void> handleRequest(HttpRequest request) async {
-          if (!WebSocketTransformer.isUpgradeRequest(request)) {
-            request.response.statusCode = HttpStatus.badRequest;
-            await request.response.close();
-            return;
-          }
-          if (request.uri.path != expectedWebSocketPath) {
-            request.response.statusCode = HttpStatus.notFound;
-            await request.response.close();
-            return;
-          }
-          if (atCapacity()) {
-            request.response.statusCode = HttpStatus.serviceUnavailable;
-            await request.response.close();
-            return;
-          }
-          pendingWebSocketUpgrades++;
-          try {
-            final ws = await WebSocketTransformer.upgrade(request);
-            if (closing) {
-              await ws.close();
+      switch (address.scheme) {
+        case 'tcp':
+          final serverSocket = await ServerSocket.bind(host, address.port);
+          serverSocket.listen((socket) {
+            if (atCapacity()) {
+              socket.destroy();
               return;
             }
             track(
               TwoPartyRpcConnection.server(
-                incoming: _webSocketIncoming(ws),
-                outgoing: _WebSocketSink(ws),
-                bootstrap: bootstrap,
+                incoming: socket.cast<Uint8List>(),
+                outgoing: _SocketSink(socket),
+                bootstrap: bootstrapIdentity,
                 onDisposeError: onDisposeError,
                 streamWindowSize: streamWindowSize,
-                preFramed: true,
               ),
             );
-          } catch (_) {
-            try {
+          });
+          // Tracked so close() can tear down already-accepted connections, not
+          // just stop accepting new ones — closing only the listening socket
+          // would otherwise leave every client connected at the time of
+          // close() running (and its underlying TCP socket open) indefinitely.
+          return _ListenerRpcServer(
+            () => serverSocket.port,
+            serverSocket.close,
+            connections,
+            serverBootstrapRef,
+          );
+
+        case 'ws':
+        case 'wss':
+          if (address.scheme == 'wss' && securityContext == null) {
+            throw RpcException(
+              'wss:// server requires a securityContext (see RpcSystem.serve)',
+            );
+          }
+          final httpServer =
+              address.scheme == 'wss'
+                  ? await HttpServer.bindSecure(
+                    host,
+                    address.port,
+                    securityContext!,
+                  )
+                  : await HttpServer.bind(host, address.port);
+          Future<void> handleRequest(HttpRequest request) async {
+            if (!WebSocketTransformer.isUpgradeRequest(request)) {
               request.response.statusCode = HttpStatus.badRequest;
               await request.response.close();
-            } catch (_) {
-              // The upgrade may already have committed or closed the response.
+              return;
             }
-          } finally {
-            pendingWebSocketUpgrades--;
+            if (request.uri.path != expectedWebSocketPath) {
+              request.response.statusCode = HttpStatus.notFound;
+              await request.response.close();
+              return;
+            }
+            if (atCapacity()) {
+              request.response.statusCode = HttpStatus.serviceUnavailable;
+              await request.response.close();
+              return;
+            }
+            pendingWebSocketUpgrades++;
+            try {
+              final ws = await WebSocketTransformer.upgrade(request);
+              if (closing) {
+                await ws.close();
+                return;
+              }
+              track(
+                TwoPartyRpcConnection.server(
+                  incoming: _webSocketIncoming(ws),
+                  outgoing: _WebSocketSink(ws),
+                  bootstrap: bootstrapIdentity,
+                  onDisposeError: onDisposeError,
+                  streamWindowSize: streamWindowSize,
+                  preFramed: true,
+                ),
+              );
+            } catch (_) {
+              try {
+                request.response.statusCode = HttpStatus.badRequest;
+                await request.response.close();
+              } catch (_) {
+                // The upgrade may already have committed or closed the response.
+              }
+            } finally {
+              pendingWebSocketUpgrades--;
+            }
           }
-        }
 
-        httpServer.listen((request) {
-          late final Future<void> task;
-          task = handleRequest(request)
-              .catchError((Object _) {})
-              .whenComplete(() => upgradeTasks.remove(task));
-          upgradeTasks.add(task);
-          task.ignore();
-        });
-        return _ListenerRpcServer(() => httpServer.port, () async {
-          closing = true;
-          await httpServer.close();
-          while (upgradeTasks.isNotEmpty) {
-            await Future.wait(upgradeTasks.toList());
-          }
-        }, connections, serverBootstrapRef);
+          httpServer.listen((request) {
+            late final Future<void> task;
+            task = handleRequest(request)
+                .catchError((Object _) {})
+                .whenComplete(() => upgradeTasks.remove(task));
+            upgradeTasks.add(task);
+            task.ignore();
+          });
+          return _ListenerRpcServer(() => httpServer.port, () async {
+            closing = true;
+            await httpServer.close();
+            while (upgradeTasks.isNotEmpty) {
+              await Future.wait(upgradeTasks.toList());
+            }
+          }, connections, serverBootstrapRef);
 
-      default:
-        throw RpcException('unsupported scheme: ${address.scheme}');
+        default:
+          throw RpcException('unsupported scheme: ${address.scheme}');
+      }
+    } catch (_) {
+      // Binding failed, the scheme is unsupported, or wss:// was requested
+      // without a securityContext — no _ListenerRpcServer was created to own
+      // serverBootstrapRef, so nothing else will ever release it. Without
+      // this, every failed serve() call would permanently leak one
+      // reference to bootstrapIdentity (vendCapabilityHandle hands out a
+      // plain object with no finalizer to fall back on).
+      await serverBootstrapRef.dispose();
+      rethrow;
     }
   }
 }
@@ -345,14 +391,19 @@ class _ListenerRpcServer implements RpcServer {
 
   @override
   Future<void> close() async {
-    await _closeListener();
-    // Snapshot first: each connection's `done.whenComplete` callback removes
-    // itself from `_connections`, which would otherwise mutate the set while
-    // this iterates it.
-    await Future.wait(_connections.toList().map((c) => c.close()));
-    // Only now — after every connection's own reference to `bootstrap` has
-    // also been released via its own close() above — release this server's
-    // own server-lifetime reference too (see `serve()`'s matching comment).
-    await _bootstrapRef.dispose();
+    try {
+      await _closeListener();
+      // Snapshot first: each connection's `done.whenComplete` callback
+      // removes itself from `_connections`, which would otherwise mutate the
+      // set while this iterates it.
+      await Future.wait(_connections.toList().map((c) => c.close()));
+    } finally {
+      // Release this server's own server-lifetime reference regardless of
+      // whether closing the listener or any connection above threw —
+      // otherwise a failure partway through close() would leak
+      // _bootstrapRef's reference forever, with no other owner left to
+      // release it (see `serve()`'s matching comment).
+      await _bootstrapRef.dispose();
+    }
   }
 }

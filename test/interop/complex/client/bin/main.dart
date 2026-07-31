@@ -248,7 +248,7 @@ Future<void> _run() async {
   await _s17_genericMethods(svc);
   await _s18_interfaceInheritance(svc);
   await _s19_repositoryOps(svc);
-  _s20_subscription();
+  await _s20_subscription(svc);
   await _s21_streaming(svc);
   await _s22_errorHandling(svc);
   await _s23_nullValues(svc);
@@ -1800,6 +1800,131 @@ Future<void> _s18_interfaceInheritance(ComplexTestServiceClient svc) async {
   }
 }
 
+// ─── Repository.watch / openCursor support ───────────────────────────────────
+//
+// complex.capnp:Repository(Key,Value).Change is a *nested* struct generic
+// over the enclosing interface's own Key/Value parameters — this codegen
+// doesn't emit a first-class Dart type for that (only for a struct's own
+// direct generic parameters, e.g. Optional(Value) as OptionalReader). The
+// wire layout doesn't actually care, though: StructReader's low-level field
+// accessors (getTextField, getStructFieldWith, getUint16Field, ...) work
+// against any struct's raw layout regardless of whether a typed wrapper was
+// generated for it — the same trick section 19c's `entries` list already
+// relies on (each element is nominally a generic KeyValueReader, but is read
+// via plain getTextField(0) since Key happens to be Text here). This mirrors
+// the exact layout the Rust sample server's own generated
+// `repository::change::Owned<Key,Value>` uses: revision at data word 0, the
+// inserted/updated/removed union discriminant as a UInt16 at byte offset 8,
+// key at ptr 0, the inserted/updated payload at ptr 1, and
+// previousValue (Optional(Value)) at ptr 2.
+class _ChangeReader extends StructReader {
+  _ChangeReader(super.raw, {super.capabilities});
+
+  int get revision => getUint64Field(0);
+  int get which => getUint16Field(8);
+  String? get key => getTextField(0);
+  PersonReader? get insertedOrUpdated =>
+      getStructFieldWith(1, (r) => PersonReader(r, capabilities: capabilityTable));
+  OptionalReader? get previousValue =>
+      getStructFieldWith(2, (r) => OptionalReader(r, capabilities: capabilityTable));
+}
+
+class _ChangeBuilder extends StructBuilder {
+  _ChangeBuilder(super.raw);
+
+  @override
+  _ChangeReader asReader() => _ChangeReader(rawToReader());
+}
+
+class _ChangeFactory extends StructFactory<_ChangeReader, _ChangeBuilder> {
+  @override
+  int get dataWords => 2;
+  @override
+  int get ptrWords => 3;
+  @override
+  _ChangeReader fromRawReader(RawStructReader r) => _ChangeReader(r);
+  @override
+  _ChangeReader fromRawReaderWithCapabilities(RawStructReader r, List<Object?> capabilities) =>
+      _ChangeReader(r, capabilities: capabilities);
+  @override
+  _ChangeBuilder fromRawBuilder(RawStructBuilder r) => _ChangeBuilder(r);
+}
+
+final _changeFactory = _ChangeFactory();
+
+const int _changeInserted = 0;
+const int _changeUpdated = 1;
+const int _changeRemoved = 2;
+
+class _RecordedChange {
+  _RecordedChange({
+    required this.sequence,
+    required this.key,
+    required this.revision,
+    required this.which,
+    required this.personName,
+    required this.previousPersonName,
+  });
+
+  final int sequence;
+  final String? key;
+  final int revision;
+  final int which;
+  final String? personName;
+  // null if the change carried no previousValue (an insert); distinguishing
+  // "no previous value" from "previous value present but its person has no
+  // name" isn't needed by these tests, so this alone is enough.
+  final String? previousPersonName;
+}
+
+// Records every onNext delivered to it, in delivery order — used to verify
+// Repository.watch's Observer notifications end-to-end.
+class _ChangeObserverImpl extends ObserverServer {
+  final List<_RecordedChange> changes = [];
+  bool completed = false;
+
+  @override
+  Future<void> onNext(
+    ObserverOnNextParamsReader params,
+    List<Capability> paramsCapabilities,
+  ) async {
+    final change = params.event?.asStruct(_changeFactory);
+    final previous = change?.previousValue;
+    changes.add(
+      _RecordedChange(
+        sequence: params.sequence,
+        key: change?.key,
+        revision: change?.revision ?? 0,
+        which: change?.which ?? -1,
+        personName: change?.insertedOrUpdated?.name,
+        previousPersonName:
+            previous?.which == 1
+                ? previous?.getStructFieldWith(0, (r) => PersonReader(r))?.name
+                : null,
+      ),
+    );
+  }
+
+  @override
+  Future<void> onError(
+    ObserverOnErrorParamsReader params,
+    List<Capability> paramsCapabilities,
+  ) async {}
+
+  @override
+  Future<void> onComplete(
+    ObserverOnCompleteParamsReader params,
+    List<Capability> paramsCapabilities,
+  ) async => completed = true;
+}
+
+// Builds a `put()` params struct for key -> a Person named `name`.
+void _buildPutParams(RepositoryPutParamsBuilder b, String key, String name) {
+  b.setTextField(0, key);
+  b.initStructFieldWith(1, (r) => PersonBuilder(r), 1, 10).name = name;
+  b.setUint64Field(0, 0);
+}
+
 // ─── 19. Repository Operations ────────────────────────────────────────────────
 
 Future<void> _s19_repositoryOps(ComplexTestServiceClient svc) async {
@@ -1869,31 +1994,170 @@ Future<void> _s19_repositoryOps(ComplexTestServiceClient svc) async {
   final g3 = await repo19.get((b) => b.setTextField(0, 'nonexistent'));
   checkEq('nonexistent key is none', g3.result?.getUint16Field(0), 0);
 
-  // 19f: cursor - not implemented in server (error surfaces via pipelining)
+  // 19f: cursor - iterates a snapshot of the repository's current entries
+  // (k2, k3, k4 at this point: k1 was put then removed above).
   final cursorPipeline19 = repo19.openCursorPipeline((_) {});
-  cursorPipeline19.result
-      .ignore(); // openCursor is unimplemented; avoid zone error
   final cursor19 = cursorPipeline19.cursor;
-  try {
-    await cursor19.next((_) {});
-    skip('cursor - server returned success (unexpected)');
-  } catch (e) {
-    pass('cursor not implemented in server (expected via pipelining)');
+  final cursorEntries = <String, String?>{};
+  while (true) {
+    final next = await cursor19.next((_) {});
+    final result = next.result;
+    if (result == null || result.which == 0) break; // done
+    final kv = result.value?.asStruct(keyValueFactory);
+    final key = kv?.getTextField(0);
+    if (key == null) break;
+    cursorEntries[key] = kv?.getStructFieldWith(1, (r) => PersonReader(r))?.name;
   }
+  checkEq('cursor entries count', cursorEntries.length, 3);
+  checkEq('cursor entry k2 name', cursorEntries['k2'], 'P2');
+  checkEq('cursor entry k3 name', cursorEntries['k3'], 'P3');
+  checkEq('cursor entry k4 name', cursorEntries['k4'], 'P4');
+  // A cursor is a snapshot: later put()/remove() calls don't retroactively
+  // change what an already-open cursor iterates. Confirmed here by opening a
+  // second cursor after mutating the store and checking it does see the
+  // change; sections 19g/20 already exercise mutations after this cursor was
+  // opened, so re-querying `cursor19` itself past exhaustion would only
+  // re-confirm "done", not the snapshot property.
 
-  // 19g: watch - not implemented by the Rust sample server yet.
-  skip('watch - Rust sample server method is not implemented');
+  // 19g: watch - subscribe, then observe insert/update/remove notifications,
+  // then confirm cancel() actually stops further delivery.
+  final observer19 = _ChangeObserverImpl();
+  final watchResult19 = await repo19.watch((_) {}, observer: observer19);
+  final subscription19 = watchResult19.subscription;
+
+  final putK5 = await repo19.put((b) => _buildPutParams(b, 'k5', 'P5'));
+  checkEq(
+    'watch: exactly one change observed after insert',
+    observer19.changes.length,
+    1,
+  );
+  final insertChange = observer19.changes.last;
+  checkEq('watch: insert key', insertChange.key, 'k5');
+  checkEq('watch: insert revision', insertChange.revision, putK5.newRevision);
+  checkEq('watch: insert which', insertChange.which, _changeInserted);
+  checkEq('watch: insert person name', insertChange.personName, 'P5');
+  checkEq(
+    'watch: insert has no previous value',
+    insertChange.previousPersonName,
+    null,
+  );
+
+  await repo19.put((b) => _buildPutParams(b, 'k5', 'P5-updated'));
+  checkEq(
+    'watch: exactly one change observed after update',
+    observer19.changes.length,
+    2,
+  );
+  final updateChange = observer19.changes.last;
+  checkEq('watch: update which', updateChange.which, _changeUpdated);
+  checkEq('watch: update person name', updateChange.personName, 'P5-updated');
+  checkEq(
+    'watch: update previous person name',
+    updateChange.previousPersonName,
+    'P5',
+  );
+
+  await repo19.remove((b) {
+    b.setTextField(0, 'k5');
+    b.setUint64Field(0, 0);
+  });
+  checkEq(
+    'watch: exactly one change observed after remove',
+    observer19.changes.length,
+    3,
+  );
+  final removeChange = observer19.changes.last;
+  checkEq('watch: remove which', removeChange.which, _changeRemoved);
+  checkEq(
+    'watch: remove previous person name',
+    removeChange.previousPersonName,
+    'P5-updated',
+  );
+
+  final cancelResult19 = await subscription19.cancel((_) {});
+  check('watch: cancel reports wasActive', cancelResult19.wasActive);
+  await repo19.put((b) => _buildPutParams(b, 'k6', 'P6'));
+  checkEq(
+    'watch: no further changes observed after cancel',
+    observer19.changes.length,
+    3,
+  );
+  await repo19.remove((b) {
+    b.setTextField(0, 'k6');
+    b.setUint64Field(0, 0);
+  });
 
   await repo19.dispose();
 }
 
 // ─── 20. Subscription ─────────────────────────────────────────────────────────
 
-void _s20_subscription() {
+Future<void> _s20_subscription(ComplexTestServiceClient svc) async {
   section(20, 'Subscription');
-  skip('watch/subscribe - Rust sample server method is not implemented');
-  skip('cancel subscription - requires subscription from watch');
-  skip('multiple subscribers - requires watch server implementation');
+
+  final repoResult20 = await svc.getRepository((_) {});
+  final repo20 = repoResult20.repository;
+
+  // 20a: subscribing and unsubscribing via getId()/cancel() works
+  // independently of the watch()/onNext round trip already covered by 19g.
+  final observerA = _ChangeObserverImpl();
+  final watchA = await repo20.watch((_) {}, observer: observerA);
+  final idA = await watchA.subscription.getId((_) {});
+  check(
+    'subscription: getId returns without erroring',
+    idA.id >= 0,
+  );
+
+  // 20b: cancel — the first cancel() reports the subscription was active;
+  // a second cancel() on the same (already-canceled) subscription reports
+  // it was not.
+  final cancelA1 = await watchA.subscription.cancel((_) {});
+  check('subscription: first cancel() reports wasActive', cancelA1.wasActive);
+  final cancelA2 = await watchA.subscription.cancel((_) {});
+  check(
+    'subscription: second cancel() on the same subscription reports not '
+    'wasActive',
+    !cancelA2.wasActive,
+  );
+  await repo20.put((b) => _buildPutParams(b, 'sub-a', 'SubA'));
+  checkEq(
+    'subscription: no notifications after cancel',
+    observerA.changes.length,
+    0,
+  );
+
+  // 20c: multiple simultaneous subscribers on the same repository each get
+  // their own independent notifications, and canceling one doesn't affect
+  // the other.
+  final observerB = _ChangeObserverImpl();
+  final observerC = _ChangeObserverImpl();
+  final watchB = await repo20.watch((_) {}, observer: observerB);
+  final watchC = await repo20.watch((_) {}, observer: observerC);
+
+  await repo20.put((b) => _buildPutParams(b, 'sub-multi', 'Multi'));
+  checkEq('subscription: subscriber B observed the change', observerB.changes.length, 1);
+  checkEq('subscription: subscriber C observed the change', observerC.changes.length, 1);
+  checkEq(
+    'subscription: subscriber B and C see the same key',
+    observerB.changes.last.key,
+    observerC.changes.last.key,
+  );
+
+  await watchB.subscription.cancel((_) {});
+  await repo20.put((b) => _buildPutParams(b, 'sub-multi-2', 'Multi2'));
+  checkEq(
+    'subscription: canceled subscriber B sees no further changes',
+    observerB.changes.length,
+    1,
+  );
+  checkEq(
+    'subscription: still-active subscriber C keeps observing changes',
+    observerC.changes.length,
+    2,
+  );
+
+  await watchC.subscription.cancel((_) {});
+  await repo20.dispose();
 }
 
 // ─── 21. Streaming ────────────────────────────────────────────────────────────

@@ -170,6 +170,84 @@ void main() {
     );
 
     test(
+      'passing an already-vended handle as bootstrap still keeps the '
+      'underlying identity alive across sequential connections, not just a '
+      'wrapper around a wrapper',
+      () async {
+        // Regression test: serve() used to vend serverBootstrapRef directly
+        // from whatever `bootstrap` argument it was given, without
+        // unwrapping first. vendCapabilityHandle() is itself public API, so
+        // a caller can legitimately pass an already-vended handle (rather
+        // than a bare capability) as bootstrap — vending *that* creates a
+        // second, disconnected refcount cycle keyed on the handle object
+        // instead of on the real underlying identity every connection's own
+        // export ends up sharing, so serverBootstrapRef ends up protecting
+        // nothing real: the underlying identity's shared refcount could
+        // still drop to zero between sequential connections exactly like
+        // before the original fix.
+        final bootstrap = _CountingBootstrap();
+        final wrapped = vendCapabilityHandle(bootstrap);
+        final server = await RpcSystem.serve(
+          Uri.parse('tcp://127.0.0.1:0'),
+          wrapped,
+        );
+        addTearDown(server.close);
+
+        final client1 = await RpcSystem.connect(
+          Uri.parse('tcp://127.0.0.1:${server.port}'),
+        );
+        await expectLater(
+          client1
+              .bootstrap(_RawCapabilityFactory())
+              .dispatch(0, 0, RpcPayload.fromBytes(_emptyParams)),
+          throwsA(isA<RpcException>()),
+        );
+        await client1.close();
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+
+        expect(bootstrap.disposeCount, equals(0));
+
+        final client2 = await RpcSystem.connect(
+          Uri.parse('tcp://127.0.0.1:${server.port}'),
+        );
+        await expectLater(
+          client2
+              .bootstrap(_RawCapabilityFactory())
+              .dispatch(0, 0, RpcPayload.fromBytes(_emptyParams)),
+          throwsA(isA<RpcException>()),
+        );
+        expect(bootstrap.disposeCount, equals(0));
+
+        await client2.close();
+        await server.close();
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+
+        expect(bootstrap.disposeCount, equals(1));
+      },
+    );
+
+    test(
+      'a serve() call that fails after vending its server-lifetime bootstrap '
+      'reference releases that reference instead of leaking it',
+      () async {
+        // Regression test: serverBootstrapRef used to be vended before the
+        // listener bind (or scheme validation) could fail — if serve() threw
+        // afterward, no _ListenerRpcServer existed yet to ever release that
+        // reference, permanently pinning bootstrap's refcount by one
+        // (vendCapabilityHandle hands out a plain object with no finalizer
+        // to fall back on).
+        final bootstrap = _CountingBootstrap();
+
+        await expectLater(
+          RpcSystem.serve(Uri.parse('bogus://127.0.0.1:0'), bootstrap),
+          throwsA(isA<RpcException>()),
+        );
+
+        expect(bootstrap.disposeCount, equals(1));
+      },
+    );
+
+    test(
       'a malformed/aborted connection does not surface as an unhandled '
       'top-level error, and does not destabilize later connections',
       () async {

@@ -4658,9 +4658,10 @@ void main() {
 
   group('vendCapabilityHandle: rejects vending after disposal was triggered', () {
     test(
-      'vending again after a prior cycle already fully disposed throws '
-      '(in debug/test builds) instead of silently starting a fresh cycle '
-      'that can never truly resurrect the already-torn-down target',
+      'vending again after a prior cycle already fully disposed throws — '
+      'unconditionally, not just in debug/test builds — instead of silently '
+      'starting a fresh cycle that can never truly resurrect the '
+      'already-torn-down target',
       () async {
         final target = CountingCapability();
 
@@ -4672,7 +4673,7 @@ void main() {
         // "fresh" handle for it now would be a lie (it would look live but
         // dispatch through it would just hit whatever broken state
         // target.dispose() already left behind).
-        expect(() => vendCapabilityHandle(target), throwsA(isA<AssertionError>()));
+        expect(() => vendCapabilityHandle(target), throwsA(isA<StateError>()));
       },
     );
 
@@ -4689,7 +4690,7 @@ void main() {
         // is "triggered" (disposeFuture assigned) but not yet finished.
         final h1DisposeFuture = h1.dispose();
 
-        expect(() => vendCapabilityHandle(target), throwsA(isA<AssertionError>()));
+        expect(() => vendCapabilityHandle(target), throwsA(isA<StateError>()));
 
         target.releaseDispose();
         await h1DisposeFuture;
