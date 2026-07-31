@@ -1230,29 +1230,44 @@ class TwoPartyRpcConnection implements RpcConnection {
       for (final descriptor in msg.capTableDescriptors) {
         paramsCapabilities.add(_capabilityFromDescriptor(descriptor));
       }
-    } on RpcException catch (error) {
-      // A disc this vat doesn't implement at all (e.g. thirdPartyHosted) is
-      // a bigger deal than a single bad call — see the `default` case in
-      // _capabilityFromDescriptor and the "tears down the connection as
-      // unimplemented" test for this exact behavior — so let that kind keep
-      // propagating to this listener's own outer try/catch, which tears the
-      // whole connection down. Every other decode failure here (e.g. a
-      // receiverHosted descriptor naming an export id we don't have) is
-      // just this one call's problem: fail only it, with a normal
-      // Return.exception, and keep serving the connection.
-      if (error.kind == ErrorKind.unimplemented) rethrow;
-
-      // Every entry decoded successfully before the one that failed is a
-      // real, live reference (an import refcount bump, a vended
-      // receiverHosted handle, ...) that nothing else will ever release
-      // now that this call never reaches a real dispatch — release them
-      // here, or a peer could leak import refcounts (and pin this vat's
-      // own exports alive) simply by repeatedly sending a Call whose
-      // capTable's *last* entry is invalid.
+    } catch (error) {
+      // Every entry decoded successfully before whatever failed is a real,
+      // live reference (an import refcount bump, a vended receiverHosted
+      // handle, ...) — dispose them *before* deciding what to do with the
+      // error itself, including the unimplemented/rethrow path below,
+      // which tears the whole connection down: _tearDown only ever
+      // disposes each export's own single `ownedReference` (see that
+      // field's doc comment) — it has no way to know about an *additional*
+      // handle vended into a local variable like this one, so leaving one
+      // undisposed here would leak a permanent share of that identity's
+      // refcount, potentially high enough that its own real capability
+      // never actually gets disposed even once every other reference to it
+      // (including the export's own) is long gone. A malicious peer could
+      // repeat this pattern — one valid entry, then an invalid one — every
+      // connection to accumulate exactly such leaked references.
       for (final capability in paramsCapabilities) {
         _disposeIgnoringErrors(capability);
       }
 
+      // A disc this vat doesn't implement at all (e.g. thirdPartyHosted) is
+      // a bigger deal than a single bad call — see the `default` case in
+      // _capabilityFromDescriptor and the "tears down the connection as
+      // unimplemented" test for this exact behavior — so let that kind
+      // keep propagating to this listener's own outer try/catch, which
+      // tears the whole connection down. Same for anything that isn't even
+      // an RpcException: _capabilityFromDescriptor itself never throws
+      // anything else today, but this being a peer-triggered decode loop,
+      // silently downgrading an unexpected failure type to an ordinary
+      // per-call Return.exception would be the wrong default.
+      if (error is! RpcException || error.kind == ErrorKind.unimplemented) {
+        rethrow;
+      }
+
+      // Every other decode failure here (e.g. a receiverHosted descriptor
+      // naming an export id we don't have) is just this one call's
+      // problem: fail only it, with a normal Return.exception, and keep
+      // serving the connection.
+      //
       // Registers qid as answered — with no result-capability export ids
       // to release later, since this call never reached a real dispatch —
       // so _rejectDuplicateQuestionId can still catch a peer illegally

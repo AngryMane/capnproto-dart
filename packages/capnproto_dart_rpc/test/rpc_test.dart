@@ -178,6 +178,47 @@ Uint8List _callWithCapDescriptorDisc(int disc) {
   return result;
 }
 
+// Same byte-patching trick as _callWithCapDescriptorDisc, but for a
+// two-entry capTable whose *first* entry is a real, valid
+// receiverHosted(0) descriptor and whose *second* entry's disc byte is
+// patched to [disc] — used to probe cleanup when a later entry fails to
+// decode after an earlier one already succeeded.
+Uint8List _callWithReceiverHostedThenCapDescriptorDisc(int disc) {
+  final paramsBuilder = MessageBuilder();
+  paramsBuilder.initRoot(_TextParamFactory());
+  final params = paramsBuilder.serialize();
+  final withNoneSecond = buildCallMessage(
+    questionId: 1,
+    targetImportId: 0,
+    interfaceId: _echoInterfaceId,
+    methodId: _echoMethodId,
+    paramsBytes: params,
+    capTableDescriptors: const [
+      RpcCapDescriptor.receiverHosted(0),
+      RpcCapDescriptor.none(),
+    ],
+  );
+  final withSenderHostedSecond = buildCallMessage(
+    questionId: 1,
+    targetImportId: 0,
+    interfaceId: _echoInterfaceId,
+    methodId: _echoMethodId,
+    paramsBytes: params,
+    capTableDescriptors: const [
+      RpcCapDescriptor.receiverHosted(0),
+      RpcCapDescriptor.senderHosted(0),
+    ],
+  );
+  final differences = <int>[
+    for (var i = 0; i < withNoneSecond.length; i++)
+      if (withNoneSecond[i] != withSenderHostedSecond[i]) i,
+  ];
+  expect(differences, hasLength(1));
+  final result = Uint8List.fromList(withNoneSecond);
+  result[differences.single] = disc;
+  return result;
+}
+
 class _TextParamReader extends StructReader {
   _TextParamReader(super.raw);
 }
@@ -5342,6 +5383,68 @@ void main() {
         await serverOutput.close();
       },
     );
+
+    test(
+      'an entry that resolved before an unimplemented descriptor is still '
+      'disposed before the connection tears down',
+      () async {
+        // Regression test: the unimplemented rethrow used to skip the
+        // dispose loop entirely (it ran only in the per-call-failure
+        // branch below it) — any capTable entry that had already resolved
+        // successfully before the unimplemented one (e.g. a receiverHosted
+        // descriptor vending a fresh handle to bootstrap/an export) was
+        // simply abandoned. _tearDown only ever disposes each export's own
+        // single `ownedReference` — it has no way to know about this
+        // *additional* vended handle, so the shared refcount for that
+        // identity never actually reached zero, and the real capability's
+        // own dispose() never ran even though the connection (and every
+        // other reference to it) was long gone.
+        final bootstrap = CountingCapability();
+        final serverInput = StreamController<Uint8List>();
+        final serverOutput = StreamController<Uint8List>();
+        serverOutput.stream.listen((_) {});
+        final server = TwoPartyRpcConnection.server(
+          incoming: serverInput.stream,
+          outgoing: serverOutput.sink,
+          bootstrap: bootstrap,
+        );
+
+        final doneExpectation = expectLater(
+          server.done,
+          throwsA(
+            isA<RpcException>().having(
+              (error) => error.cause,
+              'cause',
+              isA<RpcException>().having(
+                (cause) => cause.kind,
+                'kind',
+                ErrorKind.unimplemented,
+              ),
+            ),
+          ),
+        );
+
+        // [0] receiverHosted(0) — resolves successfully, vending a fresh
+        // handle to bootstrap (export 0) in addition to the export's own
+        // ownedReference. [1] disc=5 (thirdPartyHosted) — unimplemented.
+        serverInput.add(_callWithReceiverHostedThenCapDescriptorDisc(5));
+        await doneExpectation;
+
+        expect(
+          bootstrap.disposeCount,
+          equals(1),
+          reason:
+              'the extra handle vended for the receiverHosted(0) entry '
+              'was never disposed, so the shared refcount for bootstrap '
+              'never reached zero even after teardown released the '
+              "export's own reference",
+        );
+
+        await serverInput.close();
+        await serverOutput.close();
+      },
+    );
+
     test(
       'server sends Unimplemented when it receives a message with unknown disc',
       () async {
