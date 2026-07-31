@@ -227,15 +227,22 @@ void main() {
     );
 
     test(
-      'a serve() call that fails after vending its server-lifetime bootstrap '
-      'reference releases that reference instead of leaking it',
+      'a serve() call that fails before ever binding (an unsupported '
+      'scheme) does not touch bootstrap at all — matching serve()\'s own '
+      'doc comment, the same bootstrap can be reused for a later, '
+      'successful call',
       () async {
-        // Regression test: serverBootstrapRef used to be vended before the
-        // listener bind (or scheme validation) could fail — if serve() threw
-        // afterward, no _ListenerRpcServer existed yet to ever release that
-        // reference, permanently pinning bootstrap's refcount by one
-        // (vendCapabilityHandle hands out a plain object with no finalizer
-        // to fall back on).
+        // Regression test: serve() used to vend its server-lifetime
+        // bootstrap reference *before* scheme validation / listener
+        // binding, unconditionally disposing it (via the caller's own
+        // handle-release step, or the shared refcount it created) on any
+        // failure afterward — including scheme validation, which happens
+        // before anything is bound and touches nothing else. That
+        // permanently disposed the real bootstrap identity even though
+        // serve() never actually took ownership of it, directly
+        // contradicting this method's own doc comment ("If this call
+        // throws instead ... bootstrap is left exactly as it was passed
+        // in").
         final bootstrap = _CountingBootstrap();
 
         await expectLater(
@@ -243,7 +250,65 @@ void main() {
           throwsA(isA<RpcException>()),
         );
 
-        expect(bootstrap.disposeCount, equals(1));
+        expect(bootstrap.disposeCount, equals(0));
+
+        // The same instance — untouched by the failed call above — must
+        // still be usable for a real server.
+        final server = await RpcSystem.serve(
+          Uri.parse('tcp://127.0.0.1:0'),
+          bootstrap,
+        );
+        addTearDown(server.close);
+        final client = await RpcSystem.connect(
+          Uri.parse('tcp://127.0.0.1:${server.port}'),
+        );
+        await expectLater(
+          client
+              .bootstrap(_RawCapabilityFactory())
+              .dispatch(0, 0, RpcPayload.fromBytes(_emptyParams)),
+          throwsA(isA<RpcException>()),
+        );
+        await client.close();
+      },
+    );
+
+    test(
+      'a serve() call that fails only after successfully binding the '
+      'listener — because bootstrap itself is unusable (e.g. already fully '
+      'disposed through a prior vendCapabilityHandle cycle) — still closes '
+      'that listener, instead of leaking an open port',
+      () async {
+        // Learn a currently-free port, then release it immediately — used
+        // only to give the failing serve() call below a specific port
+        // number to bind (rather than an ephemeral 0), so a subsequent
+        // successful bind to that exact same port number can prove the
+        // first call's listener socket was actually closed, not merely
+        // abandoned.
+        final probe = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+        final port = probe.port;
+        await probe.close();
+
+        final spentBootstrap = _CountingBootstrap();
+        // Triggers disposal for spentBootstrap's identity — any later
+        // vendCapabilityHandle(spentBootstrap) throws (see that function's
+        // own doc comment).
+        await vendCapabilityHandle(spentBootstrap).dispose();
+        expect(spentBootstrap.disposeCount, equals(1));
+
+        await expectLater(
+          RpcSystem.serve(Uri.parse('tcp://127.0.0.1:$port'), spentBootstrap),
+          throwsA(anything),
+        );
+
+        // Only possible if the failed call above actually closed the
+        // listener it had already bound on `port`, rather than leaking it
+        // open forever.
+        final server = await RpcSystem.serve(
+          Uri.parse('tcp://127.0.0.1:$port'),
+          _CountingBootstrap(),
+        );
+        addTearDown(server.close);
+        expect(server.port, equals(port));
       },
     );
 

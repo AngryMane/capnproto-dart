@@ -2948,6 +2948,17 @@ class _ReceiverAnswerCapability extends Capability {
   int _pendingCalls = 0;
   Future<void>? _resolvedDisposeFuture;
 
+  // dispose()'s own returned Future must not complete until the real
+  // underlying disposal has itself finished — not just been scheduled —
+  // per Capability.dispose()'s own doc comment ("frees any associated
+  // resources"). When dispose() is called while calls are still pending,
+  // that real disposal is deferred (see _trackCall/_disposeResolvedIfIdle)
+  // until they drain; this completer is what lets dispose()'s Future wait
+  // for that deferred point instead of resolving early, whether the real
+  // disposal happens synchronously (right away, if already idle) or only
+  // once the last pending call finishes.
+  Completer<void>? _disposeCompleter;
+
   _ReceiverAnswerCapability(this._conn, this._questionId, this._path);
 
   Future<Capability> _resolve() => _resolution ??= _resolveOnce();
@@ -2989,18 +3000,30 @@ class _ReceiverAnswerCapability extends Capability {
   }
 
   Future<void> _disposeResolvedIfIdle() {
-    final resolution = _resolution;
-    if (!_disposed || resolution == null || _pendingCalls > 0) {
+    if (!_disposed || _pendingCalls > 0) {
       return Future.value();
     }
+    final resolution = _resolution;
+    if (resolution == null) {
+      // Never dispatched through, so there was never anything to resolve
+      // (or dispose) in the first place — this is itself the terminal
+      // outcome dispose() is waiting on.
+      _disposeCompleter?.complete();
+      return Future.value();
+    }
+    final existing = _resolvedDisposeFuture;
+    if (existing != null) return existing;
     // A resolution that failed (e.g. an invalid questionId — see
     // _resolveOnce) never produced a handle in the first place, so there's
     // nothing to dispose — swallow that here the same way the previous
     // (untracked) implementation's try/catch did.
-    return _resolvedDisposeFuture ??= resolution.then(
+    final future = resolution.then(
       (cap) => cap.dispose(),
       onError: (Object error, StackTrace stackTrace) {},
     );
+    _resolvedDisposeFuture = future;
+    future.whenComplete(() => _disposeCompleter?.complete()).ignore();
+    return future;
   }
 
   static RpcException get _disposedError => const RpcException(
@@ -3071,10 +3094,18 @@ class _ReceiverAnswerCapability extends Capability {
   }
 
   @override
-  Future<void> dispose() async {
-    if (_disposed) return;
+  Future<void> dispose() {
+    final existing = _disposeCompleter;
+    if (existing != null) return existing.future;
     _disposed = true;
-    await _disposeResolvedIfIdle();
+    _disposeCompleter = Completer<void>();
+    // Kicks off (or, if calls are still pending, merely checks — see
+    // _trackCall for what actually triggers it once they drain) the real
+    // disposal; _disposeCompleter (via _disposeResolvedIfIdle's own hooks)
+    // is what makes the Future returned below wait for that to actually
+    // finish rather than resolving as soon as this synchronous call returns.
+    _disposeResolvedIfIdle().ignore();
+    return _disposeCompleter!.future;
   }
 }
 

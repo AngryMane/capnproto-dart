@@ -4875,6 +4875,91 @@ void main() {
         await clientToServer.close();
       },
     );
+
+    test(
+      'dispose() itself does not resolve until the resolved target\'s real '
+      'dispose() has actually completed — not merely been scheduled — when '
+      'disposed while a call through the same capability is still in flight',
+      () async {
+        // Reviewed concern about the fix above: tracking in-flight calls so
+        // the real target isn't disposed while one is still running is
+        // necessary but not sufficient on its own — dispose()'s own
+        // returned Future must also not resolve until that deferred real
+        // disposal has actually finished (Capability.dispose()'s own doc
+        // comment: "frees any associated resources"), not merely been
+        // scheduled to run once the last pending call drains.
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        serverToClient.stream.listen((_) {});
+
+        final leaf = DisposeOrderProbeCapability();
+        final probe = ReceiverAnswerProbeServer(leaf);
+        TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: probe,
+        );
+
+        clientToServer.add(
+          buildCallMessage(
+            questionId: 1,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _pipelineMethodId,
+            paramsBytes: _buildEchoParams(''),
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        clientToServer.add(
+          buildCallMessage(
+            questionId: 2,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _echoMethodId,
+            paramsBytes: _buildEchoParams(''),
+            capTableDescriptors: [RpcCapDescriptor.receiverAnswer(1, [0])],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(probe.lastParams, hasLength(1));
+        final receiverAnswerCap = probe.lastParams[0];
+
+        final dispatchFuture = receiverAnswerCap.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('x')),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        clientToServer.add(buildFinishMessage(1, releaseResultCaps: true));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        var disposeCompleted = false;
+        final disposeFuture = receiverAnswerCap.dispose().whenComplete(() {
+          disposeCompleted = true;
+        });
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(
+          disposeCompleted,
+          isFalse,
+          reason:
+              'dispose() resolved before the in-flight dispatch() call — '
+              'and therefore the resolved target\'s real dispose() — ever '
+              'settled',
+        );
+
+        leaf.dispatchGate.complete();
+        await dispatchFuture;
+        await disposeFuture;
+
+        expect(disposeCompleted, isTrue);
+        expect(leaf.disposeCount, equals(1));
+
+        await clientToServer.close();
+      },
+    );
   });
 
   group('_ImportState.replacement: disposed when the import is released', () {

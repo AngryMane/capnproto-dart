@@ -219,7 +219,8 @@ impl subscription::Server for SubscriptionImpl {
 }
 
 struct TextPersonCursorImpl {
-    // A snapshot taken at openCursor() time, in insertion order — later
+    // A snapshot taken at openCursor() time, in unspecified order (`store`
+    // is a HashMap, so `.iter()`'s order is not insertion order) — later
     // put()/remove() calls do not affect an already-open cursor.
     entries: RefCell<std::vec::IntoIter<(String, Vec<u8>)>>,
 }
@@ -673,8 +674,9 @@ impl repository::Server<capnp::text::Owned, complex_capnp::person::Owned> for Re
         _params: repository::OpenCursorParams<capnp::text::Owned, complex_capnp::person::Owned>,
         mut results: repository::OpenCursorResults<capnp::text::Owned, complex_capnp::person::Owned>,
     ) -> Result<(), capnp::Error> {
-        // A snapshot taken now, in insertion order — later put()/remove()
-        // calls do not affect an already-open cursor (see TextPersonCursorImpl).
+        // A snapshot taken now, in unspecified order (see
+        // TextPersonCursorImpl) — later put()/remove() calls do not affect
+        // an already-open cursor.
         let snapshot: Vec<(String, Vec<u8>)> = self
             .store
             .borrow()
