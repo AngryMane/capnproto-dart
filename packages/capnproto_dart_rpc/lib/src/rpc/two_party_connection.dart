@@ -908,13 +908,27 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// params-capability release sink, see [_dispatchToCapability]) can apply
   /// the local effect immediately while leaving the wire notification to be
   /// folded into `Return.releaseParamCaps` instead of an explicit Release.
+  ///
+  /// Also disposes the dropped [_ImportState.replacement], if the promise
+  /// this import tracks had resolved to one (see [_handleResolve]) — every
+  /// `_ImportedCapability` sharing this state forwards its calls to
+  /// `replacement` (see [_ImportedCapability.dispatch]) instead of holding
+  /// a separate reference of its own, so once every one of them has been
+  /// disposed (this reaching zero), `replacement`'s own reference —
+  /// whether a freshly [vendCapabilityHandle]d handle (disc 1/2/3) or a
+  /// [DeferredCapability] wrapping one (the disembargo-loopback branch) —
+  /// would otherwise never be released, permanently pinning whatever it
+  /// wraps.
   void _decrementImportRefcount(int importId) {
     final count = _importRefCounts[importId];
     if (count == null || count <= 0) return;
     if (count == 1) {
       _importRefCounts.remove(importId);
       _brokenImports.remove(importId);
-      _imports.remove(importId);
+      final replacement = _imports.remove(importId)?.replacement;
+      if (replacement != null) {
+        _disposeIgnoringErrors(replacement);
+      }
     } else {
       _importRefCounts[importId] = count - 1;
     }
@@ -2911,15 +2925,31 @@ class _ReceiverAnswerCapability extends Capability {
   final List<int> _path;
   bool _disposed = false;
 
+  // Resolved (and vended — see requireCapabilityFromResultPath) at most
+  // once and cached, mirroring _WirePipelinedCapability: this capability
+  // can be dispatched through multiple times before it's disposed (e.g.
+  // several pipelined calls against the same receiverAnswer target), and
+  // each of those calls must reuse the same resolved handle rather than
+  // vending — and then never disposing — a fresh one every time, which
+  // would permanently pin the underlying identity's shared refcount by one
+  // for every call ever made through this capability.
+  Future<Capability>? _resolution;
+
   _ReceiverAnswerCapability(this._conn, this._questionId, this._path);
 
-  Future<Capability> _resolve() async {
+  Future<Capability> _resolve() {
     if (_disposed) {
-      throw const RpcException(
-        'capability is disposed',
-        kind: ErrorKind.disconnected,
+      return Future.error(
+        const RpcException(
+          'capability is disposed',
+          kind: ErrorKind.disconnected,
+        ),
       );
     }
+    return _resolution ??= _resolveOnce();
+  }
+
+  Future<Capability> _resolveOnce() async {
     final resolved = _conn._answerCaps[_questionId];
     if (resolved != null) {
       return requireCapabilityFromResultPath(
@@ -2997,7 +3027,22 @@ class _ReceiverAnswerCapability extends Capability {
 
   @override
   Future<void> dispose() async {
+    if (_disposed) return;
     _disposed = true;
+    // Only release a resolution that actually produced a handle — one that
+    // was never started (no dispatch call was ever made) has nothing to
+    // dispose, and one that failed to resolve (e.g. an invalid
+    // questionId — see _resolveOnce) never vended a handle in the first
+    // place.
+    final resolution = _resolution;
+    if (resolution == null) return;
+    final Capability cap;
+    try {
+      cap = await resolution;
+    } catch (_) {
+      return;
+    }
+    await cap.dispose();
   }
 }
 

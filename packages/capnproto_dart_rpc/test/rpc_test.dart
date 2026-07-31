@@ -334,6 +334,34 @@ class SyncThrowingDisposeCapability extends Capability {
   }
 }
 
+// Lets a test control exactly when a real (asynchronous, multi-event-loop-
+// -turn) dispose() call completes — e.g. to probe vendCapabilityHandle's
+// behavior for a handle vended *while* an earlier cycle's disposal of the
+// same target is still in flight, not yet actually finished.
+class SlowDisposeCapability extends Capability {
+  int disposeCount = 0;
+  final Completer<void> _gate = Completer<void>();
+
+  /// Lets a pending dispose() call complete.
+  void releaseDispose() {
+    if (!_gate.isCompleted) _gate.complete();
+  }
+
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    RpcPayload params, {
+    List<Capability> paramsCapabilities = const [],
+  }) => Future.error(UnsupportedError('not used'));
+
+  @override
+  Future<void> dispose() async {
+    await _gate.future;
+    disposeCount++;
+  }
+}
+
 class CountingCapability extends EchoServer {
   int disposeCount = 0;
   int dispatchCount = 0;
@@ -829,6 +857,47 @@ class CapReceivingServer extends Capability {
 
   @override
   Future<void> dispose() async {}
+}
+
+// Combines CapReceivingServer's params-recording (_echoMethodId) with
+// PipelineServer's result-capability-vending (_pipelineMethodId, returning
+// `caps: [leaf]`) and dispose-count tracking on itself — used to probe
+// _ReceiverAnswerCapability's handling of a capability that's actually this
+// same vat's own prior answer, handed back via a raw receiverAnswer
+// capability descriptor.
+class ReceiverAnswerProbeServer extends Capability {
+  final Capability leaf;
+  ReceiverAnswerProbeServer(this.leaf);
+
+  List<Capability> lastParams = const [];
+  int disposeCount = 0;
+
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    RpcPayload params, {
+    List<Capability> paramsCapabilities = const [],
+  }) async {
+    if (methodId == _echoMethodId) {
+      lastParams = List.of(paramsCapabilities);
+      return DispatchResult(
+        payload: RpcPayload.fromBytes(_buildEchoParams('ok')),
+      );
+    }
+    if (methodId == _pipelineMethodId) {
+      final mb = MessageBuilder();
+      final root = mb.initRoot(_TextParamFactory());
+      root.setCapabilityField(0, 0);
+      return DispatchResult(payload: RpcPayload.fromBuilder(root), caps: [leaf]);
+    }
+    throw RpcException('unknown method: $methodId');
+  }
+
+  @override
+  Future<void> dispose() async {
+    disposeCount++;
+  }
 }
 
 // #53: tail calls. On _tailCallMethodId, redirects the entire dispatch to
@@ -4513,6 +4582,243 @@ void main() {
         // wouldn't dedupe against export 0 and would show up as a second,
         // redundant entry.
         expect(serverConn.debugExportCount, equals(1));
+
+        await client.close();
+        await serverConn.close();
+      },
+    );
+  });
+
+  group('vendCapabilityHandle delegates tryTailCall', () {
+    test(
+      'a vended handle forwards tryTailCall to its target instead of '
+      'silently disabling the tail-call optimization',
+      () {
+        final target = TailCallServer();
+        final handle = vendCapabilityHandle(target);
+
+        final direct = target.tryTailCall(
+          _echoInterfaceId,
+          _tailCallMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('')),
+          paramsCapabilities: [EchoServer()],
+        );
+        final viaHandle = handle.tryTailCall(
+          _echoInterfaceId,
+          _tailCallMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('')),
+          paramsCapabilities: [EchoServer()],
+        );
+
+        expect(direct, isNotNull);
+        expect(viaHandle, isNotNull);
+        expect(viaHandle!.interfaceId, equals(direct!.interfaceId));
+        expect(viaHandle.methodId, equals(direct.methodId));
+      },
+    );
+  });
+
+  group('vendCapabilityHandle: reuse after a prior cycle fully disposed', () {
+    test(
+      'the same capability instance can be vended again in a fresh cycle '
+      'after an earlier one fully disposed — e.g. a shared bootstrap '
+      'capability RpcSystem.serve registers again for every newly accepted '
+      'connection, including ones whose own reference to it has already '
+      'drained — and that later cycle correctly disposes the target again',
+      () async {
+        final target = CountingCapability();
+
+        final h1 = vendCapabilityHandle(target);
+        await h1.dispose();
+        expect(target.disposeCount, equals(1));
+
+        // A second, independent cycle for the same underlying instance:
+        // must not be corrupted by (or itself corrupt) the first cycle's
+        // already-completed refcount/dispose bookkeeping.
+        final h2 = vendCapabilityHandle(target);
+        await h2.dispose();
+        expect(target.disposeCount, equals(2));
+      },
+    );
+
+    test(
+      'a handle vended while the previous cycle\'s dispose() is still in '
+      'flight (not yet actually finished) joins that same cycle instead of '
+      'starting a premature fresh one',
+      () async {
+        final target = SlowDisposeCapability();
+
+        final h1 = vendCapabilityHandle(target);
+        // Don't await yet — dispose() is blocked on the gate, so this cycle
+        // is "started" (disposeFuture assigned) but not yet finished.
+        final h1DisposeFuture = h1.dispose();
+
+        // Vended *during* that still-in-flight window: must join the same
+        // cycle (share its eventual dispose), not be treated as a fresh,
+        // fully-live reference to an object that's mid-teardown.
+        final h2 = vendCapabilityHandle(target);
+
+        target.releaseDispose();
+        await h1DisposeFuture;
+        // h2 is still outstanding (joined the cycle) — target.dispose()
+        // must only have run once so far, and h2 must still work.
+        expect(target.disposeCount, equals(1));
+
+        await h2.dispose();
+        // h2 joining the cycle must not trigger a second, redundant
+        // target.dispose() call.
+        expect(target.disposeCount, equals(1));
+
+        // Now that both handles are gone, vending again is a genuinely
+        // fresh cycle.
+        final h3 = vendCapabilityHandle(target);
+        await h3.dispose();
+        expect(target.disposeCount, equals(2));
+      },
+    );
+  });
+
+  group('_ReceiverAnswerCapability: resolved handle reuse and disposal', () {
+    test(
+      'a receiverAnswer-decoded capability dispatched multiple times reuses '
+      'one resolved handle instead of leaking a fresh one per call, and '
+      'dispose() releases exactly that one reference',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        serverToClient.stream.listen((_) {});
+
+        final leaf = CountingCapability();
+        final probe = ReceiverAnswerProbeServer(leaf);
+        TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: probe,
+        );
+
+        // Call 1: probe.pipeline() -> caps: [leaf] at ptr slot 0. This vat
+        // (the server) now has an outstanding answer #1 whose result
+        // capability is `leaf`.
+        clientToServer.add(
+          buildCallMessage(
+            questionId: 1,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _pipelineMethodId,
+            paramsBytes: _buildEchoParams(''),
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        // Call 2: probe.echo(...), with a receiverAnswer(1, [0]) param —
+        // telling this same vat "the capability I'm passing you is your
+        // own answer #1's capability at path [0]" — i.e. handing `leaf`
+        // back to the vat that produced it.
+        clientToServer.add(
+          buildCallMessage(
+            questionId: 2,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _echoMethodId,
+            paramsBytes: _buildEchoParams(''),
+            capTableDescriptors: [RpcCapDescriptor.receiverAnswer(1, [0])],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(probe.lastParams, hasLength(1));
+        final receiverAnswerCap = probe.lastParams[0];
+
+        // Dispatch through it twice, *while* answer #1 is still tracked
+        // (_answerCaps[1]/_pendingCaps[1]) — before the fix, each call
+        // vended (and never disposed) a fresh handle to `leaf`.
+        await receiverAnswerCap.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('a')),
+        );
+        await receiverAnswerCap.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('b')),
+        );
+
+        // Finish question 1 now — safe only *after* the receiverAnswer
+        // resolution above already captured its own reference, since
+        // Finish drops `_answerCaps[1]` unconditionally. This releases the
+        // *separate* export-owned reference to `leaf` that sending call 1's
+        // own Return created (every result capability gets exported to the
+        // peer, independent of whether anything ever names it via
+        // receiverAnswer) — the one other outstanding reference besides
+        // whatever receiverAnswerCap itself is holding.
+        clientToServer.add(buildFinishMessage(1, releaseResultCaps: true));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        // Only the receiverAnswer-side reference(s) remain now — none of
+        // them disposed yet.
+        expect(leaf.disposeCount, equals(0));
+
+        await receiverAnswerCap.dispose();
+        // Both dispatch() calls sharing one resolved handle (rather than
+        // leaking a fresh one each) means this single dispose() call is
+        // enough to release the last remaining reference for real.
+        expect(leaf.disposeCount, equals(1));
+
+        await clientToServer.close();
+      },
+    );
+  });
+
+  group('_ImportState.replacement: disposed when the import is released', () {
+    test(
+      'a promise import that resolved to a replacement capability disposes '
+      'that replacement once the import itself is fully released',
+      () async {
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        final server = PromisedReturnServer();
+        final resolvedTarget = CountingCapability();
+
+        final serverConn = TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: server,
+        );
+        final client = TwoPartyRpcConnection.client(
+          incoming: serverToClient.stream,
+          outgoing: clientToServer.sink,
+        );
+
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        await bootstrapCap.echo('warmup');
+
+        // A plain (non-pipelined) call: awaits the full Return directly, so
+        // the only reference to the promise's import is the one this test
+        // holds itself — no _WirePipelinedCapability involved to also
+        // retain it.
+        final result = await bootstrapCap.cap.dispatch(
+          _echoInterfaceId,
+          _pipelineMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('')),
+        );
+        final promiseCap = requireCapabilityFromResult(result, 0);
+
+        // Resolve the promise to resolvedTarget — the server exports it and
+        // sends Resolve(cap); the client's _ImportState for the promise's
+        // import id now has `replacement` set to a fresh import of it.
+        server.completer.complete(resolvedTarget);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(resolvedTarget.disposeCount, equals(0));
+
+        // Releasing the *promise* import (not `replacement` directly —
+        // nothing in this test ever touches `replacement` itself) must
+        // cascade to disposing `replacement`, since every call through the
+        // promise import forwards to it and nothing else references it.
+        await promiseCap.dispose();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(resolvedTarget.disposeCount, equals(1));
 
         await client.close();
         await serverConn.close();
