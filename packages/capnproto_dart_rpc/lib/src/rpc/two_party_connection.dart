@@ -1241,7 +1241,42 @@ class TwoPartyRpcConnection implements RpcConnection {
       // just this one call's problem: fail only it, with a normal
       // Return.exception, and keep serving the connection.
       if (error.kind == ErrorKind.unimplemented) rethrow;
-      _sendRaw(buildReturnExceptionMessage(answerId: qid, reason: error.message));
+
+      // Every entry decoded successfully before the one that failed is a
+      // real, live reference (an import refcount bump, a vended
+      // receiverHosted handle, ...) that nothing else will ever release
+      // now that this call never reaches a real dispatch — release them
+      // here, or a peer could leak import refcounts (and pin this vat's
+      // own exports alive) simply by repeatedly sending a Call whose
+      // capTable's *last* entry is invalid.
+      for (final capability in paramsCapabilities) {
+        _disposeIgnoringErrors(capability);
+      }
+
+      // Registers qid as answered — with no result-capability export ids
+      // to release later, since this call never reached a real dispatch —
+      // so _rejectDuplicateQuestionId can still catch a peer illegally
+      // reusing this same qid before sending Finish for it, exactly like
+      // every other Return sent without a real dispatch throughout this
+      // file (see the sibling `_answers[qid] = const [];` sites).
+      _answers[qid] = const [];
+
+      _sendRaw(
+        buildReturnExceptionMessage(
+          answerId: qid,
+          reason: error.message,
+          // The dispose() calls above already sent a real wire Release for
+          // every import successfully resolved before the failing
+          // descriptor (see _ImportedCapability.dispose()) — leaving this
+          // at its default (true) would additionally tell the peer it
+          // doesn't need to send its own Release for those same export
+          // ids, so it would apply *both*: its own remoteRefCount would be
+          // decremented twice for what was really only one release,
+          // potentially tearing its own capability down while some other
+          // legitimate reference to it is still outstanding.
+          releaseParamCaps: false,
+        ),
+      );
       return;
     }
 

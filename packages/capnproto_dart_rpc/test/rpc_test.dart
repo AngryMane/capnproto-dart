@@ -4461,6 +4461,137 @@ void main() {
         await serverInput.close();
       },
     );
+
+    test(
+      'a descriptor that fails partway through a multi-entry capTable does '
+      'not leak the capabilities that resolved successfully before it',
+      () async {
+        // Regression test: when _capabilityFromDescriptor throws partway
+        // through decoding a Call's capTable, everything already decoded
+        // before the failing entry (an import refcount bump, in this
+        // case) used to just sit in the local `paramsCapabilities` list
+        // forever — nothing ever disposed it, since the call itself never
+        // reaches a real dispatch. A peer could repeat this (a valid
+        // senderHosted entry followed by an invalid one) to leak import
+        // refcounts indefinitely.
+        final serverInput = StreamController<Uint8List>();
+        final serverOutput = StreamController<Uint8List>();
+        final receivedMessages = <RpcMessage>[];
+        serverOutput.stream.listen((bytes) {
+          receivedMessages.add(parseRpcMessage(bytes));
+        });
+        final serverConn = TwoPartyRpcConnection.server(
+          incoming: serverInput.stream,
+          outgoing: serverOutput.sink,
+          bootstrap: EchoServer(),
+        );
+
+        serverInput.add(
+          buildCallMessage(
+            questionId: 1,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _echoMethodId,
+            paramsBytes: _buildEchoParams(''),
+            capTableDescriptors: const [
+              RpcCapDescriptor.senderHosted(10),
+              RpcCapDescriptor.receiverHosted(99999),
+            ],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        final returns = receivedMessages.where((m) => m.isReturnException);
+        expect(returns, hasLength(1));
+        expect(
+          returns.single.returnReleaseParamCaps,
+          isFalse,
+          reason:
+              'an explicit Release for the already-resolved '
+              'senderHosted(10) import is sent separately (checked below) '
+              '— releaseParamCaps: true here too would tell the peer to '
+              'also decrement its own export refcount for it a second '
+              'time',
+        );
+
+        expect(
+          serverConn.debugImportCount,
+          equals(0),
+          reason:
+              'the senderHosted(10) import resolved before the failing '
+              'descriptor was never disposed',
+        );
+
+        final releases = receivedMessages.where(
+          (m) => m.type == RpcMessageType.release,
+        );
+        expect(releases, hasLength(1));
+        expect(releases.single.releaseId, equals(10));
+        expect(releases.single.referenceCount, equals(1));
+
+        await serverInput.close();
+      },
+    );
+
+    test(
+      'after an error Return from a mid-capTable decode failure, the peer '
+      'reusing the same question id before Finish is rejected as a '
+      'protocol violation instead of being processed as a fresh call',
+      () async {
+        // Regression test: the error Return sent for a mid-capTable decode
+        // failure used to leave `qid` registered in none of
+        // _pendingCaps/_answerCaps/_answers/_finishedAnswers, so
+        // _rejectDuplicateQuestionId (which checks exactly those tables)
+        // couldn't distinguish a peer illegally reusing that same question
+        // id before sending Finish for it from a legitimate fresh call.
+        final serverInput = StreamController<Uint8List>();
+        final serverOutput = StreamController<Uint8List>();
+        serverOutput.stream.listen((_) {});
+        final serverConn = TwoPartyRpcConnection.server(
+          incoming: serverInput.stream,
+          outgoing: serverOutput.sink,
+          bootstrap: EchoServer(),
+        );
+
+        final doneExpectation = expectLater(
+          serverConn.done,
+          throwsA(
+            isA<RpcException>().having(
+              (e) => e.message,
+              'message',
+              contains('duplicate incoming question ID 1'),
+            ),
+          ),
+        );
+
+        serverInput.add(
+          buildCallMessage(
+            questionId: 1,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _echoMethodId,
+            paramsBytes: _buildEchoParams(''),
+            capTableDescriptors: const [RpcCapDescriptor.receiverHosted(99999)],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        // Reuses qid=1 before ever sending Finish for the first (failed)
+        // attempt — a well-behaved peer never does this; a malformed or
+        // hostile one might.
+        serverInput.add(
+          buildCallMessage(
+            questionId: 1,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _echoMethodId,
+            paramsBytes: _buildEchoParams(''),
+          ),
+        );
+
+        await doneExpectation;
+      },
+    );
   });
 
   group('ownership: capability relayed across two different connections', () {
