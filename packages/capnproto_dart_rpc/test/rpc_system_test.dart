@@ -12,6 +12,23 @@ class _RawCapabilityFactory extends CapabilityFactory<Capability> {
   Capability fromCapability(Capability cap) => cap;
 }
 
+class _CountingBootstrap extends Capability {
+  int disposeCount = 0;
+
+  @override
+  Future<DispatchResult> dispatch(
+    int interfaceId,
+    int methodId,
+    RpcPayload params, {
+    List<Capability> paramsCapabilities = const [],
+  }) => Future.error(const RpcException('unsupported'));
+
+  @override
+  Future<void> dispose() async {
+    disposeCount++;
+  }
+}
+
 // Minimal validly-framed message (1 segment, 1 word, null root pointer) —
 // enough to get past decoding so the call reaches NullCapability.dispatch(),
 // which is what's actually under test here.
@@ -95,6 +112,62 @@ void main() {
 
       await client.close();
     });
+
+    test(
+      'the bootstrap capability is not disposed while the server is still '
+      'running, even after every currently-connected client disconnects — '
+      'only server.close() finally releases it',
+      () async {
+        // Regression test: every accepted connection is handed the same
+        // `bootstrap` instance and (per TwoPartyRpcConnection.server's
+        // ownership contract) disposes its own reference on close. With
+        // connections coming and going sequentially (not all simultaneously
+        // alive) rather than a fresh handle per connection, the *last*
+        // connection open at any moment closing would previously drop the
+        // shared refcount to zero and trigger real disposal of `bootstrap`
+        // — even with other clients yet to connect and reuse it.
+        final bootstrap = _CountingBootstrap();
+        final server = await RpcSystem.serve(
+          Uri.parse('tcp://127.0.0.1:0'),
+          bootstrap,
+        );
+        addTearDown(server.close);
+
+        final client1 = await RpcSystem.connect(
+          Uri.parse('tcp://127.0.0.1:${server.port}'),
+        );
+        await expectLater(
+          client1
+              .bootstrap(_RawCapabilityFactory())
+              .dispatch(0, 0, RpcPayload.fromBytes(_emptyParams)),
+          throwsA(isA<RpcException>()),
+        );
+        await client1.close();
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+
+        // No client is connected right now, but the server itself is still
+        // running — bootstrap must still be alive.
+        expect(bootstrap.disposeCount, equals(0));
+
+        // A second, later connection must still be able to use it.
+        final client2 = await RpcSystem.connect(
+          Uri.parse('tcp://127.0.0.1:${server.port}'),
+        );
+        await expectLater(
+          client2
+              .bootstrap(_RawCapabilityFactory())
+              .dispatch(0, 0, RpcPayload.fromBytes(_emptyParams)),
+          throwsA(isA<RpcException>()),
+        );
+        expect(bootstrap.disposeCount, equals(0));
+
+        await client2.close();
+        await server.close();
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+
+        expect(bootstrap.disposeCount, equals(1));
+      },
+    );
 
     test(
       'a malformed/aborted connection does not surface as an unhandled '

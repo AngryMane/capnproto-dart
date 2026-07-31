@@ -32,13 +32,10 @@ final Future<void> _neverCanceledFuture = Completer<void>().future;
 /// `_returnCapDescriptor`/`_resolveDescriptorForCapability` in
 /// `two_party_connection.dart`). Reusing that same handle — or the bare
 /// capability it wrapped — for anything *after* returning it here is a
-/// use-after-ownership-transfer bug, though not one this library can detect
-/// for you at the [Capability] level: unlike a one-shot value read out of a
-/// single call's result, the same underlying capability *instance* is
-/// routinely and legitimately handed to [vendCapabilityHandle] many
-/// independent times over its life (a server's bootstrap capability, most
-/// commonly — see that function's doc comment), so "was this identity ever
-/// vended before" isn't itself a reliable signal of misuse.
+/// use-after-ownership-transfer bug: if every reference to the underlying
+/// capability happens to have been released by then, [vendCapabilityHandle]
+/// catches the reuse itself (in debug/test builds) rather than silently
+/// handing back a handle to an already-torn-down object.
 class DispatchResult {
   /// The method results — see [RpcPayload].
   final RpcPayload payload;
@@ -536,23 +533,6 @@ final class CapabilityTableBuilder {
 class _CapabilityRefCount {
   int count = 0;
   Future<void>? disposeFuture;
-
-  /// True only once [disposeFuture] has actually *completed* — not merely
-  /// been started. [disposeFuture] is assigned synchronously the instant
-  /// [count] reaches zero (see [_CapabilityHandle.dispose]), before
-  /// `target.dispose()`'s own work (commonly asynchronous — closing a
-  /// connection, releasing an import, etc.) has actually run. If
-  /// [vendCapabilityHandle] used "[disposeFuture] is non-null" as its
-  /// signal for "safe to start a fresh cycle", a handle vended *during*
-  /// that still-in-flight window would wrongly be treated as a brand-new,
-  /// fully-live reference — while the previous cycle's disposal is still
-  /// racing to tear the same [target] down underneath it. Waiting for
-  /// actual completion instead means such a handle correctly joins the
-  /// *existing* (already-committed-to-disposing) cycle — sharing its
-  /// [disposeFuture] rather than triggering a second, redundant
-  /// `target.dispose()` call — exactly like reusing it *after* the first
-  /// cycle's disposal had already finished ends up doing.
-  bool disposed = false;
 }
 
 final Expando<_CapabilityRefCount> _capabilityRefCounts =
@@ -563,27 +543,41 @@ final Expando<_CapabilityRefCount> _capabilityRefCounts =
 /// (by identity). [target] itself is only disposed once every handle vended
 /// for it has been disposed.
 ///
-/// Once that refcount reaches zero *and* the resulting disposal has
-/// actually finished, a *later* call to this function for the same
-/// [target] starts a brand-new count from scratch (the old
-/// [_CapabilityRefCount] is simply replaced) rather than treating it as an
-/// error: unlike a one-shot value read out of a single call's result (see
-/// [requireCapabilityFromResult]), the same [Capability] instance is
-/// routinely handed to this function many independent times over its
-/// lifetime — most commonly a server's bootstrap capability, which
-/// [RpcSystem.serve] registers as export 0 again for every newly accepted
-/// connection, including ones whose own reference to it has since fully
-/// drained and disposed. There is deliberately no reuse-after-dispose
-/// assertion here for that reason — see [DispatchResult]'s doc comment for
-/// the actual ownership-transfer contract this guards against violating,
-/// which is a narrower, single-call-result claim than "this identity is
-/// vended exactly once for its whole lifetime."
+/// In debug/test builds (this uses [assert], stripped from `--release`
+/// builds), throws if disposal for [target] has already been *triggered*
+/// (its shared count already reached zero at least once — see
+/// [_CapabilityHandle.dispose] — whether or not `target.dispose()` itself
+/// has actually finished running yet). Vending a new handle at that point
+/// would either resurrect an already-torn-down capability, or race a fresh
+/// handle against a still in-flight disposal that could finish tearing
+/// [target] down at any moment — neither is safe, so this is treated as a
+/// caller bug rather than something to silently paper over with a second,
+/// independent refcount cycle.
+///
+/// This means a [Capability] meant to be exported repeatedly over a long
+/// lifetime — e.g. [RpcSystem.serve]'s own `bootstrap`, handed to a fresh
+/// [TwoPartyRpcConnection] for every accepted connection, potentially long
+/// after an earlier one has come and gone — must never let this shared
+/// count reach zero while the *owner* still considers it alive: `serve()`
+/// itself holds its own vended handle for as long as the server is
+/// running, specifically so no individual connection closing can ever
+/// trigger `bootstrap`'s real disposal on its own.
 Capability vendCapabilityHandle(Capability target) {
-  var refCount = _capabilityRefCounts[target];
-  if (refCount == null || refCount.disposed) {
-    refCount = _CapabilityRefCount();
-    _capabilityRefCounts[target] = refCount;
-  }
+  final refCount = _capabilityRefCounts[target] ??= _CapabilityRefCount();
+  assert(
+    refCount.disposeFuture == null,
+    'vendCapabilityHandle($target): disposal for this capability has '
+    'already been triggered (every previously vended handle for it has '
+    'been disposed) — vending a new handle now would either resurrect an '
+    'already-torn-down capability or race a fresh handle against a still '
+    'in-flight disposal. This usually means a reference to it was held '
+    'onto and reused after ownership of it should have been considered '
+    'transferred away (see DispatchResult\'s doc comment) — or, for a '
+    'capability meant to be exported repeatedly over a long lifetime, that '
+    'its owner should hold its own persistent vended handle for that whole '
+    'lifetime instead of letting this shared count ever reach zero while '
+    'still in use (see this function\'s own doc comment).',
+  );
   return _CapabilityHandle(target, refCount);
 }
 
@@ -705,18 +699,14 @@ class _CapabilityHandle extends Capability {
     _handleDisposed = true;
     _refCount.count--;
     if (_refCount.count <= 0) {
+      // Assigning disposeFuture here — synchronously, before this await
+      // suspends — is itself what permanently marks this identity as
+      // "disposal triggered" for vendCapabilityHandle's assert, regardless
+      // of whether target.dispose() ultimately succeeds or throws: a
+      // failed disposal is still treated as terminal (matching
+      // _disposeIgnoringErrors' "report, don't retry" handling elsewhere),
+      // not as a reason to allow the identity to be vended fresh again.
       await (_refCount.disposeFuture ??= _target.dispose());
-      // Re-check count rather than unconditionally marking this cycle
-      // disposed: a handle vended (by [vendCapabilityHandle]) *while* this
-      // await was in flight joins this same cycle instead of starting a
-      // fresh one (see [_CapabilityRefCount.disposed]'s doc comment), which
-      // bumps count back above zero. That joiner is still a live reference
-      // — this cycle isn't actually finished until *its* dispose() (or
-      // whichever handle's brings count back to zero last) observes zero
-      // here too.
-      if (_refCount.count <= 0) {
-        _refCount.disposed = true;
-      }
     }
   }
 }

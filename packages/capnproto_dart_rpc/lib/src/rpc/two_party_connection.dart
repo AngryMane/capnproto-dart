@@ -2935,19 +2935,22 @@ class _ReceiverAnswerCapability extends Capability {
   // for every call ever made through this capability.
   Future<Capability>? _resolution;
 
+  // Tracks every dispatch()/dispatchBuilding()/beginDispatch() call that was
+  // admitted (started before _disposed flipped true), mirroring
+  // _WirePipelinedCapability's _pendingPipelinedCalls — but, unlike that
+  // class (which only tracks calls made *before* its target resolves, since
+  // afterwards it dispatches directly against the already-resolved
+  // capability with no tracking at all), every call through this class goes
+  // through _resolve() and is tracked, since there's no untracked
+  // "already resolved, dispatch directly" fast path here. Without this,
+  // dispose() could release the shared resolved handle — tearing down its
+  // real target — while one of these calls was still using it.
+  int _pendingCalls = 0;
+  Future<void>? _resolvedDisposeFuture;
+
   _ReceiverAnswerCapability(this._conn, this._questionId, this._path);
 
-  Future<Capability> _resolve() {
-    if (_disposed) {
-      return Future.error(
-        const RpcException(
-          'capability is disposed',
-          kind: ErrorKind.disconnected,
-        ),
-      );
-    }
-    return _resolution ??= _resolveOnce();
-  }
+  Future<Capability> _resolve() => _resolution ??= _resolveOnce();
 
   Future<Capability> _resolveOnce() async {
     final resolved = _conn._answerCaps[_questionId];
@@ -2974,19 +2977,54 @@ class _ReceiverAnswerCapability extends Capability {
     );
   }
 
+  Future<T> _trackCall<T>(Future<T> future) {
+    _pendingCalls++;
+    future.whenComplete(() {
+      _pendingCalls--;
+      if (_disposed) {
+        _disposeResolvedIfIdle().ignore();
+      }
+    }).ignore();
+    return future;
+  }
+
+  Future<void> _disposeResolvedIfIdle() {
+    final resolution = _resolution;
+    if (!_disposed || resolution == null || _pendingCalls > 0) {
+      return Future.value();
+    }
+    // A resolution that failed (e.g. an invalid questionId — see
+    // _resolveOnce) never produced a handle in the first place, so there's
+    // nothing to dispose — swallow that here the same way the previous
+    // (untracked) implementation's try/catch did.
+    return _resolvedDisposeFuture ??= resolution.then(
+      (cap) => cap.dispose(),
+      onError: (Object error, StackTrace stackTrace) {},
+    );
+  }
+
+  static RpcException get _disposedError => const RpcException(
+    'capability is disposed',
+    kind: ErrorKind.disconnected,
+  );
+
   @override
   Future<DispatchResult> dispatch(
     int interfaceId,
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-  }) async {
-    final cap = await _resolve();
-    return cap.dispatch(
-      interfaceId,
-      methodId,
-      params,
-      paramsCapabilities: paramsCapabilities,
+  }) {
+    if (_disposed) return Future.error(_disposedError);
+    return _trackCall(
+      _resolve().then(
+        (cap) => cap.dispatch(
+          interfaceId,
+          methodId,
+          params,
+          paramsCapabilities: paramsCapabilities,
+        ),
+      ),
     );
   }
 
@@ -2996,13 +3034,17 @@ class _ReceiverAnswerCapability extends Capability {
     int methodId,
     void Function(AnyPointerBuilder) build, {
     List<Capability> paramsCapabilities = const [],
-  }) async {
-    final cap = await _resolve();
-    return cap.dispatchBuilding(
-      interfaceId,
-      methodId,
-      build,
-      paramsCapabilities: paramsCapabilities,
+  }) {
+    if (_disposed) return Future.error(_disposedError);
+    return _trackCall(
+      _resolve().then(
+        (cap) => cap.dispatchBuilding(
+          interfaceId,
+          methodId,
+          build,
+          paramsCapabilities: paramsCapabilities,
+        ),
+      ),
     );
   }
 
@@ -3013,12 +3055,15 @@ class _ReceiverAnswerCapability extends Capability {
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
   }) {
-    final result = _resolve().then(
-      (cap) => cap.dispatch(
-        interfaceId,
-        methodId,
-        params,
-        paramsCapabilities: paramsCapabilities,
+    if (_disposed) return _ErrorCapCall(_disposedError);
+    final result = _trackCall(
+      _resolve().then(
+        (cap) => cap.dispatch(
+          interfaceId,
+          methodId,
+          params,
+          paramsCapabilities: paramsCapabilities,
+        ),
       ),
     );
     result.ignore();
@@ -3029,20 +3074,7 @@ class _ReceiverAnswerCapability extends Capability {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    // Only release a resolution that actually produced a handle — one that
-    // was never started (no dispatch call was ever made) has nothing to
-    // dispose, and one that failed to resolve (e.g. an invalid
-    // questionId — see _resolveOnce) never vended a handle in the first
-    // place.
-    final resolution = _resolution;
-    if (resolution == null) return;
-    final Capability cap;
-    try {
-      cap = await resolution;
-    } catch (_) {
-      return;
-    }
-    await cap.dispose();
+    await _disposeResolvedIfIdle();
   }
 }
 

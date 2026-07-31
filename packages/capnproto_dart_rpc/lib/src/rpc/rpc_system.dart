@@ -112,6 +112,26 @@ class RpcSystem {
     final upgradeTasks = <Future<void>>{};
     final expectedWebSocketPath = address.path.isEmpty ? '/' : address.path;
 
+    // Every accepted connection is handed the same `bootstrap` instance and
+    // (per TwoPartyRpcConnection.server's ownership contract) disposes its
+    // own reference to it on close — with connections coming and going over
+    // the server's lifetime (not all simultaneously alive), the *last*
+    // connection open at any given moment closing would otherwise drop the
+    // shared refcount (see vendCapabilityHandle) to zero and trigger real
+    // disposal, even though the server itself is still accepting new
+    // connections that will go on to reuse the same `bootstrap` object (and
+    // vendCapabilityHandle deliberately refuses to vend a fresh handle for
+    // an identity whose disposal has already been triggered — see its own
+    // doc comment — so that reuse would fail loudly instead of silently
+    // handing a later connection a handle to an already-torn-down object).
+    // Holding this server-lifetime reference for as long as `serve()`'s own
+    // returned RpcServer is open keeps the shared refcount above zero
+    // throughout, so no individual connection closing can ever trigger
+    // `bootstrap`'s real disposal while the server is still running — only
+    // this server's own close() (below) does, once every connection's own
+    // reference has also been released.
+    final serverBootstrapRef = vendCapabilityHandle(bootstrap);
+
     void track(TwoPartyRpcConnection conn) {
       connections.add(conn);
       // `conn.done` completes with an error for a connection that was torn
@@ -156,6 +176,7 @@ class RpcSystem {
           () => serverSocket.port,
           serverSocket.close,
           connections,
+          serverBootstrapRef,
         );
 
       case 'ws':
@@ -232,7 +253,7 @@ class RpcSystem {
           while (upgradeTasks.isNotEmpty) {
             await Future.wait(upgradeTasks.toList());
           }
-        }, connections);
+        }, connections, serverBootstrapRef);
 
       default:
         throw RpcException('unsupported scheme: ${address.scheme}');
@@ -311,7 +332,13 @@ class _ListenerRpcServer implements RpcServer {
   final int Function() _getPort;
   final Future<void> Function() _closeListener;
   final Set<TwoPartyRpcConnection> _connections;
-  _ListenerRpcServer(this._getPort, this._closeListener, this._connections);
+  final Capability _bootstrapRef;
+  _ListenerRpcServer(
+    this._getPort,
+    this._closeListener,
+    this._connections,
+    this._bootstrapRef,
+  );
 
   @override
   int get port => _getPort();
@@ -323,5 +350,9 @@ class _ListenerRpcServer implements RpcServer {
     // itself from `_connections`, which would otherwise mutate the set while
     // this iterates it.
     await Future.wait(_connections.toList().map((c) => c.close()));
+    // Only now — after every connection's own reference to `bootstrap` has
+    // also been released via its own close() above — release this server's
+    // own server-lifetime reference too (see `serve()`'s matching comment).
+    await _bootstrapRef.dispose();
   }
 }
