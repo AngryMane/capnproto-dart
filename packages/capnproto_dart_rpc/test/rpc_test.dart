@@ -4960,6 +4960,84 @@ void main() {
         await clientToServer.close();
       },
     );
+
+    test(
+      'a failure from the resolved target\'s own dispose() propagates '
+      'through receiverAnswerCap.dispose() itself, instead of being '
+      'silently reported as success',
+      () async {
+        // Reviewed concern about the fix above: the deferred real disposal
+        // used to be forwarded to _disposeCompleter via whenComplete(...),
+        // which runs identically on success *and* failure and can't tell
+        // them apart — so a real failure from the resolved target's own
+        // dispose() was always reported as a successful dispose() to
+        // receiverAnswerCap's own caller, silently discarding it. That
+        // directly contradicts Capability.dispose()'s own doc comment
+        // ("frees any associated resources") — a caller awaiting dispose()
+        // has no way to learn cleanup actually failed.
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        serverToClient.stream.listen((_) {});
+
+        final leaf = ThrowingDisposeCapability();
+        final probe = ReceiverAnswerProbeServer(leaf);
+        TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: probe,
+        );
+
+        clientToServer.add(
+          buildCallMessage(
+            questionId: 1,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _pipelineMethodId,
+            paramsBytes: _buildEchoParams(''),
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        clientToServer.add(
+          buildCallMessage(
+            questionId: 2,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _echoMethodId,
+            paramsBytes: _buildEchoParams(''),
+            capTableDescriptors: [RpcCapDescriptor.receiverAnswer(1, [0])],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(probe.lastParams, hasLength(1));
+        final receiverAnswerCap = probe.lastParams[0];
+
+        // Forces resolution (ThrowingDisposeCapability.dispatch() itself
+        // just rejects — irrelevant here, only resolving matters).
+        await expectLater(
+          receiverAnswerCap.dispatch(
+            _echoInterfaceId,
+            _echoMethodId,
+            RpcPayload.fromBytes(_buildEchoParams('x')),
+          ),
+          throwsA(isA<UnsupportedError>()),
+        );
+
+        // Release the other outstanding reference to `leaf` (answer #1's
+        // own export), so receiverAnswerCap's handle is the last one left —
+        // its dispose() below is what actually tears `leaf` down for real.
+        clientToServer.add(buildFinishMessage(1, releaseResultCaps: true));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        await expectLater(
+          receiverAnswerCap.dispose(),
+          throwsA(isA<StateError>()),
+        );
+
+        await clientToServer.close();
+      },
+    );
   });
 
   group('_ImportState.replacement: disposed when the import is released', () {

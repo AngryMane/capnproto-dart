@@ -3016,13 +3016,43 @@ class _ReceiverAnswerCapability extends Capability {
     // A resolution that failed (e.g. an invalid questionId — see
     // _resolveOnce) never produced a handle in the first place, so there's
     // nothing to dispose — swallow that here the same way the previous
-    // (untracked) implementation's try/catch did.
+    // (untracked) implementation's try/catch did. Note this `onError` only
+    // ever fires for `resolution`'s own failure, per Future.then's
+    // documented semantics — a failure from the `cap.dispose()` call below
+    // is a completely separate failure of `future` itself (propagated to
+    // dispose()'s own caller below), not something this `onError` ever
+    // observes or swallows.
     final future = resolution.then(
       (cap) => cap.dispose(),
       onError: (Object error, StackTrace stackTrace) {},
     );
     _resolvedDisposeFuture = future;
-    future.whenComplete(() => _disposeCompleter?.complete()).ignore();
+    // Deliberately `.then(onValue, onError:)`, not `.whenComplete(...)`:
+    // whenComplete's callback runs on both success and failure alike but
+    // can't distinguish which happened, so unconditionally calling
+    // `complete()` from it would report the resolved target's own real
+    // dispose() failure (if `future` itself rejects) as a success to
+    // dispose()'s caller — silently discarding it, contrary to
+    // Capability.dispose()'s own doc comment ("frees any associated
+    // resources"). Forwarding the actual outcome here instead means a
+    // failure the resolved target's dispose() raises is a failure
+    // `receiverAnswerCap.dispose()` itself raises too.
+    future
+        .then<void>(
+          (_) {
+            final completer = _disposeCompleter;
+            if (completer != null && !completer.isCompleted) {
+              completer.complete();
+            }
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            final completer = _disposeCompleter;
+            if (completer != null && !completer.isCompleted) {
+              completer.completeError(error, stackTrace);
+            }
+          },
+        )
+        .ignore();
     return future;
   }
 
