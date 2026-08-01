@@ -376,7 +376,6 @@ class TwoPartyRpcConnection implements RpcConnection {
       // reaches onError does so before _sendRaw ever runs (both the sync
       // branch and the async IIFE only call onSent(), never onError(), once
       // _sendRaw succeeds) — see _rollbackQuestionParamExports's doc comment.
-      _rollbackQuestionParamExports(qid);
       final ids = _questionTable.failBeforeSend(question, e, st);
       if (ids != null) _applyReleaseParamCaps(ids);
     }
@@ -1662,10 +1661,6 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// wire — see each call site's own doc comment for why that invariant
   /// holds — so this is safe to call unconditionally there, with no separate
   /// "was it actually sent" flag to track.
-  void _rollbackQuestionParamExports(int qid) {
-    final ids = _questionTable.takeParamExportIds(qid);
-    if (ids != null) _applyReleaseParamCaps(ids);
-  }
 
   void _handleResolve(RpcMessage msg) {
     if (msg.isResolveException) {

@@ -123,7 +123,16 @@ class QuestionTable {
     if (question == null) return null;
     final ids = question.parameterExportIds;
     question.parameterExportIds = null;
+    _removeIfEmpty(question);
     return ids;
+  }
+
+  void _removeIfEmpty(OutgoingQuestion question) {
+    if (question.returnCompleter == null &&
+        question.sentCompleter == null &&
+        question.parameterExportIds == null) {
+      _questions.remove(question.id);
+    }
   }
 
   /// Removes and returns [qid]'s `Return` completer, if it's still tracked
@@ -134,9 +143,7 @@ class QuestionTable {
     if (question == null) return null;
     final completer = question.returnCompleter;
     question.returnCompleter = null;
-    if (question.sentCompleter == null && question.parameterExportIds == null) {
-      _questions.remove(qid);
-    }
+    _removeIfEmpty(question);
     return completer;
   }
 

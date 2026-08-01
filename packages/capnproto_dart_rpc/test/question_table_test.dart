@@ -163,5 +163,17 @@ void main() {
       expect(table.takeReturn(qid), isNull);
       expect(table.takeReturn(9999), isNull);
     });
+
+    test('removes entry after Return and param export state are consumed', () {
+      final table = QuestionTable();
+      final question = table.allocate();
+      final qid = question.id;
+
+      table.recordParamExportIds(qid, [10]);
+      table.markSent(qid);
+      expect(table.takeReturn(qid), isNotNull);
+      expect(table.takeParamExportIds(qid), equals([10]));
+      expect(table.remove(qid), isNull);
+    });
   });
 }
