@@ -35,6 +35,12 @@
     "source=capnproto-dart-cargo-git,target=/usr/local/cargo/git,type=volume",
     "source=${localEnv:HOME}/.claude,target=/root/.claude,type=bind",
     "source=${localEnv:HOME}/.codex,target=/root/.codex,type=bind",
+    // Bind-mount the host's SSH keys/known_hosts so `git pull`/`git push` over
+    // SSH work inside the container without a separate key setup.
+    "source=${localEnv:HOME}/.ssh,target=/root/.ssh,type=bind",
+    // Share the host's GitHub CLI configuration so `gh auth login`/`gh auth status`
+    // work inside the container without re-authenticating.
+    "source=${localEnv:HOME}/.config/gh,target=/root/.config/gh,type=bind",
     // Wayland compositor socket (native rendering) and the X11 socket dir
     // (XWayland fallback for any tool that only speaks X11).
     "source=${localEnv:XDG_RUNTIME_DIR},target=${localEnv:XDG_RUNTIME_DIR},type=bind",

@@ -22,10 +22,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         ca-certificates \
         git \
+        gh \
         libglu1-mesa \
         libgtk-3-dev \
         liblzma-dev \
         ninja-build \
+        openssh-client \
         pkg-config \
         unzip \
         wget \
