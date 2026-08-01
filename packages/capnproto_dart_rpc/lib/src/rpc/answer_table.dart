@@ -17,160 +17,195 @@ class ResolvedAnswer {
   ResolvedAnswer(this.resultBytes, this.caps);
 }
 
+/// One incoming question's answer-lifecycle state, exactly one of which
+/// applies at a time — see [AnswerTable]'s own doc comment for how
+/// [TwoPartyRpcConnection] drives the transitions between them.
+sealed class AnswerState {
+  const AnswerState();
+}
+
+/// A dispatch is currently running for this question. [pending] lets a
+/// pipelined call queue behind it; [cancellation] lets a Finish that arrives
+/// before it settles cancel the dispatch in flight.
+final class DispatchingAnswer extends AnswerState {
+  final Future<ResolvedAnswer> pending;
+  final DispatchCancellationController cancellation;
+  const DispatchingAnswer(this.pending, this.cancellation);
+}
+
+/// A Return was already sent (or the equivalent resultsSentElsewhere path
+/// taken) for this question, and it's now awaiting Finish. [resolved] is
+/// only set when pipelined calls can target this answer's result — `null`
+/// for a Return variant with no result payload of its own (an exception, or
+/// a takeFromOtherQuestion forward). [resultExportIds] are the export ids
+/// (if any) that a later Finish(releaseResultCaps: true) should release.
+final class AnsweredState extends AnswerState {
+  final ResolvedAnswer? resolved;
+  final List<int> resultExportIds;
+  const AnsweredState({this.resolved, this.resultExportIds = const []});
+}
+
+/// This question's dispatch failed, and the error is retained (instead of
+/// just being sent as a Return.exception and forgotten) so a
+/// `takeFromOtherQuestion` racing with the failure still observes the
+/// original error rather than a misleading "unknown question id" — only
+/// reachable via the sendResultsTo=yourself path, where nothing is put on
+/// the wire that a normal Return.exception would otherwise carry.
+final class FailedAnswerState extends AnswerState {
+  final CapnpException error;
+  const FailedAnswerState(this.error);
+}
+
+/// The peer already sent Finish for this question while its dispatch was
+/// still running. The eventual dispatch result must be dropped instead of
+/// resurrecting answer state for it.
+final class FinishedBeforeCompletion extends AnswerState {
+  const FinishedBeforeCompletion();
+}
+
 /// Owns every incoming call a [TwoPartyRpcConnection] is currently (or has
-/// recently) answered — resolved/pending/broken answer state for promise
-/// pipelining, which result-capability export ids a Finish should release,
-/// live dispatch cancellation controllers, and answers Finished by the peer
-/// before their dispatch even completed.
+/// recently) answered, as one [AnswerState] entry per question id —
+/// resolved/pending/broken answer state for promise pipelining, which
+/// result-capability export ids a Finish should release, live dispatch
+/// cancellation controllers, and answers Finished by the peer before their
+/// dispatch even completed all live as fields of whichever single state a
+/// question id is currently in, so invalid combinations (e.g. a retained
+/// error alongside a live dispatch) can't be constructed through this
+/// table's API.
 ///
 /// Deliberately doesn't know how to actually send a Return/Finish, or how to
 /// release an export — [finish] only ever hands back the result export ids
 /// that need releasing; the caller (today, exclusively
 /// `TwoPartyRpcConnection`) owns translating that into an actual
-/// `ExportTable.release` call and any wire traffic. This class only owns the
-/// invariant "each question id's answer bookkeeping reflects exactly one of:
-/// not yet dispatched, dispatch pending, resolved-and-awaiting-Finish, or
-/// fully settled" — see [isTracked], which callers rely on to detect a peer
-/// illegally reusing a question id before that settling has happened.
+/// `ExportTable.release` call and any wire traffic.
 class AnswerTable {
-  final Map<int, List<int>> _answers = {};
-  final Map<int, ResolvedAnswer> _answerCaps = {};
-  final Map<int, Future<ResolvedAnswer>> _pendingCaps = {};
-  final Map<int, CapnpException> _answerErrors = {};
-  // Incoming questions that were finished by the peer before local dispatch
-  // completed. Their dispatch result must be dropped instead of returned.
-  final Set<int> _finishedAnswers = {};
-  final Map<int, DispatchCancellationController> _dispatchCancellations = {};
+  final Map<int, AnswerState> _answers = {};
 
   /// Number of incoming calls with some tracked answer-lifecycle state:
   /// dispatch in flight, a resolved-but-not-yet-finished answer, or a
   /// Finish that arrived before dispatch completed. Zero means every
   /// incoming call this connection has seen has fully settled.
-  int get count =>
-      <int>{
-        ..._answers.keys,
-        ..._answerCaps.keys,
-        ..._answerErrors.keys,
-        ..._pendingCaps.keys,
-        ..._finishedAnswers,
-      }.length;
+  int get count => _answers.length;
 
   /// Number of incoming dispatches with a live [DispatchCancellationController]
   /// (i.e. dispatch is still running and could still observe cancellation).
-  int get cancellationCount => _dispatchCancellations.length;
+  int get cancellationCount =>
+      _answers.values.whereType<DispatchingAnswer>().length;
 
   /// Whether [qid] currently has any tracked answer-lifecycle state at all
-  /// (dispatch in flight, a resolved-but-not-yet-finished answer, a
-  /// dispatch that failed with an error still retained for a racing
-  /// `takeFromOtherQuestion`, or a Finish that arrived before dispatch
-  /// completed) — used to reject a peer illegally reusing a question id
-  /// before it has fully settled. Mirrors [count]'s own definition of
-  /// "tracked" exactly, so the two never disagree about whether a qid is
-  /// still live.
-  bool isTracked(int qid) =>
-      _pendingCaps.containsKey(qid) ||
-      _answerCaps.containsKey(qid) ||
-      _answerErrors.containsKey(qid) ||
-      _answers.containsKey(qid) ||
-      _finishedAnswers.contains(qid);
+  /// — used to reject a peer illegally reusing a question id before it has
+  /// fully settled.
+  bool isTracked(int qid) => _answers.containsKey(qid);
 
-  /// The resolved answer for [qid], if its dispatch has already completed
-  /// successfully.
-  ResolvedAnswer? resolvedFor(int qid) => _answerCaps[qid];
+  /// The resolved answer for [qid], if it has one available for promise
+  /// pipelining right now (a completed dispatch, or a directly-resolved
+  /// answer such as Bootstrap's).
+  ResolvedAnswer? resolvedFor(int qid) {
+    final state = _answers[qid];
+    return state is AnsweredState ? state.resolved : null;
+  }
 
   /// The in-flight dispatch future for [qid], if it hasn't settled yet.
-  Future<ResolvedAnswer>? pendingFor(int qid) => _pendingCaps[qid];
+  Future<ResolvedAnswer>? pendingFor(int qid) {
+    final state = _answers[qid];
+    return state is DispatchingAnswer ? state.pending : null;
+  }
 
   /// The error [qid]'s dispatch failed with, if any — retained until Finish
   /// so a `takeFromOtherQuestion` racing with the failure still observes
   /// the original error rather than a misleading "unknown question id".
-  CapnpException? errorFor(int qid) => _answerErrors[qid];
-
-  /// Records [answer] as [qid]'s resolved result.
-  void setResolved(int qid, ResolvedAnswer answer) => _answerCaps[qid] = answer;
-
-  /// Drops [qid]'s resolved result, if any — without touching any other
-  /// tracked state for it.
-  void dropResolved(int qid) => _answerCaps.remove(qid);
-
-  /// Records [error] as [qid]'s dispatch failure.
-  void recordError(int qid, CapnpException error) => _answerErrors[qid] = error;
-
-  /// Records [qid] as answered — [resultExportIds] are the export ids (if
-  /// any) that a later Finish(releaseResultCaps: true) for it should
-  /// release. An empty list is used whenever a Return was sent (or the
-  /// equivalent resultsSentElsewhere/exception path) that carries no result
-  /// capabilities of its own to release later.
-  void recordAnswered(int qid, List<int> resultExportIds) =>
-      _answers[qid] = resultExportIds;
-
-  /// Registers [cancellation] as the live cancellation controller for
-  /// [qid]'s in-flight dispatch.
-  void trackCancellation(int qid, DispatchCancellationController cancellation) {
-    _dispatchCancellations[qid] = cancellation;
+  CapnpException? errorFor(int qid) {
+    final state = _answers[qid];
+    return state is FailedAnswerState ? state.error : null;
   }
 
-  /// Registers [pending] as the in-flight dispatch future for [qid], so a
-  /// pipelined call arriving before it settles can queue behind it.
-  void trackPending(int qid, Future<ResolvedAnswer> pending) {
-    _pendingCaps[qid] = pending;
+  /// Starts tracking a live dispatch for [qid]: [pending] lets a pipelined
+  /// call queue behind it, [cancellation] lets an early Finish cancel it.
+  void beginDispatch(
+    int qid,
+    Future<ResolvedAnswer> pending,
+    DispatchCancellationController cancellation,
+  ) {
+    _answers[qid] = DispatchingAnswer(pending, cancellation);
   }
 
-  /// Drops dispatch-in-flight bookkeeping for [qid] — called unconditionally
-  /// as the very first step of handling a dispatch's outcome (success or
-  /// failure), before deciding what (if anything) to do next.
-  void dispatchSettled(int qid) {
-    _pendingCaps.remove(qid);
-    _dispatchCancellations.remove(qid);
-  }
-
-  /// If the peer already sent Finish for [qid] while its dispatch was still
-  /// running, drops every remaining trace of it (a Finished answer must
-  /// never be resurrected) and returns `true`. A no-op returning `false`
-  /// otherwise.
-  bool consumeIfAlreadyFinished(int qid) {
-    if (!_finishedAnswers.remove(qid)) return false;
-    _answerCaps.remove(qid);
-    _answerErrors.remove(qid);
+  /// Called once [qid]'s dispatch settles (success or failure): drops its
+  /// dispatch-in-flight bookkeeping and reports whether the peer already
+  /// sent Finish for it while it was still running. When `true`, every
+  /// trace of [qid] has already been dropped (a Finished answer must never
+  /// be resurrected) and the caller must discard the dispatch's result
+  /// instead of answering it.
+  bool settleDispatch(int qid) {
+    final wasFinishedEarly = _answers[qid] is FinishedBeforeCompletion;
     _answers.remove(qid);
-    return true;
+    return wasFinishedEarly;
   }
 
-  /// Applies an incoming Finish for [qid]: drops its resolved-answer state
-  /// and returns the result export ids a `releaseResultCaps: true` Finish
+  /// Records [qid] as answered and awaiting Finish — covers every Return
+  /// variant that doesn't need its error retained for a racing
+  /// `takeFromOtherQuestion` (see [completeWithError] for the one that
+  /// does): a real result (with [resolved] set so pipelined calls can
+  /// target it, and [resultExportIds] the export ids a later
+  /// Finish(releaseResultCaps: true) should release), a directly-resolved
+  /// answer such as Bootstrap's ([resolved] set, no export ids of its own
+  /// to release), or a Return with no result payload at all (an exception,
+  /// or a takeFromOtherQuestion forward — neither [resolved] nor
+  /// [resultExportIds] set).
+  void completeSuccessfully(
+    int qid, {
+    ResolvedAnswer? resolved,
+    List<int> resultExportIds = const [],
+  }) {
+    _answers[qid] = AnsweredState(
+      resolved: resolved,
+      resultExportIds: resultExportIds,
+    );
+  }
+
+  /// Records [qid] as answered with [error] retained for a racing
+  /// `takeFromOtherQuestion` — only used on the sendResultsTo=yourself
+  /// failure path, where nothing is put on the wire that a normal
+  /// Return.exception would otherwise carry.
+  void completeWithError(int qid, CapnpException error) {
+    _answers[qid] = FailedAnswerState(error);
+  }
+
+  /// Applies an incoming Finish for [qid]: drops its answer state and
+  /// returns the result export ids a `releaseResultCaps: true` Finish
   /// should release (the caller is responsible for actually releasing them
   /// — see [ExportTable.release] — this only ever returns what needs it).
   ///
   /// Returns `null` if [qid]'s dispatch was still pending when Finish
   /// arrived — in that case, this instead marks it as finished (so the
   /// eventual dispatch-settled handler drops its own bookkeeping instead of
-  /// answering) and cancels its dispatch.
+  /// answering) and cancels its dispatch. Also returns `null` (as a no-op)
+  /// if [qid] is unknown, or already marked finished by an earlier call —
+  /// a Finish must never resurrect or double-cancel anything.
   List<int>? finish(int qid) {
-    _answerCaps.remove(qid);
-    _answerErrors.remove(qid);
-    final resultExportIds = _answers.remove(qid);
-    if (resultExportIds == null) {
-      if (_pendingCaps.containsKey(qid)) {
-        _finishedAnswers.add(qid);
-        _dispatchCancellations.remove(qid)?.cancel();
-      }
-      return null;
+    final state = _answers[qid];
+    switch (state) {
+      case null:
+      case FinishedBeforeCompletion():
+        return null;
+      case DispatchingAnswer(:final cancellation):
+        _answers[qid] = const FinishedBeforeCompletion();
+        cancellation.cancel();
+        return null;
+      case AnsweredState(:final resultExportIds):
+        _answers.remove(qid);
+        return resultExportIds;
+      case FailedAnswerState():
+        _answers.remove(qid);
+        return const [];
     }
-    _finishedAnswers.remove(qid);
-    return resultExportIds;
   }
 
   /// Drops every tracked answer's state, canceling any still-live dispatch
   /// — called once when the owning connection tears down.
   void tearDown() {
-    for (final cancellation in _dispatchCancellations.values) {
-      cancellation.cancel();
+    for (final state in _answers.values) {
+      if (state is DispatchingAnswer) state.cancellation.cancel();
     }
-    _dispatchCancellations.clear();
     _answers.clear();
-    _answerCaps.clear();
-    _answerErrors.clear();
-    _pendingCaps.clear();
-    _finishedAnswers.clear();
   }
 }

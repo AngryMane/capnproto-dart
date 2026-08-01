@@ -1022,9 +1022,9 @@ class TwoPartyRpcConnection implements RpcConnection {
     // resolve ptr[0] → the bootstrap capability.
     final bootstrapCap = _exportTable.retainExisting(0);
     if (bootstrapCap != null) {
-      _answerTable.setResolved(
+      _answerTable.completeSuccessfully(
         msg.questionId,
-        ResolvedAnswer(_bootstrapResultBytes, [bootstrapCap]),
+        resolved: ResolvedAnswer(_bootstrapResultBytes, [bootstrapCap]),
       );
     }
   }
@@ -1187,9 +1187,9 @@ class TwoPartyRpcConnection implements RpcConnection {
       // so _rejectDuplicateQuestionId can still catch a peer illegally
       // reusing this same qid before sending Finish for it, exactly like
       // every other Return sent without a real dispatch throughout this
-      // file (see the sibling `_answerTable.recordAnswered(qid, const [])`
+      // file (see the sibling `_answerTable.completeSuccessfully(qid)`
       // sites).
-      _answerTable.recordAnswered(qid, const []);
+      _answerTable.completeSuccessfully(qid);
 
       _sendRaw(
         buildReturnExceptionMessage(
@@ -1227,7 +1227,7 @@ class TwoPartyRpcConnection implements RpcConnection {
           paramsCapabilities: paramsCapabilities,
         );
       } catch (error) {
-        _answerTable.recordAnswered(qid, const []);
+        _answerTable.completeSuccessfully(qid);
         _sendRaw(
           buildReturnExceptionMessage(
             answerId: qid,
@@ -1286,11 +1286,11 @@ class TwoPartyRpcConnection implements RpcConnection {
             // supported: a pipelined call targeting qid will fail with
             // "unknown promisedAnswer questionId", since qid's resolved/
             // pending answer state is deliberately never populated here.
-            _answerTable.recordAnswered(qid, const []);
+            _answerTable.completeSuccessfully(qid);
           })
           .catchError((Object err) {
             if (_closedError != null) return;
-            _answerTable.recordAnswered(qid, const []);
+            _answerTable.completeSuccessfully(qid);
             _sendRaw(
               buildReturnExceptionMessage(
                 answerId: qid,
@@ -1390,7 +1390,6 @@ class TwoPartyRpcConnection implements RpcConnection {
     bool sendResultsToYourself = false,
   }) {
     final cancellation = DispatchCancellationController();
-    _answerTable.trackCancellation(qid, cancellation);
 
     // Params capabilities freshly imported for this call (see
     // _dispatchToCapability/_capabilityFromDescriptor — every senderHosted/
@@ -1433,11 +1432,10 @@ class TwoPartyRpcConnection implements RpcConnection {
       (r) => ResolvedAnswer(r.payload.bytes, r.caps),
     );
     resolvedFuture.ignore();
-    _answerTable.trackPending(qid, resolvedFuture);
+    _answerTable.beginDispatch(qid, resolvedFuture, cancellation);
 
     dispatchFuture
         .then((result) {
-          _answerTable.dispatchSettled(qid);
           // The connection was torn down while this dispatch was still
           // running. _tearDown() already cleared the answer tables; don't
           // resurrect an entry for a peer that's no longer there. _sendRaw()
@@ -1445,20 +1443,11 @@ class TwoPartyRpcConnection implements RpcConnection {
           // so nothing lingers for a caller to observe as a leak. The result
           // is never sent as a Return, so any capabilities it carries would
           // otherwise never be disposed — dispose them here instead.
-          if (_closedError != null) {
+          if (_answerTable.settleDispatch(qid) || _closedError != null) {
             _disposeResultCapabilities(result);
             _finalizeParamCapsTracker(paramCapsTracker);
             return;
           }
-          if (_answerTable.consumeIfAlreadyFinished(qid)) {
-            _disposeResultCapabilities(result);
-            _finalizeParamCapsTracker(paramCapsTracker);
-            return;
-          }
-          _answerTable.setResolved(
-            qid,
-            ResolvedAnswer(result.payload.bytes, result.caps),
-          );
 
           if (sendResultsToYourself) {
             // Results are consumed locally by whichever of the peer's own
@@ -1470,7 +1459,10 @@ class TwoPartyRpcConnection implements RpcConnection {
             // this forwarded question uses releaseResultCaps=false. Therefore
             // Finish must only drop bookkeeping here, not dispose result.caps.
             _sendRaw(buildReturnResultsSentElsewhereMessage(answerId: qid));
-            _answerTable.recordAnswered(qid, const []);
+            _answerTable.completeSuccessfully(
+              qid,
+              resolved: ResolvedAnswer(result.payload.bytes, result.caps),
+            );
             // No Return field exists on this variant to carry
             // releaseParamCaps, so just flush any deferred params releases
             // as ordinary Release messages.
@@ -1502,24 +1494,20 @@ class TwoPartyRpcConnection implements RpcConnection {
               noFinishNeeded: noFinishNeeded,
             ),
           );
-          if (noFinishNeeded) {
-            _answerTable.dropResolved(qid);
-          } else {
-            _answerTable.recordAnswered(qid, [
-              for (final d in resultDescriptors)
-                if (d.disc == 1 || d.disc == 2) d.id,
-            ]);
+          if (!noFinishNeeded) {
+            _answerTable.completeSuccessfully(
+              qid,
+              resolved: ResolvedAnswer(result.payload.bytes, result.caps),
+              resultExportIds: [
+                for (final d in resultDescriptors)
+                  if (d.disc == 1 || d.disc == 2) d.id,
+              ],
+            );
           }
         })
         .catchError((Object err) {
-          _answerTable.dispatchSettled(qid);
-          _answerTable.dropResolved(qid);
           // See the matching comment in the success branch above.
-          if (_closedError != null) {
-            _finalizeParamCapsTracker(paramCapsTracker);
-            return;
-          }
-          if (_answerTable.consumeIfAlreadyFinished(qid)) {
+          if (_answerTable.settleDispatch(qid) || _closedError != null) {
             _finalizeParamCapsTracker(paramCapsTracker);
             return;
           }
@@ -1528,8 +1516,7 @@ class TwoPartyRpcConnection implements RpcConnection {
                   ? err
                   : RpcException(err.toString(), kind: ErrorKind.failed);
           if (sendResultsToYourself) {
-            _answerTable.recordError(qid, rpcError);
-            _answerTable.recordAnswered(qid, const []);
+            _answerTable.completeWithError(qid, rpcError);
             _sendRaw(buildReturnResultsSentElsewhereMessage(answerId: qid));
             _finalizeParamCapsTracker(paramCapsTracker);
             return;
