@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import '../capability/capability.dart';
 import 'flow_controller.dart';
+import 'rpc_connection.dart';
 import 'rpc_exception.dart';
 import 'rpc_server.dart';
 import 'two_party_connection.dart';

@@ -25,7 +25,7 @@ export 'src/capability/capability.dart'
 export 'src/capability/capability_any_pointer_codec.dart';
 export 'src/capability/capability_factory.dart';
 export 'src/capability/rpc_payload.dart';
+export 'src/rpc/rpc_connection.dart';
 export 'src/rpc/rpc_exception.dart';
 export 'src/rpc/rpc_server.dart';
 export 'src/rpc/rpc_system.dart';
-export 'src/rpc/two_party_connection.dart' show RpcConnection;
