@@ -20,9 +20,16 @@ import '../capability/capability.dart'
         vendCapabilityHandle;
 import '../capability/capability_factory.dart';
 import '../capability/rpc_payload.dart';
+import 'answer_table.dart';
+import 'embargo_table.dart';
+import 'export_table.dart';
 import 'flow_controller.dart';
+import 'import_table.dart';
+import 'question_table.dart';
 import 'rpc_exception.dart';
 import 'rpc_proto.dart';
+
+part 'wire_capabilities.dart';
 
 /// A Cap'n Proto RPC Level 1 two-party connection.
 ///
@@ -68,72 +75,29 @@ class TwoPartyRpcConnection implements RpcConnection {
   StreamController<Uint8List>? _decoderInput;
 
   // Exports: capabilities we have sent to the peer.
-  // Key = export ID; value tracks the remote reference count so we know
-  // when the peer has released all references and we can dispose the cap.
-  final Map<int, _ExportEntry> _exports = {};
-  // Reverse map: capability object → its export ID (for dedup on re-export).
-  final Map<Capability, int> _exportIds = HashMap<Capability, int>.identity();
-  // Bootstrap is registered at export ID 0; subsequent exports start at 1.
-  int _nextExportId = 1;
+  final ExportTable _exportTable = ExportTable();
 
-  // Questions: outgoing calls waiting for a Return. Key = question ID.
-  final Map<int, Completer<RpcMessage>> _questions = {};
-  // Completes when the Call message for a given question has been sent on the
-  // wire.  Pipelined calls (promisedAnswer target) await this to guarantee
-  // their Call arrives AFTER the parent Call.
-  final Map<int, Completer<void>> _questionSent = {};
-  int _nextQuestionId = 0;
-  // senderHosted/senderPromise export IDs this vat put in a given outgoing
-  // Call's own capTable (its params capabilities), keyed by question ID —
-  // only questions with at least one such entry get one. Consulted by
-  // _awaitReturn when the peer's Return sets releaseParamCaps=true, to
-  // apply the same local effect an explicit Release(id, 1) for each would
-  // have had, without the peer needing to actually send one.
-  final Map<int, List<int>> _questionParamExportIds = {};
+  // Questions: outgoing calls waiting for a Return.
+  final QuestionTable _questionTable = QuestionTable();
 
   // Imports: remote capabilities we hold. Key = import ID (= peer's export ID).
-  // We track refcounts to know when to send Release.
-  final Map<int, int> _importRefCounts = {};
-  final Map<int, _ImportState> _imports = {};
-  // Imports that the peer has resolved to an exception. Future calls through
-  // these promise/import IDs fail locally instead of becoming null capability
-  // calls that hide the original failure.
-  final Map<int, RpcException> _brokenImports = {};
-
+  final ImportTable _importTable = ImportTable();
   // Batches Release sends: _releaseImport() decrements the local refcount
-  // immediately but only records the count here, deferring the actual wire
-  // send to a microtask. Several dispose() calls issued without an
-  // intervening await (e.g. disposing a whole observer list in one
-  // synchronous pass, or `Future.wait([...].map((c) => c.dispose()))`)
-  // therefore coalesce into a single Release per import ID with
-  // referenceCount > 1, instead of one wire message each. Sequential
-  // `await`ed dispose() calls are unaffected — each already resumes after
-  // the previous flush has run, so every Release still carries
-  // referenceCount == 1 as before.
-  final Map<int, int> _pendingReleaseCounts = {};
+  // immediately (via ImportTable.releaseAndBatch) but only records the count
+  // there, deferring the actual wire send to a microtask. Several dispose()
+  // calls issued without an intervening await (e.g. disposing a whole
+  // observer list in one synchronous pass, or
+  // `Future.wait([...].map((c) => c.dispose()))`) therefore coalesce into a
+  // single Release per import ID with referenceCount > 1, instead of one
+  // wire message each. Sequential `await`ed dispose() calls are unaffected —
+  // each already resumes after the previous flush has run, so every Release
+  // still carries referenceCount == 1 as before.
   Future<void>? _releaseFlushFuture;
 
-  // Answers: incoming calls whose Return has been sent.
-  // Key = question ID from the peer; value = export IDs included in the Return.
-  // Used to release result caps when the peer sends Finish(releaseResultCaps: true).
-  final Map<int, List<int>> _answers = {};
-
-  // Promise-pipeline support (server side):
-  //   _answerCaps[qid]  — resolved answer for a completed incoming call
-  //   _pendingCaps[qid] — future that resolves to the answer when dispatch completes
-  // Needed to handle promisedAnswer-targeted calls that arrive while qid is pending.
-  // Both store _ResolvedAnswer (result bytes + cap table) so that
-  // _handlePipelinedCall can parse the pointer slot to get the correct cap table index.
-  final Map<int, _ResolvedAnswer> _answerCaps = {};
-  final Map<int, Future<_ResolvedAnswer>> _pendingCaps = {};
-  final Map<int, CapnpException> _answerErrors = {};
-  // Incoming questions that were finished by the peer before local dispatch
-  // completed. Their dispatch result must be dropped instead of returned.
-  final Set<int> _finishedAnswers = {};
-  final Map<int, DispatchCancellationController> _dispatchCancellations = {};
-  final Map<int, _EmbargoEntry> _embargoes = {};
-  int _nextEmbargoId = 0;
-  final Set<int> _senderPromiseResolves = {};
+  // Answers: incoming calls this vat is currently (or has recently)
+  // answered — see AnswerTable's own doc comment.
+  final AnswerTable _answerTable = AnswerTable();
+  final EmbargoTable _embargoTable = EmbargoTable();
 
   // Set to a non-null error once the connection is closed.
   Object? _closedError;
@@ -228,7 +192,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// [streamWindowSize], [disembargoTimeout], and [preFramed].
   ///
   /// [bootstrap]'s ownership transfers to this connection: it's disposed
-  /// (via its export's [_ExportEntry.ownedReference] — see that field's doc
+  /// (via its export's own owned reference — see [ExportTable]'s doc
   /// comment) once every remote reference to it has been released and,
   /// failing that, when the connection itself is torn down. Callers must
   /// not separately dispose it themselves.
@@ -251,23 +215,17 @@ class TwoPartyRpcConnection implements RpcConnection {
       disembargoTimeout,
       preFramed,
     );
-    // Unwrap first, like every _getOrCreateExportId caller — bootstrap is
-    // registered as export 0 through the same _exportIds/_ExportEntry
-    // machinery, so its identity must satisfy the same "always unwrapped"
-    // invariant those rely on for deduplication (e.g. this same underlying
-    // capability being handed back to _getOrCreateExportId again later,
-    // via a normal export, must dedupe against this entry instead of
-    // creating a redundant second export for it).
+    // Unwrap first, like every ExportTable.getOrCreate caller — bootstrap
+    // is registered as export 0 through the same ExportTable machinery, so
+    // its identity must satisfy the same "always unwrapped" invariant those
+    // rely on for deduplication (e.g. this same underlying capability being
+    // handed back to ExportTable.getOrCreate again later, via a normal
+    // export, must dedupe against this entry instead of creating a
+    // redundant second export for it).
     final bootstrapIdentity = unwrapVendedCapability(bootstrap);
-    // Register bootstrap as export 0. Its remoteRefCount starts at 0 (not 1,
-    // unlike the _ExportEntry constructor's default for _getOrCreateExportId
-    // callers): the entry needs to exist now so _handleCall/_handleBootstrap
-    // can route to it, but the peer doesn't actually hold a reference until
-    // it sends a Bootstrap request — _handleBootstrap increments this on
-    // every one it answers, matching how _getOrCreateExportId increments on
-    // every ordinary export vend.
-    conn._exports[0] = _ExportEntry(bootstrapIdentity)..remoteRefCount = 0;
-    conn._exportIds[bootstrapIdentity] = 0;
+    // See ExportTable.registerBootstrap's doc comment for why its remote
+    // refcount starts at 0, not 1.
+    conn._exportTable.registerBootstrap(bootstrapIdentity);
     // bootstrap's ownership transfers to this connection (see doc comment
     // above) — the entry just created its own ownedReference for
     // bootstrapIdentity, so if the caller passed an already-vended handle
@@ -300,10 +258,9 @@ class TwoPartyRpcConnection implements RpcConnection {
     }
 
     // Send Bootstrap message.
-    final qid = _nextQuestionId++;
+    final qid = _questionTable.allocateForBootstrap();
     _bootstrapQuestionId = qid;
     _bootstrapCompleter = Completer<int>();
-    _questions[qid] = Completer<RpcMessage>();
 
     _sendRaw(buildBootstrapMessage(qid));
 
@@ -344,12 +301,8 @@ class TwoPartyRpcConnection implements RpcConnection {
       throw RpcException('connection is closed', kind: ErrorKind.disconnected);
     }
 
-    final qid = _nextQuestionId++;
-    final completer = Completer<RpcMessage>();
-    _questions[qid] = completer;
-    final sentCompleter = Completer<void>();
+    final (qid, completer, sentCompleter) = _questionTable.allocate();
     sentCompleter.future.ignore();
-    _questionSent[qid] = sentCompleter;
 
     // Build cap table and send the wire message (may need async for cap resolution).
     _buildAndSendCall(
@@ -369,8 +322,7 @@ class TwoPartyRpcConnection implements RpcConnection {
       // params export refs _resolveCapTable already bumped for this qid
       // never actually reached the peer and must be rolled back here.
       _rollbackQuestionParamExports(qid);
-      _questions.remove(qid);
-      _questionSent.remove(qid);
+      _questionTable.abandon(qid);
       if (!sentCompleter.isCompleted) sentCompleter.completeError(e, st);
       if (!completer.isCompleted) completer.completeError(e, st);
     });
@@ -405,18 +357,13 @@ class TwoPartyRpcConnection implements RpcConnection {
     if (_closedError != null) {
       throw RpcException('connection is closed', kind: ErrorKind.disconnected);
     }
-    _throwIfImportBroken(importId);
+    _importTable.throwIfBroken(importId);
 
-    final qid = _nextQuestionId++;
-    final completer = Completer<RpcMessage>();
-    _questions[qid] = completer;
-    final sentCompleter = Completer<void>();
+    final (qid, completer, sentCompleter) = _questionTable.allocate();
     sentCompleter.future.ignore();
-    _questionSent[qid] = sentCompleter;
 
     void onSent() {
-      if (!sentCompleter.isCompleted) sentCompleter.complete();
-      _questionSent.remove(qid);
+      _questionTable.markSent(qid);
     }
 
     void onError(Object e, StackTrace st) {
@@ -425,8 +372,7 @@ class TwoPartyRpcConnection implements RpcConnection {
       // branch and the async IIFE only call onSent(), never onError(), once
       // _sendRaw succeeds) — see _rollbackQuestionParamExports's doc comment.
       _rollbackQuestionParamExports(qid);
-      _questions.remove(qid);
-      _questionSent.remove(qid);
+      _questionTable.abandon(qid);
       if (!sentCompleter.isCompleted) sentCompleter.completeError(e, st);
       if (!completer.isCompleted) completer.completeError(e, st);
     }
@@ -473,8 +419,8 @@ class TwoPartyRpcConnection implements RpcConnection {
   }) async {
     final capEntries = <RpcCapDescriptor>[];
     // try/finally, not a plain trailing call: a broken import or a rejected
-    // _importIdFuture partway through this loop (_throwIfImportBroken/await
-    // above) must still record whatever senderHosted/senderPromise exports
+    // _importIdFuture partway through this loop (_importTable.throwIfBroken/
+    // await above) must still record whatever senderHosted/senderPromise exports
     // _getOrCreateExportId already created for entries processed *before*
     // that point — otherwise their refcount bump would never be visible to
     // _rollbackQuestionParamExports and would leak. See that method's doc
@@ -493,7 +439,7 @@ class TwoPartyRpcConnection implements RpcConnection {
         final cap = unwrapVendedCapability(rawCap);
         if (cap is _ImportedCapability && cap._conn == this) {
           final id = await cap._importIdFuture;
-          _throwIfImportBroken(id);
+          _importTable.throwIfBroken(id);
           capEntries.add(RpcCapDescriptor.receiverHosted(id));
         } else if (cap is _WirePipelinedCapability &&
             cap._conn == this &&
@@ -506,14 +452,14 @@ class TwoPartyRpcConnection implements RpcConnection {
           // _buildAndSendCall/_buildAndSendCallBuilding, but for a param
           // capability referencing another question instead of this call's
           // own target.
-          final parentSent = _questionSent[cap._parentQid];
+          final parentSent = _questionTable.sentCompleterFor(cap._parentQid);
           if (parentSent != null) await parentSent.future;
           capEntries.add(
             RpcCapDescriptor.receiverAnswer(cap._parentQid, cap._transformPath),
           );
         } else {
           capEntries.add(
-            RpcCapDescriptor.senderHosted(_getOrCreateExportId(cap)),
+            RpcCapDescriptor.senderHosted(_exportTable.getOrCreate(cap)),
           );
         }
       }
@@ -534,7 +480,7 @@ class TwoPartyRpcConnection implements RpcConnection {
       for (final d in capEntries)
         if (d.disc == 1 || d.disc == 2) d.id,
     ];
-    if (ids.isNotEmpty) _questionParamExportIds[qid] = ids;
+    _questionTable.recordParamExportIds(qid, ids);
   }
 
   /// Synchronous variant of [_resolveCapTable] for [_startResolvedImportCall]:
@@ -562,7 +508,7 @@ class TwoPartyRpcConnection implements RpcConnection {
           (cap is _WirePipelinedCapability &&
               cap._conn == this &&
               !cap._hasResolved &&
-              _questionSent[cap._parentQid] != null);
+              _questionTable.sentCompleterFor(cap._parentQid) != null);
     });
     if (needsAsync) return _resolveCapTable(paramsCapabilities, qid: qid);
 
@@ -577,7 +523,7 @@ class TwoPartyRpcConnection implements RpcConnection {
         final cap = unwrapVendedCapability(rawCap);
         if (cap is _ImportedCapability && cap._conn == this) {
           final id = cap._cachedState!.importId;
-          _throwIfImportBroken(id);
+          _importTable.throwIfBroken(id);
           capEntries.add(RpcCapDescriptor.receiverHosted(id));
         } else if (cap is _WirePipelinedCapability &&
             cap._conn == this &&
@@ -590,7 +536,7 @@ class TwoPartyRpcConnection implements RpcConnection {
           );
         } else {
           capEntries.add(
-            RpcCapDescriptor.senderHosted(_getOrCreateExportId(cap)),
+            RpcCapDescriptor.senderHosted(_exportTable.getOrCreate(cap)),
           );
         }
       }
@@ -615,7 +561,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     // For promisedAnswer targets, wait until the parent Call is on the wire so
     // the server always receives the parent before the pipelined call.
     if (targetPromisedAnswerQid != null) {
-      final parentSent = _questionSent[targetPromisedAnswerQid];
+      final parentSent = _questionTable.sentCompleterFor(targetPromisedAnswerQid);
       if (parentSent != null) await parentSent.future;
     }
 
@@ -639,7 +585,7 @@ class TwoPartyRpcConnection implements RpcConnection {
       );
     } else {
       final importId = await importIdFuture!;
-      _throwIfImportBroken(importId);
+      _importTable.throwIfBroken(importId);
       _sendRaw(
         buildCallMessage(
           questionId: qid,
@@ -654,8 +600,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     }
 
     // Signal to any pipelined calls waiting on this question.
-    if (!sentCompleter.isCompleted) sentCompleter.complete();
-    _questionSent.remove(qid);
+    _questionTable.markSent(qid);
   }
 
   /// Zero-copy counterpart of [_startCall]: [buildParams] writes params
@@ -681,12 +626,8 @@ class TwoPartyRpcConnection implements RpcConnection {
       throw RpcException('connection is closed', kind: ErrorKind.disconnected);
     }
 
-    final qid = _nextQuestionId++;
-    final completer = Completer<RpcMessage>();
-    _questions[qid] = completer;
-    final sentCompleter = Completer<void>();
+    final (qid, completer, sentCompleter) = _questionTable.allocate();
     sentCompleter.future.ignore();
-    _questionSent[qid] = sentCompleter;
 
     _buildAndSendCallBuilding(
       qid: qid,
@@ -702,8 +643,7 @@ class TwoPartyRpcConnection implements RpcConnection {
       // Same invariant as _startCall's catchError, for
       // _buildAndSendCallBuilding instead — see _rollbackQuestionParamExports.
       _rollbackQuestionParamExports(qid);
-      _questions.remove(qid);
-      _questionSent.remove(qid);
+      _questionTable.abandon(qid);
       if (!sentCompleter.isCompleted) sentCompleter.completeError(e, st);
       if (!completer.isCompleted) completer.completeError(e, st);
     });
@@ -727,7 +667,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     // For promisedAnswer targets, wait until the parent Call is on the wire so
     // the server always receives the parent before the pipelined call.
     if (targetPromisedAnswerQid != null) {
-      final parentSent = _questionSent[targetPromisedAnswerQid];
+      final parentSent = _questionTable.sentCompleterFor(targetPromisedAnswerQid);
       if (parentSent != null) await parentSent.future;
     }
 
@@ -752,7 +692,7 @@ class TwoPartyRpcConnection implements RpcConnection {
       );
     } else {
       final importId = await importIdFuture!;
-      _throwIfImportBroken(importId);
+      _importTable.throwIfBroken(importId);
       _sendRaw(
         await buildCallMessageBuilding(
           questionId: qid,
@@ -767,8 +707,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     }
 
     // Signal to any pipelined calls waiting on this question.
-    if (!sentCompleter.isCompleted) sentCompleter.complete();
-    _questionSent.remove(qid);
+    _questionTable.markSent(qid);
   }
 
   Future<DispatchResult> _awaitReturn(
@@ -786,7 +725,7 @@ class TwoPartyRpcConnection implements RpcConnection {
       // exception, or completer failing before a Return ever arrived).
       // Captured into a local first so the success path below still has it
       // even though `finally` runs before that code does.
-      paramExportIds = _questionParamExportIds.remove(qid);
+      paramExportIds = _questionTable.takeParamExportIds(qid);
     }
 
     // Only Return-results/Return-exception ever legitimately carry these —
@@ -852,17 +791,18 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// Resolves [qid] against this vat's own incoming-answer bookkeeping, for
   /// correlating a `Return.takeFromOtherQuestion` from the peer.
   ///
-  /// Mirrors the `_answerCaps`-then-`_pendingCaps` lookup order
-  /// [_handlePipelinedCall] already uses, with one extra case: failed
+  /// Mirrors the resolved-then-pending lookup order [_handlePipelinedCall]
+  /// already uses (see [AnswerTable.resolvedFor]/[AnswerTable.pendingFor]),
+  /// with one extra case: failed
   /// answers are retained until Finish so a `takeFromOtherQuestion` that
   /// races with the failure still observes the original server exception
   /// rather than a misleading "unknown question id".
-  Future<_ResolvedAnswer> _resolveLocalAnswer(int qid) {
-    final resolved = _answerCaps[qid];
+  Future<ResolvedAnswer> _resolveLocalAnswer(int qid) {
+    final resolved = _answerTable.resolvedFor(qid);
     if (resolved != null) return Future.value(resolved);
-    final pending = _pendingCaps[qid];
+    final pending = _answerTable.pendingFor(qid);
     if (pending != null) return pending;
-    final error = _answerErrors[qid];
+    final error = _answerTable.errorFor(qid);
     if (error != null) throw error;
     throw RpcException(
       'takeFromOtherQuestion referenced unknown question id $qid',
@@ -872,7 +812,8 @@ class TwoPartyRpcConnection implements RpcConnection {
   // 24-byte message: struct with 0 data words, 1 pointer word = CapabilityPointer(0).
   // Used as the synthesised result for Bootstrap answers so that pipelined
   // calls targeting {receiverAnswer: {questionId: <boot>, transform: []}}
-  // can resolve ptr[0] → _answerCaps[<boot>].caps[0].
+  // can resolve ptr[0] → the resolved answer's caps[0] (see
+  // AnswerTable.resolvedFor).
   // hi = (dataWords & 0xFFFF) | (ptrWords << 16)
   // For dataWords=0, ptrWords=1: hi = 0x00010000 → LE bytes [0,0,1,0]
   static final _bootstrapResultBytes = Uint8List.fromList([
@@ -902,54 +843,20 @@ class TwoPartyRpcConnection implements RpcConnection {
     0,
   ]);
 
-  /// Decrements [importId]'s local refcount and drops its import bookkeeping
-  /// once it reaches zero — without sending a wire Release. Split out of
-  /// [_releaseImport] so a deferred caller ([_ImportedCapability]'s
-  /// params-capability release sink, see [_dispatchToCapability]) can apply
-  /// the local effect immediately while leaving the wire notification to be
-  /// folded into `Return.releaseParamCaps` instead of an explicit Release.
-  ///
-  /// Also disposes the dropped [_ImportState.replacement], if the promise
-  /// this import tracks had resolved to one (see [_handleResolve]) — every
-  /// `_ImportedCapability` sharing this state forwards its calls to
-  /// `replacement` (see [_ImportedCapability.dispatch]) instead of holding
-  /// a separate reference of its own, so once every one of them has been
-  /// disposed (this reaching zero), `replacement`'s own reference —
-  /// whether a freshly [vendCapabilityHandle]d handle (disc 1/2/3) or a
-  /// [DeferredCapability] wrapping one (the disembargo-loopback branch) —
-  /// would otherwise never be released, permanently pinning whatever it
-  /// wraps.
-  void _decrementImportRefcount(int importId) {
-    final count = _importRefCounts[importId];
-    if (count == null || count <= 0) return;
-    if (count == 1) {
-      _importRefCounts.remove(importId);
-      _brokenImports.remove(importId);
-      final replacement = _imports.remove(importId)?.replacement;
-      if (replacement != null) {
-        _disposeIgnoringErrors(replacement);
-      }
-    } else {
-      _importRefCounts[importId] = count - 1;
-    }
-  }
-
   /// The returned Future always completes successfully (never with an
   /// error), and does so even if the underlying sink fails partway through
   /// the batched flush — see [_flushPendingReleases]'s doc comment for why.
   /// Callers (only [_ImportedCapability.dispose]) can therefore always
   /// `await` it without a `try`/`catch`.
   Future<void> _releaseImport(int importId) {
-    final count = _importRefCounts[importId];
-    if (count == null || count <= 0) return Future.value();
-    _decrementImportRefcount(importId);
-    _pendingReleaseCounts[importId] =
-        (_pendingReleaseCounts[importId] ?? 0) + 1;
+    if (!_importTable.releaseAndBatch(importId, _disposeIgnoringErrors)) {
+      return Future.value();
+    }
     return _releaseFlushFuture ??= Future.microtask(_flushPendingReleases);
   }
 
-  /// Sends one batched Release per import ID accumulated in
-  /// [_pendingReleaseCounts] since the last flush — see [_releaseImport].
+  /// Sends one batched Release per import ID accumulated since the last
+  /// flush — see [_releaseImport]/[ImportTable.takeBatchedReleases].
   ///
   /// Never throws, and never leaves a Release permanently un-sent while the
   /// connection is still usable: [_sendRaw] catches any synchronous sink
@@ -964,9 +871,8 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// longer anything for a Release to reconcile.
   void _flushPendingReleases() {
     _releaseFlushFuture = null;
-    if (_pendingReleaseCounts.isEmpty) return;
-    final pending = Map<int, int>.of(_pendingReleaseCounts);
-    _pendingReleaseCounts.clear();
+    final pending = _importTable.takeBatchedReleases();
+    if (pending.isEmpty) return;
     for (final entry in pending.entries) {
       if (_closedError != null) return;
       _sendRaw(buildReleaseMessage(entry.key, entry.value));
@@ -1097,21 +1003,20 @@ class TwoPartyRpcConnection implements RpcConnection {
       buildBootstrapReturnMessage(answerId: msg.questionId, exportId: 0),
     );
     // Each Bootstrap request hands the peer a new reference to export 0,
-    // exactly like _getOrCreateExportId does for capabilities returned from
-    // ordinary calls — without this, a peer that bootstraps twice and later
-    // disposes just one of the two resulting capabilities would drop this
-    // side's refcount to 0 and dispose the capability out from under the
-    // peer's other, still-live reference.
-    final exportEntry = _exports[0];
-    exportEntry?.remoteRefCount++;
+    // exactly like ExportTable.getOrCreate does for capabilities returned
+    // from ordinary calls — without this, a peer that bootstraps twice and
+    // later disposes just one of the two resulting capabilities would drop
+    // this side's refcount to 0 and dispose the capability out from under
+    // the peer's other, still-live reference.
     // Register the bootstrap answer so pipelined calls targeting
     // {receiverAnswer: {questionId: msg.questionId, transform: []}} can
     // resolve ptr[0] → the bootstrap capability.
-    final bootstrapCap = exportEntry?.identity;
+    final bootstrapCap = _exportTable.retainExisting(0);
     if (bootstrapCap != null) {
-      _answerCaps[msg.questionId] = _ResolvedAnswer(_bootstrapResultBytes, [
-        bootstrapCap,
-      ]);
+      _answerTable.setResolved(
+        msg.questionId,
+        ResolvedAnswer(_bootstrapResultBytes, [bootstrapCap]),
+      );
     }
   }
 
@@ -1121,8 +1026,8 @@ class TwoPartyRpcConnection implements RpcConnection {
       return;
     }
 
-    final entry = _exports[msg.targetImportId];
-    if (entry == null) {
+    final identity = _exportTable.identityFor(msg.targetImportId);
+    if (identity == null) {
       _sendRaw(
         buildReturnExceptionMessage(
           answerId: msg.questionId,
@@ -1131,7 +1036,7 @@ class TwoPartyRpcConnection implements RpcConnection {
       );
       return;
     }
-    _dispatchToCapability(msg, entry.identity);
+    _dispatchToCapability(msg, identity);
   }
 
   void _handlePipelinedCall(RpcMessage msg) {
@@ -1148,7 +1053,7 @@ class TwoPartyRpcConnection implements RpcConnection {
         msg.targetTransformPath.isEmpty ? const [0] : msg.targetTransformPath;
 
     // Already resolved: dispatch immediately.
-    final resolved = _answerCaps[parentQid];
+    final resolved = _answerTable.resolvedFor(parentQid);
     if (resolved != null) {
       final cap = _capFromPath(resolved, path);
       if (cap == null) {
@@ -1165,7 +1070,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     }
 
     // Still pending: queue behind the parent dispatch.
-    final pending = _pendingCaps[parentQid];
+    final pending = _answerTable.pendingFor(parentQid);
     if (pending == null) {
       _sendRaw(
         buildReturnExceptionMessage(
@@ -1200,7 +1105,7 @@ class TwoPartyRpcConnection implements RpcConnection {
         });
   }
 
-  Capability? _capFromPath(_ResolvedAnswer resolved, List<int> path) =>
+  Capability? _capFromPath(ResolvedAnswer resolved, List<int> path) =>
       capabilityFromResultPath(
         DispatchResult(
           payload: RpcPayload.fromBytes(resolved.resultBytes),
@@ -1273,8 +1178,9 @@ class TwoPartyRpcConnection implements RpcConnection {
       // so _rejectDuplicateQuestionId can still catch a peer illegally
       // reusing this same qid before sending Finish for it, exactly like
       // every other Return sent without a real dispatch throughout this
-      // file (see the sibling `_answers[qid] = const [];` sites).
-      _answers[qid] = const [];
+      // file (see the sibling `_answerTable.recordAnswered(qid, const [])`
+      // sites).
+      _answerTable.recordAnswered(qid, const []);
 
       _sendRaw(
         buildReturnExceptionMessage(
@@ -1312,7 +1218,7 @@ class TwoPartyRpcConnection implements RpcConnection {
           paramsCapabilities: paramsCapabilities,
         );
       } catch (error) {
-        _answers[qid] = const [];
+        _answerTable.recordAnswered(qid, const []);
         _sendRaw(
           buildReturnExceptionMessage(
             answerId: qid,
@@ -1369,14 +1275,13 @@ class TwoPartyRpcConnection implements RpcConnection {
             // own answer bookkeeping, released independently when the peer
             // finishes that call. Pipelining further off qid itself is not
             // supported: a pipelined call targeting qid will fail with
-            // "unknown promisedAnswer questionId", since
-            // _answerCaps[qid]/_pendingCaps[qid] are deliberately never
-            // populated here.
-            _answers[qid] = const [];
+            // "unknown promisedAnswer questionId", since qid's resolved/
+            // pending answer state is deliberately never populated here.
+            _answerTable.recordAnswered(qid, const []);
           })
           .catchError((Object err) {
             if (_closedError != null) return;
-            _answers[qid] = const [];
+            _answerTable.recordAnswered(qid, const []);
             _sendRaw(
               buildReturnExceptionMessage(
                 answerId: qid,
@@ -1416,11 +1321,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     _ImportedCapability target,
     TailCall tailCall,
   ) {
-    final qid = _nextQuestionId++;
-    final completer = Completer<RpcMessage>();
-    _questions[qid] = completer;
-    final sentCompleter = Completer<void>();
-    _questionSent[qid] = sentCompleter;
+    final (qid, completer, sentCompleter) = _questionTable.allocate();
 
     _buildAndSendCall(
       qid: qid,
@@ -1443,8 +1344,7 @@ class TwoPartyRpcConnection implements RpcConnection {
       // object (see _capabilityFromDescriptor's disc-3 case), which *does*
       // get a fresh senderHosted export when forwarded here.
       _rollbackQuestionParamExports(qid);
-      _questions.remove(qid);
-      _questionSent.remove(qid);
+      _questionTable.abandon(qid);
       if (!sentCompleter.isCompleted) sentCompleter.completeError(e, st);
       if (!completer.isCompleted) completer.completeError(e, st);
     });
@@ -1473,7 +1373,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     bool sendResultsToYourself = false,
   }) {
     final cancellation = DispatchCancellationController();
-    _dispatchCancellations[qid] = cancellation;
+    _answerTable.trackCancellation(qid, cancellation);
 
     // Params capabilities freshly imported for this call (see
     // _dispatchToCapability/_capabilityFromDescriptor — every senderHosted/
@@ -1493,7 +1393,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     if (paramCapsTracker != null) {
       for (final wrapper in paramImportWrappers) {
         wrapper._deferredReleaseSink = (id) {
-          _decrementImportRefcount(id);
+          _importTable.decrementRefcount(id, _disposeIgnoringErrors);
           paramCapsTracker.disposedImportIds.add(id);
         };
       }
@@ -1513,15 +1413,14 @@ class TwoPartyRpcConnection implements RpcConnection {
     // Attach .ignore() to prevent unhandled-rejection if dispatch throws —
     // pipelined callers handle the error via their own catchError.
     final resolvedFuture = dispatchFuture.then(
-      (r) => _ResolvedAnswer(r.payload.bytes, r.caps),
+      (r) => ResolvedAnswer(r.payload.bytes, r.caps),
     );
     resolvedFuture.ignore();
-    _pendingCaps[qid] = resolvedFuture;
+    _answerTable.trackPending(qid, resolvedFuture);
 
     dispatchFuture
         .then((result) {
-          _pendingCaps.remove(qid);
-          _dispatchCancellations.remove(qid);
+          _answerTable.dispatchSettled(qid);
           // The connection was torn down while this dispatch was still
           // running. _tearDown() already cleared the answer tables; don't
           // resurrect an entry for a peer that's no longer there. _sendRaw()
@@ -1534,15 +1433,15 @@ class TwoPartyRpcConnection implements RpcConnection {
             _finalizeParamCapsTracker(paramCapsTracker);
             return;
           }
-          if (_finishedAnswers.remove(qid)) {
-            _answerCaps.remove(qid);
-            _answerErrors.remove(qid);
-            _answers.remove(qid);
+          if (_answerTable.consumeIfAlreadyFinished(qid)) {
             _disposeResultCapabilities(result);
             _finalizeParamCapsTracker(paramCapsTracker);
             return;
           }
-          _answerCaps[qid] = _ResolvedAnswer(result.payload.bytes, result.caps);
+          _answerTable.setResolved(
+            qid,
+            ResolvedAnswer(result.payload.bytes, result.caps),
+          );
 
           if (sendResultsToYourself) {
             // Results are consumed locally by whichever of the peer's own
@@ -1554,7 +1453,7 @@ class TwoPartyRpcConnection implements RpcConnection {
             // this forwarded question uses releaseResultCaps=false. Therefore
             // Finish must only drop bookkeeping here, not dispose result.caps.
             _sendRaw(buildReturnResultsSentElsewhereMessage(answerId: qid));
-            _answers[qid] = const [];
+            _answerTable.recordAnswered(qid, const []);
             // No Return field exists on this variant to carry
             // releaseParamCaps, so just flush any deferred params releases
             // as ordinary Release messages.
@@ -1587,26 +1486,23 @@ class TwoPartyRpcConnection implements RpcConnection {
             ),
           );
           if (noFinishNeeded) {
-            _answerCaps.remove(qid);
+            _answerTable.dropResolved(qid);
           } else {
-            _answers[qid] = [
+            _answerTable.recordAnswered(qid, [
               for (final d in resultDescriptors)
                 if (d.disc == 1 || d.disc == 2) d.id,
-            ];
+            ]);
           }
         })
         .catchError((Object err) {
-          _pendingCaps.remove(qid);
-          _dispatchCancellations.remove(qid);
-          _answerCaps.remove(qid);
+          _answerTable.dispatchSettled(qid);
+          _answerTable.dropResolved(qid);
           // See the matching comment in the success branch above.
           if (_closedError != null) {
             _finalizeParamCapsTracker(paramCapsTracker);
             return;
           }
-          if (_finishedAnswers.remove(qid)) {
-            _answerErrors.remove(qid);
-            _answers.remove(qid);
+          if (_answerTable.consumeIfAlreadyFinished(qid)) {
             _finalizeParamCapsTracker(paramCapsTracker);
             return;
           }
@@ -1615,8 +1511,8 @@ class TwoPartyRpcConnection implements RpcConnection {
                   ? err
                   : RpcException(err.toString(), kind: ErrorKind.failed);
           if (sendResultsToYourself) {
-            _answerErrors[qid] = rpcError;
-            _answers[qid] = const [];
+            _answerTable.recordError(qid, rpcError);
+            _answerTable.recordAnswered(qid, const []);
             _sendRaw(buildReturnResultsSentElsewhereMessage(answerId: qid));
             _finalizeParamCapsTracker(paramCapsTracker);
             return;
@@ -1624,8 +1520,8 @@ class TwoPartyRpcConnection implements RpcConnection {
           final releaseParamCaps = _finalizeParamCapsTracker(paramCapsTracker);
           // An exception Return never carries a results payload/capTable,
           // so — same reasoning as the noFinishNeeded branch above — no
-          // Finish is ever needed for it, and _answerErrors/_answers can be
-          // dropped immediately instead of waiting for one.
+          // Finish is ever needed for it, and no answer-lifecycle state
+          // needs to be recorded for this qid at all.
           _sendRaw(
             buildReturnExceptionMessage(
               answerId: qid,
@@ -1639,26 +1535,15 @@ class TwoPartyRpcConnection implements RpcConnection {
   }
 
   void _handleFinish(RpcMessage msg) {
-    final qid = msg.questionId;
-    _answerCaps.remove(qid);
-    _answerErrors.remove(qid);
-    final resultExportIds = _answers.remove(qid);
-    if (resultExportIds == null) {
-      if (_pendingCaps.containsKey(qid)) {
-        _finishedAnswers.add(qid);
-        _dispatchCancellations.remove(qid)?.cancel();
-      }
-      return;
-    }
-    _finishedAnswers.remove(qid);
-    if (!msg.releaseResultCaps) return;
+    final resultExportIds = _answerTable.finish(msg.questionId);
+    if (resultExportIds == null || !msg.releaseResultCaps) return;
     for (final eid in resultExportIds) {
-      _releaseExport(eid);
+      _exportTable.release(eid, _disposeIgnoringErrors);
     }
   }
 
   void _handleReturn(RpcMessage msg) {
-    final completer = _questions.remove(msg.answerId);
+    final completer = _questionTable.takeReturn(msg.answerId);
     if (completer == null) return;
 
     // Only drive the bootstrap completer for the bootstrap question itself.
@@ -1708,8 +1593,8 @@ class TwoPartyRpcConnection implements RpcConnection {
   }
 
   void _handleRelease(RpcMessage msg) {
-    final entry = _exports[msg.releaseId];
-    if (entry == null) return;
+    final remoteRefCount = _exportTable.remoteRefCountFor(msg.releaseId);
+    if (remoteRefCount == null) return;
     // Releasing zero references is meaningless — a legitimate peer never
     // sends one — and silently accepting it would be a no-op that masks the
     // same kind of peer bug the excessive-count check below guards against.
@@ -1726,39 +1611,21 @@ class TwoPartyRpcConnection implements RpcConnection {
     // clamping an excessive referenceCount to zero would mask a peer/local
     // refcount mismatch — treat it as a protocol violation instead, since a
     // legitimate peer implementation never sends one.
-    if (msg.referenceCount > entry.remoteRefCount) {
+    if (msg.referenceCount > remoteRefCount) {
       _tearDown(
         RpcException(
           'protocol violation: Release(id=${msg.releaseId}) referenceCount '
           '${msg.referenceCount} exceeds outstanding remote reference count '
-          '${entry.remoteRefCount}',
+          '$remoteRefCount',
         ),
       );
       return;
     }
-    _releaseExportRef(msg.releaseId, entry, msg.referenceCount);
-  }
-
-  /// Core effect of releasing [referenceCount] references to the export
-  /// tracked by [entry] (whose ID is [exportId]): decrements
-  /// `remoteRefCount` and, once it reaches zero, drops the export and
-  /// disposes this export's own reference to the underlying capability
-  /// (see [_ExportEntry.ownedReference] — this only tears the capability
-  /// down for real once every other outstanding [vendCapabilityHandle]
-  /// reference to it, held anywhere else, has also been disposed). Shared
-  /// by [_handleRelease] (after its protocol-violation checks against a
-  /// real incoming Release) and [_awaitReturn]'s handling of
-  /// `Return.releaseParamCaps` (no checks needed there — the count released
-  /// is exactly what this vat itself put in the matching Call's capTable,
-  /// per [_recordParamExportIds]).
-  void _releaseExportRef(int exportId, _ExportEntry entry, int referenceCount) {
-    entry.remoteRefCount -= referenceCount;
-    if (entry.remoteRefCount <= 0) {
-      _exports.remove(exportId);
-      _exportIds.remove(entry.identity);
-      _senderPromiseResolves.remove(exportId);
-      _disposeIgnoringErrors(entry.ownedReference);
-    }
+    _exportTable.releaseRef(
+      msg.releaseId,
+      msg.referenceCount,
+      _disposeIgnoringErrors,
+    );
   }
 
   /// Applies `Return.releaseParamCaps` locally: for each export ID this vat
@@ -1768,12 +1635,11 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// the peer needing to actually send one.
   void _applyReleaseParamCaps(List<int> exportIds) {
     for (final id in exportIds) {
-      final entry = _exports[id];
-      if (entry != null) _releaseExportRef(id, entry, 1);
+      _exportTable.releaseRef(id, 1, _disposeIgnoringErrors);
     }
   }
 
-  /// Undoes [_recordParamExportIds]/`_getOrCreateExportId`'s refcount bump
+  /// Undoes [_recordParamExportIds]/`ExportTable.getOrCreate`'s refcount bump
   /// for [qid]'s params capabilities when the Call itself never reached
   /// [_sendRaw] — e.g. `importIdFuture` rejects, or a broken-import check
   /// throws, after cap table resolution already ran. The peer never
@@ -1787,61 +1653,45 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// holds — so this is safe to call unconditionally there, with no separate
   /// "was it actually sent" flag to track.
   void _rollbackQuestionParamExports(int qid) {
-    final ids = _questionParamExportIds.remove(qid);
+    final ids = _questionTable.takeParamExportIds(qid);
     if (ids != null) _applyReleaseParamCaps(ids);
   }
 
   void _handleResolve(RpcMessage msg) {
     if (msg.isResolveException) {
       // Mirror the success branch below: if we've already fully released
-      // this import (removed from _importRefCounts), a Resolve that arrives
-      // late must not resurrect tracking state for it — _importStateForId
-      // would otherwise create a brand new _ImportState/_brokenImports
-      // entry that nothing will ever clean up.
-      if (!_importRefCounts.containsKey(msg.promiseId)) return;
-      final state = _imports[msg.promiseId] ?? _importStateForId(msg.promiseId);
+      // this import, a Resolve that arrives late must not resurrect
+      // tracking state for it — ImportTable.stateFor would otherwise create
+      // a brand new ImportState/broken-import entry that nothing will ever
+      // clean up.
+      if (!_importTable.isTracked(msg.promiseId)) return;
+      final state = _importTable.stateFor(msg.promiseId);
       final error = RpcException(
         msg.exceptionReason ?? 'promise resolved to exception',
         kind: msg.exceptionKind,
       );
-      _brokenImports[msg.promiseId] = error;
+      _importTable.markBroken(msg.promiseId, error);
       state.resolveError(error);
       return;
     }
 
     final descriptor = msg.resolveCapDescriptor;
     if (descriptor == null) return;
-    if (!_importRefCounts.containsKey(msg.promiseId)) {
+    if (!_importTable.isTracked(msg.promiseId)) {
       if (descriptor.disc == 1 || descriptor.disc == 2) {
         _sendRaw(buildReleaseMessage(descriptor.id, 1));
       }
       return;
     }
 
-    final state = _imports[msg.promiseId] ?? _importStateForId(msg.promiseId);
+    final state = _importTable.stateFor(msg.promiseId);
     final replacement = _capabilityFromDescriptor(descriptor);
     if (state.receivedCall && _isLocalCapability(replacement)) {
-      final embargoId = _nextEmbargoId++;
       final completer = Completer<void>();
-      final entry = _EmbargoEntry(completer);
-      _embargoes[embargoId] = entry;
-      final timeout = _disembargoTimeout;
-      if (timeout != null) {
-        entry.timer = Timer(timeout, () {
-          // Already resolved by the peer's receiverLoopback reply (or by
-          // teardown, which clears _embargoes outright) — nothing to do.
-          if (_embargoes.remove(embargoId) != entry) return;
-          if (!completer.isCompleted) {
-            completer.completeError(
-              RpcException(
-                'Disembargo(id=$embargoId) timed out waiting for the peer\'s '
-                'receiverLoopback reply after $timeout',
-                kind: ErrorKind.overloaded,
-              ),
-            );
-          }
-        });
-      }
+      final embargoId = _embargoTable.register(
+        completer,
+        timeout: _disembargoTimeout,
+      );
       _sendRaw(
         buildDisembargoMessage(
           targetImportId: msg.promiseId,
@@ -1859,11 +1709,7 @@ class TwoPartyRpcConnection implements RpcConnection {
 
   void _handleDisembargo(RpcMessage msg) {
     if (msg.disembargoContextDisc == 1) {
-      final embargo = _embargoes.remove(msg.disembargoContextId);
-      embargo?.timer?.cancel();
-      if (embargo != null && !embargo.completer.isCompleted) {
-        embargo.completer.complete();
-      }
+      _embargoTable.resolve(msg.disembargoContextId);
       return;
     }
 
@@ -1890,56 +1736,32 @@ class TwoPartyRpcConnection implements RpcConnection {
   // ---------------------------------------------------------------------------
 
   /// If [qid] already has tracked answer-lifecycle state (from Bootstrap or
-  /// an in-flight/finished Call), tears the connection down as a protocol
-  /// violation and returns true. A well-behaved peer never reuses a question
-  /// ID before it has fully settled (Finish sent and Return received) — if
-  /// it does anyway, registering the new dispatch would silently clobber
-  /// _dispatchCancellations/_pendingCaps/_answerCaps for the still-live one,
-  /// corrupting cancellation and Return/Finish bookkeeping for both.
+  /// an in-flight/finished Call — see [AnswerTable.isTracked]), tears the
+  /// connection down as a protocol violation and returns true. A
+  /// well-behaved peer never reuses a question ID before it has fully
+  /// settled (Finish sent and Return received) — if it does anyway,
+  /// registering the new dispatch would silently clobber the cancellation
+  /// and pending/resolved-answer state for the still-live one, corrupting
+  /// cancellation and Return/Finish bookkeeping for both.
   bool _rejectDuplicateQuestionId(int qid) {
-    final inUse =
-        _pendingCaps.containsKey(qid) ||
-        _answerCaps.containsKey(qid) ||
-        _answers.containsKey(qid) ||
-        _finishedAnswers.contains(qid);
-    if (!inUse) return false;
+    if (!_answerTable.isTracked(qid)) return false;
     _tearDown(
       RpcException('protocol violation: duplicate incoming question ID $qid'),
     );
     return true;
   }
 
-  /// Returns the existing export ID for [identity] (incrementing its remote
-  /// ref count), or allocates a new export ID — with its own
-  /// [vendCapabilityHandle] [_ExportEntry.ownedReference] — if this is the
-  /// first export. [identity] must already be unwrapped (see
-  /// [unwrapVendedCapability]): every caller of this method unwraps first,
-  /// so that two different vended handles for the same underlying
-  /// capability dedupe to the same export instead of each creating their
-  /// own.
-  int _getOrCreateExportId(Capability identity) {
-    final existing = _exportIds[identity];
-    if (existing != null) {
-      _exports[existing]!.remoteRefCount++;
-      return existing;
-    }
-    final eid = _nextExportId++;
-    _exports[eid] = _ExportEntry(identity);
-    _exportIds[identity] = eid;
-    return eid;
-  }
-
   /// [cap] may be a [vendCapabilityHandle] handle — e.g. an application's
   /// dispatch handler read a capability out of another call's result via
   /// [requireCapabilityFromResult] and is now returning that same handle as
   /// part of its own result (or relaying it into a call on a different
-  /// connection's — see [_ExportEntry.ownedReference]'s doc comment) —
-  /// so it's unwrapped to its real identity before being used as the
-  /// [_getOrCreateExportId] dedup key.
+  /// connection's — see [ExportTable]'s `_ExportEntry.ownedReference`) —
+  /// so it's unwrapped to its real identity before being used as
+  /// [ExportTable.getOrCreate]'s dedup key.
   ///
   /// `DispatchResult.caps` transfers ownership of [cap] to this connection
-  /// — [_getOrCreateExportId] establishes (or reuses) this connection's own
-  /// owning reference to [identity], so if [cap] was itself a distinct
+  /// — [ExportTable.getOrCreate] establishes (or reuses) this connection's
+  /// own owning reference to [identity], so if [cap] was itself a distinct
   /// vended handle, it's now redundant with that owning reference and is
   /// disposed here: otherwise its share of [identity]'s refcount (see
   /// [vendCapabilityHandle]) would never be released, leaking the
@@ -1949,11 +1771,13 @@ class TwoPartyRpcConnection implements RpcConnection {
     final identity = unwrapVendedCapability(cap);
     final RpcCapDescriptor descriptor;
     if (identity is DeferredCapability) {
-      final promiseId = _getOrCreateExportId(identity);
+      final promiseId = _exportTable.getOrCreate(identity);
       _scheduleSenderPromiseResolve(promiseId, identity);
       descriptor = RpcCapDescriptor.senderPromise(promiseId);
     } else {
-      descriptor = RpcCapDescriptor.senderHosted(_getOrCreateExportId(identity));
+      descriptor = RpcCapDescriptor.senderHosted(
+        _exportTable.getOrCreate(identity),
+      );
     }
     if (!identical(cap, identity)) {
       _disposeIgnoringErrors(cap);
@@ -1965,12 +1789,12 @@ class TwoPartyRpcConnection implements RpcConnection {
     int promiseId,
     DeferredCapability promise,
   ) {
-    if (!_senderPromiseResolves.add(promiseId)) return;
+    if (!_exportTable.markScheduled(promiseId)) return;
 
     promise.resolution
         .then(
           (resolved) async {
-            _senderPromiseResolves.remove(promiseId);
+            _exportTable.clearScheduled(promiseId);
             if (!_isStillExportedPromise(promiseId, promise)) return;
 
             final RpcCapDescriptor descriptor;
@@ -1989,7 +1813,7 @@ class TwoPartyRpcConnection implements RpcConnection {
             }
             if (!_isStillExportedPromise(promiseId, promise)) {
               if (descriptor.disc == 1 || descriptor.disc == 2) {
-                _releaseExport(descriptor.id);
+                _exportTable.release(descriptor.id, _disposeIgnoringErrors);
               }
               return;
             }
@@ -2003,7 +1827,7 @@ class TwoPartyRpcConnection implements RpcConnection {
             );
           },
           onError: (Object error) {
-            _senderPromiseResolves.remove(promiseId);
+            _exportTable.clearScheduled(promiseId);
             if (!_isStillExportedPromise(promiseId, promise)) return;
             _sendRaw(
               buildResolveExceptionMessage(
@@ -2017,10 +1841,8 @@ class TwoPartyRpcConnection implements RpcConnection {
         .ignore();
   }
 
-  bool _isStillExportedPromise(int promiseId, DeferredCapability promise) {
-    final entry = _exports[promiseId];
-    return entry != null && identical(entry.identity, promise);
-  }
+  bool _isStillExportedPromise(int promiseId, DeferredCapability promise) =>
+      _exportTable.isCurrentIdentity(promiseId, promise);
 
   /// See [_returnCapDescriptor]'s doc comment — [cap] is unwrapped to its
   /// real identity first, and a redundant vended [cap] is disposed at the
@@ -2038,34 +1860,21 @@ class TwoPartyRpcConnection implements RpcConnection {
     final RpcCapDescriptor descriptor;
     if (identity is _ImportedCapability && identity._conn == this) {
       final id = await identity._importIdFuture;
-      _throwIfImportBroken(id);
+      _importTable.throwIfBroken(id);
       descriptor = RpcCapDescriptor.receiverHosted(id);
     } else if (identity is DeferredCapability) {
-      final nestedPromiseId = _getOrCreateExportId(identity);
+      final nestedPromiseId = _exportTable.getOrCreate(identity);
       _scheduleSenderPromiseResolve(nestedPromiseId, identity);
       descriptor = RpcCapDescriptor.senderPromise(nestedPromiseId);
     } else {
-      descriptor = RpcCapDescriptor.senderHosted(_getOrCreateExportId(identity));
+      descriptor = RpcCapDescriptor.senderHosted(
+        _exportTable.getOrCreate(identity),
+      );
     }
     if (!identical(cap, identity)) {
       _disposeIgnoringErrors(cap);
     }
     return descriptor;
-  }
-
-  /// Decrements the remote ref count for [eid] and, once no remote
-  /// references remain, disposes this export's own reference to the
-  /// underlying capability — see [_releaseExportRef]'s matching doc comment.
-  void _releaseExport(int eid) {
-    final entry = _exports[eid];
-    if (entry == null) return;
-    entry.remoteRefCount--;
-    if (entry.remoteRefCount <= 0) {
-      _exports.remove(eid);
-      _exportIds.remove(entry.identity);
-      _senderPromiseResolves.remove(eid);
-      _disposeIgnoringErrors(entry.ownedReference);
-    }
   }
 
   /// Disposes [capability] without awaiting or propagating a failure.
@@ -2126,10 +1935,10 @@ class TwoPartyRpcConnection implements RpcConnection {
       case 0: // none
         return NullCapability();
       case 1: // senderHosted
-        final state = _retainImport(descriptor.id);
+        final state = _importTable.retain(descriptor.id);
         return _ImportedCapability.fromState(this, state);
       case 2: // senderPromise
-        final state = _retainImport(descriptor.id, isPromise: true);
+        final state = _importTable.retain(descriptor.id, isPromise: true);
         return _ImportedCapability.fromState(this, state);
       case 3: // receiverHosted: we (the receiver) export this cap
         // A fresh vendCapabilityHandle, not the export's own identity/
@@ -2146,8 +1955,8 @@ class TwoPartyRpcConnection implements RpcConnection {
         // object) must unwrap it first — see unwrapVendedCapability's doc
         // comment; this is the same discipline every other decode path
         // (requireCapabilityFromResult et al.) already requires.
-        final hosted = _exports[descriptor.id];
-        if (hosted == null) {
+        final identity = _exportTable.identityFor(descriptor.id);
+        if (identity == null) {
           // A well-behaved peer, honoring the protocol's causal ordering
           // guarantees, never references an export id we haven't actually
           // exported to it — this is a genuine protocol violation (a buggy
@@ -2158,7 +1967,7 @@ class TwoPartyRpcConnection implements RpcConnection {
           // decision, changing the meaning of an otherwise valid call.
           throw RpcException('unknown receiverHosted export id: ${descriptor.id}');
         }
-        return vendCapabilityHandle(hosted.identity);
+        return vendCapabilityHandle(identity);
       case 4: // receiverAnswer: capability in one of our outstanding answers
         return _ReceiverAnswerCapability(
           this,
@@ -2179,32 +1988,14 @@ class TwoPartyRpcConnection implements RpcConnection {
 
   int? _importIdFromDescriptor(RpcCapDescriptor descriptor) {
     if (descriptor.disc != 1 && descriptor.disc != 2) return null;
-    _retainImport(descriptor.id, isPromise: descriptor.disc == 2);
+    _importTable.retain(descriptor.id, isPromise: descriptor.disc == 2);
     return descriptor.id;
   }
-
-  _ImportState _retainImport(int importId, {bool isPromise = false}) {
-    _importRefCounts[importId] = (_importRefCounts[importId] ?? 0) + 1;
-    final state = _imports.putIfAbsent(
-      importId,
-      () => _ImportState(importId, isPromise: isPromise),
-    );
-    if (isPromise) state.isPromise = true;
-    return state;
-  }
-
-  _ImportState _importStateForId(int importId) =>
-      _imports.putIfAbsent(importId, () => _ImportState(importId));
 
   bool _isLocalCapability(Capability cap) {
     if (cap is _ImportedCapability && cap._conn == this) return false;
     if (cap is _WirePipelinedCapability && cap._conn == this) return false;
     return true;
-  }
-
-  void _throwIfImportBroken(int importId) {
-    final err = _brokenImports[importId];
-    if (err != null) throw err;
   }
 
   void _sendRaw(Uint8List bytes) {
@@ -2262,51 +2053,20 @@ class TwoPartyRpcConnection implements RpcConnection {
             );
 
     // Fail all pending questions.
-    for (final c in _questions.values) {
-      if (!c.isCompleted) {
-        c.future.ignore();
-        c.completeError(err);
-      }
-    }
-    _questions.clear();
-    for (final c in _questionSent.values) {
-      if (!c.isCompleted) c.completeError(err);
-    }
-    _questionSent.clear();
+    _questionTable.tearDown(err);
 
     if (_bootstrapCompleter != null && !_bootstrapCompleter!.isCompleted) {
       _bootstrapCompleter!.future.ignore();
       _bootstrapCompleter!.completeError(err);
     }
 
-    for (final cancellation in _dispatchCancellations.values) {
-      cancellation.cancel();
-    }
-    _dispatchCancellations.clear();
+    _answerTable.tearDown();
 
     // Dispose all exported capabilities (each export's own owned
-    // reference — see _ExportEntry's doc comment).
-    for (final entry in _exports.values) {
-      _disposeIgnoringErrors(entry.ownedReference);
-    }
-    _exports.clear();
-    _exportIds.clear();
-    _answers.clear();
-    _answerCaps.clear();
-    _answerErrors.clear();
-    _pendingCaps.clear();
-    _finishedAnswers.clear();
-    _senderPromiseResolves.clear();
-    _importRefCounts.clear();
-    _imports.clear();
-    _brokenImports.clear();
-    for (final embargo in _embargoes.values) {
-      embargo.timer?.cancel();
-      if (!embargo.completer.isCompleted) {
-        embargo.completer.completeError(err);
-      }
-    }
-    _embargoes.clear();
+    // reference — see ExportTable's own doc comment).
+    _exportTable.tearDown(_disposeIgnoringErrors);
+    _importTable.tearDown();
+    _embargoTable.tearDown(err);
 
     try {
       await _outgoing.close();
@@ -2326,23 +2086,23 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// A future that completes when the connection is closed.
   Future<void> get done => _closedCompleter.future;
 
-  int get debugPendingQuestionCount => _questions.length;
-  int get debugPendingQuestionSentCount => _questionSent.length;
+  int get debugPendingQuestionCount => _questionTable.pendingCount;
+  int get debugPendingQuestionSentCount => _questionTable.pendingSentCount;
 
   /// Number of capabilities currently exported to the peer (i.e. still
   /// holding at least one outstanding remote reference).
-  int get debugExportCount => _exports.length;
+  int get debugExportCount => _exportTable.count;
 
   /// Number of remote capabilities currently imported from the peer (i.e.
   /// still holding at least one outstanding local reference).
-  int get debugImportCount => _imports.length;
+  int get debugImportCount => _importTable.count;
 
   /// Number of imports recorded as broken (their promise resolved to an
   /// exception). Tracked separately from [debugImportCount] because a
   /// broken import can still be observed after the import itself is
   /// released — this should settle back to zero once every import that
   /// ever broke has also been fully released.
-  int get debugBrokenImportCount => _brokenImports.length;
+  int get debugBrokenImportCount => _importTable.brokenCount;
 
   /// Number of import IDs with a Release batched but not yet flushed to the
   /// wire (see [_releaseImport]/[_flushPendingReleases]). Always zero
@@ -2350,938 +2110,19 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// single, already-scheduled flush, and [_flushPendingReleases] clears it
   /// up front before that flush sends anything (so a mid-flush sink failure
   /// never leaves it non-empty either).
-  int get debugPendingReleaseCount => _pendingReleaseCounts.length;
+  int get debugPendingReleaseCount => _importTable.pendingReleaseCount;
 
   /// Number of incoming calls with some tracked answer-lifecycle state:
-  /// dispatch in flight ([_pendingCaps]), a resolved-but-not-yet-finished
-  /// answer ([_answerCaps]/[_answers]), or a Finish that arrived before
-  /// dispatch completed ([_finishedAnswers]). Zero means every incoming call
-  /// this connection has seen has fully settled.
-  int get debugAnswerCount =>
-      <int>{
-        ..._answers.keys,
-        ..._answerCaps.keys,
-        ..._answerErrors.keys,
-        ..._pendingCaps.keys,
-        ..._finishedAnswers,
-      }.length;
+  /// dispatch in flight, a resolved-but-not-yet-finished answer, or a
+  /// Finish that arrived before dispatch completed. Zero means every
+  /// incoming call this connection has seen has fully settled.
+  int get debugAnswerCount => _answerTable.count;
 
   /// Number of incoming dispatches with a live [DispatchCancellationController]
   /// (i.e. dispatch is still running and could still observe cancellation).
-  int get debugCancellationCount => _dispatchCancellations.length;
+  int get debugCancellationCount => _answerTable.cancellationCount;
 
   /// Number of Disembargo round-trips currently awaiting the peer's
   /// receiverLoopback response.
-  int get debugEmbargoCount => _embargoes.length;
-}
-
-// ---------------------------------------------------------------------------
-// _ExportEntry: tracks a locally-exported capability and its remote ref count
-// ---------------------------------------------------------------------------
-
-class _ExportEntry {
-  /// The real, unwrapped capability this export refers to — used as the
-  /// [TwoPartyRpcConnection._exportIds] identity key and for dispatching
-  /// incoming calls. Never disposed directly; see [ownedReference].
-  final Capability identity;
-
-  /// A [vendCapabilityHandle] reference this export table owns for
-  /// [identity], sharing the same refcount as any other handle another
-  /// piece of code may still hold for it — e.g. when [identity] was
-  /// obtained from a different connection (or from this same connection's
-  /// own result-reading helpers) and relayed here while the code that
-  /// vended it is still holding its own handle. Disposing *this* reference
-  /// (instead of [identity] itself) once the peer's references reach zero
-  /// ensures [identity] is only really torn down once every other
-  /// outstanding reference to it is gone too — see vendCapabilityHandle's
-  /// doc comment for the shared-refcount mechanism this participates in.
-  final Capability ownedReference;
-
-  // How many times the peer holds a reference to this export.
-  // Incremented on every export (or re-export); decremented on Release.
-  int remoteRefCount;
-
-  _ExportEntry(this.identity)
-    : ownedReference = vendCapabilityHandle(identity),
-      remoteRefCount = 1;
-}
-
-class _ImportState {
-  final int importId;
-  bool isPromise;
-  bool receivedCall = false;
-  Capability? replacement;
-  Object? error;
-  StackTrace? stackTrace;
-
-  _ImportState(this.importId, {this.isPromise = false});
-
-  void resolveCapability(Capability cap) {
-    if (error != null) return;
-    replacement = cap;
-  }
-
-  void resolveError(Object err, [StackTrace? st]) {
-    error = err;
-    stackTrace = st;
-  }
-}
-
-/// Tracks a single [TwoPartyRpcConnection._runDispatch] call's params-caps
-/// deferred-release window — see [TwoPartyRpcConnection._finalizeParamCapsTracker].
-/// [wrappers] are every freshly-imported `_ImportedCapability` created for
-/// this call's params (one per senderHosted/senderPromise capTable entry);
-/// [disposedImportIds] accumulates the import ID each time one of them is
-/// disposed while the window is open (see [_ImportedCapability]'s
-/// `_deferredReleaseSink`) — as a `List`, not a `Set`, so a duplicate
-/// import ID appearing more than once among the params (two distinct
-/// wrapper objects for the same underlying capability) is still counted
-/// once per wrapper, matching the refcount contribution each one made.
-class _ParamCapsReleaseTracker {
-  final List<_ImportedCapability> wrappers;
-  final List<int> disposedImportIds = [];
-  _ParamCapsReleaseTracker(this.wrappers);
-}
-
-// ---------------------------------------------------------------------------
-// _ImportedCapability: client-side proxy for a remote capability
-// ---------------------------------------------------------------------------
-
-class _ImportedCapability extends Capability {
-  final TwoPartyRpcConnection _conn;
-  bool _disposed = false;
-
-  // Set only for a call's freshly-imported params capabilities (see
-  // _runDispatch/_ParamCapsReleaseTracker), for the window between dispatch
-  // starting and its Return being sent. While set, dispose() defers the
-  // wire Release entirely to the tracker instead of sending one itself, so
-  // the connection can fold it into `Return.releaseParamCaps` when every
-  // params capability created for the call turns out to have been disposed
-  // by the time the call settles. Cleared once that window ends (Return
-  // sent), so a dispose() after that point behaves exactly as normal.
-  void Function(int importId)? _deferredReleaseSink;
-
-  // Resolves to the import ID once the bootstrap handshake completes.
-  final Future<int> _importIdFuture;
-  final Future<_ImportState>? _stateFuture;
-  _ImportState? _cachedState;
-
-  // Lazily created on the first `-> stream` call through this capability
-  // reference, then reused for every subsequent streaming call so the
-  // window is shared/accumulated across the whole call sequence — matching
-  // capnp-rust, which scopes one FlowController per call target.
-  FlowController? _flowController;
-
-  _ImportedCapability(this._conn, this._importIdFuture) : _stateFuture = null {
-    // Suppress unhandled rejection if nobody awaits this future before the
-    // connection closes (e.g. bootstrap() called then close() immediately).
-    _importIdFuture.ignore();
-  }
-
-  _ImportedCapability.fromState(this._conn, _ImportState state)
-    : _importIdFuture = Future.value(state.importId),
-      _stateFuture = Future.value(state),
-      _cachedState = state {
-    _importIdFuture.ignore();
-  }
-
-  Future<_ImportState> get _state async {
-    final cached = _cachedState;
-    if (cached != null) return cached;
-    final stateFuture = _stateFuture;
-    if (stateFuture != null) {
-      final state = await stateFuture;
-      _cachedState = state;
-      return state;
-    }
-    final state = _conn._importStateForId(await _importIdFuture);
-    _cachedState = state;
-    return state;
-  }
-
-  @override
-  Future<DispatchResult> dispatch(
-    int interfaceId,
-    int methodId,
-    RpcPayload params, {
-    List<Capability> paramsCapabilities = const [],
-  }) async {
-    if (_disposed) {
-      throw const RpcException(
-        'capability is disposed',
-        kind: ErrorKind.disconnected,
-      );
-    }
-    // `_cachedState ?? await _state` skips `_state`'s own `await` entirely
-    // when the state is already cached — Dart's `await` costs at least one
-    // microtask tick even for an already-completed Future, and this is the
-    // common case for every call after the first through a resolved import.
-    final state = _cachedState ?? await _state;
-    if (_disposed) {
-      throw const RpcException(
-        'capability is disposed',
-        kind: ErrorKind.disconnected,
-      );
-    }
-    final replacement = state.replacement;
-    if (replacement != null) {
-      return replacement.dispatch(
-        interfaceId,
-        methodId,
-        params,
-        paramsCapabilities: paramsCapabilities,
-      );
-    }
-    final error = state.error;
-    if (error != null) {
-      return Future<DispatchResult>.error(error, state.stackTrace);
-    }
-    state.receivedCall = true;
-    // state.importId is already known synchronously here (whether from
-    // cache or from the await above), so this always goes through the fast
-    // path (see TwoPartyRpcConnection._startResolvedImportCall) instead of
-    // _startCall's Future.value(...)/await indirection for it.
-    final (_, future) = _conn._startResolvedImportCall(
-      state.importId,
-      interfaceId,
-      methodId,
-      (anyPtr) => anyPtr.setMessageBytes(
-        params.bytes,
-        preserveCapabilityPointers: true,
-      ),
-      paramsCapabilities,
-    );
-    return future;
-  }
-
-  @override
-  Future<DispatchResult> dispatchBuilding(
-    int interfaceId,
-    int methodId,
-    void Function(AnyPointerBuilder) build, {
-    List<Capability> paramsCapabilities = const [],
-  }) async {
-    if (_disposed) {
-      throw const RpcException(
-        'capability is disposed',
-        kind: ErrorKind.disconnected,
-      );
-    }
-    // See dispatch() for why this skips _state's own await when cached.
-    final state = _cachedState ?? await _state;
-    if (_disposed) {
-      throw const RpcException(
-        'capability is disposed',
-        kind: ErrorKind.disconnected,
-      );
-    }
-    final replacement = state.replacement;
-    if (replacement != null) {
-      return replacement.dispatchBuilding(
-        interfaceId,
-        methodId,
-        build,
-        paramsCapabilities: paramsCapabilities,
-      );
-    }
-    final error = state.error;
-    if (error != null) {
-      return Future<DispatchResult>.error(error, state.stackTrace);
-    }
-    state.receivedCall = true;
-    // See dispatch()'s equivalent line for why this always takes the fast
-    // path now that state.importId is known.
-    final (_, future) = _conn._startResolvedImportCall(
-      state.importId,
-      interfaceId,
-      methodId,
-      build,
-      paramsCapabilities,
-    );
-    return future;
-  }
-
-  @override
-  Future<void> dispatchStreaming(
-    int interfaceId,
-    int methodId,
-    RpcPayload params, {
-    List<Capability> paramsCapabilities = const [],
-  }) async {
-    if (_disposed) {
-      throw const RpcException(
-        'capability is disposed',
-        kind: ErrorKind.disconnected,
-      );
-    }
-    final state = await _state;
-    if (_disposed) {
-      throw const RpcException(
-        'capability is disposed',
-        kind: ErrorKind.disconnected,
-      );
-    }
-    final replacement = state.replacement;
-    if (replacement != null) {
-      return replacement.dispatchStreaming(
-        interfaceId,
-        methodId,
-        params,
-        paramsCapabilities: paramsCapabilities,
-      );
-    }
-    final error = state.error;
-    if (error != null) {
-      return Future<void>.error(error, state.stackTrace);
-    }
-    state.receivedCall = true;
-    // The call is started (and its Call message sent) immediately either
-    // way — the flow controller only ever delays how long the *returned*
-    // future takes to resolve, never the send itself, so wire ordering is
-    // unaffected by window state.
-    final paramsBytes = params.bytes;
-    final (_, future) = _conn._startCall(
-      Future.value(state.importId),
-      interfaceId,
-      methodId,
-      paramsBytes,
-      paramsCapabilities: paramsCapabilities,
-    );
-    final controller =
-        _flowController ??= FlowController(windowSize: _conn._streamWindowSize);
-    return controller.send(paramsBytes.lengthInBytes, future);
-  }
-
-  @override
-  CapCall beginDispatch(
-    int interfaceId,
-    int methodId,
-    RpcPayload params, {
-    List<Capability> paramsCapabilities = const [],
-  }) {
-    if (_disposed) {
-      return _ErrorCapCall(
-        const RpcException(
-          'capability is disposed',
-          kind: ErrorKind.disconnected,
-        ),
-      );
-    }
-    final cached = _cachedState;
-    if (cached != null) {
-      final replacement = cached.replacement;
-      if (replacement != null) {
-        return replacement.beginDispatch(
-          interfaceId,
-          methodId,
-          params,
-          paramsCapabilities: paramsCapabilities,
-        );
-      }
-      final error = cached.error;
-      if (error != null) {
-        return _ErrorCapCall(error, cached.stackTrace);
-      }
-      cached.receivedCall = true;
-      final (qid, future) = _conn._startCall(
-        Future.value(cached.importId),
-        interfaceId,
-        methodId,
-        params.bytes,
-        paramsCapabilities: paramsCapabilities,
-      );
-      return _WireCapCall(future, _conn, qid);
-    }
-    final stateFuture = _state;
-    final qidCompleter = Completer<int>();
-    final result = stateFuture
-        .then((state) {
-          if (_disposed) {
-            throw const RpcException(
-              'capability is disposed',
-              kind: ErrorKind.disconnected,
-            );
-          }
-          final replacement = state.replacement;
-          if (replacement != null) {
-            return replacement
-                .dispatch(
-                  interfaceId,
-                  methodId,
-                  params,
-                  paramsCapabilities: paramsCapabilities,
-                )
-                .then((r) {
-                  if (!qidCompleter.isCompleted) qidCompleter.complete(-1);
-                  return r;
-                });
-          }
-          final error = state.error;
-          if (error != null) {
-            return Future<DispatchResult>.error(error, state.stackTrace);
-          }
-          state.receivedCall = true;
-          final (qid, future) = _conn._startCall(
-            Future.value(state.importId),
-            interfaceId,
-            methodId,
-            params.bytes,
-            paramsCapabilities: paramsCapabilities,
-          );
-          if (!qidCompleter.isCompleted) qidCompleter.complete(qid);
-          return future;
-        })
-        .then((r) => r);
-    result.ignore();
-    return _AsyncWireCapCall(result, _conn, qidCompleter.future);
-  }
-
-  @override
-  Future<void> dispose() async {
-    if (_disposed) return;
-    _disposed = true;
-    final id = await _importIdFuture.catchError((_) => -1);
-    if (id < 0) return;
-    final sink = _deferredReleaseSink;
-    if (sink != null) {
-      sink(id);
-      return;
-    }
-    await _conn._releaseImport(id);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// _WireCapCall: CapCall backed by a pending question on the wire
-// ---------------------------------------------------------------------------
-
-class _WireCapCall implements CapCall {
-  @override
-  final Future<DispatchResult> result;
-  final TwoPartyRpcConnection _conn;
-  final int _qid;
-
-  _WireCapCall(this.result, this._conn, this._qid);
-
-  @override
-  Capability pipelineResult(int ptrIndex) =>
-      _WirePipelinedCapability(_conn, _qid, [ptrIndex], result);
-
-  @override
-  Capability pipelineResultPath(List<int> path) =>
-      _WirePipelinedCapability(_conn, _qid, path, result);
-}
-
-class _AsyncWireCapCall implements CapCall {
-  @override
-  final Future<DispatchResult> result;
-  final TwoPartyRpcConnection _conn;
-  final Future<int> _qidFuture;
-
-  _AsyncWireCapCall(this.result, this._conn, this._qidFuture);
-
-  @override
-  Capability pipelineResult(int ptrIndex) => pipelineResultPath([ptrIndex]);
-
-  @override
-  Capability pipelineResultPath(List<int> path) => DeferredCapability(() async {
-    final qid = await _qidFuture;
-    if (qid >= 0) {
-      return _WirePipelinedCapability(_conn, qid, path, result);
-    }
-    final resolved = await result;
-    return requireCapabilityFromResultPath(resolved, path);
-  }());
-}
-
-// ---------------------------------------------------------------------------
-// _WirePipelinedCapability: targets a promisedAnswer on the wire, then
-// switches to the resolved imported capability once the parent completes.
-// ---------------------------------------------------------------------------
-
-class _WirePipelinedCapability extends Capability {
-  final TwoPartyRpcConnection _conn;
-  final int _parentQid;
-  // The full getPointerField hop sequence into the parent answer (see
-  // RpcCapDescriptor.path) — today always a single index, since nothing
-  // generates a deeper path yet (see _collectCapResults in
-  // dart_generator.dart), but represented as a path throughout the wire
-  // codec and resolution layers, so this doesn't have to special-case
-  // length-1 vs. longer paths.
-  final List<int> _transformPath;
-  late final Future<Capability> _resolution;
-
-  // Set once the parent question resolves; null while still pending.
-  // After resolution all new calls go directly to this cap (no pipelining).
-  Capability? _resolved;
-  Object? _resolutionError;
-  StackTrace? _resolutionStackTrace;
-  bool _disposed = false;
-  int _pendingPipelinedCalls = 0;
-  Future<void>? _resolvedDisposeFuture;
-  bool get _hasResolved => _resolved != null || _resolutionError != null;
-
-  _WirePipelinedCapability(
-    this._conn,
-    this._parentQid,
-    this._transformPath,
-    Future<DispatchResult> parentResult,
-  ) {
-    _resolution = parentResult.then(
-      (result) => requireCapabilityFromResultPath(result, _transformPath),
-    );
-    _resolution.ignore();
-    _resolution
-        .then(
-          (resolved) async {
-            _resolved = resolved;
-            if (_disposed) {
-              await _disposeResolvedIfIdle();
-            }
-          },
-          onError: (Object err, StackTrace st) {
-            _resolutionError = err;
-            _resolutionStackTrace = st;
-          },
-        )
-        .ignore();
-  }
-
-  Future<T> _trackPipelinedCall<T>(Future<T> future) {
-    _pendingPipelinedCalls++;
-    future.whenComplete(() {
-      _pendingPipelinedCalls--;
-      if (_disposed) {
-        _disposeResolvedIfIdle().ignore();
-      }
-    }).ignore();
-    return future;
-  }
-
-  Future<void> _disposeResolvedIfIdle() {
-    final resolved = _resolved;
-    if (!_disposed || resolved == null || _pendingPipelinedCalls > 0) {
-      return Future.value();
-    }
-    return _resolvedDisposeFuture ??= resolved.dispose();
-  }
-
-  @override
-  Future<DispatchResult> dispatch(
-    int interfaceId,
-    int methodId,
-    RpcPayload params, {
-    List<Capability> paramsCapabilities = const [],
-  }) {
-    if (_disposed) {
-      return Future.error(
-        const RpcException(
-          'capability is disposed',
-          kind: ErrorKind.disconnected,
-        ),
-      );
-    }
-    final r = _resolved;
-    if (r != null) {
-      return r.dispatch(
-        interfaceId,
-        methodId,
-        params,
-        paramsCapabilities: paramsCapabilities,
-      );
-    }
-    final resolutionError = _resolutionError;
-    if (resolutionError != null) {
-      return Future.error(resolutionError, _resolutionStackTrace);
-    }
-    final (_, future) = _conn._startCall(
-      null,
-      interfaceId,
-      methodId,
-      params.bytes,
-      paramsCapabilities: paramsCapabilities,
-      targetPromisedAnswerQid: _parentQid,
-      targetTransformPath: _transformPath,
-    );
-    return _trackPipelinedCall(future);
-  }
-
-  @override
-  Future<DispatchResult> dispatchBuilding(
-    int interfaceId,
-    int methodId,
-    void Function(AnyPointerBuilder) build, {
-    List<Capability> paramsCapabilities = const [],
-  }) {
-    if (_disposed) {
-      return Future.error(
-        const RpcException(
-          'capability is disposed',
-          kind: ErrorKind.disconnected,
-        ),
-      );
-    }
-    final r = _resolved;
-    if (r != null) {
-      return r.dispatchBuilding(
-        interfaceId,
-        methodId,
-        build,
-        paramsCapabilities: paramsCapabilities,
-      );
-    }
-    final resolutionError = _resolutionError;
-    if (resolutionError != null) {
-      return Future.error(resolutionError, _resolutionStackTrace);
-    }
-    final (_, future) = _conn._startCallBuilding(
-      null,
-      interfaceId,
-      methodId,
-      build,
-      paramsCapabilities: paramsCapabilities,
-      targetPromisedAnswerQid: _parentQid,
-      targetTransformPath: _transformPath,
-    );
-    return _trackPipelinedCall(future);
-  }
-
-  @override
-  CapCall beginDispatch(
-    int interfaceId,
-    int methodId,
-    RpcPayload params, {
-    List<Capability> paramsCapabilities = const [],
-  }) {
-    if (_disposed) {
-      return _ErrorCapCall(
-        const RpcException(
-          'capability is disposed',
-          kind: ErrorKind.disconnected,
-        ),
-      );
-    }
-    final r = _resolved;
-    if (r != null) {
-      return r.beginDispatch(
-        interfaceId,
-        methodId,
-        params,
-        paramsCapabilities: paramsCapabilities,
-      );
-    }
-    final resolutionError = _resolutionError;
-    if (resolutionError != null) {
-      return _ErrorCapCall(resolutionError, _resolutionStackTrace);
-    }
-    final (qid, future) = _conn._startCall(
-      null,
-      interfaceId,
-      methodId,
-      params.bytes,
-      paramsCapabilities: paramsCapabilities,
-      targetPromisedAnswerQid: _parentQid,
-      targetTransformPath: _transformPath,
-    );
-    return _WireCapCall(_trackPipelinedCall(future), _conn, qid);
-  }
-
-  @override
-  Future<void> dispose() async {
-    _disposed = true;
-    await _disposeResolvedIfIdle();
-  }
-}
-
-class _ReceiverAnswerCapability extends Capability {
-  final TwoPartyRpcConnection _conn;
-  final int _questionId;
-  final List<int> _path;
-  bool _disposed = false;
-
-  // Resolved (and vended — see requireCapabilityFromResultPath) at most
-  // once and cached, mirroring _WirePipelinedCapability: this capability
-  // can be dispatched through multiple times before it's disposed (e.g.
-  // several pipelined calls against the same receiverAnswer target), and
-  // each of those calls must reuse the same resolved handle rather than
-  // vending — and then never disposing — a fresh one every time, which
-  // would permanently pin the underlying identity's shared refcount by one
-  // for every call ever made through this capability.
-  Future<Capability>? _resolution;
-
-  // Tracks every dispatch()/dispatchBuilding()/beginDispatch() call that was
-  // admitted (started before _disposed flipped true), mirroring
-  // _WirePipelinedCapability's _pendingPipelinedCalls — but, unlike that
-  // class (which only tracks calls made *before* its target resolves, since
-  // afterwards it dispatches directly against the already-resolved
-  // capability with no tracking at all), every call through this class goes
-  // through _resolve() and is tracked, since there's no untracked
-  // "already resolved, dispatch directly" fast path here. Without this,
-  // dispose() could release the shared resolved handle — tearing down its
-  // real target — while one of these calls was still using it.
-  int _pendingCalls = 0;
-  Future<void>? _resolvedDisposeFuture;
-
-  // dispose()'s own returned Future must not complete until the real
-  // underlying disposal has itself finished — not just been scheduled —
-  // per Capability.dispose()'s own doc comment ("frees any associated
-  // resources"). When dispose() is called while calls are still pending,
-  // that real disposal is deferred (see _trackCall/_disposeResolvedIfIdle)
-  // until they drain; this completer is what lets dispose()'s Future wait
-  // for that deferred point instead of resolving early, whether the real
-  // disposal happens synchronously (right away, if already idle) or only
-  // once the last pending call finishes.
-  Completer<void>? _disposeCompleter;
-
-  _ReceiverAnswerCapability(this._conn, this._questionId, this._path);
-
-  Future<Capability> _resolve() => _resolution ??= _resolveOnce();
-
-  Future<Capability> _resolveOnce() async {
-    final resolved = _conn._answerCaps[_questionId];
-    if (resolved != null) {
-      return requireCapabilityFromResultPath(
-        DispatchResult(
-          payload: RpcPayload.fromBytes(resolved.resultBytes),
-          caps: resolved.caps,
-        ),
-        _path,
-      );
-    }
-    final pending = _conn._pendingCaps[_questionId];
-    if (pending == null) {
-      throw RpcException('invalid receiverAnswer questionId: $_questionId');
-    }
-    final answer = await pending;
-    return requireCapabilityFromResultPath(
-      DispatchResult(
-        payload: RpcPayload.fromBytes(answer.resultBytes),
-        caps: answer.caps,
-      ),
-      _path,
-    );
-  }
-
-  Future<T> _trackCall<T>(Future<T> future) {
-    _pendingCalls++;
-    future.whenComplete(() {
-      _pendingCalls--;
-      if (_disposed) {
-        _disposeResolvedIfIdle().ignore();
-      }
-    }).ignore();
-    return future;
-  }
-
-  Future<void> _disposeResolvedIfIdle() {
-    if (!_disposed || _pendingCalls > 0) {
-      return Future.value();
-    }
-    final resolution = _resolution;
-    if (resolution == null) {
-      // Never dispatched through, so there was never anything to resolve
-      // (or dispose) in the first place — this is itself the terminal
-      // outcome dispose() is waiting on.
-      _disposeCompleter?.complete();
-      return Future.value();
-    }
-    final existing = _resolvedDisposeFuture;
-    if (existing != null) return existing;
-    // A resolution that failed (e.g. an invalid questionId — see
-    // _resolveOnce) never produced a handle in the first place, so there's
-    // nothing to dispose — swallow that here the same way the previous
-    // (untracked) implementation's try/catch did. Note this `onError` only
-    // ever fires for `resolution`'s own failure, per Future.then's
-    // documented semantics — a failure from the `cap.dispose()` call below
-    // is a completely separate failure of `future` itself (propagated to
-    // dispose()'s own caller below), not something this `onError` ever
-    // observes or swallows.
-    final future = resolution.then(
-      (cap) => cap.dispose(),
-      onError: (Object error, StackTrace stackTrace) {},
-    );
-    _resolvedDisposeFuture = future;
-    // Deliberately `.then(onValue, onError:)`, not `.whenComplete(...)`:
-    // whenComplete's callback runs on both success and failure alike but
-    // can't distinguish which happened, so unconditionally calling
-    // `complete()` from it would report the resolved target's own real
-    // dispose() failure (if `future` itself rejects) as a success to
-    // dispose()'s caller — silently discarding it, contrary to
-    // Capability.dispose()'s own doc comment ("frees any associated
-    // resources"). Forwarding the actual outcome here instead means a
-    // failure the resolved target's dispose() raises is a failure
-    // `receiverAnswerCap.dispose()` itself raises too.
-    future
-        .then<void>(
-          (_) {
-            final completer = _disposeCompleter;
-            if (completer != null && !completer.isCompleted) {
-              completer.complete();
-            }
-          },
-          onError: (Object error, StackTrace stackTrace) {
-            final completer = _disposeCompleter;
-            if (completer != null && !completer.isCompleted) {
-              completer.completeError(error, stackTrace);
-            }
-          },
-        )
-        .ignore();
-    return future;
-  }
-
-  static RpcException get _disposedError => const RpcException(
-    'capability is disposed',
-    kind: ErrorKind.disconnected,
-  );
-
-  @override
-  Future<DispatchResult> dispatch(
-    int interfaceId,
-    int methodId,
-    RpcPayload params, {
-    List<Capability> paramsCapabilities = const [],
-  }) {
-    if (_disposed) return Future.error(_disposedError);
-    return _trackCall(
-      _resolve().then(
-        (cap) => cap.dispatch(
-          interfaceId,
-          methodId,
-          params,
-          paramsCapabilities: paramsCapabilities,
-        ),
-      ),
-    );
-  }
-
-  @override
-  Future<DispatchResult> dispatchBuilding(
-    int interfaceId,
-    int methodId,
-    void Function(AnyPointerBuilder) build, {
-    List<Capability> paramsCapabilities = const [],
-  }) {
-    if (_disposed) return Future.error(_disposedError);
-    return _trackCall(
-      _resolve().then(
-        (cap) => cap.dispatchBuilding(
-          interfaceId,
-          methodId,
-          build,
-          paramsCapabilities: paramsCapabilities,
-        ),
-      ),
-    );
-  }
-
-  @override
-  CapCall beginDispatch(
-    int interfaceId,
-    int methodId,
-    RpcPayload params, {
-    List<Capability> paramsCapabilities = const [],
-  }) {
-    if (_disposed) return _ErrorCapCall(_disposedError);
-    final result = _trackCall(
-      _resolve().then(
-        (cap) => cap.dispatch(
-          interfaceId,
-          methodId,
-          params,
-          paramsCapabilities: paramsCapabilities,
-        ),
-      ),
-    );
-    result.ignore();
-    return _FutureCapCall(result);
-  }
-
-  @override
-  Future<void> dispose() {
-    final existing = _disposeCompleter;
-    if (existing != null) return existing.future;
-    _disposed = true;
-    _disposeCompleter = Completer<void>();
-    // Kicks off (or, if calls are still pending, merely checks — see
-    // _trackCall for what actually triggers it once they drain) the real
-    // disposal; _disposeCompleter (via _disposeResolvedIfIdle's own hooks)
-    // is what makes the Future returned below wait for that to actually
-    // finish rather than resolving as soon as this synchronous call returns.
-    _disposeResolvedIfIdle().ignore();
-    return _disposeCompleter!.future;
-  }
-}
-
-class _FutureCapCall implements CapCall {
-  @override
-  final Future<DispatchResult> result;
-
-  _FutureCapCall(this.result);
-
-  @override
-  Capability pipelineResult(int ptrIndex) => DeferredCapability(
-    result.then((r) => requireCapabilityFromResult(r, ptrIndex)),
-  );
-
-  @override
-  Capability pipelineResultPath(List<int> path) => DeferredCapability(
-    result.then((r) => requireCapabilityFromResultPath(r, path)),
-  );
-}
-
-class _ErrorCapCall implements CapCall {
-  @override
-  final Future<DispatchResult> result;
-
-  _ErrorCapCall(Object error, [StackTrace? stackTrace])
-    : result = Future.error(error, stackTrace) {
-    result.ignore();
-  }
-
-  @override
-  Capability pipelineResult(int ptrIndex) => DeferredCapability(
-    result.then((r) => requireCapabilityFromResult(r, ptrIndex)),
-  );
-
-  @override
-  Capability pipelineResultPath(List<int> path) => DeferredCapability(
-    result.then((r) => requireCapabilityFromResultPath(r, path)),
-  );
-}
-
-// ---------------------------------------------------------------------------
-// _ResolvedAnswer: result bytes + cap table for a completed server dispatch
-// ---------------------------------------------------------------------------
-
-/// Holds the serialized result message and the corresponding cap table for a
-/// completed incoming call.  Both are needed by [TwoPartyRpcConnection] to
-/// resolve promise-pipelined calls: the result bytes encode which pointer slot
-/// maps to which cap table index via a [CapabilityPointer], so the lookup must
-/// parse the pointer rather than using the pointer-slot number as a cap table
-/// index directly.
-class _EmbargoEntry {
-  final Completer<void> completer;
-  Timer? timer;
-
-  _EmbargoEntry(this.completer);
-}
-
-class _ResolvedAnswer {
-  final Uint8List resultBytes;
-  final List<Capability> caps;
-  _ResolvedAnswer(this.resultBytes, this.caps);
-}
-
-// ---------------------------------------------------------------------------
-// RpcConnection abstract interface (declared here to avoid circular imports)
-// ---------------------------------------------------------------------------
-
-/// Manages an RPC connection to a remote peer.
-abstract class RpcConnection {
-  /// Returns a typed capability backed by the peer's bootstrap capability.
-  T bootstrap<T extends Capability>(CapabilityFactory<T> factory);
-
-  /// Closes the connection and releases all associated capabilities.
-  Future<void> close();
+  int get debugEmbargoCount => _embargoTable.count;
 }
