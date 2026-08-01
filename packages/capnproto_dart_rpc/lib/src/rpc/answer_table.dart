@@ -60,12 +60,17 @@ class AnswerTable {
   int get cancellationCount => _dispatchCancellations.length;
 
   /// Whether [qid] currently has any tracked answer-lifecycle state at all
-  /// (dispatch in flight, a resolved-but-not-yet-finished answer, or a
-  /// Finish that arrived before dispatch completed) — used to reject a peer
-  /// illegally reusing a question id before it has fully settled.
+  /// (dispatch in flight, a resolved-but-not-yet-finished answer, a
+  /// dispatch that failed with an error still retained for a racing
+  /// `takeFromOtherQuestion`, or a Finish that arrived before dispatch
+  /// completed) — used to reject a peer illegally reusing a question id
+  /// before it has fully settled. Mirrors [count]'s own definition of
+  /// "tracked" exactly, so the two never disagree about whether a qid is
+  /// still live.
   bool isTracked(int qid) =>
       _pendingCaps.containsKey(qid) ||
       _answerCaps.containsKey(qid) ||
+      _answerErrors.containsKey(qid) ||
       _answers.containsKey(qid) ||
       _finishedAnswers.contains(qid);
 

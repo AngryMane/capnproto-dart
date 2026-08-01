@@ -42,7 +42,7 @@ void main() {
     test('tearDown fails every still-pending Return and sent completer, '
         'and clears the table', () async {
       final table = QuestionTable();
-      final (qid1, completer1, sentCompleter1) = table.allocate();
+      final (_, completer1, sentCompleter1) = table.allocate();
       final (qid2, completer2, sentCompleter2) = table.allocate();
       table.markSent(qid2); // qid2 has no outstanding sent completer.
 
@@ -57,6 +57,23 @@ void main() {
       // qid2's sent completer was already removed by markSent, so tearDown
       // has nothing left to fail for it — no exception either way.
       expect(sentCompleter2.isCompleted, isTrue);
+    });
+
+    test('tearDown also drops recorded param export ids — it clears every '
+        'piece of state this table owns, not just the Return/sent '
+        'completers', () {
+      final table = QuestionTable();
+      final (qid, completer, sentCompleter) = table.allocate();
+      completer.future.ignore();
+      sentCompleter.future.ignore();
+      table.recordParamExportIds(qid, [10, 11]);
+
+      table.tearDown(StateError('connection torn down'));
+
+      // Connection teardown discards the whole ExportTable too, so this
+      // isn't needed to avoid a capability leak — but the table must not
+      // claim to clear "all tracking" while silently leaving this behind.
+      expect(table.takeParamExportIds(qid), isNull);
     });
 
     test('tearDown does not double-complete a Return completer the caller '

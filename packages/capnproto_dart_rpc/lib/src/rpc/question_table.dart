@@ -116,5 +116,6 @@ class QuestionTable {
       if (!c.isCompleted) c.completeError(err);
     }
     _questionSent.clear();
+    _questionParamExportIds.clear();
   }
 }

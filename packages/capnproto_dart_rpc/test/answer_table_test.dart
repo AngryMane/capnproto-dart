@@ -72,26 +72,8 @@ void main() {
       table.finish(3);
       expect(table.isTracked(3), isFalse);
 
-      // recordError is only ever called alongside recordAnswered (the
-      // sendResultsToYourself failure path in _runDispatch) — isTracked
-      // relies on that pairing rather than checking _answerErrors itself,
-      // so this asserts the pairing invariant holds, not just isTracked in
-      // isolation.
       table.recordError(3, const CapnpException('boom'));
-      table.recordAnswered(3, const []);
       expect(table.isTracked(3), isTrue, reason: 'dispatch failed, error retained');
-    });
-
-    test('isTracked does not, by itself, reflect a recorded error unless '
-        'recordAnswered was also called for the same qid — the only real '
-        'call site (_runDispatch\'s sendResultsToYourself failure path) '
-        'always calls both together, so this is a latent gap rather than '
-        'a reachable one; documented here so it stays visible if that '
-        'pairing ever changes', () {
-      final table = AnswerTable();
-      table.recordError(4, const CapnpException('boom'));
-      expect(table.isTracked(4), isFalse);
-      expect(table.errorFor(4), isNotNull);
     });
 
     test('count is the union of every distinct qid across all tracked '
