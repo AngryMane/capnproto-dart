@@ -562,7 +562,9 @@ class TwoPartyRpcConnection implements RpcConnection {
     // For promisedAnswer targets, wait until the parent Call is on the wire so
     // the server always receives the parent before the pipelined call.
     if (targetPromisedAnswerQid != null) {
-      final parentSent = _questionTable.sentCompleterFor(targetPromisedAnswerQid);
+      final parentSent = _questionTable.sentCompleterFor(
+        targetPromisedAnswerQid,
+      );
       if (parentSent != null) await parentSent.future;
     }
 
@@ -668,7 +670,9 @@ class TwoPartyRpcConnection implements RpcConnection {
     // For promisedAnswer targets, wait until the parent Call is on the wire so
     // the server always receives the parent before the pipelined call.
     if (targetPromisedAnswerQid != null) {
-      final parentSent = _questionTable.sentCompleterFor(targetPromisedAnswerQid);
+      final parentSent = _questionTable.sentCompleterFor(
+        targetPromisedAnswerQid,
+      );
       if (parentSent != null) await parentSent.future;
     }
 
@@ -1966,7 +1970,9 @@ class TwoPartyRpcConnection implements RpcConnection {
           // descriptor (disc 0), losing that distinction and, per
           // _dispatchToCapability's own doc comment on this same class of
           // decision, changing the meaning of an otherwise valid call.
-          throw RpcException('unknown receiverHosted export id: ${descriptor.id}');
+          throw RpcException(
+            'unknown receiverHosted export id: ${descriptor.id}',
+          );
         }
         return vendCapabilityHandle(identity);
       case 4: // receiverAnswer: capability in one of our outstanding answers

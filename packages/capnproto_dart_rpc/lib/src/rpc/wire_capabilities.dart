@@ -822,4 +822,3 @@ class _ErrorCapCall implements CapCall {
     result.then((r) => requireCapabilityFromResultPath(r, path)),
   );
 }
-
