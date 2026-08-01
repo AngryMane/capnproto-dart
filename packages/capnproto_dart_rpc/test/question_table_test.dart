@@ -6,7 +6,11 @@ void main() {
     test('abandon drops both the Return completer and the sent completer, '
         'so a stray late Return for that qid is no longer recognized', () {
       final table = QuestionTable();
-      final (qid, completer, sentCompleter) = table.allocate();
+      final question = table.allocate();
+      final completer = question.returnCompleter!;
+      final sentCompleter = question.sentCompleter!;
+      final qid = question.id;
+
       expect(table.pendingCount, equals(1));
       expect(table.pendingSentCount, equals(1));
       expect(table.sentCompleterFor(qid), same(sentCompleter));
@@ -25,7 +29,10 @@ void main() {
     test('markSent completes the sent completer and drops sent-tracking, '
         'without touching the Return completer', () {
       final table = QuestionTable();
-      final (qid, completer, sentCompleter) = table.allocate();
+      final question = table.allocate();
+      final completer = question.returnCompleter!;
+      final sentCompleter = question.sentCompleter!;
+      final qid = question.id;
 
       table.markSent(qid);
       expect(sentCompleter.isCompleted, isTrue);
@@ -42,8 +49,13 @@ void main() {
     test('tearDown fails every still-pending Return and sent completer, '
         'and clears the table', () async {
       final table = QuestionTable();
-      final (_, completer1, sentCompleter1) = table.allocate();
-      final (qid2, completer2, sentCompleter2) = table.allocate();
+      final question1 = table.allocate();
+      final completer1 = question1.returnCompleter!;
+      final sentCompleter1 = question1.sentCompleter!;
+      final question2 = table.allocate();
+      final qid2 = question2.id;
+      final completer2 = question2.returnCompleter!;
+      final sentCompleter2 = question2.sentCompleter!;
       table.markSent(qid2); // qid2 has no outstanding sent completer.
 
       final err = StateError('connection torn down');
@@ -63,7 +75,10 @@ void main() {
         'piece of state this table owns, not just the Return/sent '
         'completers', () {
       final table = QuestionTable();
-      final (qid, completer, sentCompleter) = table.allocate();
+      final question = table.allocate();
+      final completer = question.returnCompleter!;
+      final sentCompleter = question.sentCompleter!;
+      final qid = question.id;
       completer.future.ignore();
       sentCompleter.future.ignore();
       table.recordParamExportIds(qid, [10, 11]);
@@ -79,7 +94,9 @@ void main() {
     test('tearDown does not double-complete a Return completer the caller '
         'already settled itself', () async {
       final table = QuestionTable();
-      final (_, completer, sentCompleter) = table.allocate();
+      final question = table.allocate();
+      final completer = question.returnCompleter!;
+      final sentCompleter = question.sentCompleter!;
       sentCompleter.future.ignore();
       final originalError = StateError('already failed');
       completer.completeError(originalError);
@@ -92,7 +109,8 @@ void main() {
     test('param export ids: recording an empty list stores nothing, so '
         'takeParamExportIds reports no entry to roll back or release', () {
       final table = QuestionTable();
-      final (qid, _, _) = table.allocate();
+      final question = table.allocate();
+      final qid = question.id;
 
       table.recordParamExportIds(qid, const []);
       expect(table.takeParamExportIds(qid), isNull);
@@ -102,7 +120,8 @@ void main() {
         'takeParamExportIds exactly once, then reports nothing on a second '
         'call for the same qid', () {
       final table = QuestionTable();
-      final (qid, _, _) = table.allocate();
+      final question = table.allocate();
+      final qid = question.id;
 
       table.recordParamExportIds(qid, [5, 6, 7]);
       expect(table.takeParamExportIds(qid), equals([5, 6, 7]));
@@ -112,19 +131,22 @@ void main() {
     test('allocateForBootstrap registers only a Return completer, with no '
         'matching sent-tracking entry', () {
       final table = QuestionTable();
-      final qid = table.allocateForBootstrap();
+      final question = table.allocateForBootstrap();
+      final qid = question.id;
+      final completer = question.returnCompleter!;
+
       expect(table.pendingCount, equals(1));
       expect(table.pendingSentCount, equals(0));
       expect(table.sentCompleterFor(qid), isNull);
-      expect(table.takeReturn(qid), isNotNull);
+      expect(table.takeReturn(qid), same(completer));
     });
 
     test('question ids are allocated monotonically and never reused across '
         'allocate()/allocateForBootstrap() calls', () {
       final table = QuestionTable();
-      final (qid1, _, _) = table.allocate();
-      final qid2 = table.allocateForBootstrap();
-      final (qid3, _, _) = table.allocate();
+      final qid1 = table.allocate().id;
+      final qid2 = table.allocateForBootstrap().id;
+      final qid3 = table.allocate().id;
       expect({qid1, qid2, qid3}.length, equals(3));
       expect(qid2, greaterThan(qid1));
       expect(qid3, greaterThan(qid2));
@@ -133,11 +155,25 @@ void main() {
     test('takeReturn removes and returns the Return completer for a '
         'tracked qid, and returns null for an unknown one', () {
       final table = QuestionTable();
-      final (qid, completer, _) = table.allocate();
+      final question = table.allocate();
+      final qid = question.id;
+      final completer = question.returnCompleter!;
 
       expect(table.takeReturn(qid), same(completer));
       expect(table.takeReturn(qid), isNull);
       expect(table.takeReturn(9999), isNull);
+    });
+
+    test('removes entry after Return and param export state are consumed', () {
+      final table = QuestionTable();
+      final question = table.allocate();
+      final qid = question.id;
+
+      table.recordParamExportIds(qid, [10]);
+      table.markSent(qid);
+      expect(table.takeReturn(qid), isNotNull);
+      expect(table.takeParamExportIds(qid), equals([10]));
+      expect(table.remove(qid), isNull);
     });
   });
 }

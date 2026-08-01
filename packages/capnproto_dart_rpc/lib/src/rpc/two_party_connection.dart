@@ -259,11 +259,11 @@ class TwoPartyRpcConnection implements RpcConnection {
     }
 
     // Send Bootstrap message.
-    final qid = _questionTable.allocateForBootstrap();
-    _bootstrapQuestionId = qid;
+    final question = _questionTable.allocateForBootstrap();
+    _bootstrapQuestionId = question.id;
     _bootstrapCompleter = Completer<int>();
 
-    _sendRaw(buildBootstrapMessage(qid));
+    _sendRaw(buildBootstrapMessage(question.id));
 
     _bootstrapCap = _ImportedCapability(this, _bootstrapCompleter!.future);
     return factory.fromCapability(_bootstrapCap!);
@@ -302,7 +302,10 @@ class TwoPartyRpcConnection implements RpcConnection {
       throw RpcException('connection is closed', kind: ErrorKind.disconnected);
     }
 
-    final (qid, completer, sentCompleter) = _questionTable.allocate();
+    final question = _questionTable.allocate();
+    final qid = question.id;
+    final completer = question.returnCompleter!;
+    final sentCompleter = question.sentCompleter!;
     sentCompleter.future.ignore();
 
     // Build cap table and send the wire message (may need async for cap resolution).
@@ -319,13 +322,11 @@ class TwoPartyRpcConnection implements RpcConnection {
     ).catchError((Object e, StackTrace st) {
       // _buildAndSendCall only ever completes its Future with an error
       // before _sendRaw has run (nothing after that point in its body can
-      // throw) — see _rollbackQuestionParamExports's doc comment — so any
-      // params export refs _resolveCapTable already bumped for this qid
-      // never actually reached the peer and must be rolled back here.
-      _rollbackQuestionParamExports(qid);
-      _questionTable.abandon(qid);
-      if (!sentCompleter.isCompleted) sentCompleter.completeError(e, st);
-      if (!completer.isCompleted) completer.completeError(e, st);
+      // throw) — any params export refs _resolveCapTable already bumped for
+      // this qid never actually reached the peer and must be rolled back
+      // here via failBeforeSend.
+      final ids = _questionTable.failBeforeSend(question, e, st);
+      if (ids != null) _applyReleaseParamCaps(ids);
     });
 
     final resultFuture = _awaitReturn(qid, completer);
@@ -360,7 +361,10 @@ class TwoPartyRpcConnection implements RpcConnection {
     }
     _importTable.throwIfBroken(importId);
 
-    final (qid, completer, sentCompleter) = _questionTable.allocate();
+    final question = _questionTable.allocate();
+    final qid = question.id;
+    final completer = question.returnCompleter!;
+    final sentCompleter = question.sentCompleter!;
     sentCompleter.future.ignore();
 
     void onSent() {
@@ -371,11 +375,10 @@ class TwoPartyRpcConnection implements RpcConnection {
       // Same invariant as _startCall's catchError: every path below that
       // reaches onError does so before _sendRaw ever runs (both the sync
       // branch and the async IIFE only call onSent(), never onError(), once
-      // _sendRaw succeeds) — see _rollbackQuestionParamExports's doc comment.
-      _rollbackQuestionParamExports(qid);
-      _questionTable.abandon(qid);
-      if (!sentCompleter.isCompleted) sentCompleter.completeError(e, st);
-      if (!completer.isCompleted) completer.completeError(e, st);
+      // _sendRaw succeeds) — any params export refs already recorded for
+      // this qid need to be rolled back here via failBeforeSend.
+      final ids = _questionTable.failBeforeSend(question, e, st);
+      if (ids != null) _applyReleaseParamCaps(ids);
     }
 
     try {
@@ -629,7 +632,10 @@ class TwoPartyRpcConnection implements RpcConnection {
       throw RpcException('connection is closed', kind: ErrorKind.disconnected);
     }
 
-    final (qid, completer, sentCompleter) = _questionTable.allocate();
+    final question = _questionTable.allocate();
+    final qid = question.id;
+    final completer = question.returnCompleter!;
+    final sentCompleter = question.sentCompleter!;
     sentCompleter.future.ignore();
 
     _buildAndSendCallBuilding(
@@ -645,10 +651,8 @@ class TwoPartyRpcConnection implements RpcConnection {
     ).catchError((Object e, StackTrace st) {
       // Same invariant as _startCall's catchError, for
       // _buildAndSendCallBuilding instead — see _rollbackQuestionParamExports.
-      _rollbackQuestionParamExports(qid);
-      _questionTable.abandon(qid);
-      if (!sentCompleter.isCompleted) sentCompleter.completeError(e, st);
-      if (!completer.isCompleted) completer.completeError(e, st);
+      final ids = _questionTable.failBeforeSend(question, e, st);
+      if (ids != null) _applyReleaseParamCaps(ids);
     });
 
     final resultFuture = _awaitReturn(qid, completer);
@@ -1326,7 +1330,10 @@ class TwoPartyRpcConnection implements RpcConnection {
     _ImportedCapability target,
     TailCall tailCall,
   ) {
-    final (qid, completer, sentCompleter) = _questionTable.allocate();
+    final question = _questionTable.allocate();
+    final qid = question.id;
+    final completer = question.returnCompleter;
+    final sentCompleter = question.sentCompleter!;
 
     _buildAndSendCall(
       qid: qid,
@@ -1340,23 +1347,28 @@ class TwoPartyRpcConnection implements RpcConnection {
       paramsCapabilities: tailCall.paramsCapabilities,
       sendResultsToYourself: true,
     ).catchError((Object e, StackTrace st) {
-      // Same invariant as _startCall's catchError — see
-      // _rollbackQuestionParamExports. Usually a no-op here: tailCall's
+      // Same invariant as _startCall's catchError — any params export refs
+      // already recorded for this qid need to be rolled back here via
+      // failBeforeSend. Usually a no-op here: tailCall's
       // params are almost always _ImportedCapability from this same
       // connection, which _resolveCapTable categorizes as receiverHosted
       // (no export created) — but a receiverHosted-descriptor param on the
       // *original* incoming call resolves to this vat's own capability
       // object (see _capabilityFromDescriptor's disc-3 case), which *does*
       // get a fresh senderHosted export when forwarded here.
-      _rollbackQuestionParamExports(qid);
-      _questionTable.abandon(qid);
-      if (!sentCompleter.isCompleted) sentCompleter.completeError(e, st);
-      if (!completer.isCompleted) completer.completeError(e, st);
+      final ids = _questionTable.failBeforeSend(question, e, st);
+      if (ids != null) _applyReleaseParamCaps(ids);
     });
 
-    completer.future
+    completer!.future
         .then(
-          (_) => _sendRaw(buildFinishMessage(qid, releaseResultCaps: false)),
+          (_) {
+            _questionTable.takeParamExportIds(qid);
+            _sendRaw(buildFinishMessage(qid, releaseResultCaps: false));
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            _questionTable.takeParamExportIds(qid);
+          },
         )
         .ignore();
 
@@ -1657,10 +1669,6 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// wire — see each call site's own doc comment for why that invariant
   /// holds — so this is safe to call unconditionally there, with no separate
   /// "was it actually sent" flag to track.
-  void _rollbackQuestionParamExports(int qid) {
-    final ids = _questionTable.takeParamExportIds(qid);
-    if (ids != null) _applyReleaseParamCaps(ids);
-  }
 
   void _handleResolve(RpcMessage msg) {
     if (msg.isResolveException) {
