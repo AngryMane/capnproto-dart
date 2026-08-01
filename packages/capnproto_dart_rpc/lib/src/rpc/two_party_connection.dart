@@ -1360,7 +1360,13 @@ class TwoPartyRpcConnection implements RpcConnection {
 
     completer!.future
         .then(
-          (_) => _sendRaw(buildFinishMessage(qid, releaseResultCaps: false)),
+          (_) {
+            _questionTable.takeParamExportIds(qid);
+            _sendRaw(buildFinishMessage(qid, releaseResultCaps: false));
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            _questionTable.takeParamExportIds(qid);
+          },
         )
         .ignore();
 

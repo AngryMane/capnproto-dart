@@ -93,6 +93,7 @@ class QuestionTable {
     }
     if (question != null) {
       question.sentCompleter = null;
+      _removeIfEmpty(question);
     }
   }
 
