@@ -26,6 +26,7 @@ import 'export_table.dart';
 import 'flow_controller.dart';
 import 'import_table.dart';
 import 'question_table.dart';
+import 'rpc_connection.dart';
 import 'rpc_exception.dart';
 import 'rpc_proto.dart';
 
