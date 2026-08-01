@@ -129,27 +129,82 @@ class AnswerTable {
     _answers[qid] = DispatchingAnswer(pending, cancellation);
   }
 
-  /// Called once [qid]'s dispatch settles (success or failure): drops its
-  /// dispatch-in-flight bookkeeping and reports whether the peer already
-  /// sent Finish for it while it was still running. When `true`, every
-  /// trace of [qid] has already been dropped (a Finished answer must never
-  /// be resurrected) and the caller must discard the dispatch's result
-  /// instead of answering it.
+  /// Called once [qid]'s dispatch settles (success or failure) on a path
+  /// that ends up recording no further answer state at all (connection
+  /// torn down, or a plain exception Return that needs no Finish): drops
+  /// its dispatch-in-flight bookkeeping and reports whether the peer
+  /// already sent Finish for it while it was still running. When `true`,
+  /// every trace of [qid] has already been dropped (a Finished answer must
+  /// never be resurrected) and the caller must discard the dispatch's
+  /// result instead of answering it.
+  ///
+  /// A path that *does* go on to record an answer must use
+  /// [completeDispatchSuccessfully]/[completeDispatchWithError] instead —
+  /// calling this first would still detect the early Finish correctly, but
+  /// leaves [qid] briefly untracked in between, which a caller that then
+  /// sends the Return before its own follow-up call can observe (see those
+  /// methods' doc comments).
   bool settleDispatch(int qid) {
     final wasFinishedEarly = _answers[qid] is FinishedBeforeCompletion;
     _answers.remove(qid);
     return wasFinishedEarly;
   }
 
-  /// Records [qid] as answered and awaiting Finish — covers every Return
-  /// variant that doesn't need its error retained for a racing
-  /// `takeFromOtherQuestion` (see [completeWithError] for the one that
-  /// does): a real result (with [resolved] set so pipelined calls can
-  /// target it, and [resultExportIds] the export ids a later
-  /// Finish(releaseResultCaps: true) should release), a directly-resolved
-  /// answer such as Bootstrap's ([resolved] set, no export ids of its own
-  /// to release), or a Return with no result payload at all (an exception,
-  /// or a takeFromOtherQuestion forward — neither [resolved] nor
+  /// Atomically settles [qid]'s live dispatch as answered successfully: if
+  /// Finish already arrived for it while the dispatch was running, drops
+  /// every trace of it and returns `false` — the caller must then discard
+  /// the dispatch's result instead of answering it, exactly like
+  /// [settleDispatch] reporting `true`. Otherwise records
+  /// [resolved]/[resultExportIds] as the answer awaiting Finish (see
+  /// [completeSuccessfully], which this shares its recorded state with)
+  /// and returns `true`.
+  ///
+  /// Call this *before* actually sending the Return. Unlike calling
+  /// [settleDispatch] first and a separate call to record the answer
+  /// second, this never leaves [qid] briefly untracked in between — a
+  /// caller that sent the Return between those two calls would otherwise
+  /// risk a synchronously-delivered Finish, duplicate Call, or pipelined
+  /// Call for the same [qid] (e.g. over an in-memory or `sync: true`
+  /// transport, where sending can reenter this table before the second
+  /// call ever runs) observing state this table never actually held.
+  bool completeDispatchSuccessfully(
+    int qid, {
+    ResolvedAnswer? resolved,
+    List<int> resultExportIds = const [],
+  }) {
+    if (_answers[qid] is FinishedBeforeCompletion) {
+      _answers.remove(qid);
+      return false;
+    }
+    _answers[qid] = AnsweredState(
+      resolved: resolved,
+      resultExportIds: resultExportIds,
+    );
+    return true;
+  }
+
+  /// [completeDispatchSuccessfully]'s counterpart for a dispatch that
+  /// failed with [error] retained for a racing `takeFromOtherQuestion` —
+  /// only used on the sendResultsTo=yourself failure path, where nothing
+  /// is put on the wire that a normal Return.exception would otherwise
+  /// carry. Same atomicity contract: call before sending, `false` means
+  /// discard the failure instead of answering it.
+  bool completeDispatchWithError(int qid, CapnpException error) {
+    if (_answers[qid] is FinishedBeforeCompletion) {
+      _answers.remove(qid);
+      return false;
+    }
+    _answers[qid] = FailedAnswerState(error);
+    return true;
+  }
+
+  /// Records [qid] as answered and awaiting Finish, for a Return sent
+  /// without ever going through a live dispatch (so no early-Finish race
+  /// is possible — see [completeDispatchSuccessfully] for the dispatch
+  /// counterpart that must guard against one): a directly-resolved answer
+  /// such as Bootstrap's ([resolved] set, no export ids of its own to
+  /// release), or a Return with no result payload at all (an exception, or
+  /// a takeFromOtherQuestion forward — neither [resolved] nor
   /// [resultExportIds] set).
   void completeSuccessfully(
     int qid, {
@@ -160,14 +215,6 @@ class AnswerTable {
       resolved: resolved,
       resultExportIds: resultExportIds,
     );
-  }
-
-  /// Records [qid] as answered with [error] retained for a racing
-  /// `takeFromOtherQuestion` — only used on the sendResultsTo=yourself
-  /// failure path, where nothing is put on the wire that a normal
-  /// Return.exception would otherwise carry.
-  void completeWithError(int qid, CapnpException error) {
-    _answers[qid] = FailedAnswerState(error);
   }
 
   /// Applies an incoming Finish for [qid]: drops its answer state and
