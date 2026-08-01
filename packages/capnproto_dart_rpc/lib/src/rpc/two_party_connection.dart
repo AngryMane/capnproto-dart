@@ -322,9 +322,9 @@ class TwoPartyRpcConnection implements RpcConnection {
     ).catchError((Object e, StackTrace st) {
       // _buildAndSendCall only ever completes its Future with an error
       // before _sendRaw has run (nothing after that point in its body can
-      // throw) — see _rollbackQuestionParamExports's doc comment — so any
-      // params export refs _resolveCapTable already bumped for this qid
-      // never actually reached the peer and must be rolled back here.
+      // throw) — any params export refs _resolveCapTable already bumped for
+      // this qid never actually reached the peer and must be rolled back
+      // here via failBeforeSend.
       final ids = _questionTable.failBeforeSend(question, e, st);
       if (ids != null) _applyReleaseParamCaps(ids);
     });
@@ -375,7 +375,8 @@ class TwoPartyRpcConnection implements RpcConnection {
       // Same invariant as _startCall's catchError: every path below that
       // reaches onError does so before _sendRaw ever runs (both the sync
       // branch and the async IIFE only call onSent(), never onError(), once
-      // _sendRaw succeeds) — see _rollbackQuestionParamExports's doc comment.
+      // _sendRaw succeeds) — any params export refs already recorded for
+      // this qid need to be rolled back here via failBeforeSend.
       final ids = _questionTable.failBeforeSend(question, e, st);
       if (ids != null) _applyReleaseParamCaps(ids);
     }
@@ -1346,8 +1347,9 @@ class TwoPartyRpcConnection implements RpcConnection {
       paramsCapabilities: tailCall.paramsCapabilities,
       sendResultsToYourself: true,
     ).catchError((Object e, StackTrace st) {
-      // Same invariant as _startCall's catchError — see
-      // _rollbackQuestionParamExports. Usually a no-op here: tailCall's
+      // Same invariant as _startCall's catchError — any params export refs
+      // already recorded for this qid need to be rolled back here via
+      // failBeforeSend. Usually a no-op here: tailCall's
       // params are almost always _ImportedCapability from this same
       // connection, which _resolveCapTable categorizes as receiverHosted
       // (no export created) — but a receiverHosted-descriptor param on the
