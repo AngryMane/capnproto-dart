@@ -303,145 +303,223 @@ class TwoPartyRpcConnection implements RpcConnection {
   // Internal: sending a method call through an imported capability
   // ---------------------------------------------------------------------------
 
-  /// Allocates a question ID immediately, then asynchronously builds the
-  /// cap-table entries and sends the Call message.  Returns both the question
-  /// ID (available synchronously for pipelining) and the result future.
-  ///
-  /// Use [importIdFuture] for an `importedCap` target; set
-  /// [targetPromisedAnswerQid] + [targetTransformPath] for a
-  /// `promisedAnswer` target (wire-level pipelining) — the full
-  /// getPointerField hop sequence into the parent answer, not just a single
-  /// index, so a capability nested more than one struct deep is expressible
-  /// (see [RpcCapDescriptor.path]).
-  (int, Future<DispatchResult>) _startCall(
-    Future<int>? importIdFuture,
-    int interfaceId,
-    int methodId,
-    Uint8List paramsBytes, {
-    List<Capability> paramsCapabilities = const [],
-    int? targetPromisedAnswerQid,
-    List<int> targetTransformPath = const [],
+  /// True when starting a Call against [target] needs to `await` something
+  /// before any side effect (an export refcount bump, `_sendRaw`) can run —
+  /// see [_resolveCapTableMaybeSync]'s matching doc comment for why this
+  /// must be checked before touching anything with a side effect.
+  bool _targetNeedsAsync(OutgoingCallTarget target) => switch (target) {
+    ImportedCapabilityTarget(importId: final id) => id is! int,
+    PromisedAnswerTarget(questionId: final qid) =>
+      _questionTable.sentCompleterFor(qid) != null,
+  };
+
+  /// Builds an outgoing Call's wire bytes against [target]/[params],
+  /// synchronously when possible (mirrors the old `_startResolvedImportCall`
+  /// fast path: no `Future`/microtask indirection when [target]'s import id
+  /// is already known and [paramsCapabilities] resolves synchronously) and
+  /// asynchronously otherwise, via [_buildOutgoingCallBytesAsync].
+  FutureOr<Uint8List> _buildOutgoingCallBytes({
+    required int qid,
+    required OutgoingCallTarget target,
+    required OutgoingParams params,
+    required int interfaceId,
+    required int methodId,
+    required List<Capability> paramsCapabilities,
+    bool sendResultsToYourself = false,
   }) {
-    if (_closedError != null) {
-      throw RpcException('connection is closed', kind: ErrorKind.disconnected);
+    final buildParams = switch (params) {
+      SerializedParams(bytes: final b) =>
+        (AnyPointerBuilder p) =>
+            p.setMessageBytes(b, preserveCapabilityPointers: true),
+      BuilderParams(build: final b) => b,
+    };
+
+    if (_targetNeedsAsync(target)) {
+      return _buildOutgoingCallBytesAsync(
+        qid: qid,
+        target: target,
+        buildParams: buildParams,
+        interfaceId: interfaceId,
+        methodId: methodId,
+        paramsCapabilities: paramsCapabilities,
+        sendResultsToYourself: sendResultsToYourself,
+      );
     }
 
-    final question = _questionTable.allocate();
-    final qid = question.id;
-    final completer = question.returnCompleter!;
-    final sentCompleter = question.sentCompleter!;
-    sentCompleter.future.ignore();
-
-    // Build cap table and send the wire message (may need async for cap resolution).
-    _buildAndSendCall(
-      qid: qid,
-      sentCompleter: sentCompleter,
-      importIdFuture: importIdFuture,
+    int targetImportId = 0;
+    int? targetPromisedAnswerQid;
+    var targetTransformPath = const <int>[];
+    switch (target) {
+      case ImportedCapabilityTarget(importId: final id):
+        targetImportId = id as int; // _targetNeedsAsync confirmed this above
+        _importTable.throwIfBroken(targetImportId);
+      case PromisedAnswerTarget(questionId: final pqid, transformPath: final path):
+        targetPromisedAnswerQid = pqid;
+        targetTransformPath = path;
+    }
+    return buildCallMessageBuildingMaybeSync(
+      questionId: qid,
+      targetImportId: targetImportId,
       targetPromisedAnswerQid: targetPromisedAnswerQid,
       targetTransformPath: targetTransformPath,
       interfaceId: interfaceId,
       methodId: methodId,
-      paramsBytes: paramsBytes,
-      paramsCapabilities: paramsCapabilities,
-    ).catchError((Object e, StackTrace st) {
-      // _buildAndSendCall only ever completes its Future with an error
-      // before _sendRaw has run (nothing after that point in its body can
-      // throw) — any params export refs _resolveCapTable already bumped for
-      // this qid never actually reached the peer and must be rolled back
-      // here via failBeforeSend.
-      final ids = _questionTable.failBeforeSend(question, e, st);
-      if (ids != null) _applyReleaseParamCaps(ids);
-    });
-
-    final resultFuture = _awaitReturn(qid, completer);
-    return (qid, resultFuture);
+      buildParams: buildParams,
+      resolveDescriptors:
+          () => _resolveCapTableMaybeSync(paramsCapabilities, qid: qid),
+      sendResultsToYourself: sendResultsToYourself,
+    );
   }
 
-  /// Synchronous-when-possible fast path shared by [_ImportedCapability]'s
-  /// `dispatch`/`dispatchBuilding`: since [importId] is already known
-  /// synchronously here (no `Future` to await), this skips
-  /// [_startCall]/[_startCallBuilding]'s `Future.value(...)`/`await`
-  /// indirection for it — each `await`, even of an already-completed
-  /// Future, costs at least one microtask tick. [buildParams] writes params
-  /// directly into the outgoing Call, same as [_startCallBuilding]; callers
-  /// with pre-built bytes pass `(anyPtr) => anyPtr.setMessageBytes(bytes,
-  /// preserveCapabilityPointers: true)` (see [buildCallMessage]'s own
-  /// delegation to the *Building variants for the same pattern).
+  /// Async branch of [_buildOutgoingCallBytes] — awaits whatever [target]
+  /// needs (an import id, or the promisedAnswer target's parent being sent),
+  /// then resolves the capTable.
   ///
-  /// The capTable is resolved via [_resolveCapTableMaybeSync], which stays
-  /// synchronous unless [paramsCapabilities] contains an import whose own
-  /// ID isn't yet known synchronously — even then this is still strictly
-  /// better than the fully generic path, since [importId] itself never
-  /// needs awaiting either way.
-  (int, Future<DispatchResult>) _startResolvedImportCall(
-    int importId,
-    int interfaceId,
-    int methodId,
-    void Function(AnyPointerBuilder) buildParams,
-    List<Capability> paramsCapabilities,
-  ) {
-    if (_closedError != null) {
-      throw RpcException('connection is closed', kind: ErrorKind.disconnected);
+  /// Uses [buildCallMessageBuilding] (a `resolveCapTable` callback invoked
+  /// only *after* [buildParams] has returned), not a pre-resolve-then-sync-
+  /// build sequence: [paramsCapabilities] may still be being appended to by
+  /// [buildParams] itself for a builder-based Call (see [Capability.
+  /// dispatchBuilding]'s contract) — resolving the capTable before
+  /// [buildParams] runs would silently miss those. This is safe and
+  /// equivalent for a serialized-params Call too, since the synthetic
+  /// `setMessageBytes` [buildParams] built by [_buildOutgoingCallBytes]
+  /// never appends to [paramsCapabilities].
+  Future<Uint8List> _buildOutgoingCallBytesAsync({
+    required int qid,
+    required OutgoingCallTarget target,
+    required void Function(AnyPointerBuilder) buildParams,
+    required int interfaceId,
+    required int methodId,
+    required List<Capability> paramsCapabilities,
+    required bool sendResultsToYourself,
+  }) async {
+    int targetImportId = 0;
+    int? targetPromisedAnswerQid;
+    var targetTransformPath = const <int>[];
+    switch (target) {
+      case ImportedCapabilityTarget(importId: final id):
+        targetImportId = id is int ? id : await id;
+        _importTable.throwIfBroken(targetImportId);
+      case PromisedAnswerTarget(questionId: final pqid, transformPath: final path):
+        // For promisedAnswer targets, wait until the parent Call is on the
+        // wire so the server always receives the parent before the
+        // pipelined call.
+        final parentSent = _questionTable.sentCompleterFor(pqid);
+        if (parentSent != null) await parentSent.future;
+        targetPromisedAnswerQid = pqid;
+        targetTransformPath = path;
     }
-    _importTable.throwIfBroken(importId);
+    return buildCallMessageBuilding(
+      questionId: qid,
+      targetImportId: targetImportId,
+      targetPromisedAnswerQid: targetPromisedAnswerQid,
+      targetTransformPath: targetTransformPath,
+      interfaceId: interfaceId,
+      methodId: methodId,
+      buildParams: buildParams,
+      resolveCapTable:
+          () async => await _resolveCapTableMaybeSync(paramsCapabilities, qid: qid),
+      sendResultsToYourself: sendResultsToYourself,
+    );
+  }
 
-    final question = _questionTable.allocate();
+  /// The single site wiring [QuestionTable.markSent] (on success) and
+  /// [QuestionTable.failBeforeSend] + [_applyReleaseParamCaps] (on failure)
+  /// together for an outgoing Call — shared by [_startOutgoingCall] and
+  /// [_sendTailForwardCall], so this pairing is never wired up ad hoc at a
+  /// third call site. Every path that reaches [onError] does so before
+  /// `_sendRaw` ever runs (nothing after that point in [_buildOutgoingCallBytes]/
+  /// [_buildOutgoingCallBytesAsync] can throw) — any params export refs
+  /// already bumped for [question] never actually reached the peer and must
+  /// be rolled back here.
+  void _sendOutgoingCall({
+    required OutgoingQuestion question,
+    required OutgoingCallTarget target,
+    required OutgoingParams params,
+    required int interfaceId,
+    required int methodId,
+    required List<Capability> paramsCapabilities,
+    bool sendResultsToYourself = false,
+  }) {
     final qid = question.id;
-    final completer = question.returnCompleter!;
-    final sentCompleter = question.sentCompleter!;
-    sentCompleter.future.ignore();
-
-    void onSent() {
-      _questionTable.markSent(qid);
-    }
-
     void onError(Object e, StackTrace st) {
-      // Same invariant as _startCall's catchError: every path below that
-      // reaches onError does so before _sendRaw ever runs (both the sync
-      // branch and the async IIFE only call onSent(), never onError(), once
-      // _sendRaw succeeds) — any params export refs already recorded for
-      // this qid need to be rolled back here via failBeforeSend.
       final ids = _questionTable.failBeforeSend(question, e, st);
       if (ids != null) _applyReleaseParamCaps(ids);
     }
 
     try {
-      final builtOrFuture = buildCallMessageBuildingMaybeSync(
-        questionId: qid,
-        targetImportId: importId,
+      final builtOrFuture = _buildOutgoingCallBytes(
+        qid: qid,
+        target: target,
+        params: params,
         interfaceId: interfaceId,
         methodId: methodId,
-        buildParams: buildParams,
-        resolveDescriptors:
-            () => _resolveCapTableMaybeSync(paramsCapabilities, qid: qid),
+        paramsCapabilities: paramsCapabilities,
+        sendResultsToYourself: sendResultsToYourself,
       );
-      if (builtOrFuture is Future<Uint8List>) {
-        () async {
-          try {
-            final bytes = await builtOrFuture;
-            _sendRaw(bytes);
-            onSent();
-          } catch (e, st) {
-            onError(e, st);
-          }
-        }();
-      } else {
+      if (builtOrFuture is Uint8List) {
         _sendRaw(builtOrFuture);
-        onSent();
+        _questionTable.markSent(qid);
+      } else {
+        builtOrFuture.then((bytes) {
+          _sendRaw(bytes);
+          _questionTable.markSent(qid);
+        }, onError: onError);
       }
     } catch (e, st) {
       onError(e, st);
     }
-
-    return (qid, _awaitReturn(qid, completer));
   }
 
-  /// Canonical async capTable resolution shared by [_buildAndSendCall],
-  /// [_buildAndSendCallBuilding], and (via [_resolveCapTableMaybeSync])
-  /// [_startResolvedImportCall]. When [qid] is given, records every
-  /// senderHosted/senderPromise export ID produced (this call's own params
-  /// capabilities) against it — see [_recordParamExportIds].
-  Future<List<RpcCapDescriptor>> _resolveCapTable(
+  /// Starts an outgoing Call against [target] with [params]. Allocates a
+  /// question ID immediately (available synchronously for pipelining, via
+  /// [StartedCall.questionId]), then builds and sends the Call message —
+  /// synchronously when possible, asynchronously otherwise — via
+  /// [_sendOutgoingCall]. [StartedCall.result] resolves once the matching
+  /// Return arrives.
+  StartedCall _startOutgoingCall({
+    required OutgoingCallTarget target,
+    required OutgoingParams params,
+    required int interfaceId,
+    required int methodId,
+    List<Capability> paramsCapabilities = const [],
+  }) {
+    if (_closedError != null) {
+      throw RpcException('connection is closed', kind: ErrorKind.disconnected);
+    }
+    // Mirrors the old _startResolvedImportCall's up-front check: a broken
+    // import already known synchronously throws immediately, before a
+    // question id is even allocated. An import id that still needs
+    // awaiting, or a promisedAnswer target, is checked later instead, once
+    // _buildOutgoingCallBytes[Async] actually reaches it.
+    if (target case ImportedCapabilityTarget(importId: final id) when id is int) {
+      _importTable.throwIfBroken(id);
+    }
+
+    final question = _questionTable.allocate();
+    question.sentCompleter!.future.ignore();
+
+    _sendOutgoingCall(
+      question: question,
+      target: target,
+      params: params,
+      interfaceId: interfaceId,
+      methodId: methodId,
+      paramsCapabilities: paramsCapabilities,
+    );
+
+    return StartedCall(
+      question.id,
+      _awaitReturn(question.id, question.returnCompleter!),
+    );
+  }
+
+  /// Canonical async capTable resolution — the fallback [_resolveCapTableMaybeSync]
+  /// delegates to when it can't resolve everything synchronously. When [qid]
+  /// is given, records every senderHosted/senderPromise export ID produced
+  /// (this call's own params capabilities) against it — see
+  /// [_recordParamExportIds].
+  Future<List<RpcCapDescriptor>> _resolveCapTableAsync(
     List<Capability> paramsCapabilities, {
     int? qid,
   }) async {
@@ -477,9 +555,8 @@ class TwoPartyRpcConnection implements RpcConnection {
           // peer sees a question id it hasn't been told about yet and
           // rejects it (e.g. capnp-rust's "invalid 'receiver answer'").
           // Mirrors the promisedAnswer-*target* guard in
-          // _buildAndSendCall/_buildAndSendCallBuilding, but for a param
-          // capability referencing another question instead of this call's
-          // own target.
+          // _buildOutgoingCallBytesAsync, but for a param capability
+          // referencing another question instead of this call's own target.
           final parentSent = _questionTable.sentCompleterFor(cap._parentQid);
           if (parentSent != null) await parentSent.future;
           capEntries.add(
@@ -511,15 +588,16 @@ class TwoPartyRpcConnection implements RpcConnection {
     _questionTable.recordParamExportIds(qid, ids);
   }
 
-  /// Synchronous variant of [_resolveCapTable] for [_startResolvedImportCall]:
-  /// resolves synchronously when every capability is already locally
-  /// resolvable (true for everything except an [_ImportedCapability] whose
-  /// own import ID isn't cached yet), falling back to [_resolveCapTable]
-  /// as a whole otherwise. Checking "is everything resolvable" up front,
-  /// before touching anything with a side effect (like
-  /// [_getOrCreateExportId], which isn't idempotent — it bumps a refcount
-  /// on every call), avoids resolving some entries synchronously and then
-  /// re-resolving the whole list again through [_resolveCapTable].
+  /// Synchronous variant of [_resolveCapTableAsync] for
+  /// [_buildOutgoingCallBytes]'s sync fast path: resolves synchronously when
+  /// every capability is already locally resolvable (true for everything
+  /// except an [_ImportedCapability] whose own import ID isn't cached yet),
+  /// falling back to [_resolveCapTableAsync] as a whole otherwise. Checking
+  /// "is everything resolvable" up front, before touching anything with a
+  /// side effect (like [_getOrCreateExportId], which isn't idempotent — it
+  /// bumps a refcount on every call), avoids resolving some entries
+  /// synchronously and then re-resolving the whole list again through
+  /// [_resolveCapTableAsync].
   FutureOr<List<RpcCapDescriptor>> _resolveCapTableMaybeSync(
     List<Capability> paramsCapabilities, {
     int? qid,
@@ -538,7 +616,7 @@ class TwoPartyRpcConnection implements RpcConnection {
               !cap._hasResolved &&
               _questionTable.sentCompleterFor(cap._parentQid) != null);
     });
-    if (needsAsync) return _resolveCapTable(paramsCapabilities, qid: qid);
+    if (needsAsync) return _resolveCapTableAsync(paramsCapabilities, qid: qid);
 
     final capEntries = <RpcCapDescriptor>[];
     // See _resolveCapTable's matching comment: try/finally so a broken
@@ -572,175 +650,6 @@ class TwoPartyRpcConnection implements RpcConnection {
       if (qid != null) _recordParamExportIds(qid, capEntries);
     }
     return capEntries;
-  }
-
-  Future<void> _buildAndSendCall({
-    required int qid,
-    required Completer<void> sentCompleter,
-    required Future<int>? importIdFuture,
-    required int? targetPromisedAnswerQid,
-    required List<int> targetTransformPath,
-    required int interfaceId,
-    required int methodId,
-    required Uint8List paramsBytes,
-    required List<Capability> paramsCapabilities,
-    bool sendResultsToYourself = false,
-  }) async {
-    // For promisedAnswer targets, wait until the parent Call is on the wire so
-    // the server always receives the parent before the pipelined call.
-    if (targetPromisedAnswerQid != null) {
-      final parentSent = _questionTable.sentCompleterFor(
-        targetPromisedAnswerQid,
-      );
-      if (parentSent != null) await parentSent.future;
-    }
-
-    // Categorize each capability param:
-    //   - Imported cap from this same peer → receiverHosted
-    //   - Everything else → senderHosted export
-    final capEntries = await _resolveCapTable(paramsCapabilities, qid: qid);
-
-    if (targetPromisedAnswerQid != null) {
-      _sendRaw(
-        buildCallMessage(
-          questionId: qid,
-          targetPromisedAnswerQid: targetPromisedAnswerQid,
-          targetTransformPath: targetTransformPath,
-          interfaceId: interfaceId,
-          methodId: methodId,
-          paramsBytes: paramsBytes,
-          capTableDescriptors: capEntries,
-          sendResultsToYourself: sendResultsToYourself,
-        ),
-      );
-    } else {
-      final importId = await importIdFuture!;
-      _importTable.throwIfBroken(importId);
-      _sendRaw(
-        buildCallMessage(
-          questionId: qid,
-          targetImportId: importId,
-          interfaceId: interfaceId,
-          methodId: methodId,
-          paramsBytes: paramsBytes,
-          capTableDescriptors: capEntries,
-          sendResultsToYourself: sendResultsToYourself,
-        ),
-      );
-    }
-
-    // Signal to any pipelined calls waiting on this question.
-    _questionTable.markSent(qid);
-  }
-
-  /// Zero-copy counterpart of [_startCall]: [buildParams] writes params
-  /// directly into the outgoing Call's `Payload.content`, instead of the
-  /// caller pre-building a standalone message. See [Capability.
-  /// dispatchBuilding].
-  ///
-  /// [paramsCapabilities] may still be being appended to when this is
-  /// called (see [Capability.dispatchBuilding]'s contract) — capTable
-  /// resolution only reads it from inside [buildCallMessageBuilding]'s
-  /// `resolveCapTable` callback, which [buildCallMessageBuilding] itself
-  /// only invokes after [buildParams] has returned.
-  (int, Future<DispatchResult>) _startCallBuilding(
-    Future<int>? importIdFuture,
-    int interfaceId,
-    int methodId,
-    void Function(AnyPointerBuilder) buildParams, {
-    List<Capability> paramsCapabilities = const [],
-    int? targetPromisedAnswerQid,
-    List<int> targetTransformPath = const [],
-  }) {
-    if (_closedError != null) {
-      throw RpcException('connection is closed', kind: ErrorKind.disconnected);
-    }
-
-    final question = _questionTable.allocate();
-    final qid = question.id;
-    final completer = question.returnCompleter!;
-    final sentCompleter = question.sentCompleter!;
-    sentCompleter.future.ignore();
-
-    _buildAndSendCallBuilding(
-      qid: qid,
-      sentCompleter: sentCompleter,
-      importIdFuture: importIdFuture,
-      targetPromisedAnswerQid: targetPromisedAnswerQid,
-      targetTransformPath: targetTransformPath,
-      interfaceId: interfaceId,
-      methodId: methodId,
-      buildParams: buildParams,
-      paramsCapabilities: paramsCapabilities,
-    ).catchError((Object e, StackTrace st) {
-      // Same invariant as _startCall's catchError, for
-      // _buildAndSendCallBuilding instead — see _rollbackQuestionParamExports.
-      final ids = _questionTable.failBeforeSend(question, e, st);
-      if (ids != null) _applyReleaseParamCaps(ids);
-    });
-
-    final resultFuture = _awaitReturn(qid, completer);
-    return (qid, resultFuture);
-  }
-
-  Future<void> _buildAndSendCallBuilding({
-    required int qid,
-    required Completer<void> sentCompleter,
-    required Future<int>? importIdFuture,
-    required int? targetPromisedAnswerQid,
-    required List<int> targetTransformPath,
-    required int interfaceId,
-    required int methodId,
-    required void Function(AnyPointerBuilder) buildParams,
-    required List<Capability> paramsCapabilities,
-    bool sendResultsToYourself = false,
-  }) async {
-    // For promisedAnswer targets, wait until the parent Call is on the wire so
-    // the server always receives the parent before the pipelined call.
-    if (targetPromisedAnswerQid != null) {
-      final parentSent = _questionTable.sentCompleterFor(
-        targetPromisedAnswerQid,
-      );
-      if (parentSent != null) await parentSent.future;
-    }
-
-    // Same categorization as _buildAndSendCall, just deferred until after
-    // buildParams has run (see this method's doc comment) by living inside
-    // resolveCapTable instead of running up front.
-    Future<List<RpcCapDescriptor>> resolveCapTable() =>
-        _resolveCapTable(paramsCapabilities, qid: qid);
-
-    if (targetPromisedAnswerQid != null) {
-      _sendRaw(
-        await buildCallMessageBuilding(
-          questionId: qid,
-          targetPromisedAnswerQid: targetPromisedAnswerQid,
-          targetTransformPath: targetTransformPath,
-          interfaceId: interfaceId,
-          methodId: methodId,
-          buildParams: buildParams,
-          resolveCapTable: resolveCapTable,
-          sendResultsToYourself: sendResultsToYourself,
-        ),
-      );
-    } else {
-      final importId = await importIdFuture!;
-      _importTable.throwIfBroken(importId);
-      _sendRaw(
-        await buildCallMessageBuilding(
-          questionId: qid,
-          targetImportId: importId,
-          interfaceId: interfaceId,
-          methodId: methodId,
-          buildParams: buildParams,
-          resolveCapTable: resolveCapTable,
-          sendResultsToYourself: sendResultsToYourself,
-        ),
-      );
-    }
-
-    // Signal to any pipelined calls waiting on this question.
-    _questionTable.markSent(qid);
   }
 
   Future<DispatchResult> _awaitReturn(
@@ -1349,7 +1258,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// correlates via `takeFromOtherQuestion` (see [_resolveLocalAnswer]),
   /// not to us. This just needs to send Finish once any Return arrives, so
   /// it talks to the wire directly rather than going through
-  /// [_startCall]/[_awaitReturn] (which expects a real result).
+  /// [_startOutgoingCall]/[_awaitReturn] (which expects a real result).
   (int, Future<void>) _sendTailForwardCall(
     _ImportedCapability target,
     TailCall tailCall,
@@ -1359,30 +1268,22 @@ class TwoPartyRpcConnection implements RpcConnection {
     final completer = question.returnCompleter;
     final sentCompleter = question.sentCompleter!;
 
-    _buildAndSendCall(
-      qid: qid,
-      sentCompleter: sentCompleter,
-      importIdFuture: target._importIdFuture,
-      targetPromisedAnswerQid: null,
-      targetTransformPath: const [],
+    // Usually a no-op rollback target: tailCall's params are almost always
+    // _ImportedCapability from this same connection, which capTable
+    // resolution categorizes as receiverHosted (no export created) — but a
+    // receiverHosted-descriptor param on the *original* incoming call
+    // resolves to this vat's own capability object (see
+    // _capabilityFromDescriptor's disc-3 case), which *does* get a fresh
+    // senderHosted export when forwarded here.
+    _sendOutgoingCall(
+      question: question,
+      target: ImportedCapabilityTarget(target._importIdFuture),
+      params: SerializedParams(tailCall.params.bytes),
       interfaceId: tailCall.interfaceId,
       methodId: tailCall.methodId,
-      paramsBytes: tailCall.params.bytes,
       paramsCapabilities: tailCall.paramsCapabilities,
       sendResultsToYourself: true,
-    ).catchError((Object e, StackTrace st) {
-      // Same invariant as _startCall's catchError — any params export refs
-      // already recorded for this qid need to be rolled back here via
-      // failBeforeSend. Usually a no-op here: tailCall's
-      // params are almost always _ImportedCapability from this same
-      // connection, which _resolveCapTable categorizes as receiverHosted
-      // (no export created) — but a receiverHosted-descriptor param on the
-      // *original* incoming call resolves to this vat's own capability
-      // object (see _capabilityFromDescriptor's disc-3 case), which *does*
-      // get a fresh senderHosted export when forwarded here.
-      final ids = _questionTable.failBeforeSend(question, e, st);
-      if (ids != null) _applyReleaseParamCaps(ids);
-    });
+    );
 
     completer!.future
         .then(
@@ -1715,12 +1616,11 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// received anything in that case, so there is no reference for it to
   /// `Release`; a real one from `Return.releaseParamCaps` would go through
   /// [_applyReleaseParamCaps] instead, once a Return can even exist. Callers
-  /// (the `catchError`/`onError` handlers alongside every `_buildAndSendCall`
-  /// / `_buildAndSendCallBuilding` / `_startResolvedImportCall` attempt) only
-  /// ever run for a build/send that failed before committing anything to the
-  /// wire — see each call site's own doc comment for why that invariant
-  /// holds — so this is safe to call unconditionally there, with no separate
-  /// "was it actually sent" flag to track.
+  /// (the `onError` handler in [_sendOutgoingCall], shared by every outgoing
+  /// Call attempt) only ever run for a build/send that failed before
+  /// committing anything to the wire — see that method's own doc comment
+  /// for why that invariant holds — so this is safe to call unconditionally
+  /// there, with no separate "was it actually sent" flag to track.
 
   void _handleResolve(RpcMessage msg) {
     if (msg.isResolveException) {
@@ -2203,8 +2103,8 @@ class TwoPartyRpcConnection implements RpcConnection {
 /// [TwoPartyRpcConnection._wireContext]. Kept separate from
 /// [TwoPartyRpcConnection] itself (rather than having the connection
 /// `implements WireCapabilityContext` directly) so wire-level entry points
-/// like [startCall]/[releaseImport] never become part of the connection's
-/// own public API.
+/// like [startOutgoingCall]/[releaseImport] never become part of the
+/// connection's own public API.
 class _TwoPartyWireCapabilityContext implements WireCapabilityContext {
   final TwoPartyRpcConnection _conn;
   _TwoPartyWireCapabilityContext(this._conn);
@@ -2217,56 +2117,18 @@ class _TwoPartyWireCapabilityContext implements WireCapabilityContext {
   Future<void> releaseImport(int importId) => _conn._releaseImport(importId);
 
   @override
-  (int, Future<DispatchResult>) startCall(
-    Future<int>? importIdFuture,
-    int interfaceId,
-    int methodId,
-    Uint8List paramsBytes, {
+  StartedCall startOutgoingCall({
+    required OutgoingCallTarget target,
+    required OutgoingParams params,
+    required int interfaceId,
+    required int methodId,
     List<Capability> paramsCapabilities = const [],
-    int? targetPromisedAnswerQid,
-    List<int> targetTransformPath = const [],
-  }) => _conn._startCall(
-    importIdFuture,
-    interfaceId,
-    methodId,
-    paramsBytes,
+  }) => _conn._startOutgoingCall(
+    target: target,
+    params: params,
+    interfaceId: interfaceId,
+    methodId: methodId,
     paramsCapabilities: paramsCapabilities,
-    targetPromisedAnswerQid: targetPromisedAnswerQid,
-    targetTransformPath: targetTransformPath,
-  );
-
-  @override
-  (int, Future<DispatchResult>) startCallBuilding(
-    Future<int>? importIdFuture,
-    int interfaceId,
-    int methodId,
-    void Function(AnyPointerBuilder) buildParams, {
-    List<Capability> paramsCapabilities = const [],
-    int? targetPromisedAnswerQid,
-    List<int> targetTransformPath = const [],
-  }) => _conn._startCallBuilding(
-    importIdFuture,
-    interfaceId,
-    methodId,
-    buildParams,
-    paramsCapabilities: paramsCapabilities,
-    targetPromisedAnswerQid: targetPromisedAnswerQid,
-    targetTransformPath: targetTransformPath,
-  );
-
-  @override
-  (int, Future<DispatchResult>) startResolvedImportCall(
-    int importId,
-    int interfaceId,
-    int methodId,
-    void Function(AnyPointerBuilder) buildParams,
-    List<Capability> paramsCapabilities,
-  ) => _conn._startResolvedImportCall(
-    importId,
-    interfaceId,
-    methodId,
-    buildParams,
-    paramsCapabilities,
   );
 
   @override

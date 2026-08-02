@@ -111,20 +111,22 @@ class _ImportedCapability extends Capability {
     }
     state.receivedCall = true;
     // state.importId is already known synchronously here (whether from
-    // cache or from the await above), so this always goes through the fast
-    // path (see TwoPartyRpcConnection._startResolvedImportCall) instead of
-    // _startCall's Future.value(...)/await indirection for it.
-    final (_, future) = _conn.startResolvedImportCall(
-      state.importId,
-      interfaceId,
-      methodId,
-      (anyPtr) => anyPtr.setMessageBytes(
-        params.bytes,
-        preserveCapabilityPointers: true,
+    // cache or from the await above), so this always goes through
+    // TwoPartyRpcConnection's synchronous fast path (ImportedCapabilityTarget
+    // holds it directly, no Future wrapping/await indirection needed).
+    final started = _conn.startOutgoingCall(
+      target: ImportedCapabilityTarget(state.importId),
+      params: BuilderParams(
+        (anyPtr) => anyPtr.setMessageBytes(
+          params.bytes,
+          preserveCapabilityPointers: true,
+        ),
       ),
-      paramsCapabilities,
+      interfaceId: interfaceId,
+      methodId: methodId,
+      paramsCapabilities: paramsCapabilities,
     );
-    return future;
+    return started.result;
   }
 
   @override
@@ -164,14 +166,14 @@ class _ImportedCapability extends Capability {
     state.receivedCall = true;
     // See dispatch()'s equivalent line for why this always takes the fast
     // path now that state.importId is known.
-    final (_, future) = _conn.startResolvedImportCall(
-      state.importId,
-      interfaceId,
-      methodId,
-      build,
-      paramsCapabilities,
+    final started = _conn.startOutgoingCall(
+      target: ImportedCapabilityTarget(state.importId),
+      params: BuilderParams(build),
+      interfaceId: interfaceId,
+      methodId: methodId,
+      paramsCapabilities: paramsCapabilities,
     );
-    return future;
+    return started.result;
   }
 
   @override
@@ -213,16 +215,16 @@ class _ImportedCapability extends Capability {
     // future takes to resolve, never the send itself, so wire ordering is
     // unaffected by window state.
     final paramsBytes = params.bytes;
-    final (_, future) = _conn.startCall(
-      Future.value(state.importId),
-      interfaceId,
-      methodId,
-      paramsBytes,
+    final started = _conn.startOutgoingCall(
+      target: ImportedCapabilityTarget(state.importId),
+      params: SerializedParams(paramsBytes),
+      interfaceId: interfaceId,
+      methodId: methodId,
       paramsCapabilities: paramsCapabilities,
     );
     final controller =
         _flowController ??= FlowController(windowSize: _conn.streamWindowSize);
-    return controller.send(paramsBytes.lengthInBytes, future);
+    return controller.send(paramsBytes.lengthInBytes, started.result);
   }
 
   @override
@@ -256,14 +258,14 @@ class _ImportedCapability extends Capability {
         return _ErrorCapCall(error, cached.stackTrace);
       }
       cached.receivedCall = true;
-      final (qid, future) = _conn.startCall(
-        Future.value(cached.importId),
-        interfaceId,
-        methodId,
-        params.bytes,
+      final started = _conn.startOutgoingCall(
+        target: ImportedCapabilityTarget(cached.importId),
+        params: SerializedParams(params.bytes),
+        interfaceId: interfaceId,
+        methodId: methodId,
         paramsCapabilities: paramsCapabilities,
       );
-      return _WireCapCall(future, _conn, qid);
+      return _WireCapCall(started.result, _conn, started.questionId);
     }
     final stateFuture = _state;
     final qidCompleter = Completer<int>();
@@ -294,15 +296,17 @@ class _ImportedCapability extends Capability {
             return Future<DispatchResult>.error(error, state.stackTrace);
           }
           state.receivedCall = true;
-          final (qid, future) = _conn.startCall(
-            Future.value(state.importId),
-            interfaceId,
-            methodId,
-            params.bytes,
+          final started = _conn.startOutgoingCall(
+            target: ImportedCapabilityTarget(state.importId),
+            params: SerializedParams(params.bytes),
+            interfaceId: interfaceId,
+            methodId: methodId,
             paramsCapabilities: paramsCapabilities,
           );
-          if (!qidCompleter.isCompleted) qidCompleter.complete(qid);
-          return future;
+          if (!qidCompleter.isCompleted) {
+            qidCompleter.complete(started.questionId);
+          }
+          return started.result;
         })
         .then((r) => r);
     result.ignore();
@@ -467,16 +471,14 @@ class _WirePipelinedCapability extends Capability {
     if (resolutionError != null) {
       return Future.error(resolutionError, _resolutionStackTrace);
     }
-    final (_, future) = _conn.startCall(
-      null,
-      interfaceId,
-      methodId,
-      params.bytes,
+    final started = _conn.startOutgoingCall(
+      target: PromisedAnswerTarget(_parentQid, transformPath: _transformPath),
+      params: SerializedParams(params.bytes),
+      interfaceId: interfaceId,
+      methodId: methodId,
       paramsCapabilities: paramsCapabilities,
-      targetPromisedAnswerQid: _parentQid,
-      targetTransformPath: _transformPath,
     );
-    return _trackPipelinedCall(future);
+    return _trackPipelinedCall(started.result);
   }
 
   @override
@@ -507,16 +509,14 @@ class _WirePipelinedCapability extends Capability {
     if (resolutionError != null) {
       return Future.error(resolutionError, _resolutionStackTrace);
     }
-    final (_, future) = _conn.startCallBuilding(
-      null,
-      interfaceId,
-      methodId,
-      build,
+    final started = _conn.startOutgoingCall(
+      target: PromisedAnswerTarget(_parentQid, transformPath: _transformPath),
+      params: BuilderParams(build),
+      interfaceId: interfaceId,
+      methodId: methodId,
       paramsCapabilities: paramsCapabilities,
-      targetPromisedAnswerQid: _parentQid,
-      targetTransformPath: _transformPath,
     );
-    return _trackPipelinedCall(future);
+    return _trackPipelinedCall(started.result);
   }
 
   @override
@@ -547,16 +547,18 @@ class _WirePipelinedCapability extends Capability {
     if (resolutionError != null) {
       return _ErrorCapCall(resolutionError, _resolutionStackTrace);
     }
-    final (qid, future) = _conn.startCall(
-      null,
-      interfaceId,
-      methodId,
-      params.bytes,
+    final started = _conn.startOutgoingCall(
+      target: PromisedAnswerTarget(_parentQid, transformPath: _transformPath),
+      params: SerializedParams(params.bytes),
+      interfaceId: interfaceId,
+      methodId: methodId,
       paramsCapabilities: paramsCapabilities,
-      targetPromisedAnswerQid: _parentQid,
-      targetTransformPath: _transformPath,
     );
-    return _WireCapCall(_trackPipelinedCall(future), _conn, qid);
+    return _WireCapCall(
+      _trackPipelinedCall(started.result),
+      _conn,
+      started.questionId,
+    );
   }
 
   @override

@@ -8,25 +8,20 @@ import 'package:capnproto_dart_rpc/src/rpc/two_party_connection.dart';
 import 'package:capnproto_dart_rpc/src/rpc/wire_capability_context.dart';
 import 'package:test/test.dart';
 
-/// One recorded [WireCapabilityContext.startCall]/`startCallBuilding`/
-/// `startResolvedImportCall` invocation.
-class StartCallInvocation {
-  final int? importId;
-  final Future<int>? importIdFuture;
+/// One recorded [WireCapabilityContext.startOutgoingCall] invocation.
+class StartOutgoingCallInvocation {
+  final OutgoingCallTarget target;
+  final OutgoingParams params;
   final int interfaceId;
   final int methodId;
   final List<Capability> paramsCapabilities;
-  final int? targetPromisedAnswerQid;
-  final List<int> targetTransformPath;
 
-  StartCallInvocation({
-    this.importId,
-    this.importIdFuture,
+  StartOutgoingCallInvocation({
+    required this.target,
+    required this.params,
     required this.interfaceId,
     required this.methodId,
     required this.paramsCapabilities,
-    this.targetPromisedAnswerQid,
-    this.targetTransformPath = const [],
   });
 }
 
@@ -36,13 +31,13 @@ class StartCallInvocation {
 /// [TwoPartyRpcConnection]/socket pair. See issue #64.
 class FakeWireCapabilityContext implements WireCapabilityContext {
   final Map<int, ImportState> _importStates = {};
-  final List<StartCallInvocation> startCallInvocations = [];
+  final List<StartOutgoingCallInvocation> startCallInvocations = [];
   final List<int> releasedImportIds = [];
   int _nextQid = 1;
 
   /// Result each recorded call's returned Future completes with. Defaults
   /// to an always-empty successful result.
-  DispatchResult Function(StartCallInvocation invocation) resultFor =
+  DispatchResult Function(StartOutgoingCallInvocation invocation) resultFor =
       (_) => DispatchResult.empty;
 
   Future<ResolvedAnswer> Function(int questionId)? onResolveAnswer;
@@ -65,67 +60,24 @@ class FakeWireCapabilityContext implements WireCapabilityContext {
     releasedImportIds.add(importId);
   }
 
-  (int, Future<DispatchResult>) _record(StartCallInvocation invocation) {
+  @override
+  StartedCall startOutgoingCall({
+    required OutgoingCallTarget target,
+    required OutgoingParams params,
+    required int interfaceId,
+    required int methodId,
+    List<Capability> paramsCapabilities = const [],
+  }) {
+    final invocation = StartOutgoingCallInvocation(
+      target: target,
+      params: params,
+      interfaceId: interfaceId,
+      methodId: methodId,
+      paramsCapabilities: paramsCapabilities,
+    );
     startCallInvocations.add(invocation);
-    final qid = _nextQid++;
-    return (qid, Future.value(resultFor(invocation)));
+    return StartedCall(_nextQid++, Future.value(resultFor(invocation)));
   }
-
-  @override
-  (int, Future<DispatchResult>) startCall(
-    Future<int>? importIdFuture,
-    int interfaceId,
-    int methodId,
-    Uint8List paramsBytes, {
-    List<Capability> paramsCapabilities = const [],
-    int? targetPromisedAnswerQid,
-    List<int> targetTransformPath = const [],
-  }) => _record(
-    StartCallInvocation(
-      importIdFuture: importIdFuture,
-      interfaceId: interfaceId,
-      methodId: methodId,
-      paramsCapabilities: paramsCapabilities,
-      targetPromisedAnswerQid: targetPromisedAnswerQid,
-      targetTransformPath: targetTransformPath,
-    ),
-  );
-
-  @override
-  (int, Future<DispatchResult>) startCallBuilding(
-    Future<int>? importIdFuture,
-    int interfaceId,
-    int methodId,
-    void Function(AnyPointerBuilder) buildParams, {
-    List<Capability> paramsCapabilities = const [],
-    int? targetPromisedAnswerQid,
-    List<int> targetTransformPath = const [],
-  }) => _record(
-    StartCallInvocation(
-      importIdFuture: importIdFuture,
-      interfaceId: interfaceId,
-      methodId: methodId,
-      paramsCapabilities: paramsCapabilities,
-      targetPromisedAnswerQid: targetPromisedAnswerQid,
-      targetTransformPath: targetTransformPath,
-    ),
-  );
-
-  @override
-  (int, Future<DispatchResult>) startResolvedImportCall(
-    int importId,
-    int interfaceId,
-    int methodId,
-    void Function(AnyPointerBuilder) buildParams,
-    List<Capability> paramsCapabilities,
-  ) => _record(
-    StartCallInvocation(
-      importId: importId,
-      interfaceId: interfaceId,
-      methodId: methodId,
-      paramsCapabilities: paramsCapabilities,
-    ),
-  );
 
   @override
   Future<ResolvedAnswer> resolveAnswer(int questionId) {
@@ -165,8 +117,8 @@ class _RecordingCapability extends Capability {
 
 void main() {
   group('ImportedCapability (fake WireCapabilityContext)', () {
-    test('dispatch() on a resolved import calls startResolvedImportCall '
-        'with the state\'s importId, not startCall', () async {
+    test('dispatch() on a resolved import targets it with a synchronously '
+        'known importId (ImportedCapabilityTarget)', () async {
       final context = FakeWireCapabilityContext();
       final state = ImportState(7);
       final cap = debugCreateImportedCapabilityFromState(context, state);
@@ -175,7 +127,7 @@ void main() {
 
       expect(context.startCallInvocations, hasLength(1));
       final invocation = context.startCallInvocations.single;
-      expect(invocation.importId, 7);
+      expect((invocation.target as ImportedCapabilityTarget).importId, 7);
       expect(invocation.interfaceId, 1);
       expect(invocation.methodId, 2);
       // dispatch() marks the import as having received a call.
@@ -245,7 +197,7 @@ void main() {
     });
 
     test('dispatchStreaming() sizes its FlowController from the context\'s '
-        'streamWindowSize and calls startCall', () async {
+        'streamWindowSize and calls startOutgoingCall', () async {
       final context = FakeWireCapabilityContext()..streamWindowSize = 128;
       final state = ImportState(7);
       final cap = debugCreateImportedCapabilityFromState(context, state);
@@ -253,8 +205,10 @@ void main() {
       await cap.dispatchStreaming(1, 2, RpcPayload.fromBytes(Uint8List(0)));
 
       expect(context.startCallInvocations, hasLength(1));
-      expect(context.startCallInvocations.single.importId, isNull);
-      expect(await context.startCallInvocations.single.importIdFuture, 7);
+      final target =
+          context.startCallInvocations.single.target
+              as ImportedCapabilityTarget;
+      expect(target.importId, 7);
     });
 
     test('a not-yet-resolved import awaits its importIdFuture before '
@@ -280,13 +234,15 @@ void main() {
       importIdCompleter.complete(42);
       await dispatchFuture;
 
-      expect(context.startCallInvocations.single.importId, 42);
+      final target =
+          context.startCallInvocations.single.target as ImportedCapabilityTarget;
+      expect(target.importId, 42);
     });
   });
 
   group('WirePipelinedCapability (fake WireCapabilityContext)', () {
     test('dispatch() before the parent resolves targets the parent '
-        'question/transform path through startCall', () async {
+        'question/transform path (PromisedAnswerTarget)', () async {
       final context = FakeWireCapabilityContext();
       final parentResult = Completer<DispatchResult>();
       final cap = debugCreateWirePipelinedCapability(context, 99, const [
@@ -297,10 +253,10 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(context.startCallInvocations, hasLength(1));
-      final invocation = context.startCallInvocations.single;
-      expect(invocation.targetPromisedAnswerQid, 99);
-      expect(invocation.targetTransformPath, [0]);
-      expect(invocation.importIdFuture, isNull);
+      final target =
+          context.startCallInvocations.single.target as PromisedAnswerTarget;
+      expect(target.questionId, 99);
+      expect(target.transformPath, [0]);
 
       parentResult.complete(DispatchResult.empty);
     });
