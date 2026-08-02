@@ -70,7 +70,13 @@
     // known_hosts/config are read-only metadata, not secrets.
     "source=${localEnv:SSH_AUTH_SOCK},target=/run/host-ssh-agent.sock,type=bind",
     "source=${localEnv:HOME}/.ssh/known_hosts,target=/root/.ssh/known_hosts,type=bind,readonly",
-    "source=${localEnv:HOME}/.ssh/config,target=/root/.ssh/config,type=bind,readonly",
+    // Staged at a non-default path rather than /root/.ssh/config directly:
+    // the container runs as root, and OpenSSH's strict-mode ownership check
+    // rejects a config file that isn't owned by uid 0. The host file is
+    // owned by the host user, so postStartCommand (sync-ssh-config.sh)
+    // copies it into a root-owned /root/.ssh/config on every start instead
+    // of chowning this (read-only, host-owned) bind mount in place.
+    "source=${localEnv:HOME}/.ssh/config,target=/run/host-ssh-config,type=bind,readonly",
 
     // GUI passthrough: only the Wayland compositor socket, not the whole
     // XDG_RUNTIME_DIR (which also holds the host's D-Bus session bus,
@@ -114,5 +120,10 @@
   },
 
   // Fetch Dart package dependencies after the container is created.
-  "postCreateCommand": "find . -name pubspec.yaml -not -path '*/.*' -execdir dart pub get \\;"
+  "postCreateCommand": "find . -name pubspec.yaml -not -path '*/.*' -execdir dart pub get \\;",
+
+  // Runs inside the container, every start (unlike postCreateCommand, which
+  // only runs once) — keeps /root/.ssh/config in sync with the host file
+  // staged at /run/host-ssh-config above.
+  "postStartCommand": "bash ${containerWorkspaceFolder}/.devcontainer/sync-ssh-config.sh"
 }
