@@ -198,7 +198,7 @@ class RpcSystem {
       // bootstrapIdentity's real disposal while the server is still
       // running — only this server's own close() (below) does, once every
       // connection's own reference has also been released.
-      final Capability serverBootstrapRef;
+      final CapabilityLease serverBootstrapRef;
       try {
         serverBootstrapRef = vendCapabilityHandle(bootstrapIdentity);
       } catch (_) {

@@ -13,7 +13,7 @@ export 'src/capability/capability.dart'
     show
         CapCall,
         Capability,
-        CapabilityTableBuilder,
+        CapabilityLease,
         DeferredCapability,
         DispatchContext,
         DispatchResult,
@@ -22,6 +22,7 @@ export 'src/capability/capability.dart'
         buildDispatchResult,
         requireCapabilityFromResult,
         vendCapabilityHandle;
+export 'src/capability/capability_table.dart' show CapabilityTableBuilder;
 export 'src/capability/capability_any_pointer_codec.dart';
 export 'src/capability/capability_factory.dart';
 export 'src/capability/rpc_payload.dart';
