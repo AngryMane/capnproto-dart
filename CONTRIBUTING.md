@@ -6,6 +6,29 @@ This repository is a [pub workspace](https://dart.dev/tools/pub/workspaces) cont
 
 The easiest way to get a working toolchain is the provided devcontainer ([.devcontainer/](.devcontainer/)), which pins the exact versions CI uses.
 
+The devcontainer can pop a native desktop notification on the host when something inside the container needs your attention (e.g. Claude Code waiting on a permission prompt). This requires `notify-send` (`libnotify-bin`) installed on the **host** and a systemd user session (both standard on Ubuntu desktop) — a relay that forwards container notifications to the host starts automatically via `initializeCommand`. From inside the container, send one with:
+```sh
+notify-host "Claude Code" "Approval needed"
+```
+`notify-host` is on `PATH` in the devcontainer image. To have Claude Code fire one automatically on a permission prompt, add a hook to your personal (gitignored) `.claude/settings.json`:
+```json
+{
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "permission_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "notify-host \"Claude Code\" \"Approval needed\""
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
 If you'd rather set things up manually, match the versions declared in [.github/workflows/compat.yml](.github/workflows/compat.yml):
 
 - Dart SDK (`DART_VERSION`)

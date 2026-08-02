@@ -48,6 +48,19 @@ target/
 # Skills
 ai/*
 
+# ── Claude Code ─────────────────────────────────────────────────────────────
+
+# Personal settings/hooks (e.g. desktop notification preferences) are
+# machine-specific, not project policy — keep them local. The `skills`
+# symlink above is the one intentionally tracked path under .claude/.
+.claude/*
+!.claude/skills
+
+# ── Python (.devcontainer/notify-relay/) ───────────────────────────────────────
+
+__pycache__/
+*.pyc
+
 # ── OS ────────────────────────────────────────────────────────────────────────
 
 .DS_Store
