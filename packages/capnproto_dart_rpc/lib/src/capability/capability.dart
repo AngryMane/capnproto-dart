@@ -6,8 +6,6 @@ import 'package:capnproto_dart/capnproto_dart.dart';
 import '../rpc/rpc_exception.dart';
 import 'rpc_payload.dart';
 
-export 'capability_table.dart' show CapabilityTableBuilder;
-
 part 'dispatch.dart';
 part 'cap_call.dart';
 part 'capability_handle.dart';
