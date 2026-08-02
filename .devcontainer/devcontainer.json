@@ -27,7 +27,11 @@
   "containerEnv": {
     "DISPLAY": "${localEnv:DISPLAY}",
     "WAYLAND_DISPLAY": "${localEnv:WAYLAND_DISPLAY}",
-    "XDG_RUNTIME_DIR": "${localEnv:XDG_RUNTIME_DIR}"
+    "XDG_RUNTIME_DIR": "${localEnv:XDG_RUNTIME_DIR}",
+    // Point notify-send/libnotify straight at the host's D-Bus session socket
+    // (bind-mounted below via XDG_RUNTIME_DIR) instead of relying on X11
+    // autolaunch discovery, which can be slow or fail under Xwayland.
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=${localEnv:XDG_RUNTIME_DIR}/bus"
   },
 
   "mounts": [
