@@ -105,7 +105,16 @@
     // initializeCommand (see notify-relay/), not the D-Bus session bus. The
     // container can only send {title, body}; it can't reach any other host
     // D-Bus service.
-    "source=${localEnv:XDG_RUNTIME_DIR}/capnproto-dart-notify,target=/run/host-notify,type=bind,readonly"
+    "source=${localEnv:XDG_RUNTIME_DIR}/capnproto-dart-notify,target=/run/host-notify,type=bind,readonly",
+
+    // Shadow the workspace's own .devcontainer/ with a read-only bind of the
+    // same path: initializeCommand/postStartCommand run these files on the
+    // host (or as root, unsandboxed, inside the container) on every
+    // rebuild/start, so letting a container process rewrite them would be a
+    // straightforward escape from every other restriction in this file. To
+    // change devcontainer config, edit it from the host and Rebuild
+    // Container — not from a running container.
+    "source=${localWorkspaceFolder}/.devcontainer,target=${containerWorkspaceFolder}/.devcontainer,type=bind,readonly"
   ],
 
   // 3000: Docusaurus dev server (website/, `npm run start`).

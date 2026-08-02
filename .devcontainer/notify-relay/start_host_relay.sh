@@ -35,9 +35,19 @@ command -v notify-send >/dev/null || {
 }
 
 install -d -m 700 "${runtime_dir}" "${installed_dir}"
-install -m 700 "${relay_script}" "${installed_relay}"
 
-if systemctl --user is-active --quiet "${unit_name}.service"; then
+restart_required=false
+
+if [[ ! -f "${installed_relay}" ]] || ! cmp -s "${relay_script}" "${installed_relay}"; then
+    install -m 700 "${relay_script}" "${installed_relay}"
+    restart_required=true
+fi
+
+if ! systemctl --user is-active --quiet "${unit_name}.service"; then
+    restart_required=true
+fi
+
+if [[ "${restart_required}" != true ]]; then
     exit 0
 fi
 

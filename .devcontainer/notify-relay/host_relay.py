@@ -111,12 +111,19 @@ def main() -> int:
                     request = json.loads(raw.decode("utf-8"))
                     title, body = validate_request(request)
                     show_notification(title, body)
-                    connection.sendall(b'{"ok":true}')
+                    response = b'{"ok":true}'
                 except Exception as error:
                     response = json.dumps(
                         {"ok": False, "error": str(error)}
                     ).encode("utf-8")
+
+                try:
                     connection.sendall(response)
+                except OSError:
+                    # Client already disconnected (e.g. it hit its own
+                    # timeout) — nothing to do, and no need to let this take
+                    # down the whole relay loop.
+                    pass
     finally:
         server.close()
 
