@@ -6,41 +6,6 @@ This repository is a [pub workspace](https://dart.dev/tools/pub/workspaces) cont
 
 The easiest way to get a working toolchain is the provided devcontainer ([.devcontainer/](.devcontainer/)), which pins the exact versions CI uses.
 
-The devcontainer deliberately reduces the host exposure of the AI agent it runs (Claude Code, Codex): no host SSH private keys or full-scope `gh` login are shared, and desktop notifications go through a narrow relay instead of the host's D-Bus session. This is a reduction, not a sandbox — the container still forwards the host's ssh-agent socket, the Wayland/X11 display sockets, and bind-mounts the workspace read-write, so don't treat it as a security boundary against a fully adversarial agent. This has two one-time setup steps on a native Linux host:
-
-- **SSH**: git over SSH uses agent forwarding (`SSH_AUTH_SOCK`), not a mounted private key — make sure `ssh-agent` (or the gnome-keyring SSH agent component most desktop sessions already run) has your key added (`ssh-add -l` to check).
-- **GitHub CLI**: the container never sees your host's own `gh` login. Create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) scoped to just this repository, with **Contents**, **Pull requests**, and **Issues** set to Read and write, then inside the container run:
-  ```sh
-  read -rsp "GitHub token: " GH_TOKEN
-  echo
-  printf '%s' "${GH_TOKEN}" | gh auth login --with-token
-  unset GH_TOKEN
-  ```
-  (typing `echo YOUR_TOKEN | gh auth login --with-token` also works, but leaves the token in your shell history). This is stored in a container-local Docker volume, so it survives `Rebuild Container` — you only do this once per machine.
-
-Desktop notifications additionally require `notify-send` (`libnotify-bin`) installed on the **host** and a systemd user session (both standard on Ubuntu desktop) — the relay that forwards container notifications to the host starts automatically via `initializeCommand`. From inside the container, send one with:
-```sh
-notify-host "Claude Code" "Approval needed"
-```
-`notify-host` is on `PATH` in the devcontainer image. To have Claude Code fire one automatically on a permission prompt, add a hook to your personal (gitignored) `.claude/settings.json`:
-```json
-{
-  "hooks": {
-    "PermissionRequest": [
-      {
-        "matcher": ".*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "notify-host \"Claude Code\" \"Approval needed\""
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
 If you'd rather set things up manually, match the versions declared in [.github/workflows/compat.yml](.github/workflows/compat.yml):
 
 - Dart SDK (`DART_VERSION`)
