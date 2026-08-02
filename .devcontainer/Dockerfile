@@ -81,4 +81,12 @@ RUN wget -q "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linu
 
 ENV PATH=/opt/node/bin:${PATH}
 
+# ── Desktop notification client ─────────────────────────────────────────────
+# Sends {title, body} to the host-side relay (notify-relay/host_relay.py,
+# started on the host by initializeCommand) over the socket bind-mounted at
+# /run/host-notify/notify.sock. See CONTRIBUTING.md for wiring this into a
+# Claude Code / Codex hook.
+COPY notify-relay/notify_host.py /usr/local/bin/notify-host
+RUN chmod +x /usr/local/bin/notify-host
+
 WORKDIR /workspace

@@ -7,44 +7,114 @@
     "--cap-add=SYS_ADMIN"
   ],
 
-  // Mount Cargo registry/git cache outside the container so it survives rebuilds.
-  // Also bind-mount the host's Claude Code / Codex CLI credential directories so
-  // logging in once on the host carries over into the container (no re-login).
-  // This is a live two-way bind, not a one-time copy: session/history files the
-  // CLIs write inside the container land in these same host directories too.
-  // Only works if the host stores the session as a file here rather than in an
-  // OS keychain (macOS Keychain / Windows Credential Manager) — both tools fall
-  // back to file storage by default when no OS keyring is available (e.g. this
-  // Linux container), but a macOS host may need one `claude login` / `codex login`
-  // inside the container the first time if it was using Keychain-backed storage.
+  // initializeCommand runs on the HOST, every time the container is
+  // (re)built or started. All scripts below are idempotent. Using the
+  // object form runs them in parallel.
+  "initializeCommand": {
+    // Make sure ~/.ssh/config and ~/.ssh/known_hosts exist, and
+    // SSH_AUTH_SOCK is valid, before the mounts below bind-mount them —
+    // Docker fails to start the container if a bind mount's source is
+    // missing or empty.
+    "ensure-ssh-config": [
+      "bash",
+      "${localWorkspaceFolder}/.devcontainer/ensure-ssh-config.sh"
+    ],
+    // Same, for the Claude Code / Codex credential files below.
+    "ensure-credentials": [
+      "bash",
+      "${localWorkspaceFolder}/.devcontainer/ensure-credentials.sh"
+    ],
+    // Start the host-side notification relay (see notify-relay/).
+    "notify-relay": [
+      "bash",
+      "${localWorkspaceFolder}/.devcontainer/notify-relay/start_host_relay.sh"
+    ]
+  },
 
-  // Forward the host's display sockets so GUI apps (e.g. `flutter run -d linux`)
+  // Forward the host's display socket so GUI apps (e.g. `flutter run -d linux`)
   // can show a window on the host's screen. Assumes a native Linux host with
-  // XDG_RUNTIME_DIR set (true for any normal login session). The container
-  // runs as root, so it can open the host user's Wayland/X11 socket files
-  // even though it doesn't share the host user's UID — this stops working if
-  // a non-root remoteUser is ever added here without also matching UIDs.
+  // XDG_RUNTIME_DIR and WAYLAND_DISPLAY set (true for any normal Wayland login
+  // session). The container runs as root, so it can open the host user's
+  // Wayland/X11 socket files even though it doesn't share the host user's UID —
+  // this stops working if a non-root remoteUser is ever added here without also
+  // matching UIDs.
   "containerEnv": {
     "DISPLAY": "${localEnv:DISPLAY}",
     "WAYLAND_DISPLAY": "${localEnv:WAYLAND_DISPLAY}",
-    "XDG_RUNTIME_DIR": "${localEnv:XDG_RUNTIME_DIR}"
+    "XDG_RUNTIME_DIR": "${localEnv:XDG_RUNTIME_DIR}",
+    // SSH agent forwarding target — see the SSH_AUTH_SOCK mount below. No
+    // private key ever enters the container; only signing requests do.
+    "SSH_AUTH_SOCK": "/run/host-ssh-agent.sock"
   },
 
   "mounts": [
+    // Mount Cargo registry/git cache outside the container so it survives rebuilds.
     "source=capnproto-dart-cargo-registry,target=/usr/local/cargo/registry,type=volume",
     "source=capnproto-dart-cargo-git,target=/usr/local/cargo/git,type=volume",
-    "source=${localEnv:HOME}/.claude,target=/root/.claude,type=bind",
-    "source=${localEnv:HOME}/.codex,target=/root/.codex,type=bind",
-    // Bind-mount the host's SSH keys/known_hosts so `git pull`/`git push` over
-    // SSH work inside the container without a separate key setup.
-    "source=${localEnv:HOME}/.ssh,target=/root/.ssh,type=bind",
-    // Share the host's GitHub CLI configuration so `gh auth login`/`gh auth status`
-    // work inside the container without re-authenticating.
-    "source=${localEnv:HOME}/.config/gh,target=/root/.config/gh,type=bind",
-    // Wayland compositor socket (native rendering) and the X11 socket dir
-    // (XWayland fallback for any tool that only speaks X11).
-    "source=${localEnv:XDG_RUNTIME_DIR},target=${localEnv:XDG_RUNTIME_DIR},type=bind",
-    "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind"
+
+    // Claude Code: container-local volume for settings/hooks/history (never
+    // written back to the host), with the login credential file bridged in
+    // one-way from the host so a `claude login` on the host also covers the
+    // container. Staged read-only at /run/host-credentials and copied into
+    // the volume by postStartCommand (sync-credentials.sh) rather than
+    // bind-mounted directly onto the volume — a direct bind would let a
+    // `claude login` run inside the container write back to the host's own
+    // credential file. If the host stores the session as a file here rather
+    // than an OS keychain (macOS Keychain) — Linux falls back to file
+    // storage by default, but a macOS host using Keychain-backed storage may
+    // need one `claude login` inside the container the first time; that
+    // login only ever touches the container-local copy.
+    "source=capnproto-dart-claude-home,target=/root/.claude,type=volume",
+    "source=${localEnv:HOME}/.claude/.credentials.json,target=/run/host-credentials/claude.json,type=bind,readonly",
+
+    // Codex: same pattern as Claude Code above.
+    "source=capnproto-dart-codex-home,target=/root/.codex,type=volume",
+    "source=${localEnv:HOME}/.codex/auth.json,target=/run/host-credentials/codex.json,type=bind,readonly",
+
+    // GitHub CLI: container-local volume, populated once via
+    // `gh auth login --with-token` with a repo-scoped fine-grained PAT (see
+    // CONTRIBUTING.md). Survives rebuilds; never shares the host's own,
+    // full-scope gh login.
+    "source=capnproto-dart-gh-config,target=/root/.config/gh,type=volume",
+
+    // SSH: agent forwarding only. The container asks the host's ssh-agent to
+    // sign challenges — private key material never enters the container.
+    // This is narrower than mounting the key, but not full isolation: any
+    // process in the container can request a signature from whatever
+    // identities are loaded in the forwarded agent, and so authenticate as
+    // you to any host/repo those keys are authorized for.
+    // known_hosts/config are read-only metadata, not secrets.
+    "source=${localEnv:SSH_AUTH_SOCK},target=/run/host-ssh-agent.sock,type=bind",
+    "source=${localEnv:HOME}/.ssh/known_hosts,target=/root/.ssh/known_hosts,type=bind,readonly",
+    // Staged at a non-default path rather than /root/.ssh/config directly:
+    // the container runs as root, and OpenSSH's strict-mode ownership check
+    // rejects a config file that isn't owned by uid 0. The host file is
+    // owned by the host user, so postStartCommand (sync-ssh-config.sh)
+    // copies it into a root-owned /root/.ssh/config on every start instead
+    // of chowning this (read-only, host-owned) bind mount in place.
+    "source=${localEnv:HOME}/.ssh/config,target=/run/host-ssh-config,type=bind,readonly",
+
+    // GUI passthrough: only the Wayland compositor socket, not the whole
+    // XDG_RUNTIME_DIR (which also holds the host's D-Bus session bus,
+    // PipeWire, gnome-keyring, etc.). /tmp/.X11-unix stays as the XWayland
+    // fallback for any tool that only speaks X11.
+    "source=${localEnv:XDG_RUNTIME_DIR}/${localEnv:WAYLAND_DISPLAY},target=${localEnv:XDG_RUNTIME_DIR}/${localEnv:WAYLAND_DISPLAY},type=bind",
+    "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind",
+
+    // Desktop notifications: dedicated socket to the host relay started by
+    // initializeCommand (see notify-relay/), not the D-Bus session bus. The
+    // container can only send {title, body}; it can't reach any other host
+    // D-Bus service.
+    "source=${localEnv:XDG_RUNTIME_DIR}/capnproto-dart-notify,target=/run/host-notify,type=bind,readonly",
+
+    // Shadow the workspace's own .devcontainer/ with a read-only bind of the
+    // same path: initializeCommand/postStartCommand run these files on the
+    // host (or as root, unsandboxed, inside the container) on every
+    // rebuild/start, so letting a container process rewrite them would be a
+    // straightforward escape from every other restriction in this file. To
+    // change devcontainer config, edit it from the host and Rebuild
+    // Container — not from a running container.
+    "source=${localWorkspaceFolder}/.devcontainer,target=${containerWorkspaceFolder}/.devcontainer,type=bind,readonly"
   ],
 
   // 3000: Docusaurus dev server (website/, `npm run start`).
@@ -75,5 +145,19 @@
   },
 
   // Fetch Dart package dependencies after the container is created.
-  "postCreateCommand": "find . -name pubspec.yaml -not -path '*/.*' -execdir dart pub get \\;"
+  "postCreateCommand": "find . -name pubspec.yaml -not -path '*/.*' -execdir dart pub get \\;",
+
+  // Run inside the container, every start (unlike postCreateCommand, which
+  // only runs once) — copy the read-only staged host files above into their
+  // root-owned / container-local destinations.
+  "postStartCommand": {
+    "sync-ssh-config": [
+      "bash",
+      "${containerWorkspaceFolder}/.devcontainer/sync-ssh-config.sh"
+    ],
+    "sync-credentials": [
+      "bash",
+      "${containerWorkspaceFolder}/.devcontainer/sync-credentials.sh"
+    ]
+  }
 }
