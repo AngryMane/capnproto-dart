@@ -7,6 +7,14 @@
     "--cap-add=SYS_ADMIN"
   ],
 
+  // Start the host-side notification relay (see notify-relay/) before the
+  // container exists. initializeCommand runs on the HOST, every time the
+  // container is (re)built or started, and the start script is idempotent.
+  "initializeCommand": [
+    "bash",
+    "${localWorkspaceFolder}/.devcontainer/notify-relay/start_host_relay.sh"
+  ],
+
   // Mount Cargo registry/git cache outside the container so it survives rebuilds.
   // Also bind-mount the host's Claude Code / Codex CLI credential directories so
   // logging in once on the host carries over into the container (no re-login).
@@ -41,10 +49,18 @@
     // Share the host's GitHub CLI configuration so `gh auth login`/`gh auth status`
     // work inside the container without re-authenticating.
     "source=${localEnv:HOME}/.config/gh,target=/root/.config/gh,type=bind",
-    // Wayland compositor socket (native rendering) and the X11 socket dir
-    // (XWayland fallback for any tool that only speaks X11).
-    "source=${localEnv:XDG_RUNTIME_DIR},target=${localEnv:XDG_RUNTIME_DIR},type=bind",
-    "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind"
+    // Wayland compositor socket (native rendering) — only this one socket
+    // file, not the whole XDG_RUNTIME_DIR (which also holds the host's
+    // D-Bus session bus, PipeWire, gnome-keyring, etc.) — and the X11 socket
+    // dir (XWayland fallback for any tool that only speaks X11).
+    "source=${localEnv:XDG_RUNTIME_DIR}/${localEnv:WAYLAND_DISPLAY},target=${localEnv:XDG_RUNTIME_DIR}/${localEnv:WAYLAND_DISPLAY},type=bind",
+    "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind",
+
+    // Desktop notifications: dedicated socket to the host relay started by
+    // initializeCommand (see notify-relay/), not the D-Bus session bus. The
+    // container can only send {title, body} over this socket via the
+    // notify-host CLI; it can't reach any other host D-Bus service.
+    "source=${localEnv:XDG_RUNTIME_DIR}/capnproto-dart-notify,target=/run/host-notify,type=bind,readonly"
   ],
 
   // 3000: Docusaurus dev server (website/, `npm run start`).
