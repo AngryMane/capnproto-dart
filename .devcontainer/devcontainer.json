@@ -7,13 +7,22 @@
     "--cap-add=SYS_ADMIN"
   ],
 
-  // Start the host-side notification relay (see notify-relay/) before the
-  // container exists. initializeCommand runs on the HOST, every time the
-  // container is (re)built or started, and the start script is idempotent.
-  "initializeCommand": [
-    "bash",
-    "${localWorkspaceFolder}/.devcontainer/notify-relay/start_host_relay.sh"
-  ],
+  // initializeCommand runs on the HOST, every time the container is
+  // (re)built or started. Both scripts below are idempotent. Using the
+  // object form runs them in parallel.
+  "initializeCommand": {
+    // Make sure ~/.ssh/config exists before the mounts below bind-mount it —
+    // Docker fails to start the container if a bind mount's source is missing.
+    "ensure-ssh-config": [
+      "bash",
+      "${localWorkspaceFolder}/.devcontainer/ensure-ssh-config.sh"
+    ],
+    // Start the host-side notification relay (see notify-relay/).
+    "notify-relay": [
+      "bash",
+      "${localWorkspaceFolder}/.devcontainer/notify-relay/start_host_relay.sh"
+    ]
+  },
 
   // Forward the host's display socket so GUI apps (e.g. `flutter run -d linux`)
   // can show a window on the host's screen. Assumes a native Linux host with
