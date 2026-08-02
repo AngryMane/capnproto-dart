@@ -64,28 +64,25 @@ void main() {
       );
     });
 
-    test(
-      'serve() actually attempts to resolve/bind a non-IP-literal host '
-      'instead of silently falling back to 127.0.0.1',
-      () async {
-        // Regression test: serve() used to compute its bind address as
-        // `InternetAddress.tryParse(address.host) ?? InternetAddress.loopbackIPv4`
-        // — any host that wasn't a literal IP address (a real hostname, a
-        // container name, ...) silently became 127.0.0.1, with no error
-        // and no indication the caller's actual host was ignored.
-        // '.invalid' is a reserved TLD (RFC 2606) guaranteed to never
-        // resolve, so under that old behavior this call would have quietly
-        // *succeeded* anyway (bound to loopback instead) rather than
-        // surfacing the bogus hostname as the resolution failure it is.
-        await expectLater(
-          RpcSystem.serve(
-            Uri.parse('tcp://this-host-does-not-exist.invalid:0'),
-            NullCapability(),
-          ),
-          throwsA(anything),
-        );
-      },
-    );
+    test('serve() actually attempts to resolve/bind a non-IP-literal host '
+        'instead of silently falling back to 127.0.0.1', () async {
+      // Regression test: serve() used to compute its bind address as
+      // `InternetAddress.tryParse(address.host) ?? InternetAddress.loopbackIPv4`
+      // — any host that wasn't a literal IP address (a real hostname, a
+      // container name, ...) silently became 127.0.0.1, with no error
+      // and no indication the caller's actual host was ignored.
+      // '.invalid' is a reserved TLD (RFC 2606) guaranteed to never
+      // resolve, so under that old behavior this call would have quietly
+      // *succeeded* anyway (bound to loopback instead) rather than
+      // surfacing the bogus hostname as the resolution failure it is.
+      await expectLater(
+        RpcSystem.serve(
+          Uri.parse('tcp://this-host-does-not-exist.invalid:0'),
+          NullCapability(),
+        ),
+        throwsA(anything),
+      );
+    });
   });
 
   group('RpcSystem.serve / RpcSystem.connect (TCP)', () {
@@ -136,204 +133,192 @@ void main() {
       await client.close();
     });
 
-    test(
-      'the bootstrap capability is not disposed while the server is still '
-      'running, even after every currently-connected client disconnects — '
-      'only server.close() finally releases it',
-      () async {
-        // Regression test: every accepted connection is handed the same
-        // `bootstrap` instance and (per TwoPartyRpcConnection.server's
-        // ownership contract) disposes its own reference on close. With
-        // connections coming and going sequentially (not all simultaneously
-        // alive) rather than a fresh handle per connection, the *last*
-        // connection open at any moment closing would previously drop the
-        // shared refcount to zero and trigger real disposal of `bootstrap`
-        // — even with other clients yet to connect and reuse it.
-        final bootstrap = _CountingBootstrap();
-        final server = await RpcSystem.serve(
-          Uri.parse('tcp://127.0.0.1:0'),
-          bootstrap,
-        );
-        addTearDown(server.close);
+    test('the bootstrap capability is not disposed while the server is still '
+        'running, even after every currently-connected client disconnects — '
+        'only server.close() finally releases it', () async {
+      // Regression test: every accepted connection is handed the same
+      // `bootstrap` instance and (per TwoPartyRpcConnection.server's
+      // ownership contract) disposes its own reference on close. With
+      // connections coming and going sequentially (not all simultaneously
+      // alive) rather than a fresh handle per connection, the *last*
+      // connection open at any moment closing would previously drop the
+      // shared refcount to zero and trigger real disposal of `bootstrap`
+      // — even with other clients yet to connect and reuse it.
+      final bootstrap = _CountingBootstrap();
+      final server = await RpcSystem.serve(
+        Uri.parse('tcp://127.0.0.1:0'),
+        bootstrap,
+      );
+      addTearDown(server.close);
 
-        final client1 = await RpcSystem.connect(
-          Uri.parse('tcp://127.0.0.1:${server.port}'),
-        );
-        await expectLater(
-          client1
-              .bootstrap(_RawCapabilityFactory())
-              .dispatch(0, 0, RpcPayload.fromBytes(_emptyParams)),
-          throwsA(isA<RpcException>()),
-        );
-        await client1.close();
-        await Future<void>.delayed(const Duration(milliseconds: 200));
+      final client1 = await RpcSystem.connect(
+        Uri.parse('tcp://127.0.0.1:${server.port}'),
+      );
+      await expectLater(
+        client1
+            .bootstrap(_RawCapabilityFactory())
+            .dispatch(0, 0, RpcPayload.fromBytes(_emptyParams)),
+        throwsA(isA<RpcException>()),
+      );
+      await client1.close();
+      await Future<void>.delayed(const Duration(milliseconds: 200));
 
-        // No client is connected right now, but the server itself is still
-        // running — bootstrap must still be alive.
-        expect(bootstrap.disposeCount, equals(0));
+      // No client is connected right now, but the server itself is still
+      // running — bootstrap must still be alive.
+      expect(bootstrap.disposeCount, equals(0));
 
-        // A second, later connection must still be able to use it.
-        final client2 = await RpcSystem.connect(
-          Uri.parse('tcp://127.0.0.1:${server.port}'),
-        );
-        await expectLater(
-          client2
-              .bootstrap(_RawCapabilityFactory())
-              .dispatch(0, 0, RpcPayload.fromBytes(_emptyParams)),
-          throwsA(isA<RpcException>()),
-        );
-        expect(bootstrap.disposeCount, equals(0));
+      // A second, later connection must still be able to use it.
+      final client2 = await RpcSystem.connect(
+        Uri.parse('tcp://127.0.0.1:${server.port}'),
+      );
+      await expectLater(
+        client2
+            .bootstrap(_RawCapabilityFactory())
+            .dispatch(0, 0, RpcPayload.fromBytes(_emptyParams)),
+        throwsA(isA<RpcException>()),
+      );
+      expect(bootstrap.disposeCount, equals(0));
 
-        await client2.close();
-        await server.close();
-        await Future<void>.delayed(const Duration(milliseconds: 200));
+      await client2.close();
+      await server.close();
+      await Future<void>.delayed(const Duration(milliseconds: 200));
 
-        expect(bootstrap.disposeCount, equals(1));
-      },
-    );
+      expect(bootstrap.disposeCount, equals(1));
+    });
 
-    test(
-      'passing an already-vended handle as bootstrap still keeps the '
-      'underlying identity alive across sequential connections, not just a '
-      'wrapper around a wrapper',
-      () async {
-        // Regression test: serve() used to vend serverBootstrapRef directly
-        // from whatever `bootstrap` argument it was given, without
-        // unwrapping first. vendCapabilityHandle() is itself public API, so
-        // a caller can legitimately pass an already-vended handle (rather
-        // than a bare capability) as bootstrap — vending *that* creates a
-        // second, disconnected refcount cycle keyed on the handle object
-        // instead of on the real underlying identity every connection's own
-        // export ends up sharing, so serverBootstrapRef ends up protecting
-        // nothing real: the underlying identity's shared refcount could
-        // still drop to zero between sequential connections exactly like
-        // before the original fix.
-        final bootstrap = _CountingBootstrap();
-        final wrapped = vendCapabilityHandle(bootstrap);
-        final server = await RpcSystem.serve(
-          Uri.parse('tcp://127.0.0.1:0'),
-          wrapped,
-        );
-        addTearDown(server.close);
+    test('passing an already-vended handle as bootstrap still keeps the '
+        'underlying identity alive across sequential connections, not just a '
+        'wrapper around a wrapper', () async {
+      // Regression test: serve() used to vend serverBootstrapRef directly
+      // from whatever `bootstrap` argument it was given, without
+      // unwrapping first. vendCapabilityHandle() is itself public API, so
+      // a caller can legitimately pass an already-vended handle (rather
+      // than a bare capability) as bootstrap — vending *that* creates a
+      // second, disconnected refcount cycle keyed on the handle object
+      // instead of on the real underlying identity every connection's own
+      // export ends up sharing, so serverBootstrapRef ends up protecting
+      // nothing real: the underlying identity's shared refcount could
+      // still drop to zero between sequential connections exactly like
+      // before the original fix.
+      final bootstrap = _CountingBootstrap();
+      final wrapped = vendCapabilityHandle(bootstrap);
+      final server = await RpcSystem.serve(
+        Uri.parse('tcp://127.0.0.1:0'),
+        wrapped,
+      );
+      addTearDown(server.close);
 
-        final client1 = await RpcSystem.connect(
-          Uri.parse('tcp://127.0.0.1:${server.port}'),
-        );
-        await expectLater(
-          client1
-              .bootstrap(_RawCapabilityFactory())
-              .dispatch(0, 0, RpcPayload.fromBytes(_emptyParams)),
-          throwsA(isA<RpcException>()),
-        );
-        await client1.close();
-        await Future<void>.delayed(const Duration(milliseconds: 200));
+      final client1 = await RpcSystem.connect(
+        Uri.parse('tcp://127.0.0.1:${server.port}'),
+      );
+      await expectLater(
+        client1
+            .bootstrap(_RawCapabilityFactory())
+            .dispatch(0, 0, RpcPayload.fromBytes(_emptyParams)),
+        throwsA(isA<RpcException>()),
+      );
+      await client1.close();
+      await Future<void>.delayed(const Duration(milliseconds: 200));
 
-        expect(bootstrap.disposeCount, equals(0));
+      expect(bootstrap.disposeCount, equals(0));
 
-        final client2 = await RpcSystem.connect(
-          Uri.parse('tcp://127.0.0.1:${server.port}'),
-        );
-        await expectLater(
-          client2
-              .bootstrap(_RawCapabilityFactory())
-              .dispatch(0, 0, RpcPayload.fromBytes(_emptyParams)),
-          throwsA(isA<RpcException>()),
-        );
-        expect(bootstrap.disposeCount, equals(0));
+      final client2 = await RpcSystem.connect(
+        Uri.parse('tcp://127.0.0.1:${server.port}'),
+      );
+      await expectLater(
+        client2
+            .bootstrap(_RawCapabilityFactory())
+            .dispatch(0, 0, RpcPayload.fromBytes(_emptyParams)),
+        throwsA(isA<RpcException>()),
+      );
+      expect(bootstrap.disposeCount, equals(0));
 
-        await client2.close();
-        await server.close();
-        await Future<void>.delayed(const Duration(milliseconds: 200));
+      await client2.close();
+      await server.close();
+      await Future<void>.delayed(const Duration(milliseconds: 200));
 
-        expect(bootstrap.disposeCount, equals(1));
-      },
-    );
+      expect(bootstrap.disposeCount, equals(1));
+    });
 
-    test(
-      'a serve() call that fails before ever binding (an unsupported '
-      'scheme) does not touch bootstrap at all — matching serve()\'s own '
-      'doc comment, the same bootstrap can be reused for a later, '
-      'successful call',
-      () async {
-        // Regression test: serve() used to vend its server-lifetime
-        // bootstrap reference *before* scheme validation / listener
-        // binding, unconditionally disposing it (via the caller's own
-        // handle-release step, or the shared refcount it created) on any
-        // failure afterward — including scheme validation, which happens
-        // before anything is bound and touches nothing else. That
-        // permanently disposed the real bootstrap identity even though
-        // serve() never actually took ownership of it, directly
-        // contradicting this method's own doc comment ("If this call
-        // throws instead ... bootstrap is left exactly as it was passed
-        // in").
-        final bootstrap = _CountingBootstrap();
+    test('a serve() call that fails before ever binding (an unsupported '
+        'scheme) does not touch bootstrap at all — matching serve()\'s own '
+        'doc comment, the same bootstrap can be reused for a later, '
+        'successful call', () async {
+      // Regression test: serve() used to vend its server-lifetime
+      // bootstrap reference *before* scheme validation / listener
+      // binding, unconditionally disposing it (via the caller's own
+      // handle-release step, or the shared refcount it created) on any
+      // failure afterward — including scheme validation, which happens
+      // before anything is bound and touches nothing else. That
+      // permanently disposed the real bootstrap identity even though
+      // serve() never actually took ownership of it, directly
+      // contradicting this method's own doc comment ("If this call
+      // throws instead ... bootstrap is left exactly as it was passed
+      // in").
+      final bootstrap = _CountingBootstrap();
 
-        await expectLater(
-          RpcSystem.serve(Uri.parse('bogus://127.0.0.1:0'), bootstrap),
-          throwsA(isA<RpcException>()),
-        );
+      await expectLater(
+        RpcSystem.serve(Uri.parse('bogus://127.0.0.1:0'), bootstrap),
+        throwsA(isA<RpcException>()),
+      );
 
-        expect(bootstrap.disposeCount, equals(0));
+      expect(bootstrap.disposeCount, equals(0));
 
-        // The same instance — untouched by the failed call above — must
-        // still be usable for a real server.
-        final server = await RpcSystem.serve(
-          Uri.parse('tcp://127.0.0.1:0'),
-          bootstrap,
-        );
-        addTearDown(server.close);
-        final client = await RpcSystem.connect(
-          Uri.parse('tcp://127.0.0.1:${server.port}'),
-        );
-        await expectLater(
-          client
-              .bootstrap(_RawCapabilityFactory())
-              .dispatch(0, 0, RpcPayload.fromBytes(_emptyParams)),
-          throwsA(isA<RpcException>()),
-        );
-        await client.close();
-      },
-    );
+      // The same instance — untouched by the failed call above — must
+      // still be usable for a real server.
+      final server = await RpcSystem.serve(
+        Uri.parse('tcp://127.0.0.1:0'),
+        bootstrap,
+      );
+      addTearDown(server.close);
+      final client = await RpcSystem.connect(
+        Uri.parse('tcp://127.0.0.1:${server.port}'),
+      );
+      await expectLater(
+        client
+            .bootstrap(_RawCapabilityFactory())
+            .dispatch(0, 0, RpcPayload.fromBytes(_emptyParams)),
+        throwsA(isA<RpcException>()),
+      );
+      await client.close();
+    });
 
-    test(
-      'a serve() call that fails only after successfully binding the '
-      'listener — because bootstrap itself is unusable (e.g. already fully '
-      'disposed through a prior vendCapabilityHandle cycle) — still closes '
-      'that listener, instead of leaking an open port',
-      () async {
-        // Learn a currently-free port, then release it immediately — used
-        // only to give the failing serve() call below a specific port
-        // number to bind (rather than an ephemeral 0), so a subsequent
-        // successful bind to that exact same port number can prove the
-        // first call's listener socket was actually closed, not merely
-        // abandoned.
-        final probe = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-        final port = probe.port;
-        await probe.close();
+    test('a serve() call that fails only after successfully binding the '
+        'listener — because bootstrap itself is unusable (e.g. already fully '
+        'disposed through a prior vendCapabilityHandle cycle) — still closes '
+        'that listener, instead of leaking an open port', () async {
+      // Learn a currently-free port, then release it immediately — used
+      // only to give the failing serve() call below a specific port
+      // number to bind (rather than an ephemeral 0), so a subsequent
+      // successful bind to that exact same port number can prove the
+      // first call's listener socket was actually closed, not merely
+      // abandoned.
+      final probe = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      final port = probe.port;
+      await probe.close();
 
-        final spentBootstrap = _CountingBootstrap();
-        // Triggers disposal for spentBootstrap's identity — any later
-        // vendCapabilityHandle(spentBootstrap) throws (see that function's
-        // own doc comment).
-        await vendCapabilityHandle(spentBootstrap).dispose();
-        expect(spentBootstrap.disposeCount, equals(1));
+      final spentBootstrap = _CountingBootstrap();
+      // Triggers disposal for spentBootstrap's identity — any later
+      // vendCapabilityHandle(spentBootstrap) throws (see that function's
+      // own doc comment).
+      await vendCapabilityHandle(spentBootstrap).dispose();
+      expect(spentBootstrap.disposeCount, equals(1));
 
-        await expectLater(
-          RpcSystem.serve(Uri.parse('tcp://127.0.0.1:$port'), spentBootstrap),
-          throwsA(anything),
-        );
+      await expectLater(
+        RpcSystem.serve(Uri.parse('tcp://127.0.0.1:$port'), spentBootstrap),
+        throwsA(anything),
+      );
 
-        // Only possible if the failed call above actually closed the
-        // listener it had already bound on `port`, rather than leaking it
-        // open forever.
-        final server = await RpcSystem.serve(
-          Uri.parse('tcp://127.0.0.1:$port'),
-          _CountingBootstrap(),
-        );
-        addTearDown(server.close);
-        expect(server.port, equals(port));
-      },
-    );
+      // Only possible if the failed call above actually closed the
+      // listener it had already bound on `port`, rather than leaking it
+      // open forever.
+      final server = await RpcSystem.serve(
+        Uri.parse('tcp://127.0.0.1:$port'),
+        _CountingBootstrap(),
+      );
+      addTearDown(server.close);
+      expect(server.port, equals(port));
+    });
 
     test(
       'a malformed/aborted connection does not surface as an unhandled '
@@ -395,6 +380,63 @@ void main() {
         );
       },
     );
+
+    test('maxConnections rejects a tcp:// connection beyond the cap', () async {
+      final server = await RpcSystem.serve(
+        Uri.parse('tcp://127.0.0.1:0'),
+        NullCapability(),
+        maxConnections: 1,
+      );
+      addTearDown(server.close);
+
+      final first = await RpcSystem.connect(
+        Uri.parse('tcp://127.0.0.1:${server.port}'),
+      );
+      addTearDown(first.close);
+      // Confirm the first connection is actually accepted before probing
+      // the cap.
+      await expectLater(
+        first
+            .bootstrap(_RawCapabilityFactory())
+            .dispatch(0, 0, RpcPayload.fromBytes(_emptyParams)),
+        throwsA(isA<RpcException>()),
+      );
+
+      // Unlike the WebSocket transport, a rejected tcp:// connection has no
+      // application-level handshake to fail — the server just destroys the
+      // raw socket (atCapacity() -> socket.destroy()) the moment it's
+      // accepted. Observed here as the probe socket closing with no bytes
+      // ever received, rather than staying open or getting any RPC data.
+      final probe = await Socket.connect('127.0.0.1', server.port);
+      final received = <int>[];
+      final probeDone = Completer<void>();
+      probe.listen(
+        received.addAll,
+        onDone: () {
+          if (!probeDone.isCompleted) probeDone.complete();
+        },
+        onError: (Object _) {
+          if (!probeDone.isCompleted) probeDone.complete();
+        },
+        cancelOnError: true,
+      );
+      await probeDone.future.timeout(const Duration(seconds: 2));
+      expect(received, isEmpty);
+
+      await first.close();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      final replacement = await RpcSystem.connect(
+        Uri.parse('tcp://127.0.0.1:${server.port}'),
+      );
+      addTearDown(replacement.close);
+      await expectLater(
+        replacement
+            .bootstrap(_RawCapabilityFactory())
+            .dispatch(0, 0, RpcPayload.fromBytes(_emptyParams)),
+        throwsA(isA<RpcException>()),
+      );
+    });
   });
 
   group('RpcSystem.serve / RpcSystem.connect (WebSocket)', () {
