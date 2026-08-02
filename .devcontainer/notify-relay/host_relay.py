@@ -9,6 +9,7 @@ directly, only this narrow title/body protocol.
 
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -18,14 +19,43 @@ from typing import Any
 MAX_REQUEST_SIZE = 8 * 1024
 MAX_TITLE_LENGTH = 128
 MAX_BODY_LENGTH = 2048
+MAX_ACTIONS = 4
+MAX_ACTION_ID_LENGTH = 32
+MAX_ACTION_LABEL_LENGTH = 32
+ACTION_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+# How long an interactive (actions=[...]) notification stays on screen and
+# waits for a click, in milliseconds/seconds respectively. A plain
+# title/body notification (no actions) never waits and ignores these.
+WAIT_EXPIRE_MS = 100_000
+WAIT_SUBPROCESS_TIMEOUT = 105
 
 
-def validate_request(value: Any) -> tuple[str, str]:
+def validate_action(value: Any) -> tuple[str, str]:
+    if not isinstance(value, dict) or set(value) != {"id", "label"}:
+        raise ValueError("each action needs exactly id and label")
+
+    action_id = value["id"]
+    label = value["label"]
+
+    if not isinstance(action_id, str) or not ACTION_ID_RE.fullmatch(action_id):
+        raise ValueError("action id must match [A-Za-z0-9_-]+")
+
+    if len(action_id) > MAX_ACTION_ID_LENGTH:
+        raise ValueError("action id is too long")
+
+    if not isinstance(label, str) or not label or len(label) > MAX_ACTION_LABEL_LENGTH:
+        raise ValueError("invalid action label")
+
+    return action_id, label
+
+
+def validate_request(value: Any) -> tuple[str, str, list[tuple[str, str]]]:
     if not isinstance(value, dict):
         raise ValueError("request must be an object")
 
-    if set(value) != {"title", "body"}:
-        raise ValueError("only title and body are accepted")
+    if not {"title", "body"} <= set(value) or set(value) - {"title", "body", "actions"}:
+        raise ValueError("only title, body, and optionally actions are accepted")
 
     title = value["title"]
     body = value["body"]
@@ -39,7 +69,15 @@ def validate_request(value: Any) -> tuple[str, str]:
     if len(body) > MAX_BODY_LENGTH:
         raise ValueError("body is too long")
 
-    return title, body
+    raw_actions = value.get("actions", [])
+    if not isinstance(raw_actions, list) or len(raw_actions) > MAX_ACTIONS:
+        raise ValueError(f"actions must be a list of at most {MAX_ACTIONS} items")
+
+    actions = [validate_action(action) for action in raw_actions]
+    if len({action_id for action_id, _ in actions}) != len(actions):
+        raise ValueError("action ids must be unique")
+
+    return title, body, actions
 
 
 def receive_request(connection: socket.socket) -> bytes:
@@ -60,18 +98,45 @@ def receive_request(connection: socket.socket) -> bytes:
     return b"".join(chunks)
 
 
-def show_notification(title: str, body: str) -> None:
-    subprocess.run(
-        [
-            "/usr/bin/notify-send",
-            "--app-name=Dev Container",
-            "--",
-            title,
-            body,
-        ],
+def show_notification(
+    title: str, body: str, actions: list[tuple[str, str]]
+) -> str | None:
+    """Show a notification, returning the id of the action clicked, or None
+    if there were no actions, or it was dismissed/expired without one."""
+    command = ["/usr/bin/notify-send", "--app-name=Dev Container"]
+
+    if actions:
+        command += ["--wait", f"--expire-time={WAIT_EXPIRE_MS}"]
+        command += [f"--action={action_id}={label}" for action_id, label in actions]
+
+    command += ["--", title, body]
+
+    print(f"[notify] running: {command!r}", file=sys.stderr)
+
+    result = subprocess.run(
+        command,
         check=False,
-        timeout=5,
+        capture_output=True,
+        text=True,
+        timeout=WAIT_SUBPROCESS_TIMEOUT if actions else 5,
     )
+
+    print(
+        f"[notify] returncode={result.returncode!r} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}",
+        file=sys.stderr,
+    )
+
+    if not actions:
+        return None
+
+    clicked = result.stdout.strip()
+    valid_ids = {action_id for action_id, _ in actions}
+    resolved = clicked if clicked in valid_ids else None
+
+    print(f"[notify] clicked={clicked!r} resolved={resolved!r}", file=sys.stderr)
+
+    return resolved
 
 
 def main() -> int:
@@ -101,9 +166,11 @@ def main() -> int:
                 try:
                     raw = receive_request(connection)
                     request = json.loads(raw.decode("utf-8"))
-                    title, body = validate_request(request)
-                    show_notification(title, body)
-                    response = b'{"ok":true}'
+                    title, body, actions = validate_request(request)
+                    clicked = show_notification(title, body, actions)
+                    response = json.dumps({"ok": True, "action": clicked}).encode(
+                        "utf-8"
+                    )
                 except Exception as error:
                     response = json.dumps(
                         {"ok": False, "error": str(error)}
