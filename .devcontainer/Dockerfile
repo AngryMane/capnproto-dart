@@ -26,7 +26,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libglu1-mesa \
         libgtk-3-dev \
         liblzma-dev \
-        libnotify-bin \
         ninja-build \
         openssh-client \
         pkg-config \

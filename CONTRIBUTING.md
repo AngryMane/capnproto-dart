@@ -6,6 +6,17 @@ This repository is a [pub workspace](https://dart.dev/tools/pub/workspaces) cont
 
 The easiest way to get a working toolchain is the provided devcontainer ([.devcontainer/](.devcontainer/)), which pins the exact versions CI uses.
 
+The devcontainer deliberately keeps the AI agent it runs (Claude Code, Codex) isolated from the host: no host SSH private keys or full-scope `gh` login are shared, and desktop notifications go through a narrow relay instead of the host's D-Bus session. This has two one-time setup steps on a native Linux host:
+
+- **SSH**: git over SSH uses agent forwarding (`SSH_AUTH_SOCK`), not a mounted private key — make sure `ssh-agent` (or the gnome-keyring SSH agent component most desktop sessions already run) has your key added (`ssh-add -l` to check).
+- **GitHub CLI**: the container never sees your host's own `gh` login. Create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) scoped to just this repository, with **Contents**, **Pull requests**, and **Issues** set to Read and write, then inside the container run:
+  ```sh
+  echo YOUR_TOKEN | gh auth login --with-token
+  ```
+  This is stored in a container-local Docker volume, so it survives `Rebuild Container` — you only do this once per machine.
+
+Desktop notifications additionally require `notify-send` (`libnotify-bin`) installed on the **host** and a systemd user session (both standard on Ubuntu desktop) — the relay that forwards container notifications to the host starts automatically via `initializeCommand`.
+
 If you'd rather set things up manually, match the versions declared in [.github/workflows/compat.yml](.github/workflows/compat.yml):
 
 - Dart SDK (`DART_VERSION`)
