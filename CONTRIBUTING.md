@@ -10,7 +10,7 @@ The devcontainer can pop a native desktop notification on the host when somethin
 ```sh
 notify-host "Claude Code" "Approval needed"
 ```
-`notify-host` is on `PATH` in the devcontainer image. To have Claude Code fire one automatically on a permission prompt, add a hook to your personal (gitignored) `.claude/settings.json`:
+`notify-host` is on `PATH` in the devcontainer image. To have Claude Code fire a plain heads-up notification on a permission prompt, add a hook to your personal (gitignored) `.claude/settings.json`:
 ```json
 {
   "hooks": {
@@ -27,6 +27,30 @@ notify-host "Claude Code" "Approval needed"
     ]
   }
 }
+```
+
+For an Approve/Deny notification you can act on without switching back to VS Code, point the hook at [.devcontainer/notify-relay/claude_approval_notify.py](.devcontainer/notify-relay/claude_approval_notify.py) instead — it ships in the repo (unlike your personal `.claude/settings.json`, which stays local) so its exact approval logic is reviewable:
+```json
+{
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR}/.devcontainer/notify-relay/claude_approval_notify.py\"",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+It shows the tool name and command/URL/query being requested, offers Approve/Deny buttons, and falls back to Claude Code's own in-app prompt if you dismiss it, it expires, the relay is down, or the detail is too long for the notification to show in full (so you're never asked to approve something you couldn't fully read). See [.devcontainer/notify-relay/test_host_relay.py](.devcontainer/notify-relay/test_host_relay.py) for the validation/behavior this relies on — run it with:
+```sh
+python3 -m unittest discover -s .devcontainer/notify-relay -p 'test_*.py' -v
 ```
 
 If you'd rather set things up manually, match the versions declared in [.github/workflows/compat.yml](.github/workflows/compat.yml):
