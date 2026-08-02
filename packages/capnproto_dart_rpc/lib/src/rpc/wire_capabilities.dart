@@ -821,6 +821,7 @@ class _ErrorCapCall implements CapCall {
 /// Builds the [Capability] a peer's `senderHosted`/`senderPromise` capTable
 /// entry resolves to (see [TwoPartyRpcConnection._capabilityFromDescriptor]),
 /// bound to [context] instead of a real connection.
+@visibleForTesting
 Capability debugCreateImportedCapability(
   WireCapabilityContext context,
   Future<int> importIdFuture,
@@ -828,6 +829,7 @@ Capability debugCreateImportedCapability(
 
 /// As [debugCreateImportedCapability], for an import whose [ImportState] is
 /// already known.
+@visibleForTesting
 Capability debugCreateImportedCapabilityFromState(
   WireCapabilityContext context,
   ImportState state,
@@ -836,6 +838,7 @@ Capability debugCreateImportedCapabilityFromState(
 /// Builds the [Capability] a `promisedAnswer`/pipelined call target resolves
 /// to (see [_WireCapCall.pipelineResult]), bound to [context] instead of a
 /// real connection.
+@visibleForTesting
 Capability debugCreateWirePipelinedCapability(
   WireCapabilityContext context,
   int parentQid,
@@ -846,6 +849,7 @@ Capability debugCreateWirePipelinedCapability(
 /// Builds the [Capability] a `receiverAnswer` capTable entry resolves to
 /// (see [TwoPartyRpcConnection._capabilityFromDescriptor]), bound to
 /// [context] instead of a real connection.
+@visibleForTesting
 Capability debugCreateReceiverAnswerCapability(
   WireCapabilityContext context,
   int questionId,
