@@ -21,7 +21,7 @@ class _ParamCapsReleaseTracker {
 // ---------------------------------------------------------------------------
 
 class _ImportedCapability extends Capability {
-  final TwoPartyRpcConnection _conn;
+  final WireCapabilityContext _conn;
   bool _disposed = false;
 
   // Set only for a call's freshly-imported params capabilities (see
@@ -67,7 +67,7 @@ class _ImportedCapability extends Capability {
       _cachedState = state;
       return state;
     }
-    final state = _conn._importTable.stateFor(await _importIdFuture);
+    final state = _conn.importStateFor(await _importIdFuture);
     _cachedState = state;
     return state;
   }
@@ -114,7 +114,7 @@ class _ImportedCapability extends Capability {
     // cache or from the await above), so this always goes through the fast
     // path (see TwoPartyRpcConnection._startResolvedImportCall) instead of
     // _startCall's Future.value(...)/await indirection for it.
-    final (_, future) = _conn._startResolvedImportCall(
+    final (_, future) = _conn.startResolvedImportCall(
       state.importId,
       interfaceId,
       methodId,
@@ -164,7 +164,7 @@ class _ImportedCapability extends Capability {
     state.receivedCall = true;
     // See dispatch()'s equivalent line for why this always takes the fast
     // path now that state.importId is known.
-    final (_, future) = _conn._startResolvedImportCall(
+    final (_, future) = _conn.startResolvedImportCall(
       state.importId,
       interfaceId,
       methodId,
@@ -213,7 +213,7 @@ class _ImportedCapability extends Capability {
     // future takes to resolve, never the send itself, so wire ordering is
     // unaffected by window state.
     final paramsBytes = params.bytes;
-    final (_, future) = _conn._startCall(
+    final (_, future) = _conn.startCall(
       Future.value(state.importId),
       interfaceId,
       methodId,
@@ -221,7 +221,7 @@ class _ImportedCapability extends Capability {
       paramsCapabilities: paramsCapabilities,
     );
     final controller =
-        _flowController ??= FlowController(windowSize: _conn._streamWindowSize);
+        _flowController ??= FlowController(windowSize: _conn.streamWindowSize);
     return controller.send(paramsBytes.lengthInBytes, future);
   }
 
@@ -256,7 +256,7 @@ class _ImportedCapability extends Capability {
         return _ErrorCapCall(error, cached.stackTrace);
       }
       cached.receivedCall = true;
-      final (qid, future) = _conn._startCall(
+      final (qid, future) = _conn.startCall(
         Future.value(cached.importId),
         interfaceId,
         methodId,
@@ -294,7 +294,7 @@ class _ImportedCapability extends Capability {
             return Future<DispatchResult>.error(error, state.stackTrace);
           }
           state.receivedCall = true;
-          final (qid, future) = _conn._startCall(
+          final (qid, future) = _conn.startCall(
             Future.value(state.importId),
             interfaceId,
             methodId,
@@ -320,7 +320,7 @@ class _ImportedCapability extends Capability {
       sink(id);
       return;
     }
-    await _conn._releaseImport(id);
+    await _conn.releaseImport(id);
   }
 }
 
@@ -331,7 +331,7 @@ class _ImportedCapability extends Capability {
 class _WireCapCall implements CapCall {
   @override
   final Future<DispatchResult> result;
-  final TwoPartyRpcConnection _conn;
+  final WireCapabilityContext _conn;
   final int _qid;
 
   _WireCapCall(this.result, this._conn, this._qid);
@@ -348,7 +348,7 @@ class _WireCapCall implements CapCall {
 class _AsyncWireCapCall implements CapCall {
   @override
   final Future<DispatchResult> result;
-  final TwoPartyRpcConnection _conn;
+  final WireCapabilityContext _conn;
   final Future<int> _qidFuture;
 
   _AsyncWireCapCall(this.result, this._conn, this._qidFuture);
@@ -373,7 +373,7 @@ class _AsyncWireCapCall implements CapCall {
 // ---------------------------------------------------------------------------
 
 class _WirePipelinedCapability extends Capability {
-  final TwoPartyRpcConnection _conn;
+  final WireCapabilityContext _conn;
   final int _parentQid;
   // The full getPointerField hop sequence into the parent answer (see
   // RpcCapDescriptor.path) — today always a single index, since nothing
@@ -467,7 +467,7 @@ class _WirePipelinedCapability extends Capability {
     if (resolutionError != null) {
       return Future.error(resolutionError, _resolutionStackTrace);
     }
-    final (_, future) = _conn._startCall(
+    final (_, future) = _conn.startCall(
       null,
       interfaceId,
       methodId,
@@ -507,7 +507,7 @@ class _WirePipelinedCapability extends Capability {
     if (resolutionError != null) {
       return Future.error(resolutionError, _resolutionStackTrace);
     }
-    final (_, future) = _conn._startCallBuilding(
+    final (_, future) = _conn.startCallBuilding(
       null,
       interfaceId,
       methodId,
@@ -547,7 +547,7 @@ class _WirePipelinedCapability extends Capability {
     if (resolutionError != null) {
       return _ErrorCapCall(resolutionError, _resolutionStackTrace);
     }
-    final (qid, future) = _conn._startCall(
+    final (qid, future) = _conn.startCall(
       null,
       interfaceId,
       methodId,
@@ -567,7 +567,7 @@ class _WirePipelinedCapability extends Capability {
 }
 
 class _ReceiverAnswerCapability extends Capability {
-  final TwoPartyRpcConnection _conn;
+  final WireCapabilityContext _conn;
   final int _questionId;
   final List<int> _path;
   bool _disposed = false;
@@ -611,21 +611,7 @@ class _ReceiverAnswerCapability extends Capability {
   Future<Capability> _resolve() => _resolution ??= _resolveOnce();
 
   Future<Capability> _resolveOnce() async {
-    final resolved = _conn._answerTable.resolvedFor(_questionId);
-    if (resolved != null) {
-      return requireCapabilityFromResultPath(
-        DispatchResult(
-          payload: RpcPayload.fromBytes(resolved.resultBytes),
-          caps: resolved.caps,
-        ),
-        _path,
-      );
-    }
-    final pending = _conn._answerTable.pendingFor(_questionId);
-    if (pending == null) {
-      throw RpcException('invalid receiverAnswer questionId: $_questionId');
-    }
-    final answer = await pending;
+    final answer = await _conn.resolveAnswer(_questionId);
     return requireCapabilityFromResultPath(
       DispatchResult(
         payload: RpcPayload.fromBytes(answer.resultBytes),
@@ -822,3 +808,46 @@ class _ErrorCapCall implements CapCall {
     result.then((r) => requireCapabilityFromResultPath(r, path)),
   );
 }
+
+// ---------------------------------------------------------------------------
+// Test-only construction seams (see issue #64): each wire capability class
+// above depends only on [WireCapabilityContext], so its dispatch/dispose
+// logic can be driven by a fake implementation of that interface instead of
+// a real [TwoPartyRpcConnection]/socket pair. These just expose the
+// otherwise-private constructors for that purpose, behind the public
+// [Capability] surface every caller already uses.
+// ---------------------------------------------------------------------------
+
+/// Builds the [Capability] a peer's `senderHosted`/`senderPromise` capTable
+/// entry resolves to (see [TwoPartyRpcConnection._capabilityFromDescriptor]),
+/// bound to [context] instead of a real connection.
+Capability debugCreateImportedCapability(
+  WireCapabilityContext context,
+  Future<int> importIdFuture,
+) => _ImportedCapability(context, importIdFuture);
+
+/// As [debugCreateImportedCapability], for an import whose [ImportState] is
+/// already known.
+Capability debugCreateImportedCapabilityFromState(
+  WireCapabilityContext context,
+  ImportState state,
+) => _ImportedCapability.fromState(context, state);
+
+/// Builds the [Capability] a `promisedAnswer`/pipelined call target resolves
+/// to (see [_WireCapCall.pipelineResult]), bound to [context] instead of a
+/// real connection.
+Capability debugCreateWirePipelinedCapability(
+  WireCapabilityContext context,
+  int parentQid,
+  List<int> transformPath,
+  Future<DispatchResult> parentResult,
+) => _WirePipelinedCapability(context, parentQid, transformPath, parentResult);
+
+/// Builds the [Capability] a `receiverAnswer` capTable entry resolves to
+/// (see [TwoPartyRpcConnection._capabilityFromDescriptor]), bound to
+/// [context] instead of a real connection.
+Capability debugCreateReceiverAnswerCapability(
+  WireCapabilityContext context,
+  int questionId,
+  List<int> path,
+) => _ReceiverAnswerCapability(context, questionId, path);

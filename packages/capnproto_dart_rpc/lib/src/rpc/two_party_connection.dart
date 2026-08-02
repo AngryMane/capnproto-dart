@@ -29,6 +29,7 @@ import 'question_table.dart';
 import 'rpc_connection.dart';
 import 'rpc_exception.dart';
 import 'rpc_proto.dart';
+import 'wire_capability_context.dart';
 
 part 'wire_capabilities.dart';
 
@@ -112,6 +113,17 @@ class TwoPartyRpcConnection implements RpcConnection {
   // Question ID used for the Bootstrap message (so _handleReturn can
   // distinguish the bootstrap return from regular call returns).
   int? _bootstrapQuestionId;
+
+  // The [WireCapabilityContext] every wire capability this connection vends
+  // (ImportedCapability/WirePipelinedCapability/ReceiverAnswerCapability —
+  // see wire_capabilities.dart) is bound to. One instance per connection,
+  // for its whole lifetime, so `cap._conn == _wireContext` reliably means
+  // "this capability belongs to this connection" (see e.g.
+  // _resolveCapTable, _isLocalCapability) the same way `cap._conn == this`
+  // did back when those classes held a TwoPartyRpcConnection directly.
+  // `late` so the initializer can reference `this`.
+  late final WireCapabilityContext _wireContext =
+      _TwoPartyWireCapabilityContext(this);
 
   TwoPartyRpcConnection._(
     Stream<Uint8List> incoming,
@@ -265,7 +277,10 @@ class TwoPartyRpcConnection implements RpcConnection {
 
     _sendRaw(buildBootstrapMessage(question.id));
 
-    _bootstrapCap = _ImportedCapability(this, _bootstrapCompleter!.future);
+    _bootstrapCap = _ImportedCapability(
+      _wireContext,
+      _bootstrapCompleter!.future,
+    );
     return factory.fromCapability(_bootstrapCap!);
   }
 
@@ -441,12 +456,12 @@ class TwoPartyRpcConnection implements RpcConnection {
         // this avoids (a receiverHosted hand-back gets mis-encoded as a
         // brand-new senderHosted export instead).
         final cap = unwrapVendedCapability(rawCap);
-        if (cap is _ImportedCapability && cap._conn == this) {
+        if (cap is _ImportedCapability && cap._conn == _wireContext) {
           final id = await cap._importIdFuture;
           _importTable.throwIfBroken(id);
           capEntries.add(RpcCapDescriptor.receiverHosted(id));
         } else if (cap is _WirePipelinedCapability &&
-            cap._conn == this &&
+            cap._conn == _wireContext &&
             !cap._hasResolved) {
           // The parent Call (cap._parentQid) must reach the wire before this
           // receiverAnswer descriptor referencing it does — otherwise the
@@ -504,13 +519,13 @@ class TwoPartyRpcConnection implements RpcConnection {
     final needsAsync = paramsCapabilities.any((rawCap) {
       final cap = unwrapVendedCapability(rawCap);
       return (cap is _ImportedCapability &&
-              cap._conn == this &&
+              cap._conn == _wireContext &&
               cap._cachedState == null) ||
           // A not-yet-sent parent Call means the receiverAnswer branch below
           // would need to await it (see _resolveCapTable's matching
           // comment) — fall through to the async path instead of racing it.
           (cap is _WirePipelinedCapability &&
-              cap._conn == this &&
+              cap._conn == _wireContext &&
               !cap._hasResolved &&
               _questionTable.sentCompleterFor(cap._parentQid) != null);
     });
@@ -525,12 +540,12 @@ class TwoPartyRpcConnection implements RpcConnection {
         // See _resolveCapTable's matching comment on why this unwraps
         // vendCapabilityHandle wrappers before checking the concrete type.
         final cap = unwrapVendedCapability(rawCap);
-        if (cap is _ImportedCapability && cap._conn == this) {
+        if (cap is _ImportedCapability && cap._conn == _wireContext) {
           final id = cap._cachedState!.importId;
           _importTable.throwIfBroken(id);
           capEntries.add(RpcCapDescriptor.receiverHosted(id));
         } else if (cap is _WirePipelinedCapability &&
-            cap._conn == this &&
+            cap._conn == _wireContext &&
             !cap._hasResolved) {
           // Safe to encode without waiting here: needsAsync above already
           // routed any case where the parent Call hasn't been sent yet
@@ -1264,7 +1279,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// [qid] normally, with no wire-level difference from an ordinary call.
   void _dispatchTailCall(int qid, TailCall tailCall) {
     final target = tailCall.target;
-    if (target is _ImportedCapability && target._conn == this) {
+    if (target is _ImportedCapability && target._conn == _wireContext) {
       final (forwardQid, sent) = _sendTailForwardCall(target, tailCall);
       // Must wait for the forwarded Call to actually be on the wire before
       // answering qid with takeFromOtherQuestion — otherwise the peer could
@@ -1400,7 +1415,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     // them past the call — see _finalizeParamCapsTracker.
     final paramImportWrappers = paramsCapabilities
         .whereType<_ImportedCapability>()
-        .where((c) => c._conn == this)
+        .where((c) => c._conn == _wireContext)
         .toList(growable: false);
     final paramCapsTracker =
         paramImportWrappers.isEmpty
@@ -1899,7 +1914,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   ) async {
     final identity = unwrapVendedCapability(cap);
     final RpcCapDescriptor descriptor;
-    if (identity is _ImportedCapability && identity._conn == this) {
+    if (identity is _ImportedCapability && identity._conn == _wireContext) {
       final id = await identity._importIdFuture;
       _importTable.throwIfBroken(id);
       descriptor = RpcCapDescriptor.receiverHosted(id);
@@ -1977,10 +1992,10 @@ class TwoPartyRpcConnection implements RpcConnection {
         return NullCapability();
       case 1: // senderHosted
         final state = _importTable.retain(descriptor.id);
-        return _ImportedCapability.fromState(this, state);
+        return _ImportedCapability.fromState(_wireContext, state);
       case 2: // senderPromise
         final state = _importTable.retain(descriptor.id, isPromise: true);
-        return _ImportedCapability.fromState(this, state);
+        return _ImportedCapability.fromState(_wireContext, state);
       case 3: // receiverHosted: we (the receiver) export this cap
         // A fresh vendCapabilityHandle, not the export's own identity/
         // ownedReference directly: this capability is handed to
@@ -2013,7 +2028,7 @@ class TwoPartyRpcConnection implements RpcConnection {
         return vendCapabilityHandle(identity);
       case 4: // receiverAnswer: capability in one of our outstanding answers
         return _ReceiverAnswerCapability(
-          this,
+          _wireContext,
           descriptor.questionId,
           // See _handlePipelinedCall's matching comment: an empty/noop-only
           // transform is normalized to a single hop at pointer slot 0
@@ -2036,8 +2051,10 @@ class TwoPartyRpcConnection implements RpcConnection {
   }
 
   bool _isLocalCapability(Capability cap) {
-    if (cap is _ImportedCapability && cap._conn == this) return false;
-    if (cap is _WirePipelinedCapability && cap._conn == this) return false;
+    if (cap is _ImportedCapability && cap._conn == _wireContext) return false;
+    if (cap is _WirePipelinedCapability && cap._conn == _wireContext) {
+      return false;
+    }
     return true;
   }
 
@@ -2168,4 +2185,89 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// Number of Disembargo round-trips currently awaiting the peer's
   /// receiverLoopback response.
   int get debugEmbargoCount => _embargoTable.count;
+}
+
+/// [TwoPartyRpcConnection]'s [WireCapabilityContext] — see
+/// [TwoPartyRpcConnection._wireContext]. Kept separate from
+/// [TwoPartyRpcConnection] itself (rather than having the connection
+/// `implements WireCapabilityContext` directly) so wire-level entry points
+/// like [startCall]/[releaseImport] never become part of the connection's
+/// own public API.
+class _TwoPartyWireCapabilityContext implements WireCapabilityContext {
+  final TwoPartyRpcConnection _conn;
+  _TwoPartyWireCapabilityContext(this._conn);
+
+  @override
+  ImportState importStateFor(int importId) =>
+      _conn._importTable.stateFor(importId);
+
+  @override
+  Future<void> releaseImport(int importId) => _conn._releaseImport(importId);
+
+  @override
+  (int, Future<DispatchResult>) startCall(
+    Future<int>? importIdFuture,
+    int interfaceId,
+    int methodId,
+    Uint8List paramsBytes, {
+    List<Capability> paramsCapabilities = const [],
+    int? targetPromisedAnswerQid,
+    List<int> targetTransformPath = const [],
+  }) => _conn._startCall(
+    importIdFuture,
+    interfaceId,
+    methodId,
+    paramsBytes,
+    paramsCapabilities: paramsCapabilities,
+    targetPromisedAnswerQid: targetPromisedAnswerQid,
+    targetTransformPath: targetTransformPath,
+  );
+
+  @override
+  (int, Future<DispatchResult>) startCallBuilding(
+    Future<int>? importIdFuture,
+    int interfaceId,
+    int methodId,
+    void Function(AnyPointerBuilder) buildParams, {
+    List<Capability> paramsCapabilities = const [],
+    int? targetPromisedAnswerQid,
+    List<int> targetTransformPath = const [],
+  }) => _conn._startCallBuilding(
+    importIdFuture,
+    interfaceId,
+    methodId,
+    buildParams,
+    paramsCapabilities: paramsCapabilities,
+    targetPromisedAnswerQid: targetPromisedAnswerQid,
+    targetTransformPath: targetTransformPath,
+  );
+
+  @override
+  (int, Future<DispatchResult>) startResolvedImportCall(
+    int importId,
+    int interfaceId,
+    int methodId,
+    void Function(AnyPointerBuilder) buildParams,
+    List<Capability> paramsCapabilities,
+  ) => _conn._startResolvedImportCall(
+    importId,
+    interfaceId,
+    methodId,
+    buildParams,
+    paramsCapabilities,
+  );
+
+  @override
+  Future<ResolvedAnswer> resolveAnswer(int questionId) {
+    final resolved = _conn._answerTable.resolvedFor(questionId);
+    if (resolved != null) return Future.value(resolved);
+    final pending = _conn._answerTable.pendingFor(questionId);
+    if (pending != null) return pending;
+    return Future.error(
+      RpcException('invalid receiverAnswer questionId: $questionId'),
+    );
+  }
+
+  @override
+  int get streamWindowSize => _conn._streamWindowSize;
 }
