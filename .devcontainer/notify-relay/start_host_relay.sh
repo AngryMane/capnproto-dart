@@ -15,6 +15,14 @@ readonly runtime_dir="${XDG_RUNTIME_DIR}/capnproto-dart-notify"
 readonly socket_path="${runtime_dir}/notify.sock"
 readonly script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly relay_script="${script_dir}/host_relay.py"
+# Installed outside the workspace (which the container bind-mounts
+# read-write) so a container process can't rewrite the code this systemd
+# service runs. runtime_dir itself is bind-mounted into the container
+# read-only (see devcontainer.json), so this copy is also unreadable-write
+# from inside the container. Refreshed from the workspace on every host
+# start, before the container (and its write access) exists.
+readonly installed_dir="${runtime_dir}/bin"
+readonly installed_relay="${installed_dir}/host_relay.py"
 
 command -v systemd-run >/dev/null || {
     echo "systemd-run is required on the Ubuntu host" >&2
@@ -26,7 +34,8 @@ command -v notify-send >/dev/null || {
     exit 1
 }
 
-install -d -m 700 "${runtime_dir}"
+install -d -m 700 "${runtime_dir}" "${installed_dir}"
+install -m 700 "${relay_script}" "${installed_relay}"
 
 if systemctl --user is-active --quiet "${unit_name}.service"; then
     exit 0
@@ -41,7 +50,7 @@ systemd-run \
     --unit="${unit_name}" \
     --property=Restart=on-failure \
     --property=RestartSec=1 \
-    /usr/bin/python3 "${relay_script}" "${socket_path}"
+    /usr/bin/python3 "${installed_relay}" "${socket_path}"
 
 for _ in {1..50}; do
     [[ -S "${socket_path}" ]] && exit 0

@@ -8,14 +8,21 @@
   ],
 
   // initializeCommand runs on the HOST, every time the container is
-  // (re)built or started. Both scripts below are idempotent. Using the
+  // (re)built or started. All scripts below are idempotent. Using the
   // object form runs them in parallel.
   "initializeCommand": {
-    // Make sure ~/.ssh/config exists before the mounts below bind-mount it —
-    // Docker fails to start the container if a bind mount's source is missing.
+    // Make sure ~/.ssh/config and ~/.ssh/known_hosts exist, and
+    // SSH_AUTH_SOCK is valid, before the mounts below bind-mount them —
+    // Docker fails to start the container if a bind mount's source is
+    // missing or empty.
     "ensure-ssh-config": [
       "bash",
       "${localWorkspaceFolder}/.devcontainer/ensure-ssh-config.sh"
+    ],
+    // Same, for the Claude Code / Codex credential files below.
+    "ensure-credentials": [
+      "bash",
+      "${localWorkspaceFolder}/.devcontainer/ensure-credentials.sh"
     ],
     // Start the host-side notification relay (see notify-relay/).
     "notify-relay": [
@@ -46,18 +53,23 @@
     "source=capnproto-dart-cargo-git,target=/usr/local/cargo/git,type=volume",
 
     // Claude Code: container-local volume for settings/hooks/history (never
-    // written back to the host), with only the login credential file bridged
-    // in from the host so a single `claude login` on either side covers both.
-    // Only works if the host stores the session as a file here rather than an
-    // OS keychain (macOS Keychain) — Linux falls back to file storage by
-    // default, but a macOS host may need one `claude login` inside the
-    // container the first time if it was using Keychain-backed storage.
+    // written back to the host), with the login credential file bridged in
+    // one-way from the host so a `claude login` on the host also covers the
+    // container. Staged read-only at /run/host-credentials and copied into
+    // the volume by postStartCommand (sync-credentials.sh) rather than
+    // bind-mounted directly onto the volume — a direct bind would let a
+    // `claude login` run inside the container write back to the host's own
+    // credential file. If the host stores the session as a file here rather
+    // than an OS keychain (macOS Keychain) — Linux falls back to file
+    // storage by default, but a macOS host using Keychain-backed storage may
+    // need one `claude login` inside the container the first time; that
+    // login only ever touches the container-local copy.
     "source=capnproto-dart-claude-home,target=/root/.claude,type=volume",
-    "source=${localEnv:HOME}/.claude/.credentials.json,target=/root/.claude/.credentials.json,type=bind",
+    "source=${localEnv:HOME}/.claude/.credentials.json,target=/run/host-credentials/claude.json,type=bind,readonly",
 
     // Codex: same pattern as Claude Code above.
     "source=capnproto-dart-codex-home,target=/root/.codex,type=volume",
-    "source=${localEnv:HOME}/.codex/auth.json,target=/root/.codex/auth.json,type=bind",
+    "source=${localEnv:HOME}/.codex/auth.json,target=/run/host-credentials/codex.json,type=bind,readonly",
 
     // GitHub CLI: container-local volume, populated once via
     // `gh auth login --with-token` with a repo-scoped fine-grained PAT (see
@@ -67,6 +79,10 @@
 
     // SSH: agent forwarding only. The container asks the host's ssh-agent to
     // sign challenges — private key material never enters the container.
+    // This is narrower than mounting the key, but not full isolation: any
+    // process in the container can request a signature from whatever
+    // identities are loaded in the forwarded agent, and so authenticate as
+    // you to any host/repo those keys are authorized for.
     // known_hosts/config are read-only metadata, not secrets.
     "source=${localEnv:SSH_AUTH_SOCK},target=/run/host-ssh-agent.sock,type=bind",
     "source=${localEnv:HOME}/.ssh/known_hosts,target=/root/.ssh/known_hosts,type=bind,readonly",
@@ -122,8 +138,17 @@
   // Fetch Dart package dependencies after the container is created.
   "postCreateCommand": "find . -name pubspec.yaml -not -path '*/.*' -execdir dart pub get \\;",
 
-  // Runs inside the container, every start (unlike postCreateCommand, which
-  // only runs once) — keeps /root/.ssh/config in sync with the host file
-  // staged at /run/host-ssh-config above.
-  "postStartCommand": "bash ${containerWorkspaceFolder}/.devcontainer/sync-ssh-config.sh"
+  // Run inside the container, every start (unlike postCreateCommand, which
+  // only runs once) — copy the read-only staged host files above into their
+  // root-owned / container-local destinations.
+  "postStartCommand": {
+    "sync-ssh-config": [
+      "bash",
+      "${containerWorkspaceFolder}/.devcontainer/sync-ssh-config.sh"
+    ],
+    "sync-credentials": [
+      "bash",
+      "${containerWorkspaceFolder}/.devcontainer/sync-credentials.sh"
+    ]
+  }
 }

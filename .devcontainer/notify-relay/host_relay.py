@@ -61,7 +61,7 @@ def receive_request(connection: socket.socket) -> bytes:
 
 
 def show_notification(title: str, body: str) -> None:
-    subprocess.run(
+    completed = subprocess.run(
         [
             "/usr/bin/notify-send",
             "--app-name=Dev Container",
@@ -71,7 +71,15 @@ def show_notification(title: str, body: str) -> None:
         ],
         check=False,
         timeout=5,
+        capture_output=True,
+        text=True,
     )
+
+    if completed.returncode != 0:
+        raise RuntimeError(
+            completed.stderr.strip()
+            or f"notify-send exited with {completed.returncode}"
+        )
 
 
 def main() -> int:
@@ -95,6 +103,7 @@ def main() -> int:
     try:
         while True:
             connection, _ = server.accept()
+            connection.settimeout(5)
 
             with connection:
                 try:
