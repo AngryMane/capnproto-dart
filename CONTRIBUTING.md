@@ -14,9 +14,9 @@ notify-host "Claude Code" "Approval needed"
 ```json
 {
   "hooks": {
-    "Notification": [
+    "PermissionRequest": [
       {
-        "matcher": "permission_prompt",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
