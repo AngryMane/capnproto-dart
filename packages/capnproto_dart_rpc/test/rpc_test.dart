@@ -4880,6 +4880,7 @@ void main() {
       () {
         final target = TailCallServer();
         final handle = vendCapabilityHandle(target);
+        expect(handle, isA<CapabilityLease>());
 
         final direct = target.tryTailCall(
           _echoInterfaceId,

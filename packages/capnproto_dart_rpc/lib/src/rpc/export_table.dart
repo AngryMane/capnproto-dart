@@ -1,6 +1,7 @@
 import 'dart:collection';
 
-import '../capability/capability.dart' show Capability, vendCapabilityHandle;
+import '../capability/capability.dart'
+    show Capability, CapabilityLease, vendCapabilityHandle;
 
 /// Tracks a single locally-exported capability and the peer's remote
 /// reference count for it — see [ExportTable].
@@ -20,7 +21,7 @@ class _ExportEntry {
   /// ensures [identity] is only really torn down once every other
   /// outstanding reference to it is gone too — see vendCapabilityHandle's
   /// doc comment for the shared-refcount mechanism this participates in.
-  final Capability ownedReference;
+  final CapabilityLease ownedReference;
 
   // How many times the peer holds a reference to this export.
   // Incremented on every export (or re-export); decremented on Release.
