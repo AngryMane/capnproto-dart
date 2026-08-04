@@ -562,9 +562,10 @@ class MixedResultServer extends Capability {
 
 class ChildPipelineServer extends Capability {
   final Completer<void>? completer;
-  final Capability child = EchoServer();
+  final Capability child;
 
-  ChildPipelineServer({this.completer});
+  ChildPipelineServer({this.completer, Capability? child})
+    : child = child ?? EchoServer();
 
   @override
   Future<DispatchResult> dispatch(
@@ -1333,6 +1334,47 @@ Future<RpcMessage> _waitForMessageType(
   throw TestFailure('no $type message captured');
 }
 
+/// Polls [condition] until it's true, instead of guessing how long some
+/// async processing takes with a fixed delay. Use whenever there's a
+/// concrete, already-exposed piece of state to wait for (a debug counter,
+/// a captured message, ...).
+Future<void> _waitUntil(
+  bool Function() condition, {
+  Duration timeout = const Duration(seconds: 2),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (!condition()) {
+    if (DateTime.now().isAfter(deadline)) {
+      throw TimeoutException('condition was not reached within $timeout');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+  }
+}
+
+/// Asserts that [future] has not completed (successfully or with an error)
+/// within [duration].
+///
+/// There's no positive state to poll for here — proving an *absence* of
+/// completion is inherently a bounded real-time wait, not something a
+/// polling helper like [_waitUntil] can express. Named and centralized
+/// specifically so a flaky failure here reads as "the wait was too short
+/// for this environment", not "this test is nondeterministic by design".
+Future<void> _expectStillPending(
+  Future<void> future, {
+  Duration duration = const Duration(milliseconds: 100),
+}) async {
+  var completed = false;
+  future
+      .then((_) => completed = true, onError: (_) => completed = true)
+      .ignore();
+  await Future<void>.delayed(duration);
+  expect(
+    completed,
+    isFalse,
+    reason: 'expected this to still be pending after $duration',
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -1859,6 +1901,107 @@ void main() {
         expect(_parseEchoResult(result.payload), 'echo: via tail call');
 
         await client.close();
+      });
+
+      test('known bug (#99): a tail-call-forwarded original call does not '
+          'fail on teardown -- it can succeed later from purely local '
+          'state, once the (uncancelled) forwarded dispatch eventually '
+          'finishes', () async {
+        // target is hosted on the CLIENT; TailCallServer (on the server)
+        // receives it as an import and tail-calls into it -- same wiring
+        // as "tail call to a same-connection import" above, but with a
+        // target whose dispatch never finishes on its own, to observe
+        // what happens if the connection dies while it's still running.
+        final target = SlowEchoServer();
+
+        final s2c = StreamController<Uint8List>();
+        final c2s = StreamController<Uint8List>();
+        final serverCaptured = <Uint8List>[];
+        final serverOutgoing =
+            StreamController<Uint8List>()
+              ..stream.listen(
+                (b) {
+                  serverCaptured.add(b);
+                  s2c.add(b);
+                },
+                onDone: s2c.close,
+                onError: s2c.addError,
+              );
+        final clientOutgoing =
+            StreamController<Uint8List>()
+              ..stream.listen(
+                c2s.add,
+                onDone: c2s.close,
+                onError: c2s.addError,
+              );
+
+        final serverConn = TwoPartyRpcConnection.server(
+          incoming: c2s.stream,
+          outgoing: serverOutgoing.sink,
+          bootstrap: TailCallServer(),
+        );
+        final client = TwoPartyRpcConnection.client(
+          incoming: s2c.stream,
+          outgoing: clientOutgoing.sink,
+        );
+
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        await bootstrapCap.echo('warmup');
+        serverCaptured.clear();
+
+        final callFuture = bootstrapCap.cap.dispatch(
+          _echoInterfaceId,
+          _tailCallMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('')),
+          paramsCapabilities: [target],
+        );
+
+        await target.started.future.timeout(const Duration(seconds: 2));
+        final redirect = await _waitForMessageType(
+          serverCaptured,
+          RpcMessageType.return_,
+        );
+        expect(redirect.isReturnTakeFromOtherQuestion, isTrue);
+
+        // _waitForMessageType only confirms the SERVER sent the redirect —
+        // not that the CLIENT has received and processed it yet (its own
+        // async deframing/dispatch pipeline still needs a beat). Closing
+        // too early would cancel the incoming subscription while those
+        // already-in-flight bytes are still queued, discarding them
+        // before _awaitReturn ever gets to call _resolveLocalAnswer —
+        // which would make this test exercise "outgoing question dropped
+        // before its Return arrived" (already covered elsewhere) instead
+        // of the tail-call-specific race this test is about. Waiting for
+        // debugPendingQuestionCount to drop is deterministic here:
+        // _handleReturn's very first line (QuestionTable.takeReturn)
+        // clears this synchronously, before _awaitReturn's own
+        // _resolveLocalAnswer continuation even starts running.
+        await _waitUntil(() => client.debugPendingQuestionCount == 0);
+
+        await client.close();
+        await serverConn.done.catchError((_) {});
+
+        // Known bug, tracked as https://github.com/AngryMane/capnproto-dart/issues/99
+        // -- characterized here, not fixed: AnswerTable.tearDown only
+        // cancels the forwarded dispatch's DispatchContext -- it has no
+        // way to reach into the Future _awaitReturn already extracted via
+        // _resolveLocalAnswer for the original call. SlowEchoServer
+        // ignores cancellation and keeps blocking on target.complete, so
+        // the original call stays genuinely pending, not failed, even
+        // though the whole connection is already gone. Every other
+        // "connection torn down while pending" scenario in this file fails
+        // with a connection error instead; a tail call is supposed to be a
+        // transparent wire optimization, so this asymmetry is a real gap,
+        // not an accepted design choice -- see the linked issue.
+        expect(target.lastContext?.isCanceled, isTrue);
+        await _expectStillPending(
+          callFuture,
+          duration: const Duration(milliseconds: 100),
+        );
+
+        target.complete.complete();
+        final result = await callFuture.timeout(const Duration(seconds: 2));
+        expect(_parseEchoResult(result.payload), equals('done'));
       });
     },
   );
@@ -3447,6 +3590,108 @@ void main() {
       expect(serverConn.debugCancellationCount, equals(0));
       expect(serverConn.debugAnswerCount, equals(0));
     });
+
+    test('a pipelined (promised-answer) call still pending on teardown fails '
+        'instead of hanging, and the parent settling afterwards does not '
+        'resurrect answer-table state', () async {
+      final gate = Completer<void>();
+      final child = CountingCapability();
+      final (client, serverConn) = _makePipe(
+        ChildPipelineServer(completer: gate, child: child),
+      );
+
+      final bootstrapCap = client.bootstrap(EchoClientFactory());
+      await bootstrapCap.echo('warmup');
+
+      final parent = bootstrapCap.cap.beginDispatch(
+        _echoInterfaceId,
+        _pipelineMethodId,
+        RpcPayload.fromBytes(_buildEchoParams('')),
+      );
+      final pipelinedCap = parent.pipelineResult(0);
+      final pipelinedCall = pipelinedCap.dispatch(
+        _echoInterfaceId,
+        _echoMethodId,
+        RpcPayload.fromBytes(_buildEchoParams('x')),
+      );
+      await _waitUntil(() => serverConn.debugAnswerCount == 1);
+
+      // The parent dispatch hasn't resolved yet: it's the one live answer,
+      // and the pipelined call rides on top of it wire-side without an
+      // answer entry of its own yet.
+      expect(serverConn.debugCancellationCount, equals(1));
+
+      await client.close();
+
+      await expectLater(parent.result, throwsA(isA<RpcException>()));
+      await expectLater(pipelinedCall, throwsA(isA<RpcException>()));
+      expect(client.debugPendingQuestionCount, equals(0));
+
+      await serverConn.done.catchError((_) {});
+      expect(serverConn.debugAnswerCount, equals(0));
+      expect(serverConn.debugCancellationCount, equals(0));
+
+      // ChildPipelineServer only overrides the context-less dispatch(), so
+      // it never observes the cancellation signal above and keeps running
+      // regardless of teardown. Letting it finish late must not resurrect
+      // any answer-table state that teardown already cleared. Waiting on
+      // child.disposeCount (rather than a fixed delay) proves the late-
+      // completion path actually ran: once the parent dispatch resolves
+      // after the connection is already closed, _runDispatch's
+      // _closedError branch disposes its result capabilities (since they
+      // were never going to be sent as a Return) instead of leaking them
+      // -- child's disposal is a direct signal that path executed, not
+      // just that some arbitrary amount of time passed.
+      gate.complete();
+      await _waitUntil(() => child.disposeCount == 1);
+      expect(serverConn.debugAnswerCount, equals(0));
+      expect(serverConn.debugCancellationCount, equals(0));
+    });
+
+    test(
+      'an export and an import both still holding a live remote reference '
+      'are each disposed exactly once when the connection tears down',
+      () async {
+        final serverSideCap = CountingCapability();
+        final clientSideCap = CountingCapability();
+        final (client, serverConn) = _makePipe(
+          _CapVendingServer(serverSideCap),
+        );
+
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+
+        // _CapVendingServer's _pipelineMethodId never disposes
+        // paramsCapabilities and never returns them either, so
+        // clientSideCap stays a live import on the server / live export on
+        // the client, and the vended serverSideCap (deliberately never
+        // disposed here) stays a live export on the server / live import on
+        // the client -- beyond just the single bootstrap pair.
+        final call = bootstrapCap.cap.beginDispatch(
+          _echoInterfaceId,
+          _pipelineMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('')),
+          paramsCapabilities: [clientSideCap],
+        );
+        call.pipelineResult(0); // vended cap, deliberately left undisposed
+        await call.result;
+        await Future<void>.delayed(Duration.zero);
+
+        expect(client.debugExportCount, equals(1)); // clientSideCap
+        expect(client.debugImportCount, equals(2)); // bootstrap + vended cap
+        expect(serverConn.debugExportCount, equals(2)); // bootstrap + vended
+        expect(serverConn.debugImportCount, equals(1)); // clientSideCap
+
+        await client.close();
+        await serverConn.done.catchError((_) {});
+
+        expect(client.debugExportCount, equals(0));
+        expect(client.debugImportCount, equals(0));
+        expect(serverConn.debugExportCount, equals(0));
+        expect(serverConn.debugImportCount, equals(0));
+        expect(serverSideCap.disposeCount, equals(1));
+        expect(clientSideCap.disposeCount, equals(1));
+      },
+    );
 
     test('exporting the same capability twice reuses the export id; only the '
         'final Release disposes it', () async {
@@ -5564,6 +5809,68 @@ void main() {
       },
     );
 
+    test("known bug (#100): connection torn down while waiting on a "
+        "senderPromise's Resolve -- the pending pipelined call fails "
+        'instead of hanging, but the promise\'s own disposal is left '
+        'permanently pending', () async {
+      final clientToServer = StreamController<Uint8List>();
+      final serverToClient = StreamController<Uint8List>();
+      final server = PromisedReturnServer();
+
+      final serverConn = TwoPartyRpcConnection.server(
+        incoming: clientToServer.stream,
+        outgoing: serverToClient.sink,
+        bootstrap: server,
+      );
+      final client = TwoPartyRpcConnection.client(
+        incoming: serverToClient.stream,
+        outgoing: clientToServer.sink,
+      );
+
+      final bootstrapCap = client.bootstrap(EchoClientFactory());
+      await bootstrapCap.echo('warmup');
+
+      final parent = bootstrapCap.cap.beginDispatch(
+        _echoInterfaceId,
+        _pipelineMethodId,
+        RpcPayload.fromBytes(_buildEchoParams('')),
+      );
+      final pipelinedCap = parent.pipelineResult(0);
+      final pipelinedCall = pipelinedCap.dispatch(
+        _echoInterfaceId,
+        _echoMethodId,
+        RpcPayload.fromBytes(_buildEchoParams('before-resolve')),
+      );
+      // The parent call itself resolves immediately (PromisedReturnServer
+      // returns the still-unresolved promise as its result right away);
+      // only the pipelined call rides on that promise's eventual Resolve.
+      await parent.result;
+
+      await client.close();
+      await serverConn.done.catchError((_) {});
+
+      await expectLater(pipelinedCall, throwsA(isA<RpcException>()));
+      expect(client.debugImportCount, equals(0));
+      expect(client.debugBrokenImportCount, equals(0));
+
+      // Known bug, tracked as https://github.com/AngryMane/capnproto-dart/issues/100
+      // -- characterized here, not fixed: server.completer is never
+      // completed, so DeferredCapability.dispose() -- awaited by the
+      // export's CapabilityLease.dispose(), triggered fire-and-forget by
+      // ExportTable.tearDown() when serverConn tore down above -- awaits
+      // that never-settling Future first and never actually finishes. The
+      // table's own bookkeeping already looks clean, but the real disposal
+      // is permanently pending. If application code ever awaits disposing
+      // this same capability again (this call is safe only because
+      // dispose() is idempotent/cached, so it just *observes* the
+      // already-triggered disposal rather than starting a new one), that
+      // code hangs too -- see the linked issue.
+      await _expectStillPending(
+        server.promised.dispose(),
+        duration: const Duration(milliseconds: 200),
+      );
+    });
+
     test('server sends Resolve(exception) when senderPromise fails', () async {
       final clientToServer = StreamController<Uint8List>();
       final serverToClient = StreamController<Uint8List>();
@@ -5873,7 +6180,8 @@ void main() {
         'messages actually made it out', () async {
       final input = StreamController<Uint8List>();
       final realOutput = StreamController<Uint8List>();
-      realOutput.stream.listen((_) {});
+      final delivered = <Uint8List>[];
+      realOutput.stream.listen(delivered.add);
       // Throws once _sendRaw's add() delivers the *second* Release
       // message of the batch — exercising both "a send failure partway
       // through the flush loop" and "the flush must stop trying the
@@ -5927,6 +6235,28 @@ void main() {
       // The connection is torn down as a result (matching every other
       // _sendRaw failure) — done completes, carrying the sink's error.
       await expectLater(conn.done, throwsA(isA<StateError>()));
+
+      // Teardown clears every table, not just the import-related ones the
+      // assertions above already cover.
+      expect(conn.debugExportCount, equals(0));
+      expect(conn.debugAnswerCount, equals(0));
+      expect(conn.debugCancellationCount, equals(0));
+      expect(conn.debugEmbargoCount, equals(0));
+
+      // Exactly one Release actually reached the wire (the first of the
+      // batch, before the sink's deliberate failure on the second) — the
+      // third was never even attempted, since _closedError was already set
+      // by the time the flush loop would have reached it. Proves
+      // _flushPendingReleases really does stop trying remaining entries
+      // once torn down, rather than merely tolerating one send failure and
+      // continuing.
+      final releasesDelivered =
+          delivered
+              .map(parseRpcMessage)
+              .where((m) => m.type == RpcMessageType.release)
+              .toList();
+      expect(releasesDelivered, hasLength(1));
+      expect(releasesDelivered.single.releaseId, equals(20));
 
       await input.close();
     });
@@ -6109,6 +6439,72 @@ void main() {
         await clientToServer.close();
       },
     );
+
+    test('connection torn down while waiting on a Disembargo round trip: the '
+        'waiting call fails as a connection error (not the timeout-specific '
+        'one), and the embargo table clears', () async {
+      final clientToServer = StreamController<Uint8List>();
+      final serverToClient = StreamController<Uint8List>();
+      final captured = <Uint8List>[];
+      final interceptSink =
+          StreamController<Uint8List>()
+            ..stream.listen((bytes) {
+              captured.add(bytes);
+              clientToServer.add(bytes);
+            });
+      clientToServer.stream.listen((_) {});
+
+      final client = TwoPartyRpcConnection.client(
+        incoming: serverToClient.stream,
+        outgoing: interceptSink.sink,
+      );
+      final stub = client.bootstrap(EchoClientFactory());
+      serverToClient.add(
+        buildReturnResultsWithCapDescriptorsMessage(
+          answerId: 0,
+          resultsBytes: _buildEchoParams(''),
+          descriptors: const [RpcCapDescriptor.senderPromise(10)],
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      captured.clear();
+      final firstCall = stub.cap.dispatch(
+        _echoInterfaceId,
+        _echoMethodId,
+        RpcPayload.fromBytes(_buildEchoParams('before')),
+        paramsCapabilities: [EchoServer()],
+      );
+      firstCall.ignore();
+      await _waitForMessageType(captured, RpcMessageType.call);
+
+      captured.clear();
+      serverToClient.add(
+        buildResolveCapMessage(promiseId: 10, capDisc: 3, capId: 1),
+      );
+      await _waitForMessageType(captured, RpcMessageType.disembargo);
+      expect(client.debugEmbargoCount, equals(1));
+
+      final afterCall = stub.echo('after')..ignore();
+      await client.close();
+
+      await expectLater(
+        afterCall,
+        throwsA(
+          isA<RpcException>().having(
+            (error) => error.kind,
+            'kind',
+            ErrorKind.disconnected,
+          ),
+        ),
+      );
+      expect(client.debugEmbargoCount, equals(0));
+      expect(client.debugPendingQuestionCount, equals(0));
+
+      await serverToClient.close();
+      await interceptSink.close();
+      await clientToServer.close();
+    });
   });
 
   group('TwoPartyRpcConnection resource-limit validation', () {
