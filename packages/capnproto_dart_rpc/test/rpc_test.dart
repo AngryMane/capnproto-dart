@@ -1333,6 +1333,47 @@ Future<RpcMessage> _waitForMessageType(
   throw TestFailure('no $type message captured');
 }
 
+/// Polls [condition] until it's true, instead of guessing how long some
+/// async processing takes with a fixed delay. Use whenever there's a
+/// concrete, already-exposed piece of state to wait for (a debug counter,
+/// a captured message, ...).
+Future<void> _waitUntil(
+  bool Function() condition, {
+  Duration timeout = const Duration(seconds: 2),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (!condition()) {
+    if (DateTime.now().isAfter(deadline)) {
+      throw TimeoutException('condition was not reached within $timeout');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+  }
+}
+
+/// Asserts that [future] has not completed (successfully or with an error)
+/// within [duration].
+///
+/// There's no positive state to poll for here — proving an *absence* of
+/// completion is inherently a bounded real-time wait, not something a
+/// polling helper like [_waitUntil] can express. Named and centralized
+/// specifically so a flaky failure here reads as "the wait was too short
+/// for this environment", not "this test is nondeterministic by design".
+Future<void> _expectStillPending(
+  Future<void> future, {
+  Duration duration = const Duration(milliseconds: 100),
+}) async {
+  var completed = false;
+  future
+      .then((_) => completed = true, onError: (_) => completed = true)
+      .ignore();
+  await Future<void>.delayed(duration);
+  expect(
+    completed,
+    isFalse,
+    reason: 'expected this to still be pending after $duration',
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -1861,9 +1902,10 @@ void main() {
         await client.close();
       });
 
-      test('a tail-call-forwarded original call does not fail on teardown -- '
-          'it can succeed later from purely local state, once the '
-          '(uncancelled) forwarded dispatch eventually finishes', () async {
+      test('known bug (#99): a tail-call-forwarded original call does not '
+          'fail on teardown -- it can succeed later from purely local '
+          'state, once the (uncancelled) forwarded dispatch eventually '
+          'finishes', () async {
         // target is hosted on the CLIENT; TailCallServer (on the server)
         // receives it as an import and tail-calls into it -- same wiring
         // as "tail call to a same-connection import" above, but with a
@@ -1928,32 +1970,32 @@ void main() {
         // before _awaitReturn ever gets to call _resolveLocalAnswer —
         // which would make this test exercise "outgoing question dropped
         // before its Return arrived" (already covered elsewhere) instead
-        // of the tail-call-specific race this test is about.
-        await Future<void>.delayed(const Duration(milliseconds: 20));
+        // of the tail-call-specific race this test is about. Waiting for
+        // debugPendingQuestionCount to drop is deterministic here:
+        // _handleReturn's very first line (QuestionTable.takeReturn)
+        // clears this synchronously, before _awaitReturn's own
+        // _resolveLocalAnswer continuation even starts running.
+        await _waitUntil(() => client.debugPendingQuestionCount == 0);
 
         await client.close();
         await serverConn.done.catchError((_) {});
 
-        // See this stage's plan notes ("Finding A"): AnswerTable.tearDown
-        // only cancels the forwarded dispatch's DispatchContext -- it has
-        // no way to reach into the Future _awaitReturn already extracted
-        // via _resolveLocalAnswer for the original call. SlowEchoServer
+        // Known bug, tracked as https://github.com/AngryMane/capnproto-dart/issues/99
+        // -- characterized here, not fixed: AnswerTable.tearDown only
+        // cancels the forwarded dispatch's DispatchContext -- it has no
+        // way to reach into the Future _awaitReturn already extracted via
+        // _resolveLocalAnswer for the original call. SlowEchoServer
         // ignores cancellation and keeps blocking on target.complete, so
         // the original call stays genuinely pending, not failed, even
-        // though the whole connection is already gone.
+        // though the whole connection is already gone. Every other
+        // "connection torn down while pending" scenario in this file fails
+        // with a connection error instead; a tail call is supposed to be a
+        // transparent wire optimization, so this asymmetry is a real gap,
+        // not an accepted design choice -- see the linked issue.
         expect(target.lastContext?.isCanceled, isTrue);
-        var settled = false;
-        callFuture
-            .then((_) => settled = true, onError: (_) => settled = true)
-            .ignore();
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-        expect(
-          settled,
-          isFalse,
-          reason:
-              'the original call must still be pending long after '
-              'teardown -- it only settles once the local forwarded '
-              'dispatch does',
+        await _expectStillPending(
+          callFuture,
+          duration: const Duration(milliseconds: 100),
         );
 
         target.complete.complete();
@@ -3570,12 +3612,11 @@ void main() {
         _echoMethodId,
         RpcPayload.fromBytes(_buildEchoParams('x')),
       );
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await _waitUntil(() => serverConn.debugAnswerCount == 1);
 
       // The parent dispatch hasn't resolved yet: it's the one live answer,
       // and the pipelined call rides on top of it wire-side without an
       // answer entry of its own yet.
-      expect(serverConn.debugAnswerCount, equals(1));
       expect(serverConn.debugCancellationCount, equals(1));
 
       await client.close();
@@ -5758,9 +5799,10 @@ void main() {
       },
     );
 
-    test("connection torn down while waiting on a senderPromise's Resolve: "
-        'the pending pipelined call fails instead of hanging, and the '
-        "promise's own disposal is left permanently pending", () async {
+    test("known bug (#100): connection torn down while waiting on a "
+        "senderPromise's Resolve -- the pending pipelined call fails "
+        'instead of hanging, but the promise\'s own disposal is left '
+        'permanently pending', () async {
       final clientToServer = StreamController<Uint8List>();
       final serverToClient = StreamController<Uint8List>();
       final server = PromisedReturnServer();
@@ -5801,25 +5843,22 @@ void main() {
       expect(client.debugImportCount, equals(0));
       expect(client.debugBrokenImportCount, equals(0));
 
-      // See this stage's plan notes ("Finding B"): server.completer is
-      // never completed, so DeferredCapability.dispose() -- awaited by
-      // the export's CapabilityLease.dispose(), triggered fire-and-forget
-      // by ExportTable.tearDown() when serverConn tore down above --
-      // awaits that never-settling Future first and never actually
-      // finishes. The table's own bookkeeping already looks clean, but
-      // the real disposal is permanently pending. Calling dispose() again
-      // here is safe (idempotent/cached), so this only *observes* the
-      // already-triggered disposal rather than starting a new one.
-      var promiseDisposeSettled = false;
-      server.promised
-          .dispose()
-          .then(
-            (_) => promiseDisposeSettled = true,
-            onError: (_) => promiseDisposeSettled = true,
-          )
-          .ignore();
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-      expect(promiseDisposeSettled, isFalse);
+      // Known bug, tracked as https://github.com/AngryMane/capnproto-dart/issues/100
+      // -- characterized here, not fixed: server.completer is never
+      // completed, so DeferredCapability.dispose() -- awaited by the
+      // export's CapabilityLease.dispose(), triggered fire-and-forget by
+      // ExportTable.tearDown() when serverConn tore down above -- awaits
+      // that never-settling Future first and never actually finishes. The
+      // table's own bookkeeping already looks clean, but the real disposal
+      // is permanently pending. If application code ever awaits disposing
+      // this same capability again (this call is safe only because
+      // dispose() is idempotent/cached, so it just *observes* the
+      // already-triggered disposal rather than starting a new one), that
+      // code hangs too -- see the linked issue.
+      await _expectStillPending(
+        server.promised.dispose(),
+        duration: const Duration(milliseconds: 200),
+      );
     });
 
     test('server sends Resolve(exception) when senderPromise fails', () async {

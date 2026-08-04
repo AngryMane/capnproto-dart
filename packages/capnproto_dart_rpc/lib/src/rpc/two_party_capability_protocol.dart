@@ -216,11 +216,25 @@ extension _CapabilityProtocol on TwoPartyRpcConnection {
     );
   }
 
-  /// Applies `Return.releaseParamCaps` locally: for each export ID this vat
-  /// put in the answered Call's own capTable (its params capabilities, from
-  /// [_recordParamExportIds]), releases exactly one reference — the same
-  /// effect an explicit `Release(id, 1)` from the peer would have had, without
-  /// the peer needing to actually send one.
+  /// Releases one local export reference for every ID in [exportIds]. Used
+  /// in two equivalent-effect cases:
+  ///
+  /// 1. Applying `Return.releaseParamCaps` locally: for each export ID this
+  ///    vat put in the answered Call's own capTable (its params
+  ///    capabilities, from [_recordParamExportIds]), the same effect an
+  ///    explicit `Release(id, 1)` from the peer would have had, without the
+  ///    peer needing to actually send one.
+  /// 2. Undoing [_recordParamExportIds]/`ExportTable.getOrCreate`'s refcount
+  ///    bump for an outgoing Call's params capabilities when the Call itself
+  ///    never reached [_sendRaw] — e.g. `importIdFuture` rejects, or a
+  ///    broken-import check throws, after cap table resolution already ran.
+  ///    The peer never received anything in that case, so there is no
+  ///    reference for it to `Release`. Callers (the `onError` handler in
+  ///    [_sendOutgoingCall], shared by every outgoing Call attempt) only
+  ///    ever run for a build/send that failed before committing anything to
+  ///    the wire — see that method's own doc comment for why that invariant
+  ///    holds — so this is safe to call unconditionally there, with no
+  ///    separate "was it actually sent" flag to track.
   void _applyReleaseParamCaps(List<int> exportIds) {
     for (final id in exportIds) {
       _exportTable.releaseRef(id, 1, _disposeIgnoringErrors);

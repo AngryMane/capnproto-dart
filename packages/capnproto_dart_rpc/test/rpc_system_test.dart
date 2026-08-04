@@ -63,11 +63,29 @@ class _CountingBootstrap extends Capability {
 // A bootstrap whose dispatch() blocks until release() is called -- lets a
 // test observe server-side teardown (RpcServer.close(), an abrupt
 // disconnect) while a real dispatch is genuinely still in flight, instead
-// of only ever tearing down an idle connection.
+// of only ever tearing down an idle connection. Tracks the DispatchContext
+// it's given so a test can wait for the server's own peer-loss detection
+// (context.canceled) as an independent signal, distinct from -- and prior
+// to -- any explicit RpcServer.close() the test itself calls afterward.
 class _SlowCountingBootstrap extends Capability {
   final Completer<void> started = Completer<void>();
   final Completer<void> release = Completer<void>();
   int disposeCount = 0;
+  DispatchContext? lastContext;
+
+  @override
+  Future<DispatchResult> dispatchWithContext(
+    int interfaceId,
+    int methodId,
+    RpcPayload params, {
+    List<Capability> paramsCapabilities = const [],
+    DispatchContext? context,
+  }) async {
+    lastContext = context ?? DispatchContext.neverCanceled;
+    if (!started.isCompleted) started.complete();
+    await release.future;
+    return DispatchResult(payload: RpcPayload.fromBytes(_emptyParams));
+  }
 
   @override
   Future<DispatchResult> dispatch(
@@ -75,11 +93,12 @@ class _SlowCountingBootstrap extends Capability {
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-  }) async {
-    if (!started.isCompleted) started.complete();
-    await release.future;
-    return DispatchResult(payload: RpcPayload.fromBytes(_emptyParams));
-  }
+  }) => dispatchWithContext(
+    interfaceId,
+    methodId,
+    params,
+    paramsCapabilities: paramsCapabilities,
+  );
 
   @override
   Future<void> dispose() async {
@@ -556,7 +575,22 @@ void main() {
         await socket.flush();
         await bootstrap.started.future.timeout(const Duration(seconds: 2));
 
-        socket.destroy(); // RST, not close()'s graceful FIN.
+        // Immediate transport destruction without a graceful
+        // application-level close (unlike TwoPartyRpcConnection.close(),
+        // which closes the outgoing sink cleanly).
+        socket.destroy();
+
+        // Wait for the SERVER's own peer-loss detection specifically --
+        // not for server.close() below, which would force every tracked
+        // connection closed regardless of whether the abrupt disconnect
+        // was ever actually noticed. Proves teardown here is driven by the
+        // dead transport itself, not merely by the explicit shutdown call
+        // that follows.
+        await bootstrap.lastContext!.canceled.timeout(
+          const Duration(seconds: 5),
+        );
+        expect(bootstrap.lastContext!.isCanceled, isTrue);
+
         await server.close().timeout(const Duration(seconds: 5));
         expect(bootstrap.disposeCount, equals(1));
       }, (error, stackTrace) => unhandledErrors.add(error));
@@ -751,8 +785,38 @@ void main() {
         callFuture.ignore();
         await bootstrap.started.future.timeout(const Duration(seconds: 2));
 
-        socket
-            .destroy(); // true TCP severance, bypassing the WS close handshake
+        // True TCP-level severance, bypassing the WebSocket close
+        // handshake entirely (unlike WebSocket.close(), which only ever
+        // sends a Close frame).
+        socket.destroy();
+
+        // The caller's own in-flight call must observe the disconnect too,
+        // not just the server side -- otherwise a broken client-side
+        // teardown path could hide behind the server ever getting torn
+        // down at all.
+        await expectLater(
+          callFuture,
+          throwsA(
+            isA<RpcException>().having(
+              (error) => error.kind,
+              'kind',
+              ErrorKind.disconnected,
+            ),
+          ),
+        );
+        await client.done.catchError((_) {});
+
+        // Wait for the SERVER's own peer-loss detection specifically --
+        // not for server.close() below, which would force every tracked
+        // connection closed regardless of whether the abrupt disconnect
+        // was ever actually noticed. Proves teardown here is driven by the
+        // dead transport itself, not merely by the explicit shutdown call
+        // that follows.
+        await bootstrap.lastContext!.canceled.timeout(
+          const Duration(seconds: 5),
+        );
+        expect(bootstrap.lastContext!.isCanceled, isTrue);
+
         await server.close().timeout(const Duration(seconds: 5));
         expect(bootstrap.disposeCount, equals(1));
 

@@ -426,19 +426,6 @@ class TwoPartyRpcConnection implements RpcConnection {
     }
   }
 
-  /// Undoes [_recordParamExportIds]/`ExportTable.getOrCreate`'s refcount bump
-  /// for [qid]'s params capabilities when the Call itself never reached
-  /// [_sendRaw] — e.g. `importIdFuture` rejects, or a broken-import check
-  /// throws, after cap table resolution already ran. The peer never
-  /// received anything in that case, so there is no reference for it to
-  /// `Release`; a real one from `Return.releaseParamCaps` would go through
-  /// [_applyReleaseParamCaps] instead, once a Return can even exist. Callers
-  /// (the `onError` handler in [_sendOutgoingCall], shared by every outgoing
-  /// Call attempt) only ever run for a build/send that failed before
-  /// committing anything to the wire — see that method's own doc comment
-  /// for why that invariant holds — so this is safe to call unconditionally
-  /// there, with no separate "was it actually sent" flag to track.
-
   /// Disposes [capability] without awaiting or propagating a failure.
   ///
   /// Used for every internally-triggered dispose (Release handling,
