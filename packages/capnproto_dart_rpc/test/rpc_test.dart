@@ -562,9 +562,10 @@ class MixedResultServer extends Capability {
 
 class ChildPipelineServer extends Capability {
   final Completer<void>? completer;
-  final Capability child = EchoServer();
+  final Capability child;
 
-  ChildPipelineServer({this.completer});
+  ChildPipelineServer({this.completer, Capability? child})
+    : child = child ?? EchoServer();
 
   @override
   Future<DispatchResult> dispatch(
@@ -3594,8 +3595,9 @@ void main() {
         'instead of hanging, and the parent settling afterwards does not '
         'resurrect answer-table state', () async {
       final gate = Completer<void>();
+      final child = CountingCapability();
       final (client, serverConn) = _makePipe(
-        ChildPipelineServer(completer: gate),
+        ChildPipelineServer(completer: gate, child: child),
       );
 
       final bootstrapCap = client.bootstrap(EchoClientFactory());
@@ -3632,10 +3634,18 @@ void main() {
       // ChildPipelineServer only overrides the context-less dispatch(), so
       // it never observes the cancellation signal above and keeps running
       // regardless of teardown. Letting it finish late must not resurrect
-      // any answer-table state that teardown already cleared.
+      // any answer-table state that teardown already cleared. Waiting on
+      // child.disposeCount (rather than a fixed delay) proves the late-
+      // completion path actually ran: once the parent dispatch resolves
+      // after the connection is already closed, _runDispatch's
+      // _closedError branch disposes its result capabilities (since they
+      // were never going to be sent as a Return) instead of leaking them
+      // -- child's disposal is a direct signal that path executed, not
+      // just that some arbitrary amount of time passed.
       gate.complete();
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await _waitUntil(() => child.disposeCount == 1);
       expect(serverConn.debugAnswerCount, equals(0));
+      expect(serverConn.debugCancellationCount, equals(0));
     });
 
     test(
