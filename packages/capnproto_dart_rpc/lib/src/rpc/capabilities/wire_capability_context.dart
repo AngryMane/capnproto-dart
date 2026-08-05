@@ -3,8 +3,8 @@ import 'dart:typed_data';
 
 import 'package:capnproto_dart/capnproto_dart.dart';
 
-import '../capability/capability.dart' show Capability, DispatchResult;
-import 'answer_table.dart';
+import '../../capability/capability.dart' show Capability, DispatchResult;
+import '../calls/answer_table.dart';
 import 'import_table.dart';
 
 /// The narrow set of connection operations that wire-backed capability

@@ -2,12 +2,12 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:capnproto_dart_rpc/src/capability/capability.dart';
-import 'package:capnproto_dart_rpc/src/rpc/import_table.dart';
-import 'package:capnproto_dart_rpc/src/rpc/outgoing_call_coordinator.dart';
-import 'package:capnproto_dart_rpc/src/rpc/question_table.dart';
+import 'package:capnproto_dart_rpc/src/rpc/calls/outgoing_call_coordinator.dart';
+import 'package:capnproto_dart_rpc/src/rpc/calls/question_table.dart';
+import 'package:capnproto_dart_rpc/src/rpc/capabilities/import_table.dart';
+import 'package:capnproto_dart_rpc/src/rpc/capabilities/wire_capability_context.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_exception.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_proto.dart';
-import 'package:capnproto_dart_rpc/src/rpc/wire_capability_context.dart';
 import 'package:test/test.dart';
 
 // A minimal, fully-encoded, valid Cap'n Proto message (1 segment, 1 word,
@@ -104,10 +104,12 @@ class _Harness {
   );
 }
 
-RpcMessage _decodedEmptyReturn(int answerId) =>
-    parseRpcMessage(
-      buildReturnResultsMessage(answerId: answerId, resultsBytes: _emptyMessageBytes),
-    );
+RpcMessage _decodedEmptyReturn(int answerId) => parseRpcMessage(
+  buildReturnResultsMessage(
+    answerId: answerId,
+    resultsBytes: _emptyMessageBytes,
+  ),
+);
 
 void main() {
   group('OutgoingCallCoordinator', () {
@@ -171,9 +173,12 @@ void main() {
       );
 
       expect(h.sentBytes, isEmpty);
-      expect(h.releasedExportIds, equals([
-        [42],
-      ]));
+      expect(
+        h.releasedExportIds,
+        equals([
+          [42],
+        ]),
+      );
       expect(question.sentCompleter!.future, throwsA(isA<RpcException>()));
       expect(question.returnCompleter!.future, throwsA(isA<RpcException>()));
     });
@@ -223,30 +228,33 @@ void main() {
       expect(h.returnsSeenByHook, equals([msg]));
     });
 
-    test('tearDown fails a pending call and rejects any subsequent start', () async {
-      final h = _Harness();
-      final started = h.coordinator.start(
-        target: const ImportedCapabilityTarget(5),
-        params: SerializedParams(_emptyMessageBytes),
-        interfaceId: 1,
-        methodId: 2,
-      );
-
-      final err = const RpcException('connection torn down');
-      h.coordinator.tearDown(err);
-      await expectLater(started.result, throwsA(isA<RpcException>()));
-
-      expect(
-        () => h.coordinator.start(
+    test(
+      'tearDown fails a pending call and rejects any subsequent start',
+      () async {
+        final h = _Harness();
+        final started = h.coordinator.start(
           target: const ImportedCapabilityTarget(5),
           params: SerializedParams(_emptyMessageBytes),
           interfaceId: 1,
           methodId: 2,
-        ),
-        throwsA(isA<RpcException>()),
-      );
-      expect(h.questions.pendingCount, equals(0));
-    });
+        );
+
+        final err = const RpcException('connection torn down');
+        h.coordinator.tearDown(err);
+        await expectLater(started.result, throwsA(isA<RpcException>()));
+
+        expect(
+          () => h.coordinator.start(
+            target: const ImportedCapabilityTarget(5),
+            params: SerializedParams(_emptyMessageBytes),
+            interfaceId: 1,
+            methodId: 2,
+          ),
+          throwsA(isA<RpcException>()),
+        );
+        expect(h.questions.pendingCount, equals(0));
+      },
+    );
 
     test('startUsing after tearDown fails the supplied question without '
         'sending', () {

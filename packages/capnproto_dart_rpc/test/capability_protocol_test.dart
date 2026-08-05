@@ -2,14 +2,14 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:capnproto_dart_rpc/src/capability/capability.dart';
-import 'package:capnproto_dart_rpc/src/rpc/capability_protocol.dart';
-import 'package:capnproto_dart_rpc/src/rpc/embargo_table.dart';
-import 'package:capnproto_dart_rpc/src/rpc/export_table.dart';
-import 'package:capnproto_dart_rpc/src/rpc/import_table.dart';
-import 'package:capnproto_dart_rpc/src/rpc/question_table.dart';
+import 'package:capnproto_dart_rpc/src/rpc/calls/question_table.dart';
+import 'package:capnproto_dart_rpc/src/rpc/capabilities/capability_protocol.dart';
+import 'package:capnproto_dart_rpc/src/rpc/capabilities/embargo_table.dart';
+import 'package:capnproto_dart_rpc/src/rpc/capabilities/export_table.dart';
+import 'package:capnproto_dart_rpc/src/rpc/capabilities/import_table.dart';
+import 'package:capnproto_dart_rpc/src/rpc/capabilities/wire_capability_context.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_exception.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_proto.dart';
-import 'package:capnproto_dart_rpc/src/rpc/wire_capability_context.dart';
 import 'package:test/test.dart';
 
 class _FakeCapability extends Capability {
@@ -142,10 +142,10 @@ void main() {
       final capA = _FakeCapability();
       final capB = _FakeCapability();
 
-      final result = h.protocol.resolveCapTableMaybeSync(
-        [capA, capB],
-        ensureActive: () {},
-      );
+      final result = h.protocol.resolveCapTableMaybeSync([
+        capA,
+        capB,
+      ], ensureActive: () {});
 
       expect(result, isA<List<RpcCapDescriptor>>());
       final descriptors = result as List<RpcCapDescriptor>;
@@ -167,10 +167,9 @@ void main() {
                   : const NotWireCapability();
 
       var ensureActiveCalls = 0;
-      final result = h.protocol.resolveCapTableMaybeSync(
-        [capA],
-        ensureActive: () => ensureActiveCalls++,
-      );
+      final result = h.protocol.resolveCapTableMaybeSync([
+        capA,
+      ], ensureActive: () => ensureActiveCalls++);
 
       expect(result, isA<Future<List<RpcCapDescriptor>>>());
       final callsBeforeResolve = ensureActiveCalls;
@@ -198,8 +197,9 @@ void main() {
       );
       expect(h.importTable.isTracked(5), isTrue);
 
-      final promiseState =
-          h.importTable.stateFor(6); // capture before retain, to check isPromise
+      final promiseState = h.importTable.stateFor(
+        6,
+      ); // capture before retain, to check isPromise
       h.protocol.capabilityFromDescriptor(
         const RpcCapDescriptor.senderPromise(6),
       );

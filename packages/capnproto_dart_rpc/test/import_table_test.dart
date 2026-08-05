@@ -1,5 +1,5 @@
 import 'package:capnproto_dart_rpc/src/capability/capability.dart';
-import 'package:capnproto_dart_rpc/src/rpc/import_table.dart';
+import 'package:capnproto_dart_rpc/src/rpc/capabilities/import_table.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_exception.dart';
 import 'package:test/test.dart';
 

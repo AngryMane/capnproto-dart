@@ -1,5 +1,5 @@
-import '../capability/capability.dart' show Capability;
-import 'rpc_exception.dart';
+import '../../capability/capability.dart' show Capability;
+import '../rpc_exception.dart';
 
 /// Tracks resolution/error state for a single remote capability this vat
 /// imports — see [ImportTable].

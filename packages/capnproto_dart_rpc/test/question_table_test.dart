@@ -1,4 +1,4 @@
-import 'package:capnproto_dart_rpc/src/rpc/question_table.dart';
+import 'package:capnproto_dart_rpc/src/rpc/calls/question_table.dart';
 import 'package:test/test.dart';
 
 void main() {

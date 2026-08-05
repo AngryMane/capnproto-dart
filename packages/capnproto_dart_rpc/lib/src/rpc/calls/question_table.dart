@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'rpc_proto.dart';
+import '../rpc_proto.dart';
 
 /// Owns every outgoing question a [TwoPartyRpcConnection] currently has in
 /// flight — allocation of fresh question ids, each one's `Return` completer

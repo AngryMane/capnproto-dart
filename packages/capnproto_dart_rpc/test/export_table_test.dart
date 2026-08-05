@@ -1,5 +1,5 @@
 import 'package:capnproto_dart_rpc/src/capability/capability.dart';
-import 'package:capnproto_dart_rpc/src/rpc/export_table.dart';
+import 'package:capnproto_dart_rpc/src/rpc/capabilities/export_table.dart';
 import 'package:test/test.dart';
 
 class _FakeCapability extends Capability {

@@ -7,20 +7,20 @@ import 'package:meta/meta.dart';
 import '../capability/capability.dart'
     show Capability, DispatchCancellationController, unwrapVendedCapability;
 import '../capability/capability_factory.dart';
-import 'answer_table.dart';
-import 'capability_protocol.dart';
-import 'embargo_table.dart';
-import 'export_table.dart';
+import 'calls/answer_table.dart';
+import 'calls/incoming_call_coordinator.dart';
+import 'calls/outgoing_call_coordinator.dart';
+import 'calls/question_table.dart';
+import 'capabilities/capability_protocol.dart';
+import 'capabilities/embargo_table.dart';
+import 'capabilities/export_table.dart';
+import 'capabilities/import_table.dart';
+import 'capabilities/wire_capabilities.dart';
+import 'capabilities/wire_capability_context.dart';
 import 'flow_controller.dart';
-import 'import_table.dart';
-import 'incoming_call_coordinator.dart';
-import 'outgoing_call_coordinator.dart';
-import 'question_table.dart';
 import 'rpc_connection.dart';
 import 'rpc_exception.dart';
 import 'rpc_proto.dart';
-import 'wire_capabilities.dart';
-import 'wire_capability_context.dart';
 
 /// A Cap'n Proto RPC Level 1 two-party connection.
 ///
@@ -237,9 +237,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     } else {
       if (_bootstrapCompleter != null && !_bootstrapCompleter!.isCompleted) {
         _bootstrapCompleter!.completeError(
-          const RpcException(
-            'bootstrap Return had no capability in cap table',
-          ),
+          const RpcException('bootstrap Return had no capability in cap table'),
         );
       }
     }
