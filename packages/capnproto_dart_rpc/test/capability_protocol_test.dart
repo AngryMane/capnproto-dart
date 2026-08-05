@@ -34,6 +34,7 @@ class _Harness {
   final sentBytes = <Uint8List>[];
   final disposedFromTable = <Object>[];
   final tearDownCalls = <RpcException>[];
+  final receiverAnswerCalls = <(int, List<int>)>[];
 
   /// Settable per test — defaults to "connection never closes".
   bool Function() isClosed = () => false;
@@ -56,7 +57,10 @@ class _Harness {
     tearDownConnection: tearDownCalls.add,
     classifyCapability: (cap) => classifyCapability(cap),
     importedCapabilityFromState: (state) => _FakeCapability(),
-    receiverAnswerCapability: (qid, path) => _FakeCapability(),
+    receiverAnswerCapability: (qid, path) {
+      receiverAnswerCalls.add((qid, path));
+      return _FakeCapability();
+    },
   );
 }
 
@@ -208,6 +212,31 @@ void main() {
         RpcCapDescriptor.receiverHosted(exportId),
       );
       expect(identical(unwrapVendedCapability(vended), exported), isTrue);
+    });
+
+    test('capabilityFromDescriptor delegates receiverAnswer construction to '
+        'receiverAnswerCapability, normalizing an empty path to [0]', () {
+      final h = _Harness();
+
+      h.protocol.capabilityFromDescriptor(
+        RpcCapDescriptor.receiverAnswer(7, const [1, 2]),
+      );
+      h.protocol.capabilityFromDescriptor(
+        RpcCapDescriptor.receiverAnswer(8, const []),
+      );
+
+      // Compared component-wise, not via equals() on the whole record list:
+      // a record's synthesized `==` calls `List.==` on its List field, which
+      // is identity-based (inherited from Object), not the deep/structural
+      // comparison `equals()` on a bare List would give.
+      expect(h.receiverAnswerCalls, hasLength(2));
+      expect(h.receiverAnswerCalls[0].$1, equals(7));
+      expect(h.receiverAnswerCalls[0].$2, equals([1, 2]));
+      // Empty path normalized to a single hop at pointer slot 0 — only
+      // valid for a Bootstrap answer's capability, which has no wrapping
+      // struct to traverse.
+      expect(h.receiverAnswerCalls[1].$1, equals(8));
+      expect(h.receiverAnswerCalls[1].$2, equals([0]));
     });
 
     test('handleResolve registers an embargo and sends a senderLoopback '

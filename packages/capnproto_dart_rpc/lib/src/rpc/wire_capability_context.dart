@@ -147,11 +147,14 @@ final class ImportedWireCapability extends WireCapabilityKind {
   const ImportedWireCapability(this.importId);
 }
 
-/// A not-yet-resolved pipelined result, targeting [parentQuestionId] (one of
-/// this connection's own outgoing questions) at [transformPath]. [hasResolved]
-/// is `false` only while the underlying promise is still pending — once it
-/// resolves, the capability is treated like any other ([NotWireCapability]),
-/// not specially encoded as a receiverAnswer reference anymore.
+/// A pipelined result targeting [parentQuestionId] (one of this
+/// connection's own outgoing questions) at [transformPath] — classified as
+/// this regardless of [hasResolved], which only affects how capTable
+/// encoding treats it: while `false`, it's still safe to encode as a
+/// receiverAnswer reference; once `true`, encoding falls back to exporting
+/// it normally instead (the same path a genuine [NotWireCapability] takes,
+/// even though classification itself never actually downgrades to
+/// [NotWireCapability]).
 final class PipelinedWireCapability extends WireCapabilityKind {
   final bool hasResolved;
   final int parentQuestionId;

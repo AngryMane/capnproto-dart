@@ -43,12 +43,18 @@ final class CapabilityProtocol {
 
   /// Whether the owning connection has already torn down — the only
   /// closed-check anywhere in this class (`_flushPendingReleases`'s
-  /// best-effort "stop trying, don't retry" early exit). Every other
-  /// method here is already unreachable post-teardown one layer up (the
-  /// owning connection's own message-loop gate, or its dispatch-result
-  /// callback's own `_closedError` check) — see this class's own
-  /// extraction-stage doc/PR notes for why no `tearDown()` lifecycle
-  /// method is needed here, unlike [OutgoingCallCoordinator].
+  /// best-effort "stop trying, don't retry" early exit). Most other methods
+  /// here are already unreachable post-teardown one layer up (the owning
+  /// connection's own message-loop gate, or its dispatch-result callback's
+  /// own `_closedError` check) — [releaseImport] is the one exception,
+  /// reachable at any time via `_ImportedCapability.dispose()` regardless
+  /// of connection state, but safely: once the owning connection tears
+  /// down, `ImportTable.tearDown()` has already dropped the import's
+  /// tracking, so `releaseAndBatch` finds nothing to batch and returns
+  /// immediately, without ever reaching this check at all. No `tearDown()`
+  /// lifecycle method is needed here, unlike [OutgoingCallCoordinator],
+  /// since nothing in this class ever gates its *own* entry points the way
+  /// `OutgoingCallCoordinator.start` does.
   final bool Function() isClosed;
 
   /// Tears the whole connection down — called only from [handleRelease],

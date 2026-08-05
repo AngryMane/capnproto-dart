@@ -272,8 +272,9 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// see [FlowController].
   ///
   /// [disembargoTimeout] bounds how long this vat waits for the peer's
-  /// receiverLoopback reply to a Disembargo it sent (see [_handleResolve]).
-  /// Without a bound, a peer that never replies leaves the pipelined call
+  /// receiverLoopback reply to a Disembargo it sent (see
+  /// [CapabilityProtocol.handleResolve]). Without a bound, a peer that
+  /// never replies leaves the pipelined call
   /// waiting on that embargo blocked forever. Pass `null` to wait
   /// indefinitely (the previous, unbounded behavior).
   ///
@@ -673,11 +674,11 @@ class TwoPartyRpcConnection implements RpcConnection {
   int get debugBrokenImportCount => _importTable.brokenCount;
 
   /// Number of import IDs with a Release batched but not yet flushed to the
-  /// wire (see [_releaseImport]/[_flushPendingReleases]). Always zero
-  /// between microtasks — it's only ever non-zero for the duration of a
-  /// single, already-scheduled flush, and [_flushPendingReleases] clears it
-  /// up front before that flush sends anything (so a mid-flush sink failure
-  /// never leaves it non-empty either).
+  /// wire (see [CapabilityProtocol.releaseImport] and its internal batched
+  /// Release flush). Always zero between microtasks — it's only ever
+  /// non-zero for the duration of a single, already-scheduled flush, and
+  /// that flush clears it up front before it sends anything (so a
+  /// mid-flush sink failure never leaves it non-empty either).
   int get debugPendingReleaseCount => _importTable.pendingReleaseCount;
 
   /// Number of incoming calls with some tracked answer-lifecycle state:
