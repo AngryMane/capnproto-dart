@@ -49,7 +49,7 @@ final _emptyResultBytes = Uint8List.fromList([
 /// one `_sendTailForwardCall` needs.
 final class OutgoingCallCoordinator {
   /// Shared with the owning connection — also read directly by
-  /// `_DispatchLifecycle` (tail-call forwarding) and `_CapabilityProtocol`
+  /// `_DispatchLifecycle` (tail-call forwarding) and `CapabilityProtocol`
   /// (`sentCompleterFor`, for pipelining-safety checks), so this class does
   /// not own it exclusively.
   final QuestionTable questions;
@@ -61,7 +61,7 @@ final class OutgoingCallCoordinator {
 
   /// Resolves a Call's params capabilities into wire descriptors,
   /// synchronously when possible — see the matching doc comment this method
-  /// carried as `_resolveCapTableMaybeSync` in `two_party_capability_protocol.dart`.
+  /// carries as `CapabilityProtocol.resolveCapTableMaybeSync`.
   ///
   /// [ensureActive] must be called before any side effect with lasting
   /// state (an export creation, a refcount bump, recording bookkeeping
@@ -396,8 +396,9 @@ final class OutgoingCallCoordinator {
       ret = await completer.future;
     } finally {
       // Whether or not a params-caps entry was ever recorded for this qid
-      // (see `_CapabilityProtocol._recordParamExportIds`), drop it now —
-      // nothing past this point reads _questionParamExportIds[qid] again, on
+      // (see `CapabilityProtocol`'s internal `_recordParamExportIds`),
+      // drop it now — nothing past this point reads
+      // _questionParamExportIds[qid] again, on
       // any path (success, exception, or completer failing before a Return
       // ever arrived). Captured into a local first so the success path below
       // still has it even though `finally` runs before that code does.

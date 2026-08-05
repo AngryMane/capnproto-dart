@@ -144,7 +144,9 @@ extension _IncomingCallFlow on TwoPartyRpcConnection {
     final paramsCapabilities = <Capability>[];
     try {
       for (final descriptor in msg.capTableDescriptors) {
-        paramsCapabilities.add(_capabilityFromDescriptor(descriptor));
+        paramsCapabilities.add(
+          _capabilityProtocol.capabilityFromDescriptor(descriptor),
+        );
       }
     } catch (error) {
       // Every entry decoded successfully before whatever failed is a real,

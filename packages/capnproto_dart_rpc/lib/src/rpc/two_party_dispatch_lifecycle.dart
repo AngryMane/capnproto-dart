@@ -276,7 +276,7 @@ extension _DispatchLifecycle on TwoPartyRpcConnection {
 
           final resultDescriptors = <RpcCapDescriptor>[];
           for (final c in result.caps) {
-            resultDescriptors.add(_returnCapDescriptor(c));
+            resultDescriptors.add(_capabilityProtocol.returnCapDescriptor(c));
           }
           // No capabilities anywhere in the results means no wire-level
           // pipelined call against this answer could ever resolve to

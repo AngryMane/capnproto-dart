@@ -33,8 +33,8 @@ class ImportState {
 /// capability — [releaseAndBatch]/[decrementRefcount] take a
 /// `disposeIgnoringErrors` callback for the latter, and [takeBatchedReleases]
 /// only ever hands back what needs sending, never sending anything itself;
-/// the caller (today, exclusively `TwoPartyRpcConnection`) owns both of
-/// those wire-protocol concerns. This class only owns the invariant "an
+/// the caller (today, `CapabilityProtocol`) owns both of those
+/// wire-protocol concerns. This class only owns the invariant "an
 /// import's refcount and tracking state stay consistent with how many
 /// `_ImportedCapability` wrappers for it are still undisposed."
 class ImportTable {
@@ -64,7 +64,7 @@ class ImportTable {
   /// distinguishes "we still care about this import" from "we've already
   /// fully released it, and a late message about it must not resurrect
   /// tracking state that nothing will ever clean up again" (see
-  /// `TwoPartyRpcConnection._handleResolve`'s matching doc comment).
+  /// `CapabilityProtocol.handleResolve`'s matching doc comment).
   bool isTracked(int importId) => _importRefCounts.containsKey(importId);
 
   /// Retains a reference to [importId], creating its tracking state on

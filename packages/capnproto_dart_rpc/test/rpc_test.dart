@@ -4744,13 +4744,14 @@ void main() {
     },
   );
 
-  group('_capabilityFromDescriptor: receiverHosted validation', () {
+  group('capabilityFromDescriptor: receiverHosted validation', () {
     test(
       'a receiverHosted descriptor naming an export id we never exported '
       'fails only that one call with Return.exception, and does not tear '
       'down the connection',
       () async {
-        // Regression test: _capabilityFromDescriptor's receiverHosted case
+        // Regression test: CapabilityProtocol.capabilityFromDescriptor's
+        // receiverHosted case
         // (disc=3) used to silently map an unknown export id to
         // NullCapability instead of treating it as the protocol violation
         // it is (a well-behaved peer, honoring the protocol's causal
@@ -4821,7 +4822,7 @@ void main() {
       'a descriptor that fails partway through a multi-entry capTable does '
       'not leak the capabilities that resolved successfully before it',
       () async {
-        // Regression test: when _capabilityFromDescriptor throws partway
+        // Regression test: when capabilityFromDescriptor throws partway
         // through decoding a Call's capTable, everything already decoded
         // before the failing entry (an import refcount bump, in this
         // case) used to just sit in the local `paramsCapabilities` list
@@ -5029,8 +5030,9 @@ void main() {
         // the ownership-transfer contract there means relay's dispatch
         // handler does *not* separately dispose `h` itself; the runtime is
         // solely responsible for it from that point on. Before
-        // _returnCapDescriptor disposed a redundant vended `cap` once its
-        // own owning export reference was established, `h` was simply
+        // CapabilityProtocol.returnCapDescriptor disposed a redundant
+        // vended `cap` once its own owning export reference was established,
+        // `h` was simply
         // dropped — leaking its share of the underlying identity's
         // refcount forever, so vat A's export never actually cleared even
         // after C released its own reference to the result.
@@ -5080,7 +5082,7 @@ void main() {
         // peer A → relay → peer B, then B hands the *same* capability back
         // to relay as a params capability of a further call — wire-encoded
         // as receiverHosted, since it's relay's own export as far as B's
-        // connection is concerned. Before _capabilityFromDescriptor's
+        // connection is concerned. Before capabilityFromDescriptor's
         // receiverHosted case vended a fresh handle instead of returning
         // the export's raw identity directly, relay's dispatch handler
         // disposing that received params capability tore down the shared
@@ -6172,8 +6174,9 @@ void main() {
       //
       // dispatch()'s params list is processed in order: freshCap (not an
       // import) creates a fresh export first, *then* brokenParam's
-      // _throwIfImportBroken throws — exercising _resolveCapTableMaybeSync's
-      // partial-list-then-throw path.
+      // throwIfBroken throws — exercising
+      // CapabilityProtocol.resolveCapTableMaybeSync's partial-list-then-throw
+      // path.
       final freshCap = _TrackedCapability();
       await expectLater(
         target.dispatch(
@@ -7029,8 +7032,8 @@ void main() {
     // two resulting local capabilities would incorrectly drop the server's
     // count to 0 — and since a peer's second, independent Release(id=0,
     // referenceCount=1) would then exceed the (wrongly tracked) outstanding
-    // count, _handleRelease's protocol-violation guard tears the whole
-    // connection down.
+    // count, CapabilityProtocol.handleRelease's protocol-violation guard
+    // tears the whole connection down.
     test('two Bootstrap requests followed by two separate single Releases do '
         'not tear the connection down or drop the export early', () async {
       final clientToServer = StreamController<Uint8List>();
