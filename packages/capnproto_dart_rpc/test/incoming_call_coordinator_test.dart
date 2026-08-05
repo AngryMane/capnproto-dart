@@ -139,8 +139,9 @@ class _Harness {
 
   /// Settable per test — defaults to "always safe to fold into
   /// releaseParamCaps=true", matching a null/empty ticket.
-  (bool, List<int>) Function(Object? ticket) finalizeParamCapsRelease =
-      (ticket) => (true, const []);
+  ({bool allDisposed, List<int> explicitReleaseIds}) Function(Object? ticket)
+  finalizeParamCapsRelease =
+      (ticket) => (allDisposed: true, explicitReleaseIds: const []);
 
   late final coordinator = IncomingCallCoordinator(
     exportTable: exportTable,
@@ -481,7 +482,8 @@ void main() {
       final h = _Harness();
       h.beginParamCapsRelease = (paramsCapabilities) => 'ticket';
 
-      h.finalizeParamCapsRelease = (ticket) => (true, const []);
+      h.finalizeParamCapsRelease =
+          (ticket) => (allDisposed: true, explicitReleaseIds: const []);
       final cap1 = _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
       final exportId1 = h.exportTable.getOrCreate(cap1);
       h.coordinator.handleCall(
@@ -491,7 +493,9 @@ void main() {
       var sent = parseRpcMessage(h.sentBytes.single);
       expect(sent.returnReleaseParamCaps, isTrue);
 
-      h.finalizeParamCapsRelease = (ticket) => (false, const [7, 8]);
+      h.finalizeParamCapsRelease =
+          (ticket) =>
+              (allDisposed: false, explicitReleaseIds: const [7, 8]);
       final cap2 = _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
       final exportId2 = h.exportTable.getOrCreate(cap2);
       h.coordinator.handleCall(
@@ -512,7 +516,8 @@ void main() {
       // empty explicitReleaseIds list — only the latter is safe to fold
       // into releaseParamCaps=true.
       h.sentBytes.clear();
-      h.finalizeParamCapsRelease = (ticket) => (false, const []);
+      h.finalizeParamCapsRelease =
+          (ticket) => (allDisposed: false, explicitReleaseIds: const []);
       final cap3 = _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
       final exportId3 = h.exportTable.getOrCreate(cap3);
       h.coordinator.handleCall(

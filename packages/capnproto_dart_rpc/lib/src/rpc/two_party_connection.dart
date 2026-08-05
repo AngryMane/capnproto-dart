@@ -94,8 +94,11 @@ class TwoPartyRpcConnection implements RpcConnection {
   final Completer<void> _closedCompleter = Completer<void>();
 
   // The bootstrap capability reference on this connection (client side).
-  // Resolved after the Bootstrap exchange completes.
-  _ImportedCapability? _bootstrapCap;
+  // Resolved after the Bootstrap exchange completes. Plain [Capability] —
+  // nothing here ever uses an _ImportedCapability-specific member on it,
+  // only `factory.fromCapability(_bootstrapCap!)` and the `!= null` cache
+  // check — so there's no need to name the concrete wire-capability type.
+  Capability? _bootstrapCap;
   // Completer for the bootstrap handshake.
   Completer<int>? _bootstrapCompleter;
   // Question ID used for the Bootstrap message (so _handleBootstrapReturn
@@ -106,12 +109,25 @@ class TwoPartyRpcConnection implements RpcConnection {
   // (ImportedCapability/WirePipelinedCapability/ReceiverAnswerCapability —
   // see wire_capabilities.dart) is bound to. One instance per connection,
   // for its whole lifetime, so identical(cap._conn, _wireContext) reliably
-  // means "this capability belongs to this connection" (see
-  // _ownedByThisConnection) the same way `cap._conn == this` did back when
-  // those classes held a TwoPartyRpcConnection directly. `late` so the
-  // initializer can reference `this`.
+  // means "this capability belongs to this connection" the same way
+  // `cap._conn == this` did back when those classes held a
+  // TwoPartyRpcConnection directly. `late` so the initializer can reference
+  // `this`.
   late final WireCapabilityContext _wireContext =
       _TwoPartyWireCapabilityContext(this);
+
+  // Constructs, classifies, and manages the lifecycle of every wire-backed
+  // capability this connection vends — see WireCapabilityRuntime's own doc
+  // comment for why this indirection exists (it's what lets this file stop
+  // being `part of` the same library as wire_capabilities.dart). `late` for
+  // the same reason as [_wireContext]: the initializer references `this`
+  // indirectly via [_wireContext].
+  late final WireCapabilityRuntime _wireCapabilities = WireCapabilityRuntime(
+    context: _wireContext,
+    decrementImportReference: (importId) {
+      _importTable.decrementRefcount(importId, _disposeIgnoringErrors);
+    },
+  );
 
   // Capability wire protocol: descriptor encode/decode, import/export
   // bookkeeping glue, senderPromise resolution, Release, Resolve, and
@@ -129,26 +145,9 @@ class TwoPartyRpcConnection implements RpcConnection {
     disposeIgnoringErrors: _disposeIgnoringErrors,
     isClosed: () => _closedError != null,
     tearDownConnection: (error) => _tearDown(error),
-    classifyCapability: (cap) {
-      if (cap is _ImportedCapability && identical(cap._conn, _wireContext)) {
-        return ImportedWireCapability(
-          cap._cachedState?.importId ?? cap._importIdFuture,
-        );
-      }
-      if (cap is _WirePipelinedCapability &&
-          identical(cap._conn, _wireContext)) {
-        return PipelinedWireCapability(
-          hasResolved: cap._hasResolved,
-          parentQuestionId: cap._parentQid,
-          transformPath: cap._transformPath,
-        );
-      }
-      return const NotWireCapability();
-    },
-    importedCapabilityFromState:
-        (state) => _ImportedCapability.fromState(_wireContext, state),
-    receiverAnswerCapability:
-        (qid, path) => _ReceiverAnswerCapability(_wireContext, qid, path),
+    classifyCapability: _wireCapabilities.classify,
+    importedCapabilityFromState: _wireCapabilities.createImportedFromState,
+    receiverAnswerCapability: _wireCapabilities.createReceiverAnswer,
   );
 
   // Owns every outgoing Call this connection sends — see
@@ -205,32 +204,8 @@ class TwoPartyRpcConnection implements RpcConnection {
     capabilityFromDescriptor: _capabilityProtocol.capabilityFromDescriptor,
     returnCapDescriptor: _capabilityProtocol.returnCapDescriptor,
     startUsing: _outgoingCalls.startUsing,
-    beginParamCapsRelease: (paramsCapabilities) {
-      final wrappers = paramsCapabilities
-          .whereType<_ImportedCapability>()
-          .where((c) => _ownedByThisConnection(c._conn))
-          .toList(growable: false);
-      if (wrappers.isEmpty) return null;
-      final tracker = _ParamCapsReleaseTracker(wrappers);
-      for (final wrapper in wrappers) {
-        wrapper._deferredReleaseSink = (id) {
-          _importTable.decrementRefcount(id, _disposeIgnoringErrors);
-          tracker.disposedImportIds.add(id);
-        };
-      }
-      return tracker;
-    },
-    finalizeParamCapsRelease: (ticket) {
-      final tracker = ticket as _ParamCapsReleaseTracker?;
-      if (tracker == null) return (true, const <int>[]);
-      for (final wrapper in tracker.wrappers) {
-        wrapper._deferredReleaseSink = null;
-      }
-      if (tracker.disposedImportIds.length == tracker.wrappers.length) {
-        return (true, const <int>[]);
-      }
-      return (false, tracker.disposedImportIds.toList(growable: false));
-    },
+    beginParamCapsRelease: _wireCapabilities.beginParamCapsRelease,
+    finalizeParamCapsRelease: _wireCapabilities.finalizeParamCapsRelease,
   );
 
   // Handles the bootstrap-specific half of a Return: distinguishing the
@@ -283,14 +258,6 @@ class TwoPartyRpcConnection implements RpcConnection {
     // imported bootstrap capability.
     _sendRaw(buildFinishMessage(bootstrapQid, releaseResultCaps: false));
   }
-
-  // [WireCapabilityContext] is a public interface (unlike the concrete
-  // TwoPartyRpcConnection it replaced), so a future implementation could
-  // override `==` — using `identical()` here (rather than `==`) keeps "does
-  // this capability belong to this connection" a true identity check no
-  // matter what that implementation does.
-  bool _ownedByThisConnection(WireCapabilityContext context) =>
-      identical(context, _wireContext);
 
   TwoPartyRpcConnection._(
     Stream<Uint8List> incoming,
@@ -445,8 +412,7 @@ class TwoPartyRpcConnection implements RpcConnection {
 
     _sendRaw(buildBootstrapMessage(question.id));
 
-    _bootstrapCap = _ImportedCapability(
-      _wireContext,
+    _bootstrapCap = _wireCapabilities.createImported(
       _bootstrapCompleter!.future,
     );
     return factory.fromCapability(_bootstrapCap!);
