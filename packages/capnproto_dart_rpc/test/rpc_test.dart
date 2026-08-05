@@ -5,6 +5,7 @@ import 'package:capnproto_dart_rpc/capnproto_dart_rpc.dart';
 import 'package:capnproto_dart_rpc/src/capability/capability.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_proto.dart';
 import 'package:capnproto_dart_rpc/src/rpc/two_party_connection.dart';
+import 'package:capnproto_dart_rpc/src/rpc/wire_capabilities.dart';
 import 'package:test/test.dart';
 
 class _SynchronousThrowingSink implements StreamSink<Uint8List> {

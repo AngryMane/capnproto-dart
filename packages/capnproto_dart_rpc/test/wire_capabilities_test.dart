@@ -5,6 +5,7 @@ import 'package:capnproto_dart_rpc/capnproto_dart_rpc.dart';
 import 'package:capnproto_dart_rpc/src/rpc/answer_table.dart';
 import 'package:capnproto_dart_rpc/src/rpc/import_table.dart';
 import 'package:capnproto_dart_rpc/src/rpc/two_party_connection.dart';
+import 'package:capnproto_dart_rpc/src/rpc/wire_capabilities.dart';
 import 'package:capnproto_dart_rpc/src/rpc/wire_capability_context.dart';
 import 'package:test/test.dart';
 

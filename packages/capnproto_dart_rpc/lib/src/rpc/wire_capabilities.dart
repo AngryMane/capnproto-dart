@@ -1,4 +1,151 @@
-part of 'two_party_connection.dart';
+import 'dart:async';
+
+import 'package:capnproto_dart/capnproto_dart.dart';
+import 'package:meta/meta.dart';
+
+import '../capability/capability.dart';
+import '../capability/rpc_payload.dart';
+import 'flow_controller.dart';
+import 'import_table.dart';
+import 'rpc_exception.dart';
+import 'wire_capability_context.dart';
+
+/// The single point of contact the owning connection uses to construct,
+/// classify, and manage the lifecycle of every wire-backed capability
+/// (`_ImportedCapability`/`_WirePipelinedCapability`/
+/// `_ReceiverAnswerCapability`/`_ParamCapsReleaseTracker` below) it vends —
+/// so `two_party_connection.dart` itself never needs to name any of those
+/// private types directly. One instance per connection, bound to that
+/// connection's own [WireCapabilityContext] for its whole lifetime.
+///
+/// This exists specifically so `two_party_connection.dart` can stop being
+/// `part of` the same library as this file: without it, the connection's own
+/// wiring code would need to `cap is _ImportedCapability`, read
+/// `cap._cachedState`, write `cap._deferredReleaseSink`, etc. directly,
+/// which only compiles when both files are `part of` the same library. Every
+/// method here is a plain, `Capability`/[WireCapabilityKind]-typed public
+/// surface instead.
+final class WireCapabilityRuntime {
+  /// This runtime's connection, threaded through to every capability it
+  /// constructs and used as the identity anchor for [classify]/
+  /// [beginParamCapsRelease]'s "does this capability belong to this
+  /// connection" checks — see [WireCapabilityKind]'s own doc comment for why
+  /// that must be an `identical()` check, not `==`.
+  final WireCapabilityContext context;
+
+  /// Decrements a same-connection import's local refcount once a params
+  /// capability wrapping it is disposed during [beginParamCapsRelease]'s
+  /// deferred-release window — see that method's own doc comment.
+  final void Function(int importId) decrementImportReference;
+
+  WireCapabilityRuntime({
+    required this.context,
+    required this.decrementImportReference,
+  });
+
+  /// Builds the [Capability] proxying a remote capability whose import id
+  /// isn't known synchronously yet (the client-side bootstrap capability,
+  /// before the handshake resolves — see `TwoPartyRpcConnection.bootstrap`).
+  Capability createImported(Future<int> importIdFuture) =>
+      _ImportedCapability(context, importIdFuture);
+
+  /// As [createImported], for an import whose [ImportState] is already
+  /// known — see `CapabilityProtocol.capabilityFromDescriptor`'s
+  /// senderHosted/senderPromise branches, the only real caller.
+  Capability createImportedFromState(ImportState state) =>
+      _ImportedCapability.fromState(context, state);
+
+  /// Builds the [Capability] a `receiverAnswer` capTable entry resolves to
+  /// — see `CapabilityProtocol.capabilityFromDescriptor`'s receiverAnswer
+  /// branch.
+  Capability createReceiverAnswer(int questionId, List<int> path) =>
+      _ReceiverAnswerCapability(context, questionId, path);
+
+  /// Classifies [capability] as wire-hosted or not — see
+  /// [WireCapabilityKind]'s doc comment. `_WirePipelinedCapability` is never
+  /// constructed outside this file (only `_WireCapCall`/`_AsyncWireCapCall`,
+  /// below, do), so unlike [createImported]/[createReceiverAnswer] it has no
+  /// matching `create*` method here.
+  WireCapabilityKind classify(Capability capability) {
+    if (capability is _ImportedCapability &&
+        identical(capability._conn, context)) {
+      return ImportedWireCapability(
+        capability._cachedState?.importId ?? capability._importIdFuture,
+      );
+    }
+    if (capability is _WirePipelinedCapability &&
+        identical(capability._conn, context)) {
+      return PipelinedWireCapability(
+        hasResolved: capability._hasResolved,
+        parentQuestionId: capability._parentQid,
+        transformPath: capability._transformPath,
+      );
+    }
+    return const NotWireCapability();
+  }
+
+  /// Starts a deferred-release tracking window for whichever of
+  /// [paramsCapabilities] are same-connection `_ImportedCapability`
+  /// wrappers freshly imported for a call — see
+  /// `IncomingCallCoordinator._runDispatch`'s own doc comment for why.
+  /// Returns an opaque ticket (`null` if there's nothing to track) to pass
+  /// back to [finalizeParamCapsRelease] once the call settles; opaque
+  /// because the caller has no legitimate use for anything about it besides
+  /// handing it back unchanged.
+  Object? beginParamCapsRelease(List<Capability> paramsCapabilities) {
+    final wrappers = paramsCapabilities
+        .whereType<_ImportedCapability>()
+        .where((c) => identical(c._conn, context))
+        .toList(growable: false);
+    if (wrappers.isEmpty) return null;
+    final tracker = _ParamCapsReleaseTracker(wrappers);
+    for (final wrapper in wrappers) {
+      wrapper._deferredReleaseSink = (id) {
+        decrementImportReference(id);
+        tracker.disposedImportIds.add(id);
+      };
+    }
+    return tracker;
+  }
+
+  /// Ends [ticket]'s deferred-release window (a no-op, reporting
+  /// `allDisposed` true, for a null ticket — no capability params means
+  /// nothing to release) and reports two independent things: `allDisposed`
+  /// decides `Return.releaseParamCaps` directly (`true` when every params
+  /// capability freshly imported for the call was disposed before it
+  /// settled — their wire Release was already folded into the refcount
+  /// decrement done by [_ImportedCapability]'s deferred sink, so none needs
+  /// sending); `explicitReleaseIds` is exactly the import ids that were
+  /// disposed but still need their own wire Release sent — only ever
+  /// non-empty when `allDisposed` is `false`, and can legitimately be
+  /// *empty even when `allDisposed` is `false`* (nothing disposed yet at
+  /// all). A named record, not a positional one: naming positional record
+  /// fields in a type signature is purely cosmetic in Dart (it doesn't
+  /// create real `.allDisposed`/`.explicitReleaseIds` getters, only
+  /// `.$1`/`.$2`), so a genuinely named record is what actually keeps the
+  /// two from being collapsed into one ambiguous empty list at the call
+  /// site. Either way, clears each wrapper's sink so a *later* dispose() of
+  /// one that's still outstanding goes through the normal (non-deferred)
+  /// [WireCapabilityContext.releaseImport] path.
+  ({bool allDisposed, List<int> explicitReleaseIds}) finalizeParamCapsRelease(
+    Object? ticket,
+  ) {
+    final tracker = ticket as _ParamCapsReleaseTracker?;
+    if (tracker == null) {
+      return (allDisposed: true, explicitReleaseIds: const []);
+    }
+    for (final wrapper in tracker.wrappers) {
+      wrapper._deferredReleaseSink = null;
+    }
+    if (tracker.disposedImportIds.length == tracker.wrappers.length) {
+      return (allDisposed: true, explicitReleaseIds: const []);
+    }
+    return (
+      allDisposed: false,
+      explicitReleaseIds: tracker.disposedImportIds.toList(growable: false),
+    );
+  }
+}
 
 /// Tracks a single `IncomingCallCoordinator._runDispatch` call's params-caps
 /// deferred-release window — see that class's own

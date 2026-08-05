@@ -77,7 +77,7 @@ final _emptyResultBytes = Uint8List.fromList([
 /// [returnCapDescriptor]: those three only need to *classify* or
 /// *construct* a capability, which [WireCapabilityKind] already expresses
 /// without naming `_ImportedCapability` (private to
-/// `two_party_connection.dart`'s library); params-caps deferred-release
+/// `wire_capabilities.dart`'s library); params-caps deferred-release
 /// tracking needs to *mutate* private state
 /// (`_ImportedCapability._deferredReleaseSink`) and read accumulated
 /// results back later, so it's threaded through as an opaque `Object?`
@@ -139,7 +139,7 @@ final class IncomingCallCoordinator {
   /// see [_runDispatch]'s own doc comment for why this tracking exists.
   /// Opaque because setting it up means writing a deferred-release sink
   /// onto each `_ImportedCapability` wrapper, private to
-  /// `two_party_connection.dart`'s library.
+  /// `wire_capabilities.dart`'s library.
   final Object? Function(List<Capability> paramsCapabilities)
   beginParamCapsRelease;
 
@@ -150,13 +150,13 @@ final class IncomingCallCoordinator {
   /// disposed but still need their own wire Release sent — only ever
   /// non-empty when `allDisposed` is false, and can legitimately be
   /// *empty even when `allDisposed` is false* (nothing disposed yet at
-  /// all). The two must stay separate return values rather than
-  /// collapsing "nothing to send" into "safe to release" — both look
-  /// identical as an empty list, but only the former is actually safe to
-  /// fold into `releaseParamCaps=true` (see [_finalizeParamCapsTracker],
-  /// this class's own wrapper around this closure that does the actual
-  /// sending).
-  final (bool allDisposed, List<int> explicitReleaseIds) Function(
+  /// all). A genuinely named record (curly-brace syntax) — not just a
+  /// positional one with names in the type signature, which wouldn't
+  /// actually create `.allDisposed`/`.explicitReleaseIds` getters — so the
+  /// two can't be collapsed into one ambiguous empty list at the call site
+  /// (see [_finalizeParamCapsTracker], this class's own wrapper around this
+  /// closure that does the actual sending).
+  final ({bool allDisposed, List<int> explicitReleaseIds}) Function(
     Object? ticket,
   )
   finalizeParamCapsRelease;
@@ -833,7 +833,7 @@ final class IncomingCallCoordinator {
   /// [finalizeParamCapsRelease]'s own doc comment for the actual decision
   /// logic.
   bool _finalizeParamCapsTracker(Object? ticket) {
-    final (allDisposed, explicitReleaseIds) = finalizeParamCapsRelease(
+    final (:allDisposed, :explicitReleaseIds) = finalizeParamCapsRelease(
       ticket,
     );
     // sendBytes() would silently no-op post-teardown anyway (a real
