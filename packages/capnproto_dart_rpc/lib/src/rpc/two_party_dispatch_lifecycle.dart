@@ -121,8 +121,9 @@ extension _DispatchLifecycle on TwoPartyRpcConnection {
   /// delivered to whichever of this vat's own outgoing calls the peer
   /// correlates via `takeFromOtherQuestion` (see [_resolveLocalAnswer]),
   /// not to us. This just needs to send Finish once any Return arrives, so
-  /// it talks to the wire directly rather than going through
-  /// [_startOutgoingCall]/[_awaitReturn] (which expects a real result).
+  /// it talks to the wire directly via [OutgoingCallCoordinator.startUsing]
+  /// rather than going through `start`/`_awaitReturn` (which expects a real
+  /// result).
   (int, Future<void>) _sendTailForwardCall(
     _ImportedCapability target,
     TailCall tailCall,
@@ -139,7 +140,7 @@ extension _DispatchLifecycle on TwoPartyRpcConnection {
     // resolves to this vat's own capability object (see
     // _capabilityFromDescriptor's disc-3 case), which *does* get a fresh
     // senderHosted export when forwarded here.
-    _sendOutgoingCall(
+    _outgoingCalls.startUsing(
       question: question,
       target: ImportedCapabilityTarget(target._importIdFuture),
       params: SerializedParams(tailCall.params.bytes),

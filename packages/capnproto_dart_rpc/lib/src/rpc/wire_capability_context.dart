@@ -51,8 +51,9 @@ abstract interface class WireCapabilityContext {
   int get streamWindowSize;
 }
 
-/// The target of an outgoing Call — see `TwoPartyRpcConnection.
-/// _buildOutgoingCallBytes` for how each variant is encoded on the wire.
+/// The target of an outgoing Call — see `OutgoingCallCoordinator`'s
+/// internal `_buildOutgoingCallBytes` for how each variant is encoded on
+/// the wire.
 sealed class OutgoingCallTarget {
   const OutgoingCallTarget();
 }
