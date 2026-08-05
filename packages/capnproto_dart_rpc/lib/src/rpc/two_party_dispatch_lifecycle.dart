@@ -52,17 +52,20 @@ extension _DispatchLifecycle on TwoPartyRpcConnection {
   }
 
   /// Handles a [Capability.tryTailCall] result for the call answered by
-  /// [qid]. When [tailCall]'s target is a capability imported from this
-  /// same peer connection, applies the Level 1 wire optimization: forwards
-  /// a new Call (flagged `sendResultsTo=yourself`) to that peer and answers
-  /// [qid] immediately with `takeFromOtherQuestion`, without waiting for the
-  /// forwarded call to complete. Otherwise, falls back to a transparent
-  /// proxy — dispatching the tail-called method directly and answering
-  /// [qid] normally, with no wire-level difference from an ordinary call.
+  /// [qid]. When [tailCall]'s target classifies (via
+  /// [CapabilityProtocol.classifyCapability]) as a capability imported from
+  /// this same peer connection, applies the Level 1 wire optimization:
+  /// forwards a new Call (flagged `sendResultsTo=yourself`) to that peer and
+  /// answers [qid] immediately with `takeFromOtherQuestion`, without waiting
+  /// for the forwarded call to complete. Otherwise, falls back to a
+  /// transparent proxy — dispatching the tail-called method directly and
+  /// answering [qid] normally, with no wire-level difference from an
+  /// ordinary call.
   void _dispatchTailCall(int qid, TailCall tailCall) {
     final target = tailCall.target;
-    if (target is _ImportedCapability && _ownedByThisConnection(target._conn)) {
-      final (forwardQid, sent) = _sendTailForwardCall(target, tailCall);
+    final kind = _capabilityProtocol.classifyCapability(target);
+    if (kind is ImportedWireCapability) {
+      final (forwardQid, sent) = _sendTailForwardCall(kind.importId, tailCall);
       // Must wait for the forwarded Call to actually be on the wire before
       // answering qid with takeFromOtherQuestion — otherwise the peer could
       // see the redirect before the call it points at, and fail to
@@ -109,13 +112,13 @@ extension _DispatchLifecycle on TwoPartyRpcConnection {
     );
   }
 
-  /// Sends a forwarded Call (flagged `sendResultsTo=yourself`) to [target]'s
-  /// peer, as part of applying the tail-call wire optimization in
-  /// [_dispatchTailCall]. Returns `(questionId, sent)`, where [sent]
-  /// completes once the Call has actually been written to the outgoing
-  /// sink — callers must wait for it before answering the original call
-  /// with takeFromOtherQuestion, so the peer never observes the redirect
-  /// before the call it references.
+  /// Sends a forwarded Call (flagged `sendResultsTo=yourself`) to
+  /// [targetImportId]'s peer, as part of applying the tail-call wire
+  /// optimization in [_dispatchTailCall]. Returns `(questionId, sent)`,
+  /// where [sent] completes once the Call has actually been written to the
+  /// outgoing sink — callers must wait for it before answering the original
+  /// call with takeFromOtherQuestion, so the peer never observes the
+  /// redirect before the call it references.
   ///
   /// The forwarded call's actual outcome is irrelevant to this vat — it's
   /// delivered to whichever of this vat's own outgoing calls the peer
@@ -125,7 +128,7 @@ extension _DispatchLifecycle on TwoPartyRpcConnection {
   /// rather than going through `start`/`_awaitReturn` (which expects a real
   /// result).
   (int, Future<void>) _sendTailForwardCall(
-    _ImportedCapability target,
+    FutureOr<int> targetImportId,
     TailCall tailCall,
   ) {
     final question = _questionTable.allocate();
@@ -142,7 +145,7 @@ extension _DispatchLifecycle on TwoPartyRpcConnection {
     // senderHosted export when forwarded here.
     _outgoingCalls.startUsing(
       question: question,
-      target: ImportedCapabilityTarget(target._importIdFuture),
+      target: ImportedCapabilityTarget(targetImportId),
       params: SerializedParams(tailCall.params.bytes),
       interfaceId: tailCall.interfaceId,
       methodId: tailCall.methodId,
