@@ -49,6 +49,16 @@ class _Harness {
   /// land inside it.
   Completer<void>? capTableGate;
 
+  /// Recorded every time [resolveCapTableMaybeSync]'s fake reaches the
+  /// point past [capTableGate] where a real resolver (e.g.
+  /// `TwoPartyRpcConnection._resolveCapTableAsync`) would commit a side
+  /// effect with lasting state — `ExportTable.getOrCreate`, recording a
+  /// param export id against the question. Standing in for that real side
+  /// effect here (rather than actually wiring up an `ExportTable`) so this
+  /// harness stays connection-free — see the coordinator-level test that
+  /// asserts this stays empty once `tearDown()` lands during the gate wait.
+  final postGateSideEffects = <int>[];
+
   /// Extra hook run from inside the coordinator's own `onReturn`, after the
   /// default [returnsSeenByHook] recording — lets a single test assert
   /// something about state at the exact point `onReturn` fires.
@@ -58,13 +68,28 @@ class _Harness {
     questions: questions,
     imports: imports,
     sendBytes: sentBytes.add,
-    resolveCapTableMaybeSync: (paramsCapabilities, {qid}) {
+    resolveCapTableMaybeSync: (
+      paramsCapabilities, {
+      qid,
+      required ensureActive,
+    }) {
       resolveCapTableCallCount++;
+      ensureActive();
       final failure = failWith;
       if (failure != null) throw failure;
       final gate = capTableGate;
       if (gate == null) return const [];
-      return gate.future.then((_) => const <RpcCapDescriptor>[]);
+      return gate.future.then((_) {
+        // Mirrors a real resolver resuming from its own internal `await`
+        // (an import id, a pipelined param's parent being sent) — must
+        // re-check before touching anything with lasting state, exactly
+        // like _resolveCapTableAsync does at each of its own resume
+        // points.
+        ensureActive();
+        postGateSideEffects.add(42);
+        if (qid != null) questions.recordParamExportIds(qid, [42]);
+        return const [RpcCapDescriptor.senderHosted(42)];
+      });
     },
     applyReleaseParamCaps: releasedExportIds.add,
     capabilityFromDescriptor: (descriptor) => _NeverDisposedCapability(),
@@ -307,6 +332,80 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(h.sentBytes, isEmpty);
+    });
+
+    test('resolveCapTableMaybeSync side effects that would resume after '
+        'tearDown during the gate wait never run, and are never recorded '
+        'against the question', () async {
+      // Reproduces the gap a real resolver has: resolveCapTableMaybeSync
+      // isn't a pure function — a real implementation
+      // (_resolveCapTableAsync) creates exports and records their ids
+      // against qid as a side effect. _failIfTornDown alone can't roll
+      // that back if it happens *after* tearDown() has already dropped
+      // qid's QuestionTable tracking — so the fake resolver here must
+      // itself refuse to proceed past the gate once torn down, via
+      // ensureActive(), the same way the real one does.
+      final h = _Harness();
+      final gate = Completer<void>();
+      h.capTableGate = gate;
+
+      final question = h.questions.allocate();
+      question.sentCompleter!.future.ignore();
+      h.coordinator.startUsing(
+        question: question,
+        target: const ImportedCapabilityTarget(5),
+        params: SerializedParams(_emptyMessageBytes),
+        interfaceId: 1,
+        methodId: 2,
+        paramsCapabilities: const [],
+      );
+
+      await Future<void>.delayed(Duration.zero);
+      expect(h.postGateSideEffects, isEmpty);
+
+      h.coordinator.tearDown(const RpcException('connection torn down'));
+
+      // The gate resolving now mirrors an unresolved import id/pipelined
+      // parent finally settling after tearDown already ran.
+      gate.complete();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(h.postGateSideEffects, isEmpty);
+      expect(h.sentBytes, isEmpty);
+      expect(h.releasedExportIds, isEmpty);
+      // Nothing was ever recorded against qid for _failIfTornDown to roll
+      // back in the first place — QuestionTable itself has no tracking
+      // left for this qid at all.
+      expect(h.questions.takeParamExportIds(question.id), isNull);
+    });
+
+    test('resolveCapTableMaybeSync side effects past the gate still run '
+        'normally, and still send, when tearDown never happens', () async {
+      // Companion to the test above: proves ensureActive() only blocks the
+      // torn-down case, not every gated resolution.
+      final h = _Harness();
+      final gate = Completer<void>();
+      h.capTableGate = gate;
+
+      final started = h.coordinator.start(
+        target: const ImportedCapabilityTarget(5),
+        params: SerializedParams(_emptyMessageBytes),
+        interfaceId: 1,
+        methodId: 2,
+      );
+
+      await Future<void>.delayed(Duration.zero);
+      expect(h.postGateSideEffects, isEmpty);
+      expect(h.sentBytes, isEmpty);
+
+      gate.complete();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(h.postGateSideEffects, equals([42]));
+      expect(h.sentBytes, hasLength(1));
+
+      h.coordinator.handleReturn(_decodedEmptyReturn(started.questionId));
+      await expectLater(started.result, completes);
     });
   });
 }

@@ -610,6 +610,19 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// A future that completes when the connection is closed.
   Future<void> get done => _closedCompleter.future;
 
+  /// This connection's own [WireCapabilityContext] — test-only, alongside
+  /// [debugCreateImportedCapability]/[debugCreateWirePipelinedCapability]
+  /// (see their doc comments, and issue #64): lets a test construct a wire
+  /// capability that genuinely satisfies `_ownedByThisConnection` against a
+  /// *real* connection (unlike `wire_capabilities_test.dart`'s
+  /// `FakeWireCapabilityContext`, which only drives `wire_capabilities.dart`
+  /// in isolation), to exercise `_resolveCapTableAsync`/
+  /// `_resolveCapTableMaybeSync`'s own table side effects — not reachable at
+  /// all through a fake context, since those live in
+  /// `two_party_capability_protocol.dart`, not `wire_capabilities.dart`.
+  @visibleForTesting
+  WireCapabilityContext get debugWireContext => _wireContext;
+
   int get debugPendingQuestionCount => _questionTable.pendingCount;
   int get debugPendingQuestionSentCount => _questionTable.pendingSentCount;
 

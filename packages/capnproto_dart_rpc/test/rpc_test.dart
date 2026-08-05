@@ -3693,6 +3693,75 @@ void main() {
       },
     );
 
+    test(
+      "a params capability's capTable resolution, suspended awaiting an "
+      'import id mid-list when tearDown runs, does not resurrect '
+      'ExportTable state for a capability later in the same list once that '
+      'import id resolves',
+      () async {
+        // Regression coverage for a gap the earlier startUsing()/
+        // _throwIfTornDown() guards (see OutgoingCallCoordinator) don't
+        // close on their own: they stop a *build* from resuming after
+        // tearDown, but resolveCapTableMaybeSync's own loop can itself be
+        // suspended mid-params-list -- on an unresolved import id here,
+        // just as easily on a pipelined param's parent being sent -- with
+        // some entries already resolved (and exported) and others not yet
+        // reached. QuestionTable.tearDown drops this call's qid entirely,
+        // so nothing rolls back a *new* export the loop creates after
+        // resuming from that suspension -- ensureActive() (threaded into
+        // _resolveCapTableAsync as this call's OutgoingCallCoordinator
+        // resolveCapTableMaybeSync's ensureActive parameter) exists
+        // specifically to stop the loop from ever reaching that new export
+        // in the first place.
+        final localCapA = CountingCapability();
+        final localCapB = CountingCapability();
+        final (client, _) = _makePipe(EchoServer());
+
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        await bootstrapCap.echo('warmup');
+
+        // debugWireContext/debugCreateImportedCapability (see issue #64) are
+        // the only way to get an _ImportedCapability whose import id is
+        // still genuinely unresolved and under this test's own control --
+        // every import a real Return/param descriptor hands the app is
+        // already cached by the time application code sees it.
+        final importId = Completer<int>();
+        final asyncCap = debugCreateImportedCapability(
+          client.debugWireContext,
+          importId.future,
+        );
+
+        // dispatch() resolves bootstrapCap's own (already-cached) target
+        // state synchronously, so this call's build runs synchronously up
+        // to the point _resolveCapTableAsync's loop reaches asyncCap: by
+        // the time this statement returns, localCapA (ahead of asyncCap in
+        // the list) has already been resolved and exported, and the loop is
+        // suspended awaiting asyncCap._importIdFuture -- localCapB (behind
+        // it) not yet reached.
+        final callFuture = bootstrapCap.cap.dispatch(
+          _echoInterfaceId,
+          _echoMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('x')),
+          paramsCapabilities: [localCapA, asyncCap, localCapB],
+        );
+        callFuture.ignore();
+
+        expect(client.debugExportCount, equals(1)); // localCapA only
+
+        await client.close();
+        expect(client.debugExportCount, equals(0));
+        expect(client.debugPendingQuestionCount, equals(0));
+
+        // The import id resolving now, well after tearDown, must not
+        // resurrect ExportTable state for localCapB.
+        importId.complete(9);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(client.debugExportCount, equals(0));
+        expect(localCapB.disposeCount, equals(0));
+      },
+    );
+
     test('exporting the same capability twice reuses the export id; only the '
         'final Release disposes it', () async {
       final incoming = StreamController<Uint8List>();

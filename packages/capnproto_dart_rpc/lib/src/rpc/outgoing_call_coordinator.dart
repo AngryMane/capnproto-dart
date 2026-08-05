@@ -62,9 +62,26 @@ final class OutgoingCallCoordinator {
   /// Resolves a Call's params capabilities into wire descriptors,
   /// synchronously when possible — see the matching doc comment this method
   /// carried as `_resolveCapTableMaybeSync` in `two_party_capability_protocol.dart`.
+  ///
+  /// [ensureActive] must be called before any side effect with lasting
+  /// state (an export creation, a refcount bump, recording bookkeeping
+  /// against [qid]) and again immediately after resuming from any `await` —
+  /// it throws once this coordinator has torn down, same as
+  /// [_throwIfTornDown]. A resolver implementation that never suspends
+  /// between its start and its side effects only needs the one entry call;
+  /// one that awaits something (an import id, a pipelined call's parent
+  /// being sent) must re-check right after each resume, since `tearDown`
+  /// may have run during that wait — see `_resolveCapTableAsync`'s own use
+  /// of this for the concrete scenario this guards against: this
+  /// coordinator's own post-teardown guards (`_failIfTornDown`,
+  /// `_throwIfTornDown`) can only roll back state recorded against [qid] in
+  /// `QuestionTable`, which `tearDown` has, by then, already dropped
+  /// entirely — so a side effect started *after* that point would never be
+  /// rolled back by anything.
   final FutureOr<List<RpcCapDescriptor>> Function(
     List<Capability> paramsCapabilities, {
     int? qid,
+    required void Function() ensureActive,
   })
   resolveCapTableMaybeSync;
 
@@ -157,7 +174,11 @@ final class OutgoingCallCoordinator {
       methodId: methodId,
       buildParams: buildParams,
       resolveDescriptors:
-          () => resolveCapTableMaybeSync(paramsCapabilities, qid: qid),
+          () => resolveCapTableMaybeSync(
+            paramsCapabilities,
+            qid: qid,
+            ensureActive: _throwIfTornDown,
+          ),
       sendResultsToYourself: sendResultsToYourself,
     );
   }
@@ -207,8 +228,13 @@ final class OutgoingCallCoordinator {
     // target's parent being sent) may have taken long enough for tearDown()
     // to run in the meantime. resolveCapTableMaybeSync has real side effects
     // (export creation, refcount bumps) that nothing will ever clean up on a
-    // torn-down connection — bail out before it runs, same as [startUsing]'s
-    // own entry guard does for the fully-synchronous path.
+    // torn-down connection — bail out before it even starts, same as
+    // [startUsing]'s own entry guard does for the fully-synchronous path.
+    // This alone isn't enough once resolveCapTableMaybeSync itself starts
+    // running, though: it may need its own further `await`s (an unresolved
+    // *params* capability's import id, a *different* pipelined param's
+    // parent being sent) — [ensureActive] is threaded into it precisely so
+    // it can re-check after each of those too, not just at its own entry.
     _throwIfTornDown();
     return buildCallMessageBuilding(
       questionId: qid,
@@ -219,7 +245,11 @@ final class OutgoingCallCoordinator {
       methodId: methodId,
       buildParams: buildParams,
       resolveCapTable:
-          () async => await resolveCapTableMaybeSync(paramsCapabilities, qid: qid),
+          () async => await resolveCapTableMaybeSync(
+            paramsCapabilities,
+            qid: qid,
+            ensureActive: _throwIfTornDown,
+          ),
       sendResultsToYourself: sendResultsToYourself,
     );
   }
@@ -256,10 +286,16 @@ final class OutgoingCallCoordinator {
   /// Also guarded, via [_failIfTornDown], against `tearDown` — both at entry
   /// (this coordinator is already closed) and again once an async build
   /// finishes (`tearDown` ran while it was still in flight): [sendBytes]
-  /// must never run for either, and side effects `resolveCapTableMaybeSync`
-  /// already committed for the build (export creation, refcount bumps) must
-  /// be rolled back the same way a build failure's would be, since nothing
-  /// else will ever release them once this connection is torn down.
+  /// must never run for either case, and any params export refs
+  /// `resolveCapTableMaybeSync` already recorded against [qid] *before*
+  /// tearDown ran are rolled back here the same way a build failure's would
+  /// be. That rollback only reaches bookkeeping recorded before tearDown,
+  /// though — `QuestionTable.tearDown` drops [question]'s tracking entirely,
+  /// so nothing here can roll back a side effect `resolveCapTableMaybeSync`
+  /// starts *after* that point (e.g. resuming from an `await` mid-resolution
+  /// with tearDown having landed during the wait). Preventing that is
+  /// `resolveCapTableMaybeSync`'s own job, via the `ensureActive` callback
+  /// this class passes it — see [resolveCapTableMaybeSync]'s doc comment.
   void startUsing({
     required OutgoingQuestion question,
     required OutgoingCallTarget target,

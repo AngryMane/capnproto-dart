@@ -11,10 +11,27 @@ extension _CapabilityProtocol on TwoPartyRpcConnection {
   /// is given, records every senderHosted/senderPromise export ID produced
   /// (this call's own params capabilities) against it — see
   /// [_recordParamExportIds].
+  ///
+  /// [ensureActive] (see `OutgoingCallCoordinator.resolveCapTableMaybeSync`'s
+  /// doc comment for the invariant this establishes) is called before the
+  /// loop, at the top of every iteration, and immediately after each
+  /// `await` inside it — i.e. at every point execution resumes after a
+  /// suspension that `tearDown` could have run during, and before the very
+  /// next side effect (`_exportTable.getOrCreate`, adding to [capEntries])
+  /// that resuming would otherwise lead to. Once torn down,
+  /// [ExportTable.tearDown]/[QuestionTable.tearDown] have already disposed
+  /// and cleared everything this loop could have created *before* that
+  /// point — but nothing ever revisits an export created *after* it, since
+  /// [qid]'s own `QuestionTable` tracking (where such an export's ID would
+  /// otherwise be recorded for rollback) is already gone by then too. This
+  /// loop must never reach a new [ExportTable.getOrCreate] call past that
+  /// point, since nothing would ever release it.
   Future<List<RpcCapDescriptor>> _resolveCapTableAsync(
     List<Capability> paramsCapabilities, {
     int? qid,
+    required void Function() ensureActive,
   }) async {
+    ensureActive();
     final capEntries = <RpcCapDescriptor>[];
     // try/finally, not a plain trailing call: a broken import or a rejected
     // _importIdFuture partway through this loop (_importTable.throwIfBroken/
@@ -25,6 +42,7 @@ extension _CapabilityProtocol on TwoPartyRpcConnection {
     // comment for the failure this guards against.
     try {
       for (final rawCap in paramsCapabilities) {
+        ensureActive();
         // Generated client stubs commonly hand out a fresh
         // vendCapabilityHandle wrapper every time their underlying
         // capability is accessed (e.g. a `.capability` getter), so an `is
@@ -37,6 +55,7 @@ extension _CapabilityProtocol on TwoPartyRpcConnection {
         final cap = unwrapVendedCapability(rawCap);
         if (cap is _ImportedCapability && _ownedByThisConnection(cap._conn)) {
           final id = await cap._importIdFuture;
+          ensureActive();
           _importTable.throwIfBroken(id);
           capEntries.add(RpcCapDescriptor.receiverHosted(id));
         } else if (cap is _WirePipelinedCapability &&
@@ -51,10 +70,12 @@ extension _CapabilityProtocol on TwoPartyRpcConnection {
           // referencing another question instead of this call's own target.
           final parentSent = _questionTable.sentCompleterFor(cap._parentQid);
           if (parentSent != null) await parentSent.future;
+          ensureActive();
           capEntries.add(
             RpcCapDescriptor.receiverAnswer(cap._parentQid, cap._transformPath),
           );
         } else {
+          ensureActive();
           capEntries.add(
             RpcCapDescriptor.senderHosted(_exportTable.getOrCreate(cap)),
           );
@@ -91,10 +112,19 @@ extension _CapabilityProtocol on TwoPartyRpcConnection {
   /// bumps a refcount on every call), avoids resolving some entries
   /// synchronously and then re-resolving the whole list again through
   /// [_resolveCapTableAsync].
+  ///
+  /// [ensureActive] is [_resolveCapTableAsync]'s guard, threaded through
+  /// here unchanged — this sync branch never suspends (nothing in it
+  /// `await`s), so `tearDown` can't land mid-loop the way it can in
+  /// [_resolveCapTableAsync]; the one entry call below is there purely so
+  /// every route into capTable resolution checks up front, not because this
+  /// branch specifically needs a re-check partway through.
   FutureOr<List<RpcCapDescriptor>> _resolveCapTableMaybeSync(
     List<Capability> paramsCapabilities, {
     int? qid,
+    required void Function() ensureActive,
   }) {
+    ensureActive();
     if (paramsCapabilities.isEmpty) return const [];
     final needsAsync = paramsCapabilities.any((rawCap) {
       final cap = unwrapVendedCapability(rawCap);
@@ -109,7 +139,13 @@ extension _CapabilityProtocol on TwoPartyRpcConnection {
               !cap._hasResolved &&
               _questionTable.sentCompleterFor(cap._parentQid) != null);
     });
-    if (needsAsync) return _resolveCapTableAsync(paramsCapabilities, qid: qid);
+    if (needsAsync) {
+      return _resolveCapTableAsync(
+        paramsCapabilities,
+        qid: qid,
+        ensureActive: ensureActive,
+      );
+    }
 
     final capEntries = <RpcCapDescriptor>[];
     // See _resolveCapTable's matching comment: try/finally so a broken
