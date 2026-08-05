@@ -203,6 +203,13 @@ final class OutgoingCallCoordinator {
         targetPromisedAnswerQid = pqid;
         targetTransformPath = path;
     }
+    // Whatever we just awaited (the target import id, or the promisedAnswer
+    // target's parent being sent) may have taken long enough for tearDown()
+    // to run in the meantime. resolveCapTableMaybeSync has real side effects
+    // (export creation, refcount bumps) that nothing will ever clean up on a
+    // torn-down connection — bail out before it runs, same as [startUsing]'s
+    // own entry guard does for the fully-synchronous path.
+    _throwIfTornDown();
     return buildCallMessageBuilding(
       questionId: qid,
       targetImportId: targetImportId,
@@ -217,6 +224,25 @@ final class OutgoingCallCoordinator {
     );
   }
 
+  void _throwIfTornDown() {
+    final error = _tornDownError;
+    if (error != null) throw error;
+  }
+
+  /// Fails [question] with [_tornDownError] and rolls back any params
+  /// export refs it already recorded — reuses [startUsing]'s own `onError`
+  /// rollback path (see its doc comment) so a call that's already torn down
+  /// when [startUsing] is entered, or that tears down while its async build
+  /// is still in flight, never reaches [sendBytes]. Returns whether
+  /// [question] was failed this way.
+  bool _failIfTornDown(OutgoingQuestion question) {
+    final error = _tornDownError;
+    if (error == null) return false;
+    final ids = questions.failBeforeSend(question, error, StackTrace.current);
+    if (ids != null) applyReleaseParamCaps(ids);
+    return true;
+  }
+
   /// The single site wiring [QuestionTable.markSent] (on success) and
   /// [QuestionTable.failBeforeSend] + [applyReleaseParamCaps] (on failure)
   /// together for an outgoing Call — shared by [start] and
@@ -226,6 +252,14 @@ final class OutgoingCallCoordinator {
   /// point in [_buildOutgoingCallBytes]/[_buildOutgoingCallBytesAsync] can
   /// throw) — any params export refs already bumped for [question] never
   /// actually reached the peer and must be rolled back here.
+  ///
+  /// Also guarded, via [_failIfTornDown], against `tearDown` — both at entry
+  /// (this coordinator is already closed) and again once an async build
+  /// finishes (`tearDown` ran while it was still in flight): [sendBytes]
+  /// must never run for either, and side effects `resolveCapTableMaybeSync`
+  /// already committed for the build (export creation, refcount bumps) must
+  /// be rolled back the same way a build failure's would be, since nothing
+  /// else will ever release them once this connection is torn down.
   void startUsing({
     required OutgoingQuestion question,
     required OutgoingCallTarget target,
@@ -235,6 +269,8 @@ final class OutgoingCallCoordinator {
     required List<Capability> paramsCapabilities,
     bool sendResultsToYourself = false,
   }) {
+    if (_failIfTornDown(question)) return;
+
     final qid = question.id;
     void onError(Object e, StackTrace st) {
       final ids = questions.failBeforeSend(question, e, st);
@@ -256,9 +292,13 @@ final class OutgoingCallCoordinator {
         questions.markSent(qid);
       } else {
         builtOrFuture.then((bytes) {
+          // The build may have taken long enough for tearDown() to run in
+          // the meantime — see _throwIfTornDown's matching guard earlier in
+          // the async build itself for why this can't just be assumed away.
+          if (_failIfTornDown(question)) return;
           sendBytes(bytes);
           questions.markSent(qid);
-        }, onError: onError);
+        }, onError: onError).ignore();
       }
     } catch (e, st) {
       onError(e, st);

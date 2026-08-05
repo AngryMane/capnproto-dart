@@ -37,14 +37,34 @@ class _Harness {
   /// When set, [resolveCapTableMaybeSync] throws this instead of resolving.
   Object? failWith;
 
+  /// Number of times [resolveCapTableMaybeSync] has actually run — used to
+  /// prove a torn-down coordinator bails out *before* triggering its real
+  /// side effects (export creation, refcount bumps), not just before
+  /// [sendBytes].
+  var resolveCapTableCallCount = 0;
+
+  /// When set, [resolveCapTableMaybeSync] doesn't resolve until this
+  /// completes — used to open a window between a build's capTable
+  /// resolution starting and finishing, for tests that need `tearDown()` to
+  /// land inside it.
+  Completer<void>? capTableGate;
+
+  /// Extra hook run from inside the coordinator's own `onReturn`, after the
+  /// default [returnsSeenByHook] recording — lets a single test assert
+  /// something about state at the exact point `onReturn` fires.
+  void Function(RpcMessage)? onReturnExtra;
+
   late final coordinator = OutgoingCallCoordinator(
     questions: questions,
     imports: imports,
     sendBytes: sentBytes.add,
     resolveCapTableMaybeSync: (paramsCapabilities, {qid}) {
+      resolveCapTableCallCount++;
       final failure = failWith;
       if (failure != null) throw failure;
-      return const [];
+      final gate = capTableGate;
+      if (gate == null) return const [];
+      return gate.future.then((_) => const <RpcCapDescriptor>[]);
     },
     applyReleaseParamCaps: releasedExportIds.add,
     capabilityFromDescriptor: (descriptor) => _NeverDisposedCapability(),
@@ -52,7 +72,10 @@ class _Harness {
         (qid) => Future.error(
           const RpcException('resolveLocalAnswer not stubbed for this test'),
         ),
-    onReturn: returnsSeenByHook.add,
+    onReturn: (msg) {
+      returnsSeenByHook.add(msg);
+      onReturnExtra?.call(msg);
+    },
   );
 }
 
@@ -133,24 +156,45 @@ void main() {
     test('handleReturn invokes onReturn before completing the generic '
         'completer, and is a no-op for an unknown answerId', () {
       final h = _Harness();
-      final started = h.coordinator.start(
+      // Allocated directly (rather than via start()) so the test can hold
+      // the exact Completer<RpcMessage> the coordinator will complete —
+      // takeReturn() nulls out OutgoingQuestion.returnCompleter the moment
+      // handleReturn takes it, so this must be captured *before* that.
+      final question = h.questions.allocate();
+      final returnCompleter = question.returnCompleter!;
+      h.coordinator.startUsing(
+        question: question,
         target: const ImportedCapabilityTarget(5),
         params: SerializedParams(_emptyMessageBytes),
         interfaceId: 1,
         methodId: 2,
+        paramsCapabilities: const [],
       );
 
       // Unknown answerId: no hook call, no crash.
       h.coordinator.handleReturn(_decodedEmptyReturn(999999));
       expect(h.returnsSeenByHook, isEmpty);
 
-      final msg = _decodedEmptyReturn(started.questionId);
+      h.onReturnExtra = (_) {
+        // The whole point of routing bootstrap-Return handling through this
+        // hook (see OutgoingCallCoordinator's own doc comment) is that it
+        // must run before the original caller can observe a completed
+        // Return — checked directly against the real Completer, not via a
+        // downstream .then(), since await always defers by at least one
+        // microtask even for an already-completed Future and so wouldn't
+        // actually distinguish "before" from "just after, same tick".
+        expect(returnCompleter.isCompleted, isFalse);
+      };
+
+      final msg = _decodedEmptyReturn(question.id);
       h.coordinator.handleReturn(msg);
       expect(h.returnsSeenByHook, equals([msg]));
+      expect(returnCompleter.isCompleted, isTrue);
 
       // A second Return for the same (now-consumed) answerId is also a
       // no-op, not a duplicate completion.
-      h.coordinator.handleReturn(_decodedEmptyReturn(started.questionId));
+      h.onReturnExtra = null;
+      h.coordinator.handleReturn(_decodedEmptyReturn(question.id));
       expect(h.returnsSeenByHook, equals([msg]));
     });
 
@@ -177,6 +221,92 @@ void main() {
         throwsA(isA<RpcException>()),
       );
       expect(h.questions.pendingCount, equals(0));
+    });
+
+    test('startUsing after tearDown fails the supplied question without '
+        'sending', () {
+      final h = _Harness();
+      h.coordinator.tearDown(const RpcException('connection torn down'));
+
+      // Mirrors _sendTailForwardCall: allocates its own question, then
+      // calls startUsing directly — never through start(), so startUsing's
+      // own entry guard is the only thing that can catch this.
+      final question = h.questions.allocate();
+      h.coordinator.startUsing(
+        question: question,
+        target: const ImportedCapabilityTarget(5),
+        params: SerializedParams(_emptyMessageBytes),
+        interfaceId: 1,
+        methodId: 2,
+        paramsCapabilities: const [],
+      );
+
+      expect(h.sentBytes, isEmpty);
+      expect(h.resolveCapTableCallCount, equals(0));
+      expect(question.sentCompleter!.future, throwsA(isA<RpcException>()));
+      expect(question.returnCompleter!.future, throwsA(isA<RpcException>()));
+    });
+
+    test('an async target resolving after tearDown does not send, or reach '
+        'capTable resolution', () async {
+      final h = _Harness();
+      final importId = Completer<int>();
+      final started = h.coordinator.start(
+        target: ImportedCapabilityTarget(importId.future),
+        params: SerializedParams(_emptyMessageBytes),
+        interfaceId: 1,
+        methodId: 2,
+      );
+
+      h.coordinator.tearDown(const RpcException('connection torn down'));
+      await expectLater(started.result, throwsA(isA<RpcException>()));
+
+      // The build was still waiting on the target import id when tearDown
+      // ran. Resolving it now must not resurrect the send.
+      importId.complete(9);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(h.sentBytes, isEmpty);
+      expect(h.resolveCapTableCallCount, equals(0));
+    });
+
+    test('a build whose capTable resolution is still pending when tearDown '
+        'runs does not send once it finishes', () async {
+      final h = _Harness();
+      final gate = Completer<void>();
+      h.capTableGate = gate;
+
+      // A synchronously-known target skips the target-await branch
+      // entirely (see _buildOutgoingCallBytes's sync fast path), so the
+      // only reason this build is still async is the gated capTable
+      // resolution — isolating the success-callback guard from the
+      // target-await guard the previous test already covers.
+      final question = h.questions.allocate();
+      // Mirrors start()'s own defensive ignore() for the sent completer —
+      // startUsing() is called directly here (like _sendTailForwardCall
+      // does), so nothing else ever attaches to it, and tearDown() below
+      // completes it with an error unconditionally (unlike the return
+      // completer, QuestionTable.tearDown doesn't ignore() this one itself,
+      // since every real caller already has by this point).
+      question.sentCompleter!.future.ignore();
+      h.coordinator.startUsing(
+        question: question,
+        target: const ImportedCapabilityTarget(5),
+        params: SerializedParams(_emptyMessageBytes),
+        interfaceId: 1,
+        methodId: 2,
+        paramsCapabilities: const [],
+      );
+
+      await Future<void>.delayed(Duration.zero);
+      expect(h.sentBytes, isEmpty);
+
+      h.coordinator.tearDown(const RpcException('connection torn down'));
+
+      gate.complete();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(h.sentBytes, isEmpty);
     });
   });
 }

@@ -11,10 +11,13 @@ import 'rpc_proto.dart';
 ///
 /// Deliberately doesn't know how to actually build/send a Call, apply
 /// `Return.releaseParamCaps` against the [ExportTable], or interpret a
-/// `Return` message — the caller (today, exclusively `TwoPartyRpcConnection`)
-/// owns all of that; this class only owns the invariant "a question id's
-/// tracking state exists from the moment it's allocated until its `Return`
-/// (or connection teardown) removes it."
+/// `Return` message — `OutgoingCallCoordinator` owns ordinary Call
+/// construction, sending, and Return interpretation (`TwoPartyRpcConnection`
+/// itself still owns bootstrap-specific state and connection-wide
+/// lifecycle — see `OutgoingCallCoordinator`'s own doc comment); this class
+/// only owns the invariant "a question id's tracking state exists from the
+/// moment it's allocated until its `Return` (or connection teardown)
+/// removes it."
 ///
 /// Deliberately excludes the bootstrap-capability fields
 /// (`_bootstrapCap`/`_bootstrapCompleter`/`_bootstrapQuestionId`): those
