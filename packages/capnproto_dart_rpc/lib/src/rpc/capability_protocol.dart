@@ -23,10 +23,12 @@ import 'wire_capability_context.dart';
 /// need to classify a [Capability] as wire-hosted or not, and construct
 /// wire-backed capabilities — both of which would otherwise require naming
 /// `_ImportedCapability`/`_WirePipelinedCapability`, private to
-/// `two_party_connection.dart`'s library. [classifyCapability]/
-/// [importedCapabilityFromState]/[receiverAnswerCapability] bridge that,
-/// the same way [OutgoingCallCoordinator]'s own injected closures bridge
-/// its narrower needs — see [WireCapabilityKind]'s doc comment.
+/// `wire_capabilities.dart`'s library. [classifyCapability]/
+/// [importedCapabilityFromState]/[receiverAnswerCapability] are wired to
+/// `WireCapabilityRuntime`'s own methods of the same shape at the
+/// connection's construction site, the same way [OutgoingCallCoordinator]'s
+/// own injected closures bridge its narrower needs — see
+/// [WireCapabilityKind]'s doc comment.
 final class CapabilityProtocol {
   /// Shared with the owning connection — [exportTable]/[questions] are
   /// also held directly by `IncomingCallCoordinator`, so this class does

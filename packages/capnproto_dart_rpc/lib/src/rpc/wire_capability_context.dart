@@ -121,9 +121,10 @@ final class StartedCall {
 /// encoding/decoding logic (`CapabilityProtocol`) can classify a capability
 /// without needing to reference the wire-capability implementation types
 /// directly (`_ImportedCapability`/`_WirePipelinedCapability` are private to
-/// `two_party_connection.dart`'s library) — the owning connection is the
-/// only thing that can construct one of these, via its own `identical()`
-/// check against its `WireCapabilityContext` (not `==`: `WireCapabilityContext`
+/// `wire_capabilities.dart`'s library) — `WireCapabilityRuntime.classify` is
+/// the only thing that can construct one of these, via its own `identical()`
+/// check against the owning connection's `WireCapabilityContext` (not `==`:
+/// `WireCapabilityContext`
 /// is a public interface a future implementation could override `==` on,
 /// so identity is the only check that reliably means "this capability
 /// belongs to this connection").

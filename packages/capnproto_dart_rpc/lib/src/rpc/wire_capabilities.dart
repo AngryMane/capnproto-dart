@@ -1,4 +1,14 @@
-part of 'two_party_connection.dart';
+import 'dart:async';
+
+import 'package:capnproto_dart/capnproto_dart.dart';
+import 'package:meta/meta.dart';
+
+import '../capability/capability.dart';
+import '../capability/rpc_payload.dart';
+import 'flow_controller.dart';
+import 'import_table.dart';
+import 'rpc_exception.dart';
+import 'wire_capability_context.dart';
 
 /// The single point of contact the owning connection uses to construct,
 /// classify, and manage the lifecycle of every wire-backed capability

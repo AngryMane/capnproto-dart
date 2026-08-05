@@ -5,17 +5,8 @@ import 'package:capnproto_dart/capnproto_dart.dart';
 import 'package:meta/meta.dart';
 
 import '../capability/capability.dart'
-    show
-        CapCall,
-        Capability,
-        DeferredCapability,
-        DispatchCancellationController,
-        DispatchResult,
-        requireCapabilityFromResult,
-        requireCapabilityFromResultPath,
-        unwrapVendedCapability;
+    show Capability, DispatchCancellationController, unwrapVendedCapability;
 import '../capability/capability_factory.dart';
-import '../capability/rpc_payload.dart';
 import 'answer_table.dart';
 import 'capability_protocol.dart';
 import 'embargo_table.dart';
@@ -28,9 +19,8 @@ import 'question_table.dart';
 import 'rpc_connection.dart';
 import 'rpc_exception.dart';
 import 'rpc_proto.dart';
+import 'wire_capabilities.dart';
 import 'wire_capability_context.dart';
-
-part 'wire_capabilities.dart';
 
 /// A Cap'n Proto RPC Level 1 two-party connection.
 ///
