@@ -6,7 +6,7 @@ import '../capability/capability.dart'
     show Capability, DispatchCancellationController;
 
 /// Holds the serialized result message and the corresponding cap table for a
-/// completed incoming call. Both are needed by [TwoPartyRpcConnection] to
+/// completed incoming call. Both are needed by `IncomingCallCoordinator` to
 /// resolve promise-pipelined calls: the result bytes encode which pointer
 /// slot maps to which cap table index via a `CapabilityPointer`, so the
 /// lookup must parse the pointer rather than using the pointer-slot number
@@ -63,7 +63,7 @@ final class FinishedBeforeCompletion extends AnswerState {
   const FinishedBeforeCompletion();
 }
 
-/// Owns every incoming call a [TwoPartyRpcConnection] is currently (or has
+/// Owns every incoming call a `TwoPartyRpcConnection` is currently (or has
 /// recently) answered, as one [AnswerState] entry per question id —
 /// resolved/pending/broken answer state for promise pipelining, which
 /// result-capability export ids a Finish should release, live dispatch
@@ -75,9 +75,9 @@ final class FinishedBeforeCompletion extends AnswerState {
 ///
 /// Deliberately doesn't know how to actually send a Return/Finish, or how to
 /// release an export — [finish] only ever hands back the result export ids
-/// that need releasing; the caller (today, exclusively
-/// `TwoPartyRpcConnection`) owns translating that into an actual
-/// `ExportTable.release` call and any wire traffic.
+/// that need releasing; the caller (today, `IncomingCallCoordinator`) owns
+/// translating that into an actual `ExportTable.release` call and any wire
+/// traffic.
 class AnswerTable {
   final Map<int, AnswerState> _answers = {};
 
