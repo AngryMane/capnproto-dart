@@ -1141,7 +1141,7 @@ Uint8List buildReturnExceptionMessage({
   // Exceptions never carry a results payload/capTable, so it's always
   // *wire-format*-safe to set this — but the sender must also make sure it
   // doesn't need the peer's Finish for its own answer-table bookkeeping
-  // (see two_party_connection.dart's _runDispatch, the only call site that
+  // (see incoming_call_coordinator.dart's _runDispatch, the only call site that
   // passes true) before opting in. Defaults to false so every other call
   // site (unknown-export-id/pipelining-error/tail-call-error Returns, which
   // still rely on Finish to clear their `_answers` entry) keeps its

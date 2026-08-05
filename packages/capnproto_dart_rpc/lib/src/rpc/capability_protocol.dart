@@ -28,10 +28,9 @@ import 'wire_capability_context.dart';
 /// the same way [OutgoingCallCoordinator]'s own injected closures bridge
 /// its narrower needs — see [WireCapabilityKind]'s doc comment.
 final class CapabilityProtocol {
-  /// Shared with the owning connection — also read directly by the
-  /// connection's other protocol-flow extensions (`_DispatchLifecycle`,
-  /// `_IncomingCallFlow`), so this class does not own any of these
-  /// exclusively.
+  /// Shared with the owning connection — [exportTable]/[questions] are
+  /// also held directly by `IncomingCallCoordinator`, so this class does
+  /// not own any of these exclusively.
   final ExportTable exportTable;
   final ImportTable importTable;
   final EmbargoTable embargoTable;

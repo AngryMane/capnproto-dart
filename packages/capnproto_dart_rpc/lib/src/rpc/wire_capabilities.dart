@@ -1,7 +1,8 @@
 part of 'two_party_connection.dart';
 
-/// Tracks a single [TwoPartyRpcConnection._runDispatch] call's params-caps
-/// deferred-release window — see [TwoPartyRpcConnection._finalizeParamCapsTracker].
+/// Tracks a single `IncomingCallCoordinator._runDispatch` call's params-caps
+/// deferred-release window — see that class's own
+/// `_finalizeParamCapsTracker`/`beginParamCapsRelease`/`finalizeParamCapsRelease`.
 /// [wrappers] are every freshly-imported `_ImportedCapability` created for
 /// this call's params (one per senderHosted/senderPromise capTable entry);
 /// [disposedImportIds] accumulates the import ID each time one of them is

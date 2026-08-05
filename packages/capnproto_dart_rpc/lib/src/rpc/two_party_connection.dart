@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:collection';
 import 'dart:typed_data';
 
 import 'package:capnproto_dart/capnproto_dart.dart';
@@ -12,8 +11,6 @@ import '../capability/capability.dart'
         DeferredCapability,
         DispatchCancellationController,
         DispatchResult,
-        TailCall,
-        capabilityFromResultPath,
         requireCapabilityFromResult,
         requireCapabilityFromResultPath,
         unwrapVendedCapability;
@@ -25,6 +22,7 @@ import 'embargo_table.dart';
 import 'export_table.dart';
 import 'flow_controller.dart';
 import 'import_table.dart';
+import 'incoming_call_coordinator.dart';
 import 'outgoing_call_coordinator.dart';
 import 'question_table.dart';
 import 'rpc_connection.dart';
@@ -32,8 +30,6 @@ import 'rpc_exception.dart';
 import 'rpc_proto.dart';
 import 'wire_capability_context.dart';
 
-part 'two_party_incoming_call_flow.dart';
-part 'two_party_dispatch_lifecycle.dart';
 part 'wire_capabilities.dart';
 
 /// A Cap'n Proto RPC Level 1 two-party connection.
@@ -160,6 +156,18 @@ class TwoPartyRpcConnection implements RpcConnection {
   // constructor-injected class rather than another private extension.
   // `late` for the same reason as [_wireContext]: the bound method
   // tear-offs below capture `this`.
+  //
+  // resolveLocalAnswer MUST stay a closure literal, not simplified to a
+  // bare `_incomingCalls.resolveLocalAnswer` tear-off — see
+  // [_incomingCalls]'s own doc comment for why: `late final` fields
+  // evaluate lazily on first access, and _incomingCalls's own construction
+  // eagerly reads `_outgoingCalls.startUsing`, so whichever field a caller
+  // touches first (`_incomingCalls`, the common case — incoming Bootstrap/
+  // Call messages are usually the first thing a server-role connection
+  // handles) would otherwise force this field's initializer to read
+  // _incomingCalls's value *while it's still being constructed*, which
+  // throws. Deferring the read into a closure body means it never runs
+  // until well after both fields have finished constructing.
   late final OutgoingCallCoordinator _outgoingCalls = OutgoingCallCoordinator(
     questions: _questionTable,
     imports: _importTable,
@@ -167,8 +175,62 @@ class TwoPartyRpcConnection implements RpcConnection {
     resolveCapTableMaybeSync: _capabilityProtocol.resolveCapTableMaybeSync,
     applyReleaseParamCaps: _capabilityProtocol.applyReleaseParamCaps,
     capabilityFromDescriptor: _capabilityProtocol.capabilityFromDescriptor,
-    resolveLocalAnswer: _resolveLocalAnswer,
+    resolveLocalAnswer: (qid) => _incomingCalls.resolveLocalAnswer(qid),
     onReturn: _handleBootstrapReturn,
+  );
+
+  // Incoming Call handling: Bootstrap requests, promised-answer targets,
+  // running a dispatch (with cancellation and tail-call support), and
+  // building/sending its Return — see IncomingCallCoordinator's own doc
+  // comment for why it's a standalone, constructor-injected class rather
+  // than another private extension. `late` for the same reason as
+  // [_wireContext]: the bound method tear-offs below capture `this`.
+  //
+  // startUsing is a bare tear-off (safe in either construction order,
+  // unlike _outgoingCalls's resolveLocalAnswer above — see its comment):
+  // OutgoingCallCoordinator's own construction never eagerly reads
+  // anything back from this field, only building a deferred closure for
+  // it, so forcing _outgoingCalls to construct here (if it hasn't
+  // already) never reads this field's value while it's still being
+  // assigned.
+  late final IncomingCallCoordinator _incomingCalls = IncomingCallCoordinator(
+    exportTable: _exportTable,
+    answerTable: _answerTable,
+    questions: _questionTable,
+    sendBytes: _sendRaw,
+    disposeIgnoringErrors: _disposeIgnoringErrors,
+    isClosed: () => _closedError != null,
+    tearDownConnection: (error) => _tearDown(error),
+    classifyCapability: _capabilityProtocol.classifyCapability,
+    capabilityFromDescriptor: _capabilityProtocol.capabilityFromDescriptor,
+    returnCapDescriptor: _capabilityProtocol.returnCapDescriptor,
+    startUsing: _outgoingCalls.startUsing,
+    beginParamCapsRelease: (paramsCapabilities) {
+      final wrappers = paramsCapabilities
+          .whereType<_ImportedCapability>()
+          .where((c) => _ownedByThisConnection(c._conn))
+          .toList(growable: false);
+      if (wrappers.isEmpty) return null;
+      final tracker = _ParamCapsReleaseTracker(wrappers);
+      for (final wrapper in wrappers) {
+        wrapper._deferredReleaseSink = (id) {
+          _importTable.decrementRefcount(id, _disposeIgnoringErrors);
+          tracker.disposedImportIds.add(id);
+        };
+      }
+      return tracker;
+    },
+    finalizeParamCapsRelease: (ticket) {
+      final tracker = ticket as _ParamCapsReleaseTracker?;
+      if (tracker == null) return (true, const <int>[]);
+      for (final wrapper in tracker.wrappers) {
+        wrapper._deferredReleaseSink = null;
+      }
+      if (tracker.disposedImportIds.length == tracker.wrappers.length) {
+        return (true, const <int>[]);
+      }
+      return (false, tracker.disposedImportIds.toList(growable: false));
+    },
   );
 
   // Handles the bootstrap-specific half of a Return: distinguishing the
@@ -396,40 +458,6 @@ class TwoPartyRpcConnection implements RpcConnection {
     await _tearDown(null);
   }
 
-  // 24-byte message: struct with 0 data words, 1 pointer word = CapabilityPointer(0).
-  // Used as the synthesised result for Bootstrap answers so that pipelined
-  // calls targeting {receiverAnswer: {questionId: <boot>, transform: []}}
-  // can resolve ptr[0] → the resolved answer's caps[0] (see
-  // AnswerTable.resolvedFor).
-  // hi = (dataWords & 0xFFFF) | (ptrWords << 16)
-  // For dataWords=0, ptrWords=1: hi = 0x00010000 → LE bytes [0,0,1,0]
-  static final _bootstrapResultBytes = Uint8List.fromList([
-    0, 0, 0, 0, 2, 0, 0, 0, // header: 1 segment, 2 words
-    0, 0, 0, 0, 0, 0, 1, 0, // struct ptr: offset=0, data=0, ptrs=1
-    3, 0, 0, 0, 0, 0, 0, 0, // ptr[0] = CapabilityPointer(index=0)
-  ]);
-
-  // Pre-built 16-byte message: single segment (1 word), null root pointer.
-  // Used as fallback for `-> stream` and void methods that return no content.
-  static final _emptyResultBytes = Uint8List.fromList([
-    0,
-    0,
-    0,
-    0,
-    1,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-  ]);
-
   void _runMessageLoop(Stream<Uint8List> incoming) {
     final decoderInput = StreamController<Uint8List>(sync: true);
     _decoderInput = decoderInput;
@@ -489,15 +517,15 @@ class TwoPartyRpcConnection implements RpcConnection {
 
     switch (msg.type) {
       case RpcMessageType.bootstrap:
-        _handleBootstrap(msg);
+        _incomingCalls.handleBootstrap(msg);
       case RpcMessageType.call:
-        _handleCall(msg);
+        _incomingCalls.handleCall(msg);
       case RpcMessageType.return_:
         _outgoingCalls.handleReturn(msg);
       case RpcMessageType.resolve:
         _capabilityProtocol.handleResolve(msg);
       case RpcMessageType.finish:
-        _handleFinish(msg);
+        _incomingCalls.handleFinish(msg);
       case RpcMessageType.release:
         _capabilityProtocol.handleRelease(msg);
       case RpcMessageType.disembargo:

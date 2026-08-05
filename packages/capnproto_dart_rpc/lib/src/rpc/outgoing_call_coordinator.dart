@@ -15,8 +15,8 @@ import 'wire_capability_context.dart';
 /// Pre-built 16-byte message: single segment (1 word), null root pointer.
 /// Used as fallback for `-> stream` and void methods that return no
 /// content. Connection-independent, so it's duplicated here rather than
-/// injected — see `TwoPartyRpcConnection._emptyResultBytes`, the identical
-/// constant used by the incoming-call-flow side.
+/// injected — see `IncomingCallCoordinator`'s own identical constant, used
+/// for the same reason on the incoming side.
 final _emptyResultBytes = Uint8List.fromList([
   0,
   0,
@@ -46,12 +46,12 @@ final _emptyResultBytes = Uint8List.fromList([
 /// directly, without a real connection or sockets.
 ///
 /// [start] is the normal entry point; see [startUsing] for the lower-level
-/// one `_sendTailForwardCall` needs.
+/// one `IncomingCallCoordinator`'s tail-call forwarding needs.
 final class OutgoingCallCoordinator {
   /// Shared with the owning connection — also read directly by
-  /// `_DispatchLifecycle` (tail-call forwarding) and `CapabilityProtocol`
-  /// (`sentCompleterFor`, for pipelining-safety checks), so this class does
-  /// not own it exclusively.
+  /// `IncomingCallCoordinator` (tail-call forwarding) and
+  /// `CapabilityProtocol` (`sentCompleterFor`, for pipelining-safety
+  /// checks), so this class does not own it exclusively.
   final QuestionTable questions;
 
   /// Shared with the owning connection, same reasoning as [questions].
