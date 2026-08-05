@@ -63,8 +63,8 @@ class QuestionTable {
   }
 
   /// Allocates a fresh question id plus its matching `Return` completer and
-  /// sent completer — used by every real outgoing Call (`_startOutgoingCall`,
-  /// `_sendTailForwardCall`).
+  /// sent completer — used by every real outgoing Call
+  /// (`OutgoingCallCoordinator.start`, `_sendTailForwardCall`).
   OutgoingQuestion allocate() {
     final qid = _nextQuestionId++;
     final question = OutgoingQuestion(

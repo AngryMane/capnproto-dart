@@ -68,10 +68,11 @@ extension _CapabilityProtocol on TwoPartyRpcConnection {
 
   /// Records the senderHosted/senderPromise export IDs among [capEntries]
   /// (an outgoing Call's own capTable — this vat's params capabilities)
-  /// against [qid], so [_awaitReturn] can apply `Return.releaseParamCaps`
-  /// locally once the matching Return arrives. A call with no such entries
-  /// (no capability params, or every one an import/promisedAnswer pass-
-  /// through) records nothing — nothing to release either way.
+  /// against [qid], so `OutgoingCallCoordinator`'s internal `_awaitReturn`
+  /// can apply `Return.releaseParamCaps` locally once the matching Return
+  /// arrives. A call with no such entries (no capability params, or every
+  /// one an import/promisedAnswer pass-through) records nothing — nothing
+  /// to release either way.
   void _recordParamExportIds(int qid, List<RpcCapDescriptor> capEntries) {
     final ids = <int>[
       for (final d in capEntries)
@@ -81,7 +82,7 @@ extension _CapabilityProtocol on TwoPartyRpcConnection {
   }
 
   /// Synchronous variant of [_resolveCapTableAsync] for
-  /// [_buildOutgoingCallBytes]'s sync fast path: resolves synchronously when
+  /// `OutgoingCallCoordinator`'s sync fast path: resolves synchronously when
   /// every capability is already locally resolvable (true for everything
   /// except an [_ImportedCapability] whose own import ID isn't cached yet),
   /// falling back to [_resolveCapTableAsync] as a whole otherwise. Checking
@@ -230,11 +231,12 @@ extension _CapabilityProtocol on TwoPartyRpcConnection {
   ///    broken-import check throws, after cap table resolution already ran.
   ///    The peer never received anything in that case, so there is no
   ///    reference for it to `Release`. Callers (the `onError` handler in
-  ///    [_sendOutgoingCall], shared by every outgoing Call attempt) only
-  ///    ever run for a build/send that failed before committing anything to
-  ///    the wire — see that method's own doc comment for why that invariant
-  ///    holds — so this is safe to call unconditionally there, with no
-  ///    separate "was it actually sent" flag to track.
+  ///    `OutgoingCallCoordinator.startUsing`, shared by every outgoing Call
+  ///    attempt) only ever run for a build/send that failed before
+  ///    committing anything to the wire — see that method's own doc comment
+  ///    for why that invariant holds — so this is safe to call
+  ///    unconditionally there, with no separate "was it actually sent" flag
+  ///    to track.
   void _applyReleaseParamCaps(List<int> exportIds) {
     for (final id in exportIds) {
       _exportTable.releaseRef(id, 1, _disposeIgnoringErrors);

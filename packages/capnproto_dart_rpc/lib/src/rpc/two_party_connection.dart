@@ -26,13 +26,13 @@ import 'embargo_table.dart';
 import 'export_table.dart';
 import 'flow_controller.dart';
 import 'import_table.dart';
+import 'outgoing_call_coordinator.dart';
 import 'question_table.dart';
 import 'rpc_connection.dart';
 import 'rpc_exception.dart';
 import 'rpc_proto.dart';
 import 'wire_capability_context.dart';
 
-part 'two_party_outgoing_call_flow.dart';
 part 'two_party_incoming_call_flow.dart';
 part 'two_party_dispatch_lifecycle.dart';
 part 'two_party_capability_protocol.dart';
@@ -115,8 +115,8 @@ class TwoPartyRpcConnection implements RpcConnection {
   _ImportedCapability? _bootstrapCap;
   // Completer for the bootstrap handshake.
   Completer<int>? _bootstrapCompleter;
-  // Question ID used for the Bootstrap message (so _handleReturn can
-  // distinguish the bootstrap return from regular call returns).
+  // Question ID used for the Bootstrap message (so _handleBootstrapReturn
+  // can distinguish the bootstrap return from regular call returns).
   int? _bootstrapQuestionId;
 
   // The [WireCapabilityContext] every wire capability this connection vends
@@ -129,6 +129,71 @@ class TwoPartyRpcConnection implements RpcConnection {
   // initializer can reference `this`.
   late final WireCapabilityContext _wireContext =
       _TwoPartyWireCapabilityContext(this);
+
+  // Owns every outgoing Call this connection sends — see
+  // OutgoingCallCoordinator's own doc comment for why it's a standalone,
+  // constructor-injected class rather than another private extension.
+  // `late` for the same reason as [_wireContext]: the bound method
+  // tear-offs below capture `this`.
+  late final OutgoingCallCoordinator _outgoingCalls = OutgoingCallCoordinator(
+    questions: _questionTable,
+    imports: _importTable,
+    sendBytes: _sendRaw,
+    resolveCapTableMaybeSync: _resolveCapTableMaybeSync,
+    applyReleaseParamCaps: _applyReleaseParamCaps,
+    capabilityFromDescriptor: _capabilityFromDescriptor,
+    resolveLocalAnswer: _resolveLocalAnswer,
+    onReturn: _handleBootstrapReturn,
+  );
+
+  // Handles the bootstrap-specific half of a Return: distinguishing the
+  // Bootstrap question's Return from a regular call's, resolving
+  // [_bootstrapCompleter], and releasing the server's answer state for it.
+  // Kept here (not in [OutgoingCallCoordinator]) because it reads/writes
+  // [_bootstrapQuestionId]/[_bootstrapCompleter], state deliberately kept
+  // out of [QuestionTable]/[ImportTable] — see their declarations above.
+  // Invoked via [OutgoingCallCoordinator.onReturn], after it has already
+  // confirmed a live completer exists for this Return's answerId.
+  void _handleBootstrapReturn(RpcMessage msg) {
+    if (msg.answerId != _bootstrapQuestionId) return;
+    final bootstrapQid = _bootstrapQuestionId!;
+    _bootstrapQuestionId = null;
+    if (msg.isReturnResults && msg.capTableEntries.isNotEmpty) {
+      final importId = _importIdFromDescriptor(msg.capTableDescriptors.first);
+      if (_bootstrapCompleter != null && !_bootstrapCompleter!.isCompleted) {
+        if (importId == null) {
+          _bootstrapCompleter!.completeError(
+            const RpcException(
+              'bootstrap Return cap table entry was not an import',
+            ),
+          );
+        } else {
+          _bootstrapCompleter!.complete(importId);
+        }
+      }
+    } else if (msg.isReturnException) {
+      if (_bootstrapCompleter != null && !_bootstrapCompleter!.isCompleted) {
+        _bootstrapCompleter!.completeError(
+          RpcException(
+            msg.exceptionReason ?? 'bootstrap failed',
+            kind: msg.exceptionKind,
+          ),
+        );
+      }
+    } else {
+      if (_bootstrapCompleter != null && !_bootstrapCompleter!.isCompleted) {
+        _bootstrapCompleter!.completeError(
+          const RpcException(
+            'bootstrap Return had no capability in cap table',
+          ),
+        );
+      }
+    }
+    // Send Finish to release the server's answer state for this Bootstrap
+    // question. releaseResultCaps=false because the client is retaining the
+    // imported bootstrap capability.
+    _sendRaw(buildFinishMessage(bootstrapQid, releaseResultCaps: false));
+  }
 
   // [WireCapabilityContext] is a public interface (unlike the concrete
   // TwoPartyRpcConnection it replaced), so a future implementation could
@@ -400,7 +465,7 @@ class TwoPartyRpcConnection implements RpcConnection {
       case RpcMessageType.call:
         _handleCall(msg);
       case RpcMessageType.return_:
-        _handleReturn(msg);
+        _outgoingCalls.handleReturn(msg);
       case RpcMessageType.resolve:
         _handleResolve(msg);
       case RpcMessageType.finish:
@@ -511,8 +576,8 @@ class TwoPartyRpcConnection implements RpcConnection {
               kind: ErrorKind.disconnected,
             );
 
-    // Fail all pending questions.
-    _questionTable.tearDown(err);
+    // Fail all pending questions, and reject any future outgoing Call.
+    _outgoingCalls.tearDown(err);
 
     if (_bootstrapCompleter != null && !_bootstrapCompleter!.isCompleted) {
       _bootstrapCompleter!.future.ignore();
@@ -610,7 +675,7 @@ class _TwoPartyWireCapabilityContext implements WireCapabilityContext {
     required int interfaceId,
     required int methodId,
     List<Capability> paramsCapabilities = const [],
-  }) => _conn._startOutgoingCall(
+  }) => _conn._outgoingCalls.start(
     target: target,
     params: params,
     interfaceId: interfaceId,

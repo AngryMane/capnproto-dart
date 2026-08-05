@@ -1,19 +1,104 @@
+import 'dart:async';
+import 'dart:typed_data';
+
+import 'package:capnproto_dart/capnproto_dart.dart';
+
+import '../capability/capability.dart';
+import '../capability/rpc_payload.dart';
+import 'answer_table.dart';
+import 'import_table.dart';
+import 'question_table.dart';
+import 'rpc_exception.dart';
+import 'rpc_proto.dart';
+import 'wire_capability_context.dart';
+
+/// Pre-built 16-byte message: single segment (1 word), null root pointer.
+/// Used as fallback for `-> stream` and void methods that return no
+/// content. Connection-independent, so it's duplicated here rather than
+/// injected — see `TwoPartyRpcConnection._emptyResultBytes`, the identical
+/// constant used by the incoming-call-flow side.
+final _emptyResultBytes = Uint8List.fromList([
+  0,
+  0,
+  0,
+  0,
+  1,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+]);
+
 /// Outgoing-call construction and sending: target/params resolution,
-/// capTable encoding for a fresh Call, question tracking, and handling
-/// the matching Return once it arrives. Moved out of
-/// [TwoPartyRpcConnection] verbatim -- see that class's own doc comment.
+/// capTable encoding for a fresh Call, question tracking, and handling the
+/// matching Return once it arrives. Extracted from `TwoPartyRpcConnection`
+/// as a standalone, constructor-injected class — unlike the other
+/// protocol-flow pieces, which remain private extensions on
+/// `TwoPartyRpcConnection`, this one is a plain top-level class (like
+/// [QuestionTable]/[ImportTable]) so it can be constructed and tested
+/// directly, without a real connection or sockets.
+///
+/// [start] is the normal entry point; see [startUsing] for the lower-level
+/// one `_sendTailForwardCall` needs.
+final class OutgoingCallCoordinator {
+  /// Shared with the owning connection — also read directly by
+  /// `_DispatchLifecycle` (tail-call forwarding) and `_CapabilityProtocol`
+  /// (`sentCompleterFor`, for pipelining-safety checks), so this class does
+  /// not own it exclusively.
+  final QuestionTable questions;
 
-part of 'two_party_connection.dart';
+  /// Shared with the owning connection, same reasoning as [questions].
+  final ImportTable imports;
 
-extension _OutgoingCallFlow on TwoPartyRpcConnection {
+  final void Function(Uint8List bytes) sendBytes;
+
+  /// Resolves a Call's params capabilities into wire descriptors,
+  /// synchronously when possible — see the matching doc comment this method
+  /// carried as `_resolveCapTableMaybeSync` in `two_party_capability_protocol.dart`.
+  final FutureOr<List<RpcCapDescriptor>> Function(
+    List<Capability> paramsCapabilities, {
+    int? qid,
+  })
+  resolveCapTableMaybeSync;
+
+  final void Function(List<int> exportIds) applyReleaseParamCaps;
+  final Capability Function(RpcCapDescriptor descriptor) capabilityFromDescriptor;
+  final Future<ResolvedAnswer> Function(int qid) resolveLocalAnswer;
+
+  /// Invoked from [handleReturn], right after confirming a live completer
+  /// for the Return's answerId, before that completer is completed — the
+  /// hook the owning connection uses for bootstrap-Return handling (state
+  /// that belongs to the connection, not this coordinator).
+  final void Function(RpcMessage msg)? onReturn;
+
+  RpcException? _tornDownError;
+
+  OutgoingCallCoordinator({
+    required this.questions,
+    required this.imports,
+    required this.sendBytes,
+    required this.resolveCapTableMaybeSync,
+    required this.applyReleaseParamCaps,
+    required this.capabilityFromDescriptor,
+    required this.resolveLocalAnswer,
+    this.onReturn,
+  });
+
   /// True when starting a Call against [target] needs to `await` something
-  /// before any side effect (an export refcount bump, `_sendRaw`) can run —
-  /// see [_resolveCapTableMaybeSync]'s matching doc comment for why this
-  /// must be checked before touching anything with a side effect.
+  /// before any side effect (an export refcount bump, [sendBytes]) can run —
+  /// see [resolveCapTableMaybeSync]'s matching doc comment for why this must
+  /// be checked before touching anything with a side effect.
   bool _targetNeedsAsync(OutgoingCallTarget target) => switch (target) {
     ImportedCapabilityTarget(importId: final id) => id is! int,
     PromisedAnswerTarget(questionId: final qid) =>
-      _questionTable.sentCompleterFor(qid) != null,
+      questions.sentCompleterFor(qid) != null,
   };
 
   /// Builds an outgoing Call's wire bytes against [target]/[params],
@@ -55,7 +140,7 @@ extension _OutgoingCallFlow on TwoPartyRpcConnection {
     switch (target) {
       case ImportedCapabilityTarget(importId: final id):
         targetImportId = id as int; // _targetNeedsAsync confirmed this above
-        _importTable.throwIfBroken(targetImportId);
+        imports.throwIfBroken(targetImportId);
       case PromisedAnswerTarget(
         questionId: final pqid,
         transformPath: final path,
@@ -72,7 +157,7 @@ extension _OutgoingCallFlow on TwoPartyRpcConnection {
       methodId: methodId,
       buildParams: buildParams,
       resolveDescriptors:
-          () => _resolveCapTableMaybeSync(paramsCapabilities, qid: qid),
+          () => resolveCapTableMaybeSync(paramsCapabilities, qid: qid),
       sendResultsToYourself: sendResultsToYourself,
     );
   }
@@ -105,7 +190,7 @@ extension _OutgoingCallFlow on TwoPartyRpcConnection {
     switch (target) {
       case ImportedCapabilityTarget(importId: final id):
         targetImportId = id is int ? id : await id;
-        _importTable.throwIfBroken(targetImportId);
+        imports.throwIfBroken(targetImportId);
       case PromisedAnswerTarget(
         questionId: final pqid,
         transformPath: final path,
@@ -113,7 +198,7 @@ extension _OutgoingCallFlow on TwoPartyRpcConnection {
         // For promisedAnswer targets, wait until the parent Call is on the
         // wire so the server always receives the parent before the
         // pipelined call.
-        final parentSent = _questionTable.sentCompleterFor(pqid);
+        final parentSent = questions.sentCompleterFor(pqid);
         if (parentSent != null) await parentSent.future;
         targetPromisedAnswerQid = pqid;
         targetTransformPath = path;
@@ -127,22 +212,21 @@ extension _OutgoingCallFlow on TwoPartyRpcConnection {
       methodId: methodId,
       buildParams: buildParams,
       resolveCapTable:
-          () async =>
-              await _resolveCapTableMaybeSync(paramsCapabilities, qid: qid),
+          () async => await resolveCapTableMaybeSync(paramsCapabilities, qid: qid),
       sendResultsToYourself: sendResultsToYourself,
     );
   }
 
   /// The single site wiring [QuestionTable.markSent] (on success) and
-  /// [QuestionTable.failBeforeSend] + [_applyReleaseParamCaps] (on failure)
-  /// together for an outgoing Call — shared by [_startOutgoingCall] and
-  /// [_sendTailForwardCall], so this pairing is never wired up ad hoc at a
-  /// third call site. Every path that reaches [onError] does so before
-  /// `_sendRaw` ever runs (nothing after that point in [_buildOutgoingCallBytes]/
-  /// [_buildOutgoingCallBytesAsync] can throw) — any params export refs
-  /// already bumped for [question] never actually reached the peer and must
-  /// be rolled back here.
-  void _sendOutgoingCall({
+  /// [QuestionTable.failBeforeSend] + [applyReleaseParamCaps] (on failure)
+  /// together for an outgoing Call — shared by [start] and
+  /// `_sendTailForwardCall` (via this method directly), so this pairing is
+  /// never wired up ad hoc at a third call site. Every path that reaches
+  /// [onError] does so before [sendBytes] ever runs (nothing after that
+  /// point in [_buildOutgoingCallBytes]/[_buildOutgoingCallBytesAsync] can
+  /// throw) — any params export refs already bumped for [question] never
+  /// actually reached the peer and must be rolled back here.
+  void startUsing({
     required OutgoingQuestion question,
     required OutgoingCallTarget target,
     required OutgoingParams params,
@@ -153,8 +237,8 @@ extension _OutgoingCallFlow on TwoPartyRpcConnection {
   }) {
     final qid = question.id;
     void onError(Object e, StackTrace st) {
-      final ids = _questionTable.failBeforeSend(question, e, st);
-      if (ids != null) _applyReleaseParamCaps(ids);
+      final ids = questions.failBeforeSend(question, e, st);
+      if (ids != null) applyReleaseParamCaps(ids);
     }
 
     try {
@@ -168,12 +252,12 @@ extension _OutgoingCallFlow on TwoPartyRpcConnection {
         sendResultsToYourself: sendResultsToYourself,
       );
       if (builtOrFuture is Uint8List) {
-        _sendRaw(builtOrFuture);
-        _questionTable.markSent(qid);
+        sendBytes(builtOrFuture);
+        questions.markSent(qid);
       } else {
         builtOrFuture.then((bytes) {
-          _sendRaw(bytes);
-          _questionTable.markSent(qid);
+          sendBytes(bytes);
+          questions.markSent(qid);
         }, onError: onError);
       }
     } catch (e, st) {
@@ -185,16 +269,16 @@ extension _OutgoingCallFlow on TwoPartyRpcConnection {
   /// question ID immediately (available synchronously for pipelining, via
   /// [StartedCall.questionId]), then builds and sends the Call message —
   /// synchronously when possible, asynchronously otherwise — via
-  /// [_sendOutgoingCall]. [StartedCall.result] resolves once the matching
-  /// Return arrives.
-  StartedCall _startOutgoingCall({
+  /// [startUsing]. [StartedCall.result] resolves once the matching Return
+  /// arrives.
+  StartedCall start({
     required OutgoingCallTarget target,
     required OutgoingParams params,
     required int interfaceId,
     required int methodId,
     List<Capability> paramsCapabilities = const [],
   }) {
-    if (_closedError != null) {
+    if (_tornDownError != null) {
       throw RpcException('connection is closed', kind: ErrorKind.disconnected);
     }
     // Mirrors the old _startResolvedImportCall's up-front check: a broken
@@ -205,13 +289,13 @@ extension _OutgoingCallFlow on TwoPartyRpcConnection {
     if (target case ImportedCapabilityTarget(
       importId: final id,
     ) when id is int) {
-      _importTable.throwIfBroken(id);
+      imports.throwIfBroken(id);
     }
 
-    final question = _questionTable.allocate();
+    final question = questions.allocate();
     question.sentCompleter!.future.ignore();
 
-    _sendOutgoingCall(
+    startUsing(
       question: question,
       target: target,
       params: params,
@@ -236,12 +320,12 @@ extension _OutgoingCallFlow on TwoPartyRpcConnection {
       ret = await completer.future;
     } finally {
       // Whether or not a params-caps entry was ever recorded for this qid
-      // (see _recordParamExportIds), drop it now — nothing past this point
-      // reads _questionParamExportIds[qid] again, on any path (success,
-      // exception, or completer failing before a Return ever arrived).
-      // Captured into a local first so the success path below still has it
-      // even though `finally` runs before that code does.
-      paramExportIds = _questionTable.takeParamExportIds(qid);
+      // (see `_CapabilityProtocol._recordParamExportIds`), drop it now —
+      // nothing past this point reads _questionParamExportIds[qid] again, on
+      // any path (success, exception, or completer failing before a Return
+      // ever arrived). Captured into a local first so the success path below
+      // still has it even though `finally` runs before that code does.
+      paramExportIds = questions.takeParamExportIds(qid);
     }
 
     // Only Return-results/Return-exception ever legitimately carry these —
@@ -250,10 +334,10 @@ extension _OutgoingCallFlow on TwoPartyRpcConnection {
     // results, mirrors buildReturnExceptionMessage's own support for it.
     final answersCall = ret.isReturnResults || ret.isReturnException;
     if (answersCall && ret.returnReleaseParamCaps && paramExportIds != null) {
-      _applyReleaseParamCaps(paramExportIds);
+      applyReleaseParamCaps(paramExportIds);
     }
     if (!(answersCall && ret.returnNoFinishNeeded)) {
-      _sendRaw(buildFinishMessage(qid, releaseResultCaps: false));
+      sendBytes(buildFinishMessage(qid, releaseResultCaps: false));
     }
 
     if (ret.isReturnException) {
@@ -268,7 +352,7 @@ extension _OutgoingCallFlow on TwoPartyRpcConnection {
       // therefore already tracked, locally, under our own incoming-answer
       // bookkeeping for that forwarded call: no extra wire round trip
       // needed to fetch it.
-      final resolved = await _resolveLocalAnswer(ret.takeFromOtherQuestion);
+      final resolved = await resolveLocalAnswer(ret.takeFromOtherQuestion);
       return DispatchResult(
         payload: RpcPayload.fromBytes(resolved.resultBytes),
         caps: resolved.caps,
@@ -279,9 +363,9 @@ extension _OutgoingCallFlow on TwoPartyRpcConnection {
       // these are implemented by this vat. Surfacing them as an explicit
       // error is important specifically for resultsSentElsewhere: it's only
       // ever valid as the Return to a call *we* sent with
-      // sendResultsTo=yourself (see _sendTailForwardCall, which never routes
-      // through _awaitReturn), so seeing it here means a peer sent it
-      // unprompted — treating it as an empty success would silently hand
+      // sendResultsTo=yourself (see `_sendTailForwardCall`, which never
+      // routes through [_awaitReturn]), so seeing it here means a peer sent
+      // it unprompted — treating it as an empty success would silently hand
       // the caller a bogus empty-struct result instead of the real one.
       throw RpcException(
         'unsupported Return variant: ${describeReturnDisc(ret.returnDisc)}',
@@ -291,7 +375,7 @@ extension _OutgoingCallFlow on TwoPartyRpcConnection {
     // Convert capTable entries into ImportedCapabilities.
     final caps = <Capability>[];
     for (final descriptor in ret.capTableDescriptors) {
-      caps.add(_capabilityFromDescriptor(descriptor));
+      caps.add(capabilityFromDescriptor(descriptor));
     }
 
     final resultsContent = ret.resultsContent;
@@ -299,58 +383,27 @@ extension _OutgoingCallFlow on TwoPartyRpcConnection {
       payload:
           resultsContent != null
               ? RpcPayload.fromEnvelope(resultsContent)
-              : RpcPayload.fromBytes(TwoPartyRpcConnection._emptyResultBytes),
+              : RpcPayload.fromBytes(_emptyResultBytes),
       caps: caps,
     );
   }
 
-  void _handleReturn(RpcMessage msg) {
-    final completer = _questionTable.takeReturn(msg.answerId);
+  void handleReturn(RpcMessage msg) {
+    final completer = questions.takeReturn(msg.answerId);
     if (completer == null) return;
 
-    // Only drive the bootstrap completer for the bootstrap question itself.
-    if (msg.answerId == _bootstrapQuestionId) {
-      final bootstrapQid = _bootstrapQuestionId!;
-      _bootstrapQuestionId = null;
-      if (msg.isReturnResults && msg.capTableEntries.isNotEmpty) {
-        final importId = _importIdFromDescriptor(msg.capTableDescriptors.first);
-        if (_bootstrapCompleter != null && !_bootstrapCompleter!.isCompleted) {
-          if (importId == null) {
-            _bootstrapCompleter!.completeError(
-              const RpcException(
-                'bootstrap Return cap table entry was not an import',
-              ),
-            );
-          } else {
-            _bootstrapCompleter!.complete(importId);
-          }
-        }
-      } else if (msg.isReturnException) {
-        if (_bootstrapCompleter != null && !_bootstrapCompleter!.isCompleted) {
-          _bootstrapCompleter!.completeError(
-            RpcException(
-              msg.exceptionReason ?? 'bootstrap failed',
-              kind: msg.exceptionKind,
-            ),
-          );
-        }
-      } else {
-        if (_bootstrapCompleter != null && !_bootstrapCompleter!.isCompleted) {
-          _bootstrapCompleter!.completeError(
-            const RpcException(
-              'bootstrap Return had no capability in cap table',
-            ),
-          );
-        }
-      }
-      // Send Finish to release the server's answer state for this Bootstrap
-      // question. releaseResultCaps=false because the client is retaining the
-      // imported bootstrap capability.
-      _sendRaw(buildFinishMessage(bootstrapQid, releaseResultCaps: false));
-    }
+    onReturn?.call(msg);
 
     if (!completer.isCompleted) {
       completer.complete(msg);
     }
+  }
+
+  /// Fails every pending outgoing Call with [error] and rejects any future
+  /// [start] call the same way. Called once, from the owning connection's
+  /// own teardown.
+  void tearDown(RpcException error) {
+    _tornDownError = error;
+    questions.tearDown(error);
   }
 }

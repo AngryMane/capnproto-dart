@@ -118,7 +118,8 @@ const int _returnTakeFromOtherQuestionOff = 8;
 
 const int _retResults = 0;
 const int _retException = 1;
-// Not implemented by this vat (see _awaitReturn in two_party_connection.dart).
+// Not implemented by this vat (see OutgoingCallCoordinator's internal
+// _awaitReturn, in outgoing_call_coordinator.dart).
 const int _retCanceled = 2;
 const int _retResultsSentElsewhere = 3;
 const int _retTakeFromOtherQuestion = 4;
@@ -1436,9 +1437,10 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
         );
       } else {
         // canceled(2) / resultsSentElsewhere(3) / acceptFromThirdParty(5) —
-        // none of these are implemented (see _awaitReturn), but the disc is
-        // still preserved here rather than silently discarded, so callers
-        // can report exactly what happened.
+        // none of these are implemented (see OutgoingCallCoordinator's
+        // internal _awaitReturn), but the disc is still preserved here
+        // rather than silently discarded, so callers can report exactly
+        // what happened.
         return RpcMessage._(
           type: RpcMessageType.return_,
           answerId: ret?.answerId ?? 0,
