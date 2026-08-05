@@ -147,8 +147,8 @@ class DeferredCapability extends Capability {
       // *application*-visible reference to may still have an independent,
       // uncoordinated reference of its own elsewhere — e.g. the RPC layer
       // re-exporting it under a fresh export id once a senderPromise this
-      // wraps resolves (see `_scheduleSenderPromiseResolve` in
-      // `two_party_connection.dart`), which is released separately and
+      // wraps resolves (see `CapabilityProtocol`'s internal
+      // `_scheduleSenderPromiseResolve`), which is released separately and
       // shares no bookkeeping with this object at all. Disposing `cap`
       // directly would tear it down out from under that other reference
       // instead of just releasing this one's own share.

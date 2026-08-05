@@ -64,7 +64,7 @@ class ImportTable {
   /// distinguishes "we still care about this import" from "we've already
   /// fully released it, and a late message about it must not resurrect
   /// tracking state that nothing will ever clean up again" (see
-  /// `TwoPartyRpcConnection._handleResolve`'s matching doc comment).
+  /// `CapabilityProtocol.handleResolve`'s matching doc comment).
   bool isTracked(int importId) => _importRefCounts.containsKey(importId);
 
   /// Retains a reference to [importId], creating its tracking state on

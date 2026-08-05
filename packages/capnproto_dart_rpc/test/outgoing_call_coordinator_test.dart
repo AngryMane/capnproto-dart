@@ -51,8 +51,8 @@ class _Harness {
 
   /// Recorded every time [resolveCapTableMaybeSync]'s fake reaches the
   /// point past [capTableGate] where a real resolver (e.g.
-  /// `TwoPartyRpcConnection._resolveCapTableAsync`) would commit a side
-  /// effect with lasting state — `ExportTable.getOrCreate`, recording a
+  /// `CapabilityProtocol`'s internal `_resolveCapTableAsync`) would commit
+  /// a side effect with lasting state — `ExportTable.getOrCreate`, recording a
   /// param export id against the question. Standing in for that real side
   /// effect here (rather than actually wiring up an `ExportTable`) so this
   /// harness stays connection-free — see the coordinator-level test that

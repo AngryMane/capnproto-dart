@@ -51,7 +51,7 @@ class ExportTable {
   // Bootstrap is registered at export ID 0 (see [registerBootstrap]);
   // ordinary exports start at 1.
   int _nextExportId = 1;
-  // Sender-promise export IDs (see TwoPartyRpcConnection's
+  // Sender-promise export IDs (see CapabilityProtocol's internal
   // `_scheduleSenderPromiseResolve`) currently scheduled to notify the peer
   // once they resolve — tracked here (rather than as a plain field on the
   // connection) since every mutation happens alongside an `_exports`/
