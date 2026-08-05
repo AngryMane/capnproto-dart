@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:capnproto_dart/capnproto_dart.dart';
 import 'package:capnproto_dart_rpc/src/capability/capability.dart';
-import 'package:capnproto_dart_rpc/src/rpc/answer_table.dart';
+import 'package:capnproto_dart_rpc/src/rpc/calls/answer_table.dart';
 import 'package:test/test.dart';
 
 ResolvedAnswer _answer([List<Capability> caps = const []]) =>

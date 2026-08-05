@@ -4,13 +4,13 @@ import 'dart:typed_data';
 import 'package:capnproto_dart/capnproto_dart.dart';
 import 'package:capnproto_dart_rpc/src/capability/capability.dart';
 import 'package:capnproto_dart_rpc/src/capability/rpc_payload.dart';
-import 'package:capnproto_dart_rpc/src/rpc/answer_table.dart';
-import 'package:capnproto_dart_rpc/src/rpc/export_table.dart';
-import 'package:capnproto_dart_rpc/src/rpc/incoming_call_coordinator.dart';
-import 'package:capnproto_dart_rpc/src/rpc/question_table.dart';
+import 'package:capnproto_dart_rpc/src/rpc/calls/answer_table.dart';
+import 'package:capnproto_dart_rpc/src/rpc/calls/incoming_call_coordinator.dart';
+import 'package:capnproto_dart_rpc/src/rpc/calls/question_table.dart';
+import 'package:capnproto_dart_rpc/src/rpc/capabilities/export_table.dart';
+import 'package:capnproto_dart_rpc/src/rpc/capabilities/wire_capability_context.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_exception.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_proto.dart';
-import 'package:capnproto_dart_rpc/src/rpc/wire_capability_context.dart';
 import 'package:test/test.dart';
 
 /// Pre-built 16-byte message: single segment (1 word), null root pointer —
@@ -34,11 +34,12 @@ final _singleCapResultBytes = Uint8List.fromList([
   3, 0, 0, 0, 0, 0, 0, 0, // ptr[0] = CapabilityPointer(index=0)
 ]);
 
-typedef _StartUsingCall = ({
-  OutgoingCallTarget target,
-  List<Capability> paramsCapabilities,
-  bool sendResultsToYourself,
-});
+typedef _StartUsingCall =
+    ({
+      OutgoingCallTarget target,
+      List<Capability> paramsCapabilities,
+      bool sendResultsToYourself,
+    });
 
 class _FakeCapability extends Capability {
   var disposeCount = 0;
@@ -152,7 +153,8 @@ class _Harness {
     isClosed: () => isClosed(),
     tearDownConnection: tearDownCalls.add,
     classifyCapability: (cap) => classifyCapability(cap),
-    capabilityFromDescriptor: (descriptor) => capabilityFromDescriptor(descriptor),
+    capabilityFromDescriptor:
+        (descriptor) => capabilityFromDescriptor(descriptor),
     returnCapDescriptor: (cap) => returnCapDescriptor(cap),
     startUsing: ({
       required OutgoingQuestion question,
@@ -171,8 +173,8 @@ class _Harness {
       startUsingCalls.add(call);
       onStartUsing(question, call);
     },
-    beginParamCapsRelease: (paramsCapabilities) =>
-        beginParamCapsRelease(paramsCapabilities),
+    beginParamCapsRelease:
+        (paramsCapabilities) => beginParamCapsRelease(paramsCapabilities),
     finalizeParamCapsRelease: (ticket) => finalizeParamCapsRelease(ticket),
   );
 }
@@ -219,8 +221,8 @@ void main() {
         'a resolved answer, so a pipelined call targeting it resolves '
         'immediately', () {
       final h = _Harness();
-      final bootstrapCap = _FakeCapability()
-        ..onDispatch = (_, _, _) => DispatchResult.empty;
+      final bootstrapCap =
+          _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
       h.exportTable.registerBootstrap(bootstrapCap);
 
       h.coordinator.handleBootstrap(parseRpcMessage(buildBootstrapMessage(7)));
@@ -250,8 +252,8 @@ void main() {
         'dispatches immediately against the resolved path, and reports a '
         'protocol-level error for a path that is not a capability', () {
       final h = _Harness();
-      final targetCap = _FakeCapability()
-        ..onDispatch = (_, _, _) => DispatchResult.empty;
+      final targetCap =
+          _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
       h.answerTable.completeSuccessfully(
         1,
         resolved: ResolvedAnswer(_singleCapResultBytes, [targetCap]),
@@ -281,8 +283,8 @@ void main() {
         'dispatches once the parent resolves, or reports an exception if '
         'the parent fails', () async {
       final h = _Harness();
-      final targetCap = _FakeCapability()
-        ..onDispatch = (_, _, _) => DispatchResult.empty;
+      final targetCap =
+          _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
       final pending = Completer<ResolvedAnswer>();
       h.answerTable.beginDispatch(
         1,
@@ -322,15 +324,18 @@ void main() {
         'takeFromOtherQuestion only after the forward is sent', () async {
       final h = _Harness();
       final forwardTarget = _FakeCapability();
-      final originalCap = _FakeCapability()
-        ..onTryTailCall = (interfaceId, methodId, params) =>
-            TailCall(forwardTarget, interfaceId, methodId, params);
+      final originalCap =
+          _FakeCapability()
+            ..onTryTailCall =
+                (interfaceId, methodId, params) =>
+                    TailCall(forwardTarget, interfaceId, methodId, params);
       // Cached plain int, matching the realistic path (an _ImportedCapability
       // constructed via .fromState sets _cachedState synchronously).
-      h.classifyCapability = (cap) =>
-          identical(cap, forwardTarget)
-              ? const ImportedWireCapability(9)
-              : const NotWireCapability();
+      h.classifyCapability =
+          (cap) =>
+              identical(cap, forwardTarget)
+                  ? const ImportedWireCapability(9)
+                  : const NotWireCapability();
       final exportId = h.exportTable.getOrCreate(originalCap);
 
       // Holds the forward "on the wire" open until the test explicitly lets
@@ -372,11 +377,13 @@ void main() {
         'falls back to a transparent proxy dispatch, never forwarding a '
         'Call', () async {
       final h = _Harness();
-      final forwardTarget = _FakeCapability()
-        ..onDispatch = (_, _, _) => DispatchResult.empty;
-      final originalCap = _FakeCapability()
-        ..onTryTailCall = (interfaceId, methodId, params) =>
-            TailCall(forwardTarget, interfaceId, methodId, params);
+      final forwardTarget =
+          _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
+      final originalCap =
+          _FakeCapability()
+            ..onTryTailCall =
+                (interfaceId, methodId, params) =>
+                    TailCall(forwardTarget, interfaceId, methodId, params);
       // classifyCapability's default (NotWireCapability for everything).
       final exportId = h.exportTable.getOrCreate(originalCap);
 
@@ -397,8 +404,8 @@ void main() {
         'Return.results with noFinishNeeded=true and drops the answer '
         'bookkeeping immediately', () async {
       final h = _Harness();
-      final cap = _FakeCapability()
-        ..onDispatch = (_, _, _) => DispatchResult.empty;
+      final cap =
+          _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
       final exportId = h.exportTable.getOrCreate(cap);
 
       h.coordinator.handleCall(
@@ -415,11 +422,12 @@ void main() {
     test('a failed dispatch sends Return.exception with the thrown reason/ '
         'kind and noFinishNeeded=true', () async {
       final h = _Harness();
-      final cap = _FakeCapability()
-        ..throwOnDispatch = const RpcException(
-          'boom',
-          kind: ErrorKind.overloaded,
-        );
+      final cap =
+          _FakeCapability()
+            ..throwOnDispatch = const RpcException(
+              'boom',
+              kind: ErrorKind.overloaded,
+            );
       final exportId = h.exportTable.getOrCreate(cap);
 
       h.coordinator.handleCall(
@@ -457,8 +465,8 @@ void main() {
       expect(sent1.returnDisc, equals(3)); // resultsSentElsewhere
       expect(sent1.isReturnResults, isFalse);
 
-      final failingCap = _FakeCapability()
-        ..throwOnDispatch = const RpcException('boom');
+      final failingCap =
+          _FakeCapability()..throwOnDispatch = const RpcException('boom');
       final exportId2 = h.exportTable.getOrCreate(failingCap);
       h.coordinator.handleCall(
         parseRpcMessage(
@@ -484,7 +492,8 @@ void main() {
 
       h.finalizeParamCapsRelease =
           (ticket) => (allDisposed: true, explicitReleaseIds: const []);
-      final cap1 = _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
+      final cap1 =
+          _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
       final exportId1 = h.exportTable.getOrCreate(cap1);
       h.coordinator.handleCall(
         parseRpcMessage(_buildCall(questionId: 80, targetExportId: exportId1)),
@@ -494,9 +503,9 @@ void main() {
       expect(sent.returnReleaseParamCaps, isTrue);
 
       h.finalizeParamCapsRelease =
-          (ticket) =>
-              (allDisposed: false, explicitReleaseIds: const [7, 8]);
-      final cap2 = _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
+          (ticket) => (allDisposed: false, explicitReleaseIds: const [7, 8]);
+      final cap2 =
+          _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
       final exportId2 = h.exportTable.getOrCreate(cap2);
       h.coordinator.handleCall(
         parseRpcMessage(_buildCall(questionId: 81, targetExportId: exportId2)),
@@ -518,7 +527,8 @@ void main() {
       h.sentBytes.clear();
       h.finalizeParamCapsRelease =
           (ticket) => (allDisposed: false, explicitReleaseIds: const []);
-      final cap3 = _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
+      final cap3 =
+          _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
       final exportId3 = h.exportTable.getOrCreate(cap3);
       h.coordinator.handleCall(
         parseRpcMessage(_buildCall(questionId: 82, targetExportId: exportId3)),
@@ -535,14 +545,18 @@ void main() {
 
       // Duplicate question id: handleCall is called twice with the same
       // questionId, the second reusing still-tracked answer state.
-      final dupCap = _FakeCapability()
-        ..onDispatch = (_, _, _) => DispatchResult.empty;
+      final dupCap =
+          _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
       final dupExportId = h.exportTable.getOrCreate(dupCap);
       h.coordinator.handleCall(
-        parseRpcMessage(_buildCall(questionId: 999, targetExportId: dupExportId)),
+        parseRpcMessage(
+          _buildCall(questionId: 999, targetExportId: dupExportId),
+        ),
       );
       h.coordinator.handleCall(
-        parseRpcMessage(_buildCall(questionId: 999, targetExportId: dupExportId)),
+        parseRpcMessage(
+          _buildCall(questionId: 999, targetExportId: dupExportId),
+        ),
       );
       expect(h.tearDownCalls, hasLength(1));
     });
@@ -550,8 +564,8 @@ void main() {
     test('a pending promised-answer resolving after teardown does not '
         'decode capabilities or dispatch its target', () async {
       final h = _Harness();
-      final target = _FakeCapability()
-        ..onDispatch = (_, _, _) => DispatchResult.empty;
+      final target =
+          _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
       final pending = Completer<ResolvedAnswer>();
       h.answerTable.beginDispatch(
         1,
@@ -607,8 +621,8 @@ void main() {
         'so a Finish arriving synchronously as a reaction to that Return is '
         'not silently dropped', () {
       final h = _Harness();
-      final bootstrapCap = _FakeCapability()
-        ..onDispatch = (_, _, _) => DispatchResult.empty;
+      final bootstrapCap =
+          _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
       h.exportTable.registerBootstrap(bootstrapCap);
 
       h.sendBytes = (bytes) {
@@ -637,13 +651,16 @@ void main() {
         'as a reaction to it is not silently dropped', () async {
       final h = _Harness();
       final forwardTarget = _FakeCapability();
-      final originalCap = _FakeCapability()
-        ..onTryTailCall = (interfaceId, methodId, params) =>
-            TailCall(forwardTarget, interfaceId, methodId, params);
-      h.classifyCapability = (cap) =>
-          identical(cap, forwardTarget)
-              ? const ImportedWireCapability(9)
-              : const NotWireCapability();
+      final originalCap =
+          _FakeCapability()
+            ..onTryTailCall =
+                (interfaceId, methodId, params) =>
+                    TailCall(forwardTarget, interfaceId, methodId, params);
+      h.classifyCapability =
+          (cap) =>
+              identical(cap, forwardTarget)
+                  ? const ImportedWireCapability(9)
+                  : const NotWireCapability();
       final exportId = h.exportTable.getOrCreate(originalCap);
 
       h.sendBytes = (bytes) {

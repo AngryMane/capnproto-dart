@@ -3,14 +3,14 @@ import 'dart:typed_data';
 
 import 'package:capnproto_dart/capnproto_dart.dart';
 
-import '../capability/capability.dart';
-import '../capability/rpc_payload.dart';
+import '../../capability/capability.dart';
+import '../../capability/rpc_payload.dart';
+import '../capabilities/import_table.dart';
+import '../capabilities/wire_capability_context.dart';
+import '../rpc_exception.dart';
+import '../rpc_proto.dart';
 import 'answer_table.dart';
-import 'import_table.dart';
 import 'question_table.dart';
-import 'rpc_exception.dart';
-import 'rpc_proto.dart';
-import 'wire_capability_context.dart';
 
 /// Pre-built 16-byte message: single segment (1 word), null root pointer.
 /// Used as fallback for `-> stream` and void methods that return no
@@ -86,7 +86,8 @@ final class OutgoingCallCoordinator {
   resolveCapTableMaybeSync;
 
   final void Function(List<int> exportIds) applyReleaseParamCaps;
-  final Capability Function(RpcCapDescriptor descriptor) capabilityFromDescriptor;
+  final Capability Function(RpcCapDescriptor descriptor)
+  capabilityFromDescriptor;
   final Future<ResolvedAnswer> Function(int qid) resolveLocalAnswer;
 
   /// Invoked from [handleReturn], right after confirming a live completer

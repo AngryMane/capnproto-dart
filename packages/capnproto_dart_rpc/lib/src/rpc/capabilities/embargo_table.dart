@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:capnproto_dart/capnproto_dart.dart';
 
-import 'rpc_exception.dart';
+import '../rpc_exception.dart';
 
 /// Tracks a single pending embargo round-trip: this vat sent a
 /// `senderLoopback` Disembargo and is waiting for the peer's matching

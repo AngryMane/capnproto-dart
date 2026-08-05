@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:capnproto_dart/capnproto_dart.dart';
 
-import '../capability/capability.dart'
+import '../../capability/capability.dart'
     show Capability, DispatchCancellationController;
 
 /// Holds the serialized result message and the corresponding cap table for a

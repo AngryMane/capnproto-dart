@@ -4,14 +4,14 @@ import 'dart:typed_data';
 
 import 'package:capnproto_dart/capnproto_dart.dart';
 
-import '../capability/capability.dart';
-import '../capability/rpc_payload.dart';
+import '../../capability/capability.dart';
+import '../../capability/rpc_payload.dart';
+import '../capabilities/export_table.dart';
+import '../capabilities/wire_capability_context.dart';
+import '../rpc_exception.dart';
+import '../rpc_proto.dart';
 import 'answer_table.dart';
-import 'export_table.dart';
 import 'question_table.dart';
-import 'rpc_exception.dart';
-import 'rpc_proto.dart';
-import 'wire_capability_context.dart';
 
 // 24-byte message: struct with 0 data words, 1 pointer word = CapabilityPointer(0).
 // Used as the synthesised result for Bootstrap answers so that pipelined

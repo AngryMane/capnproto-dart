@@ -1,6 +1,6 @@
 import 'dart:collection';
 
-import '../capability/capability.dart'
+import '../../capability/capability.dart'
     show Capability, CapabilityLease, vendCapabilityHandle;
 
 /// Tracks a single locally-exported capability and the peer's remote
@@ -139,7 +139,8 @@ class ExportTable {
   /// re-export of the same promise (if it's still exported under a
   /// different id, or re-exported after being released and re-created) to
   /// be scheduled again.
-  void clearScheduled(int promiseId) => _senderPromiseResolves.remove(promiseId);
+  void clearScheduled(int promiseId) =>
+      _senderPromiseResolves.remove(promiseId);
 
   /// Core effect of releasing [referenceCount] references to [exportId]:
   /// decrements its remote refcount and, once it reaches zero, drops the

@@ -3,13 +3,13 @@ import 'dart:typed_data';
 
 import 'package:capnproto_dart/capnproto_dart.dart';
 
-import '../capability/capability.dart';
+import '../../capability/capability.dart';
+import '../calls/question_table.dart';
+import '../rpc_exception.dart';
+import '../rpc_proto.dart';
 import 'embargo_table.dart';
 import 'export_table.dart';
 import 'import_table.dart';
-import 'question_table.dart';
-import 'rpc_exception.dart';
-import 'rpc_proto.dart';
 import 'wire_capability_context.dart';
 
 /// Capability wire protocol: descriptor encode/decode, import/export
@@ -349,7 +349,11 @@ final class CapabilityProtocol {
       );
       return;
     }
-    exportTable.releaseRef(msg.releaseId, msg.referenceCount, disposeIgnoringErrors);
+    exportTable.releaseRef(
+      msg.releaseId,
+      msg.referenceCount,
+      disposeIgnoringErrors,
+    );
   }
 
   /// Releases one local export reference for every ID in [exportIds]. Used
@@ -486,7 +490,10 @@ final class CapabilityProtocol {
     return descriptor;
   }
 
-  void _scheduleSenderPromiseResolve(int promiseId, DeferredCapability promise) {
+  void _scheduleSenderPromiseResolve(
+    int promiseId,
+    DeferredCapability promise,
+  ) {
     if (!exportTable.markScheduled(promiseId)) return;
 
     promise.resolution
@@ -530,7 +537,8 @@ final class CapabilityProtocol {
             sendBytes(
               buildResolveExceptionMessage(
                 promiseId: promiseId,
-                reason: error is RpcException ? error.message : error.toString(),
+                reason:
+                    error is RpcException ? error.message : error.toString(),
               ),
             );
           },
@@ -550,7 +558,9 @@ final class CapabilityProtocol {
   /// reference of its own locally (it's just handing the peer back its own
   /// capability) — [cap] disposal is what releases its share of
   /// [identity]'s refcount there, since nothing else will.
-  Future<RpcCapDescriptor> _resolveDescriptorForCapability(Capability cap) async {
+  Future<RpcCapDescriptor> _resolveDescriptorForCapability(
+    Capability cap,
+  ) async {
     final identity = unwrapVendedCapability(cap);
     final RpcCapDescriptor descriptor;
     final kind = classifyCapability(identity);
