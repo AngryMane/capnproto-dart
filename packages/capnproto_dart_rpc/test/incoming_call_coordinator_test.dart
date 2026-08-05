@@ -100,6 +100,14 @@ class _Harness {
   final tearDownCalls = <RpcException>[];
   final startUsingCalls = <_StartUsingCall>[];
 
+  /// Settable per test — defaults to just recording the bytes in
+  /// [sentBytes]. Tests that need to exercise reentrancy (a peer reacting
+  /// to a Return through a synchronously-reentrant sink) replace this to
+  /// call back into the coordinator from inside the send itself — the
+  /// replacement is responsible for still recording into [sentBytes] if
+  /// the test needs both.
+  late void Function(Uint8List bytes) sendBytes = sentBytes.add;
+
   /// Settable per test — defaults to "connection never closes".
   bool Function() isClosed = () => false;
 
@@ -138,7 +146,7 @@ class _Harness {
     exportTable: exportTable,
     answerTable: answerTable,
     questions: questions,
-    sendBytes: sentBytes.add,
+    sendBytes: (bytes) => sendBytes(bytes),
     disposeIgnoringErrors: disposedFromTable.add,
     isClosed: () => isClosed(),
     tearDownConnection: tearDownCalls.add,
@@ -193,6 +201,7 @@ Uint8List _buildPipelinedCall({
   List<int> transformPath = const [0],
   int interfaceId = 1,
   int methodId = 2,
+  List<RpcCapDescriptor>? capTableDescriptors,
 }) => buildCallMessage(
   questionId: questionId,
   targetPromisedAnswerQid: parentQid,
@@ -200,6 +209,7 @@ Uint8List _buildPipelinedCall({
   interfaceId: interfaceId,
   methodId: methodId,
   paramsBytes: _emptyMessageBytes,
+  capTableDescriptors: capTableDescriptors,
 );
 
 void main() {
@@ -322,6 +332,15 @@ void main() {
               : const NotWireCapability();
       final exportId = h.exportTable.getOrCreate(originalCap);
 
+      // Holds the forward "on the wire" open until the test explicitly lets
+      // it through — proves the redirect actually waits for it, rather than
+      // just happening to run after it because the default fake completes
+      // sentCompleter synchronously either way.
+      final sentGate = Completer<void>();
+      h.onStartUsing = (question, call) {
+        sentGate.future.then((_) => question.sentCompleter?.complete());
+      };
+
       h.coordinator.handleCall(
         parseRpcMessage(_buildCall(questionId: 50, targetExportId: exportId)),
       );
@@ -333,6 +352,12 @@ void main() {
         (h.startUsingCalls.single.target as ImportedCapabilityTarget).importId,
         equals(9),
       );
+      // Nothing sent yet — the forward hasn't reached the wire.
+      expect(h.sentBytes, isEmpty);
+
+      sentGate.complete();
+      await Future<void>.delayed(Duration.zero);
+
       final sent = parseRpcMessage(h.sentBytes.single);
       expect(sent.isReturnTakeFromOtherQuestion, isTrue);
       expect(sent.answerId, equals(50));
@@ -482,6 +507,27 @@ void main() {
               .toList();
       expect(releaseMessages.map((m) => m.releaseId), unorderedEquals([7, 8]));
 
+      // The case the (bool, List<int>) split exists for: zero disposed out
+      // of N is NOT the same as N-of-N disposed, even though both report an
+      // empty explicitReleaseIds list — only the latter is safe to fold
+      // into releaseParamCaps=true.
+      h.sentBytes.clear();
+      h.finalizeParamCapsRelease = (ticket) => (false, const []);
+      final cap3 = _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
+      final exportId3 = h.exportTable.getOrCreate(cap3);
+      h.coordinator.handleCall(
+        parseRpcMessage(_buildCall(questionId: 82, targetExportId: exportId3)),
+      );
+      await Future<void>.delayed(Duration.zero);
+      sent = parseRpcMessage(h.sentBytes.single);
+      expect(sent.returnReleaseParamCaps, isFalse);
+      expect(
+        h.sentBytes
+            .map(parseRpcMessage)
+            .where((m) => m.type == RpcMessageType.release),
+        isEmpty,
+      );
+
       // Duplicate question id: handleCall is called twice with the same
       // questionId, the second reusing still-tracked answer state.
       final dupCap = _FakeCapability()
@@ -494,6 +540,123 @@ void main() {
         parseRpcMessage(_buildCall(questionId: 999, targetExportId: dupExportId)),
       );
       expect(h.tearDownCalls, hasLength(1));
+    });
+
+    test('a pending promised-answer resolving after teardown does not '
+        'decode capabilities or dispatch its target', () async {
+      final h = _Harness();
+      final target = _FakeCapability()
+        ..onDispatch = (_, _, _) => DispatchResult.empty;
+      final pending = Completer<ResolvedAnswer>();
+      h.answerTable.beginDispatch(
+        1,
+        pending.future,
+        DispatchCancellationController(),
+      );
+
+      var descriptorDecodeCount = 0;
+      h.capabilityFromDescriptor = (descriptor) {
+        descriptorDecodeCount++;
+        return _FakeCapability();
+      };
+
+      h.coordinator.handleCall(
+        parseRpcMessage(
+          _buildPipelinedCall(
+            questionId: 2,
+            parentQid: 1,
+            capTableDescriptors: const [RpcCapDescriptor.senderHosted(7)],
+          ),
+        ),
+      );
+
+      h.isClosed = () => true;
+      h.answerTable.tearDown();
+
+      pending.complete(ResolvedAnswer(_singleCapResultBytes, [target]));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(target.dispatches, isEmpty);
+      expect(descriptorDecodeCount, equals(0));
+      expect(h.answerTable.count, equals(0));
+      expect(h.sentBytes, isEmpty);
+
+      // Companion case: the parent dispatch fails instead of succeeding —
+      // the catchError continuation must equally refuse to send once closed.
+      final failingPending = Completer<ResolvedAnswer>();
+      h.answerTable.beginDispatch(
+        3,
+        failingPending.future,
+        DispatchCancellationController(),
+      );
+      h.coordinator.handleCall(
+        parseRpcMessage(_buildPipelinedCall(questionId: 4, parentQid: 3)),
+      );
+      failingPending.completeError(const RpcException('parent broke'));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(h.sentBytes, isEmpty);
+    });
+
+    test('handleBootstrap records answer state before sending its Return, '
+        'so a Finish arriving synchronously as a reaction to that Return is '
+        'not silently dropped', () {
+      final h = _Harness();
+      final bootstrapCap = _FakeCapability()
+        ..onDispatch = (_, _, _) => DispatchResult.empty;
+      h.exportTable.registerBootstrap(bootstrapCap);
+
+      h.sendBytes = (bytes) {
+        h.sentBytes.add(bytes);
+        final msg = parseRpcMessage(bytes);
+        if (msg.type == RpcMessageType.return_) {
+          // Simulates a peer reacting to the Return through a
+          // synchronously-reentrant sink (an in-memory or `sync: true`
+          // transport) by immediately sending Finish for it.
+          h.coordinator.handleFinish(
+            parseRpcMessage(buildFinishMessage(msg.answerId)),
+          );
+        }
+      };
+
+      h.coordinator.handleBootstrap(parseRpcMessage(buildBootstrapMessage(7)));
+
+      // If the Return had been sent before the answer state existed, this
+      // reentrant Finish would have found nothing to finish, and the
+      // bootstrap answer would be stuck tracked forever.
+      expect(h.answerTable.isTracked(7), isFalse);
+    });
+
+    test('a tail-call redirect records answer state before sending its '
+        'takeFromOtherQuestion Return, so a Finish arriving synchronously '
+        'as a reaction to it is not silently dropped', () async {
+      final h = _Harness();
+      final forwardTarget = _FakeCapability();
+      final originalCap = _FakeCapability()
+        ..onTryTailCall = (interfaceId, methodId, params) =>
+            TailCall(forwardTarget, interfaceId, methodId, params);
+      h.classifyCapability = (cap) =>
+          identical(cap, forwardTarget)
+              ? const ImportedWireCapability(9)
+              : const NotWireCapability();
+      final exportId = h.exportTable.getOrCreate(originalCap);
+
+      h.sendBytes = (bytes) {
+        h.sentBytes.add(bytes);
+        final msg = parseRpcMessage(bytes);
+        if (msg.isReturnTakeFromOtherQuestion) {
+          h.coordinator.handleFinish(
+            parseRpcMessage(buildFinishMessage(msg.answerId)),
+          );
+        }
+      };
+
+      h.coordinator.handleCall(
+        parseRpcMessage(_buildCall(questionId: 50, targetExportId: exportId)),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(h.answerTable.isTracked(50), isFalse);
     });
   });
 }

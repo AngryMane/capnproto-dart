@@ -54,19 +54,19 @@ final _emptyResultBytes = Uint8List.fromList([
 /// resolving an incoming Call to the [Capability] it dispatches against,
 /// running that dispatch (with cancellation and tail-call support), and
 /// building/sending its Return. Extracted from `TwoPartyRpcConnection` as a
-/// standalone, constructor-injected class — like [OutgoingCallCoordinator]/
-/// [CapabilityProtocol], a plain top-level class (not a `part`-file
+/// standalone, constructor-injected class — like `OutgoingCallCoordinator`/
+/// `CapabilityProtocol`, a plain top-level class (not a `part`-file
 /// extension) so it can be constructed and tested directly, without a real
 /// connection or sockets.
 ///
-/// Reaches [CapabilityProtocol] and [OutgoingCallCoordinator] through
+/// Reaches `CapabilityProtocol` and `OutgoingCallCoordinator` through
 /// narrow closures rather than holding either object directly: both are
 /// declared `final class`, so a test file in a different library can't
 /// fake either by implementing it — narrow closures keep this class's own
 /// test harness as lightweight as its two siblings'. [startUsing] closes
 /// the one genuine circular dependency in this refactor:
-/// `_sendTailForwardCall` needs [OutgoingCallCoordinator.startUsing], while
-/// [OutgoingCallCoordinator]'s own `resolveLocalAnswer` field needs
+/// `_sendTailForwardCall` needs `OutgoingCallCoordinator.startUsing`, while
+/// `OutgoingCallCoordinator`'s own `resolveLocalAnswer` field needs
 /// [resolveLocalAnswer] — see the wiring site
 /// (`two_party_connection.dart`) for how both directions are kept
 /// deferred (closures, not eager reads) so neither side's construction
@@ -118,7 +118,7 @@ final class IncomingCallCoordinator {
   capabilityFromDescriptor;
   final RpcCapDescriptor Function(Capability cap) returnCapDescriptor;
 
-  /// [OutgoingCallCoordinator.startUsing] — see this class's own doc
+  /// `OutgoingCallCoordinator.startUsing` — see this class's own doc
   /// comment for why this closure, not a direct reference to that
   /// coordinator, is what closes the circular dependency between them.
   final void Function({
@@ -179,10 +179,6 @@ final class IncomingCallCoordinator {
 
   void handleBootstrap(RpcMessage msg) {
     if (_rejectDuplicateQuestionId(msg.questionId)) return;
-    // Server side: send Return with our bootstrap capability (export 0).
-    sendBytes(
-      buildBootstrapReturnMessage(answerId: msg.questionId, exportId: 0),
-    );
     // Each Bootstrap request hands the peer a new reference to export 0,
     // exactly like ExportTable.getOrCreate does for capabilities returned
     // from ordinary calls — without this, a peer that bootstraps twice and
@@ -192,6 +188,13 @@ final class IncomingCallCoordinator {
     // Register the bootstrap answer so pipelined calls targeting
     // {receiverAnswer: {questionId: msg.questionId, transform: []}} can
     // resolve ptr[0] → the bootstrap capability.
+    //
+    // Recorded *before* sending the Return — a peer that reacts to the
+    // Return through a synchronously-reentrant sink (an in-memory or
+    // `sync: true` transport) could otherwise observe a pipelined call
+    // targeting this answer, a Finish for it, or a Release for export 0,
+    // before this bookkeeping exists (see _runDispatch's own matching
+    // comment for why the same ordering matters there).
     final bootstrapCap = exportTable.retainExisting(0);
     if (bootstrapCap != null) {
       answerTable.completeSuccessfully(
@@ -199,6 +202,10 @@ final class IncomingCallCoordinator {
         resolved: ResolvedAnswer(_bootstrapResultBytes, [bootstrapCap]),
       );
     }
+    // Server side: send Return with our bootstrap capability (export 0).
+    sendBytes(
+      buildBootstrapReturnMessage(answerId: msg.questionId, exportId: 0),
+    );
   }
 
   void handleCall(RpcMessage msg) {
@@ -263,6 +270,14 @@ final class IncomingCallCoordinator {
     }
     pending
         .then((resolved) {
+          // The connection may have torn down while this call sat queued
+          // behind the parent dispatch — tearDownConnection already cleared
+          // the tables _dispatchToCapability would otherwise touch (decode
+          // capTable descriptors, bump import refcounts, dispatch to the
+          // application capability), and sendBytes() below would silently
+          // no-op anyway, so there's nothing left to do for a peer that's
+          // no longer there.
+          if (isClosed()) return;
           final cap = _capFromPath(resolved, path);
           if (cap == null) {
             sendBytes(
@@ -277,13 +292,15 @@ final class IncomingCallCoordinator {
           _dispatchToCapability(msg, cap);
         })
         .catchError((Object err) {
+          if (isClosed()) return;
           sendBytes(
             buildReturnExceptionMessage(
               answerId: msg.questionId,
               reason: 'parent call failed: $err',
             ),
           );
-        });
+        })
+        .ignore();
   }
 
   Capability? _capFromPath(ResolvedAnswer resolved, List<int> path) =>
@@ -447,12 +464,6 @@ final class IncomingCallCoordinator {
       sent
           .then((_) {
             if (isClosed()) return;
-            sendBytes(
-              buildReturnTakeFromOtherQuestionMessage(
-                answerId: qid,
-                questionId: forwardQid,
-              ),
-            );
             // Nothing was exported directly for this answer — the real
             // result (and any capabilities in it) live under forwardQid's
             // own answer bookkeeping, released independently when the peer
@@ -460,7 +471,20 @@ final class IncomingCallCoordinator {
             // supported: a pipelined call targeting qid will fail with
             // "unknown promisedAnswer questionId", since qid's resolved/
             // pending answer state is deliberately never populated here.
+            //
+            // Recorded *before* sending the Return — same reentrancy
+            // reasoning as _runDispatch/handleBootstrap: a peer reacting to
+            // this Return through a synchronously-reentrant sink could
+            // otherwise send a Finish for qid before this bookkeeping
+            // exists, which would then be silently dropped as a no-op
+            // instead of ever clearing it.
             answerTable.completeSuccessfully(qid);
+            sendBytes(
+              buildReturnTakeFromOtherQuestionMessage(
+                answerId: qid,
+                questionId: forwardQid,
+              ),
+            );
           })
           .catchError((Object err) {
             if (isClosed()) return;
@@ -531,6 +555,7 @@ final class IncomingCallCoordinator {
         .then(
           (_) {
             questions.takeParamExportIds(qid);
+            if (isClosed()) return;
             sendBytes(buildFinishMessage(qid, releaseResultCaps: false));
           },
           onError: (Object error, StackTrace stackTrace) {
@@ -811,8 +836,14 @@ final class IncomingCallCoordinator {
     final (allDisposed, explicitReleaseIds) = finalizeParamCapsRelease(
       ticket,
     );
-    for (final id in explicitReleaseIds) {
-      sendBytes(buildReleaseMessage(id, 1));
+    // sendBytes() would silently no-op post-teardown anyway (a real
+    // connection's own send path already does), but this coordinator
+    // shouldn't rely on that — skip the send outright rather than depend on
+    // a caller's hidden no-op behavior.
+    if (!isClosed()) {
+      for (final id in explicitReleaseIds) {
+        sendBytes(buildReleaseMessage(id, 1));
+      }
     }
     return allDisposed;
   }
