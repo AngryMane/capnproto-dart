@@ -27,28 +27,69 @@ extension _DispatchLifecycle on TwoPartyRpcConnection {
     );
   }
 
-  /// Ends [tracker]'s deferred-release window (a no-op, returning `true`,
-  /// for a null/empty tracker — no capability params means nothing to
-  /// release) and decides `Return.releaseParamCaps`: `true` when every
-  /// params capability freshly imported for the call was disposed before it
-  /// settled — their wire Release was already folded into the refcount
-  /// decrement done by [_ImportedCapability]'s deferred sink and none needs
-  /// sending — otherwise flushes an explicit Release for just the ones that
-  /// were disposed and returns `false`. Either way, clears each wrapper's
+  /// Starts a deferred-release tracking window for whichever of
+  /// [paramsCapabilities] are same-connection `_ImportedCapability`
+  /// wrappers freshly imported for this call — see [_runDispatch]'s own
+  /// doc comment for why. Returns `null` if there's nothing to track (no
+  /// such params capabilities), in which case [_endParamCapsRelease]
+  /// treats it as a no-op.
+  _ParamCapsReleaseTracker? _beginParamCapsRelease(
+    List<Capability> paramsCapabilities,
+  ) {
+    final wrappers = paramsCapabilities
+        .whereType<_ImportedCapability>()
+        .where((c) => _ownedByThisConnection(c._conn))
+        .toList(growable: false);
+    if (wrappers.isEmpty) return null;
+    final tracker = _ParamCapsReleaseTracker(wrappers);
+    for (final wrapper in wrappers) {
+      wrapper._deferredReleaseSink = (id) {
+        _importTable.decrementRefcount(id, _disposeIgnoringErrors);
+        tracker.disposedImportIds.add(id);
+      };
+    }
+    return tracker;
+  }
+
+  /// Ends [tracker]'s deferred-release window (a no-op, reporting
+  /// [allDisposed] `true`, for a null tracker — no capability params means
+  /// nothing to release) and reports two independent things:
+  /// [allDisposed] decides `Return.releaseParamCaps` directly (`true` when
+  /// every params capability freshly imported for the call was disposed
+  /// before it settled — their wire Release was already folded into the
+  /// refcount decrement done by [_ImportedCapability]'s deferred sink, so
+  /// none needs sending); [explicitReleaseIds] is exactly the ids that were
+  /// disposed but need their own wire Release anyway, which — critically —
+  /// is only ever non-empty when [allDisposed] is `false`, and can
+  /// legitimately be *empty even when [allDisposed] is `false`* (nothing
+  /// disposed yet at all): the two must stay separate return values rather
+  /// than collapsing "nothing to send" into "safe to release", since both
+  /// look identical as an empty list. Either way, clears each wrapper's
   /// sink so a *later* dispose() of one that's still outstanding goes
   /// through the normal (non-deferred) [_releaseImport] path.
-  bool _finalizeParamCapsTracker(_ParamCapsReleaseTracker? tracker) {
-    if (tracker == null) return true;
+  (bool allDisposed, List<int> explicitReleaseIds) _endParamCapsRelease(
+    _ParamCapsReleaseTracker? tracker,
+  ) {
+    if (tracker == null) return (true, const []);
     for (final wrapper in tracker.wrappers) {
       wrapper._deferredReleaseSink = null;
     }
     if (tracker.disposedImportIds.length == tracker.wrappers.length) {
-      return true;
+      return (true, const []);
     }
-    for (final id in tracker.disposedImportIds) {
+    return (false, tracker.disposedImportIds.toList(growable: false));
+  }
+
+  /// Thin wrapper around [_endParamCapsRelease] that also sends the wire
+  /// Release for any import ids it reports needing one, and forwards
+  /// [allDisposed] as `Return.releaseParamCaps` — see [_endParamCapsRelease]
+  /// for the actual decision logic.
+  bool _finalizeParamCapsTracker(_ParamCapsReleaseTracker? tracker) {
+    final (allDisposed, explicitReleaseIds) = _endParamCapsRelease(tracker);
+    for (final id in explicitReleaseIds) {
       _sendRaw(buildReleaseMessage(id, 1));
     }
-    return false;
+    return allDisposed;
   }
 
   /// Handles a [Capability.tryTailCall] result for the call answered by
@@ -191,22 +232,7 @@ extension _DispatchLifecycle on TwoPartyRpcConnection {
     // lifetime of this dispatch, so Return.releaseParamCaps can be set
     // without an extra wire Release when the callee turns out not to need
     // them past the call — see _finalizeParamCapsTracker.
-    final paramImportWrappers = paramsCapabilities
-        .whereType<_ImportedCapability>()
-        .where((c) => _ownedByThisConnection(c._conn))
-        .toList(growable: false);
-    final paramCapsTracker =
-        paramImportWrappers.isEmpty
-            ? null
-            : _ParamCapsReleaseTracker(paramImportWrappers);
-    if (paramCapsTracker != null) {
-      for (final wrapper in paramImportWrappers) {
-        wrapper._deferredReleaseSink = (id) {
-          _importTable.decrementRefcount(id, _disposeIgnoringErrors);
-          paramCapsTracker.disposedImportIds.add(id);
-        };
-      }
-    }
+    final paramCapsTracker = _beginParamCapsRelease(paramsCapabilities);
 
     final dispatchFuture = Future.sync(
       () => cap.dispatchWithContext(
