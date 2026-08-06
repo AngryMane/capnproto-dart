@@ -10,7 +10,7 @@ import '../rpc_proto.dart';
 import 'embargo_table.dart';
 import 'export_table.dart';
 import 'import_table.dart';
-import 'wire_capability_context.dart';
+import 'rpc_capability_reference.dart';
 
 /// Capability wire protocol: descriptor encode/decode, import/export
 /// bookkeeping glue, senderPromise resolution, Release, Resolve, and

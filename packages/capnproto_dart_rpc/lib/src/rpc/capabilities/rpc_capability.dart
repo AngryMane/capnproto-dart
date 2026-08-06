@@ -10,7 +10,7 @@ import '../flow_controller.dart';
 import '../rpc_exception.dart';
 import 'import_table.dart';
 import 'rpc_capability_delegate.dart';
-import 'wire_capability_context.dart';
+import 'rpc_capability_reference.dart';
 
 part 'rpc_capability_helpers.dart';
 

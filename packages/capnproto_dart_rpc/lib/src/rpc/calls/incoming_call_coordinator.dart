@@ -7,7 +7,7 @@ import 'package:capnproto_dart/capnproto_dart.dart';
 import '../../capability/capability.dart';
 import '../../capability/rpc_payload.dart';
 import '../capabilities/export_table.dart';
-import '../capabilities/wire_capability_context.dart';
+import '../capabilities/rpc_capability_reference.dart';
 import '../rpc_exception.dart';
 import '../rpc_proto.dart';
 import 'answer_table.dart';
