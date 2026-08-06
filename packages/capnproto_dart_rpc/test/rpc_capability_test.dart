@@ -6,11 +6,12 @@ import 'package:capnproto_dart_rpc/src/rpc/calls/answer_table.dart';
 import 'package:capnproto_dart_rpc/src/rpc/calls/outgoing_call.dart';
 import 'package:capnproto_dart_rpc/src/rpc/capabilities/import_table.dart';
 import 'package:capnproto_dart_rpc/src/rpc/capabilities/rpc_capability.dart';
+import 'package:capnproto_dart_rpc/src/rpc/capabilities/rpc_capability_delegate.dart';
 import 'package:capnproto_dart_rpc/src/rpc/capabilities/wire_capability_context.dart';
 import 'package:capnproto_dart_rpc/src/rpc/two_party_connection.dart';
 import 'package:test/test.dart';
 
-/// One recorded [WireCapabilityContext.startOutgoingCall] invocation.
+/// One recorded [RpcCapabilityDelegate.startOutgoingCall] invocation.
 class StartOutgoingCallInvocation {
   final OutgoingCallTarget target;
   final OutgoingParams params;
@@ -27,11 +28,11 @@ class StartOutgoingCallInvocation {
   });
 }
 
-/// A [WireCapabilityContext] test double: records every call it receives
+/// A [RpcCapabilityDelegate] test double: records every call it receives
 /// instead of driving a real wire connection, so rpc_capability.dart's
 /// dispatch/dispose logic can be exercised without a real
 /// [TwoPartyRpcConnection]/socket pair. See issue #64.
-class FakeWireCapabilityContext implements WireCapabilityContext {
+class FakeRpcCapabilityDelegate implements RpcCapabilityDelegate {
   final Map<int, ImportState> _importStates = {};
   final List<StartOutgoingCallInvocation> startCallInvocations = [];
   final List<int> releasedImportIds = [];
@@ -118,17 +119,76 @@ class _RecordingCapability extends Capability {
 }
 
 void main() {
-  group('ImportedCapability (fake WireCapabilityContext)', () {
+  group('RpcCapabilityDelegate identity', () {
+    test('recognizes only peer capability wrappers bound to the same '
+        'delegate', () async {
+      final delegate = FakeRpcCapabilityDelegate();
+      final otherDelegate = FakeRpcCapabilityDelegate();
+
+      final imported = createImportedCapabilityFromState(
+        delegate,
+        ImportState(7),
+      );
+      expect(
+        classifyWireCapability(delegate, imported),
+        isA<ImportedWireCapability>(),
+      );
+      expect(
+        classifyWireCapability(otherDelegate, imported),
+        isA<NotWireCapability>(),
+      );
+
+      final parentResult = Completer<DispatchResult>();
+      final pipelined = debugCreatePipelinedCapability(delegate, 99, const [
+        0,
+      ], parentResult.future);
+      expect(
+        classifyWireCapability(delegate, pipelined),
+        isA<PipelinedWireCapability>().having(
+          (kind) => kind.hasResolved,
+          'hasResolved',
+          isFalse,
+        ),
+      );
+      expect(
+        classifyWireCapability(otherDelegate, pipelined),
+        isA<NotWireCapability>(),
+      );
+
+      parentResult.complete(DispatchResult.empty);
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        classifyWireCapability(delegate, pipelined),
+        isA<PipelinedWireCapability>().having(
+          (kind) => kind.hasResolved,
+          'hasResolved',
+          isTrue,
+        ),
+      );
+
+      final receiverAnswer = createReceiverAnswerCapability(
+        delegate,
+        123,
+        const [0],
+      );
+      expect(
+        classifyWireCapability(delegate, receiverAnswer),
+        isA<NotWireCapability>(),
+      );
+    });
+  });
+
+  group('ImportedCapability (fake RpcCapabilityDelegate)', () {
     test('dispatch() on a resolved import targets it with a synchronously '
         'known importId (ImportedCapabilityTarget)', () async {
-      final context = FakeWireCapabilityContext();
+      final delegate = FakeRpcCapabilityDelegate();
       final state = ImportState(7);
-      final cap = createImportedCapabilityFromState(context, state);
+      final cap = createImportedCapabilityFromState(delegate, state);
 
       await cap.dispatch(1, 2, RpcPayload.fromBytes(Uint8List(0)));
 
-      expect(context.startCallInvocations, hasLength(1));
-      final invocation = context.startCallInvocations.single;
+      expect(delegate.startCallInvocations, hasLength(1));
+      final invocation = delegate.startCallInvocations.single;
       expect((invocation.target as ImportedCapabilityTarget).importId, 7);
       expect(invocation.interfaceId, 1);
       expect(invocation.methodId, 2);
@@ -137,11 +197,11 @@ void main() {
     });
 
     test(
-      'dispatch() after dispose() rejects without calling the context',
+      'dispatch() after dispose() rejects without calling the delegate',
       () async {
-        final context = FakeWireCapabilityContext();
+        final delegate = FakeRpcCapabilityDelegate();
         final state = ImportState(7);
-        final cap = createImportedCapabilityFromState(context, state);
+        final cap = createImportedCapabilityFromState(delegate, state);
 
         await cap.dispose();
 
@@ -155,106 +215,106 @@ void main() {
             ),
           ),
         );
-        expect(context.startCallInvocations, isEmpty);
+        expect(delegate.startCallInvocations, isEmpty);
       },
     );
 
     test('dispatch() on an import resolved to a replacement forwards to it '
-        'instead of calling the context', () async {
-      final context = FakeWireCapabilityContext();
+        'instead of calling the delegate', () async {
+      final delegate = FakeRpcCapabilityDelegate();
       final replacement = _RecordingCapability();
       final state = ImportState(7)..resolveCapability(replacement);
-      final cap = createImportedCapabilityFromState(context, state);
+      final cap = createImportedCapabilityFromState(delegate, state);
 
       await cap.dispatch(1, 2, RpcPayload.fromBytes(Uint8List(0)));
 
       expect(replacement.dispatched, isTrue);
-      expect(context.startCallInvocations, isEmpty);
+      expect(delegate.startCallInvocations, isEmpty);
     });
 
     test('dispatch() on an import resolved to an error rejects with that '
-        'error without calling the context', () async {
-      final context = FakeWireCapabilityContext();
+        'error without calling the delegate', () async {
+      final delegate = FakeRpcCapabilityDelegate();
       final boom = RpcException('boom', kind: ErrorKind.failed);
       final state = ImportState(7)..resolveError(boom);
-      final cap = createImportedCapabilityFromState(context, state);
+      final cap = createImportedCapabilityFromState(delegate, state);
 
       await expectLater(
         cap.dispatch(1, 2, RpcPayload.fromBytes(Uint8List(0))),
         throwsA(same(boom)),
       );
-      expect(context.startCallInvocations, isEmpty);
+      expect(delegate.startCallInvocations, isEmpty);
     });
 
-    test('dispose() releases the resolved importId through the context '
+    test('dispose() releases the resolved importId through the delegate '
         'exactly once, even if dispose() is called twice', () async {
-      final context = FakeWireCapabilityContext();
+      final delegate = FakeRpcCapabilityDelegate();
       final state = ImportState(7);
-      final cap = createImportedCapabilityFromState(context, state);
+      final cap = createImportedCapabilityFromState(delegate, state);
 
       await cap.dispose();
       await cap.dispose();
 
-      expect(context.releasedImportIds, [7]);
+      expect(delegate.releasedImportIds, [7]);
     });
 
-    test('dispatchStreaming() sizes its FlowController from the context\'s '
+    test('dispatchStreaming() sizes its FlowController from the delegate\'s '
         'streamWindowSize and calls startOutgoingCall', () async {
-      final context = FakeWireCapabilityContext()..streamWindowSize = 128;
+      final delegate = FakeRpcCapabilityDelegate()..streamWindowSize = 128;
       final state = ImportState(7);
-      final cap = createImportedCapabilityFromState(context, state);
+      final cap = createImportedCapabilityFromState(delegate, state);
 
       await cap.dispatchStreaming(1, 2, RpcPayload.fromBytes(Uint8List(0)));
 
-      expect(context.startCallInvocations, hasLength(1));
+      expect(delegate.startCallInvocations, hasLength(1));
       final target =
-          context.startCallInvocations.single.target
+          delegate.startCallInvocations.single.target
               as ImportedCapabilityTarget;
       expect(target.importId, 7);
     });
 
     test('a not-yet-resolved import awaits its importIdFuture before '
-        'calling the context', () async {
-      final context = FakeWireCapabilityContext();
+        'calling the delegate', () async {
+      final delegate = FakeRpcCapabilityDelegate();
       final importIdCompleter = Completer<int>();
-      final cap = createImportedCapability(context, importIdCompleter.future);
+      final cap = createImportedCapability(delegate, importIdCompleter.future);
 
       final dispatchFuture = cap.dispatch(
         1,
         2,
         RpcPayload.fromBytes(Uint8List(0)),
       );
-      // The context isn't reachable synchronously — nothing has resolved
+      // The delegate isn't reachable synchronously — nothing has resolved
       // the import id yet.
       await Future<void>.delayed(Duration.zero);
-      expect(context.startCallInvocations, isEmpty);
+      expect(delegate.startCallInvocations, isEmpty);
 
-      context.addImportState(ImportState(42));
+      delegate.addImportState(ImportState(42));
       importIdCompleter.complete(42);
       await dispatchFuture;
 
       final target =
-          context.startCallInvocations.single.target
+          delegate.startCallInvocations.single.target
               as ImportedCapabilityTarget;
       expect(target.importId, 42);
     });
   });
 
-  group('WirePipelinedCapability (fake WireCapabilityContext)', () {
+  group('WirePipelinedCapability (fake RpcCapabilityDelegate)', () {
     test('dispatch() before the parent resolves targets the parent '
         'question/transform path (PromisedAnswerTarget)', () async {
-      final context = FakeWireCapabilityContext();
+      final delegate = FakeRpcCapabilityDelegate();
       final parentResult = Completer<DispatchResult>();
-      final cap = debugCreatePipelinedCapability(context, 99, const [
+      final cap = debugCreatePipelinedCapability(delegate, 99, const [
         0,
       ], parentResult.future);
 
       unawaited(cap.dispatch(1, 2, RpcPayload.fromBytes(Uint8List(0))));
       await Future<void>.delayed(Duration.zero);
 
-      expect(context.startCallInvocations, hasLength(1));
+      expect(delegate.startCallInvocations, hasLength(1));
       final target =
-          context.startCallInvocations.single.target as PromisedAnswerTarget;
+          delegate.startCallInvocations.single.target as PromisedAnswerTarget;
       expect(target.questionId, 99);
       expect(target.transformPath, [0]);
 
@@ -262,11 +322,11 @@ void main() {
     });
 
     test(
-      'dispatch() after dispose() rejects without calling the context',
+      'dispatch() after dispose() rejects without calling the delegate',
       () async {
-        final context = FakeWireCapabilityContext();
+        final delegate = FakeRpcCapabilityDelegate();
         final parentResult = Completer<DispatchResult>();
-        final cap = debugCreatePipelinedCapability(context, 99, const [
+        final cap = debugCreatePipelinedCapability(delegate, 99, const [
           0,
         ], parentResult.future);
 
@@ -282,17 +342,17 @@ void main() {
             ),
           ),
         );
-        expect(context.startCallInvocations, isEmpty);
+        expect(delegate.startCallInvocations, isEmpty);
         parentResult.complete(DispatchResult.empty);
       },
     );
   });
 
-  group('ReceiverAnswerCapability (fake WireCapabilityContext)', () {
-    test('dispatch() surfaces the context\'s resolveAnswer() failure for an '
+  group('ReceiverAnswerCapability (fake RpcCapabilityDelegate)', () {
+    test('dispatch() surfaces the delegate\'s resolveAnswer() failure for an '
         'unknown questionId', () async {
-      final context = FakeWireCapabilityContext();
-      final cap = createReceiverAnswerCapability(context, 123, const [0]);
+      final delegate = FakeRpcCapabilityDelegate();
+      final cap = createReceiverAnswerCapability(delegate, 123, const [0]);
 
       await expectLater(
         cap.dispatch(1, 2, RpcPayload.fromBytes(Uint8List(0))),
@@ -304,7 +364,7 @@ void main() {
           ),
         ),
       );
-      expect(context.startCallInvocations, isEmpty);
+      expect(delegate.startCallInvocations, isEmpty);
     });
   });
 }

@@ -26,29 +26,29 @@ class _ParamCapsReleaseTracker {
 /// isn't known synchronously yet (the client-side bootstrap capability,
 /// before the handshake resolves — see `TwoPartyRpcConnection.bootstrap`).
 Capability createImportedCapability(
-  WireCapabilityContext context,
+  RpcCapabilityDelegate delegate,
   Future<int> importIdFuture,
-) => _ImportedCapability(context, importIdFuture);
+) => _ImportedCapability(delegate, importIdFuture);
 
 /// As [createImportedCapability], for an import whose [ImportState] is
 /// already known — see `CapabilityProtocol.capabilityFromDescriptor`'s
 /// senderHosted/senderPromise branches, the only real caller.
 Capability createImportedCapabilityFromState(
-  WireCapabilityContext context,
+  RpcCapabilityDelegate delegate,
   ImportState state,
-) => _ImportedCapability.fromState(context, state);
+) => _ImportedCapability.fromState(delegate, state);
 
 /// Builds the [Capability] a `receiverAnswer` capTable entry resolves to —
 /// see `CapabilityProtocol.capabilityFromDescriptor`'s receiverAnswer
 /// branch.
 Capability createReceiverAnswerCapability(
-  WireCapabilityContext context,
+  RpcCapabilityDelegate delegate,
   int questionId,
   List<int> path,
-) => _ReceiverAnswerCapability(context, questionId, path);
+) => _ReceiverAnswerCapability(delegate, questionId, path);
 
 /// Builds the [Capability] a `promisedAnswer`/pipelined call target
-/// resolves to (see [_OutgoingQuestionCapCall.pipelineResult]), bound to [context]
+/// resolves to (see [_OutgoingQuestionCapCall.pipelineResult]), bound to [delegate]
 /// instead of a real connection. Test-only: nothing in production
 /// constructs a `_PipelinedCapability` directly — it's always vended
 /// internally by `_OutgoingQuestionCapCall`/`_UnresolvedImportCapCall` once a call is in
@@ -56,30 +56,30 @@ Capability createReceiverAnswerCapability(
 /// counterpart.
 @visibleForTesting
 Capability debugCreatePipelinedCapability(
-  WireCapabilityContext context,
+  RpcCapabilityDelegate delegate,
   int parentQid,
   List<int> transformPath,
   Future<DispatchResult> parentResult,
-) => _PipelinedCapability(context, parentQid, transformPath, parentResult);
+) => _PipelinedCapability(delegate, parentQid, transformPath, parentResult);
 
-/// Classifies [capability] as wire-hosted or not, from [context]'s own
+/// Classifies [capability] as wire-hosted or not, from [delegate]'s own
 /// point of view — see [WireCapabilityKind]'s doc comment.
 /// `_PipelinedCapability` is never constructed outside this library
 /// (only `_OutgoingQuestionCapCall`/`_UnresolvedImportCapCall` do), so unlike
 /// [createImportedCapability]/[createReceiverAnswerCapability] it has no
 /// matching `create*` function here.
 WireCapabilityKind classifyWireCapability(
-  WireCapabilityContext context,
+  RpcCapabilityDelegate delegate,
   Capability capability,
 ) {
   if (capability is _ImportedCapability &&
-      identical(capability._conn, context)) {
+      identical(capability._delegate, delegate)) {
     return ImportedWireCapability(
       capability._cachedState?.importId ?? capability._importIdFuture,
     );
   }
   if (capability is _PipelinedCapability &&
-      identical(capability._conn, context)) {
+      identical(capability._delegate, delegate)) {
     return PipelinedWireCapability(
       hasResolved: capability._hasResolved,
       parentQuestionId: capability._parentQid,
@@ -91,7 +91,7 @@ WireCapabilityKind classifyWireCapability(
 
 /// Starts a deferred-release tracking window for whichever of
 /// [paramsCapabilities] are same-connection `_ImportedCapability` wrappers
-/// freshly imported for a call, bound to [context] — see
+/// freshly imported for a call, bound to [delegate] — see
 /// `IncomingCallCoordinator._runDispatch`'s own doc comment for why.
 /// [decrementImportReference] is called with an import id exactly once for
 /// each wrapper disposed while the window is open. Returns an opaque
@@ -100,13 +100,13 @@ WireCapabilityKind classifyWireCapability(
 /// caller has no legitimate use for anything about it besides handing it
 /// back unchanged.
 Object? beginParamCapsRelease(
-  WireCapabilityContext context,
+  RpcCapabilityDelegate delegate,
   List<Capability> paramsCapabilities,
   void Function(int importId) decrementImportReference,
 ) {
   final wrappers = paramsCapabilities
       .whereType<_ImportedCapability>()
-      .where((c) => identical(c._conn, context))
+      .where((c) => identical(c._delegate, delegate))
       .toList(growable: false);
   if (wrappers.isEmpty) return null;
   final tracker = _ParamCapsReleaseTracker(wrappers);
@@ -137,7 +137,7 @@ Object? beginParamCapsRelease(
 /// two from being collapsed into one ambiguous empty list at the call
 /// site. Either way, clears each wrapper's sink so a *later* dispose() of
 /// one that's still outstanding goes through the normal (non-deferred)
-/// [WireCapabilityContext.releaseImport] path.
+/// [RpcCapabilityDelegate.releaseImport] path.
 ({bool allDisposed, List<int> explicitReleaseIds}) finalizeParamCapsRelease(
   Object? ticket,
 ) {

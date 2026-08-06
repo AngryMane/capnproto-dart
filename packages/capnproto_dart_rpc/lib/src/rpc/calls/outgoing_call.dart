@@ -56,7 +56,7 @@ final class BuilderParams extends OutgoingParams {
   const BuilderParams(this.build);
 }
 
-/// The result of `WireCapabilityContext.startOutgoingCall`: [questionId] is
+/// The result of `RpcCapabilityDelegate.startOutgoingCall`: [questionId] is
 /// available immediately — even though the Call may still be building/
 /// sending asynchronously — so a pipelined call can target it right away
 /// (see [PromisedAnswerTarget]); [result] resolves once the matching Return
