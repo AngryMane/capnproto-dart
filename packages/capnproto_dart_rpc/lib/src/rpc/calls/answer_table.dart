@@ -24,13 +24,14 @@ sealed class AnswerState {
   const AnswerState();
 }
 
-/// A dispatch is currently running for this question. [pending] lets a
-/// pipelined call queue behind it; [cancellation] lets a Finish that arrives
-/// before it settles cancel the dispatch in flight.
-final class DispatchingAnswer extends AnswerState {
+/// This question has an answer pending while its capability invocation is
+/// still running. [pending] lets a pipelined call queue behind it;
+/// [cancellation] lets a Finish that arrives before completion cancel the
+/// invocation.
+final class PendingAnswerState extends AnswerState {
   final Future<ResolvedAnswer> pending;
   final DispatchCancellationController cancellation;
-  const DispatchingAnswer(this.pending, this.cancellation);
+  const PendingAnswerState(this.pending, this.cancellation);
 }
 
 /// A Return was already sent (or the equivalent resultsSentElsewhere path
@@ -90,7 +91,7 @@ class AnswerTable {
   /// Number of incoming dispatches with a live [DispatchCancellationController]
   /// (i.e. dispatch is still running and could still observe cancellation).
   int get cancellationCount =>
-      _answers.values.whereType<DispatchingAnswer>().length;
+      _answers.values.whereType<PendingAnswerState>().length;
 
   /// Whether [qid] currently has any tracked answer-lifecycle state at all
   /// — used to reject a peer illegally reusing a question id before it has
@@ -108,7 +109,7 @@ class AnswerTable {
   /// The in-flight dispatch future for [qid], if it hasn't settled yet.
   Future<ResolvedAnswer>? pendingFor(int qid) {
     final state = _answers[qid];
-    return state is DispatchingAnswer ? state.pending : null;
+    return state is PendingAnswerState ? state.pending : null;
   }
 
   /// The error [qid]'s dispatch failed with, if any — retained until Finish
@@ -119,55 +120,55 @@ class AnswerTable {
     return state is FailedAnswerState ? state.error : null;
   }
 
-  /// Starts tracking a live dispatch for [qid]: [pending] lets a pipelined
-  /// call queue behind it, [cancellation] lets an early Finish cancel it.
-  void beginDispatch(
+  /// Records [qid] as pending: [pending] lets a pipelined call queue behind
+  /// the running capability invocation, and [cancellation] lets an early
+  /// Finish cancel it.
+  void recordPendingAnswer(
     int qid,
     Future<ResolvedAnswer> pending,
     DispatchCancellationController cancellation,
   ) {
-    _answers[qid] = DispatchingAnswer(pending, cancellation);
+    _answers[qid] = PendingAnswerState(pending, cancellation);
   }
 
-  /// Called once [qid]'s dispatch settles (success or failure) on a path
-  /// that ends up recording no further answer state at all (connection
-  /// torn down, or a plain exception Return that needs no Finish): drops
-  /// its dispatch-in-flight bookkeeping and reports whether the peer
-  /// already sent Finish for it while it was still running. When `true`,
+  /// Clears [qid]'s pending-answer lifecycle after its capability invocation
+  /// settles on a path that records no further answer state (connection torn
+  /// down, or a plain exception Return that needs no Finish), and reports
+  /// whether the peer already sent Finish while it was pending. When `true`,
   /// every trace of [qid] has already been dropped (a Finished answer must
   /// never be resurrected) and the caller must discard the dispatch's
   /// result instead of answering it.
   ///
   /// A path that *does* go on to record an answer must use
-  /// [completeDispatchSuccessfully]/[completeDispatchWithError] instead —
+  /// [tryRecordAnswer]/[tryRecordFailedAnswer] instead —
   /// calling this first would still detect the early Finish correctly, but
   /// leaves [qid] briefly untracked in between, which a caller that then
   /// sends the Return before its own follow-up call can observe (see those
   /// methods' doc comments).
-  bool settleDispatch(int qid) {
+  bool clearPendingAnswer(int qid) {
     final wasFinishedEarly = _answers[qid] is FinishedBeforeCompletion;
     _answers.remove(qid);
     return wasFinishedEarly;
   }
 
-  /// Atomically settles [qid]'s live dispatch as answered successfully: if
-  /// Finish already arrived for it while the dispatch was running, drops
+  /// Atomically records [qid] as answered after its capability invocation
+  /// succeeds. If Finish already arrived while the answer was pending, drops
   /// every trace of it and returns `false` — the caller must then discard
   /// the dispatch's result instead of answering it, exactly like
-  /// [settleDispatch] reporting `true`. Otherwise records
+  /// [clearPendingAnswer] reporting `true`. Otherwise records
   /// [resolved]/[resultExportIds] as the answer awaiting Finish (see
-  /// [completeSuccessfully], which this shares its recorded state with)
+  /// [recordAnswer], which this shares its recorded state with)
   /// and returns `true`.
   ///
   /// Call this *before* actually sending the Return. Unlike calling
-  /// [settleDispatch] first and a separate call to record the answer
+  /// [clearPendingAnswer] first and a separate call to record the answer
   /// second, this never leaves [qid] briefly untracked in between — a
   /// caller that sent the Return between those two calls would otherwise
   /// risk a synchronously-delivered Finish, duplicate Call, or pipelined
   /// Call for the same [qid] (e.g. over an in-memory or `sync: true`
   /// transport, where sending can reenter this table before the second
   /// call ever runs) observing state this table never actually held.
-  bool completeDispatchSuccessfully(
+  bool tryRecordAnswer(
     int qid, {
     ResolvedAnswer? resolved,
     List<int> resultExportIds = const [],
@@ -183,13 +184,13 @@ class AnswerTable {
     return true;
   }
 
-  /// [completeDispatchSuccessfully]'s counterpart for a dispatch that
-  /// failed with [error] retained for a racing `takeFromOtherQuestion` —
+  /// Atomically records [qid] as failed after its capability invocation, with
+  /// [error] retained for a racing `takeFromOtherQuestion` —
   /// only used on the sendResultsTo=yourself failure path, where nothing
   /// is put on the wire that a normal Return.exception would otherwise
   /// carry. Same atomicity contract: call before sending, `false` means
   /// discard the failure instead of answering it.
-  bool completeDispatchWithError(int qid, CapnpException error) {
+  bool tryRecordFailedAnswer(int qid, CapnpException error) {
     if (_answers[qid] is FinishedBeforeCompletion) {
       _answers.remove(qid);
       return false;
@@ -200,13 +201,13 @@ class AnswerTable {
 
   /// Records [qid] as answered and awaiting Finish, for a Return sent
   /// without ever going through a live dispatch (so no early-Finish race
-  /// is possible — see [completeDispatchSuccessfully] for the dispatch
+  /// is possible — see [tryRecordAnswer] for the dispatch
   /// counterpart that must guard against one): a directly-resolved answer
   /// such as Bootstrap's ([resolved] set, no export ids of its own to
   /// release), or a Return with no result payload at all (an exception, or
   /// a takeFromOtherQuestion forward — neither [resolved] nor
   /// [resultExportIds] set).
-  void completeSuccessfully(
+  void recordAnswer(
     int qid, {
     ResolvedAnswer? resolved,
     List<int> resultExportIds = const [],
@@ -234,7 +235,7 @@ class AnswerTable {
       case null:
       case FinishedBeforeCompletion():
         return null;
-      case DispatchingAnswer(:final cancellation):
+      case PendingAnswerState(:final cancellation):
         _answers[qid] = const FinishedBeforeCompletion();
         cancellation.cancel();
         return null;
@@ -251,7 +252,7 @@ class AnswerTable {
   /// — called once when the owning connection tears down.
   void tearDown() {
     for (final state in _answers.values) {
-      if (state is DispatchingAnswer) state.cancellation.cancel();
+      if (state is PendingAnswerState) state.cancellation.cancel();
     }
     _answers.clear();
   }

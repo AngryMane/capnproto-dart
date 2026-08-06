@@ -255,7 +255,7 @@ void main() {
       final h = _Harness();
       final targetCap =
           _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
-      h.answerTable.completeSuccessfully(
+      h.answerTable.recordAnswer(
         1,
         resolved: ResolvedAnswer(_singleCapResultBytes, [targetCap]),
       );
@@ -267,7 +267,7 @@ void main() {
 
       // A second, already-resolved parent whose result has no pointer
       // fields at all: path [0] can never be a capability there.
-      h.answerTable.completeSuccessfully(
+      h.answerTable.recordAnswer(
         2,
         resolved: ResolvedAnswer(_emptyMessageBytes, const []),
       );
@@ -287,7 +287,7 @@ void main() {
       final targetCap =
           _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
       final pending = Completer<ResolvedAnswer>();
-      h.answerTable.beginDispatch(
+      h.answerTable.recordPendingAnswer(
         1,
         pending.future,
         DispatchCancellationController(),
@@ -303,7 +303,7 @@ void main() {
       expect(targetCap.dispatches, hasLength(1));
 
       final failingParent = Completer<ResolvedAnswer>();
-      h.answerTable.beginDispatch(
+      h.answerTable.recordPendingAnswer(
         2,
         failingParent.future,
         DispatchCancellationController(),
@@ -568,7 +568,7 @@ void main() {
       final target =
           _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
       final pending = Completer<ResolvedAnswer>();
-      h.answerTable.beginDispatch(
+      h.answerTable.recordPendingAnswer(
         1,
         pending.future,
         DispatchCancellationController(),
@@ -604,7 +604,7 @@ void main() {
       // Companion case: the parent dispatch fails instead of succeeding —
       // the catchError continuation must equally refuse to send once closed.
       final failingPending = Completer<ResolvedAnswer>();
-      h.answerTable.beginDispatch(
+      h.answerTable.recordPendingAnswer(
         3,
         failingPending.future,
         DispatchCancellationController(),

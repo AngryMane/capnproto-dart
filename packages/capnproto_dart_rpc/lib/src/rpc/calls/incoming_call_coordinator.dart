@@ -195,7 +195,7 @@ final class IncomingCallCoordinator {
     // comment for why the same ordering matters there).
     final bootstrapCap = exportTable.retainExisting(0);
     if (bootstrapCap != null) {
-      answerTable.completeSuccessfully(
+      answerTable.recordAnswer(
         msg.questionId,
         resolved: ResolvedAnswer(_bootstrapResultBytes, [bootstrapCap]),
       );
@@ -374,9 +374,9 @@ final class IncomingCallCoordinator {
       // so _rejectDuplicateQuestionId can still catch a peer illegally
       // reusing this same qid before sending Finish for it, exactly like
       // every other Return sent without a real dispatch throughout this
-      // file (see the sibling `answerTable.completeSuccessfully(qid)`
+      // file (see the sibling `answerTable.recordAnswer(qid)`
       // sites).
-      answerTable.completeSuccessfully(qid);
+      answerTable.recordAnswer(qid);
 
       sendBytes(
         buildReturnExceptionMessage(
@@ -414,7 +414,7 @@ final class IncomingCallCoordinator {
           paramsCapabilities: paramsCapabilities,
         );
       } catch (error) {
-        answerTable.completeSuccessfully(qid);
+        answerTable.recordAnswer(qid);
         sendBytes(
           buildReturnExceptionMessage(
             answerId: qid,
@@ -480,7 +480,7 @@ final class IncomingCallCoordinator {
             // otherwise send a Finish for qid before this bookkeeping
             // exists, which would then be silently dropped as a no-op
             // instead of ever clearing it.
-            answerTable.completeSuccessfully(qid);
+            answerTable.recordAnswer(qid);
             sendBytes(
               buildReturnTakeFromOtherQuestionMessage(
                 answerId: qid,
@@ -490,7 +490,7 @@ final class IncomingCallCoordinator {
           })
           .catchError((Object err) {
             if (isClosed()) return;
-            answerTable.completeSuccessfully(qid);
+            answerTable.recordAnswer(qid);
             sendBytes(
               buildReturnExceptionMessage(
                 answerId: qid,
@@ -612,7 +612,7 @@ final class IncomingCallCoordinator {
       (r) => ResolvedAnswer(r.payload.bytes, r.caps),
     );
     resolvedFuture.ignore();
-    answerTable.beginDispatch(qid, resolvedFuture, cancellation);
+    answerTable.recordPendingAnswer(qid, resolvedFuture, cancellation);
 
     dispatchFuture
         .then((result) {
@@ -625,7 +625,7 @@ final class IncomingCallCoordinator {
           // capabilities it carries would otherwise never be disposed —
           // dispose them here instead.
           if (isClosed()) {
-            answerTable.settleDispatch(qid);
+            answerTable.clearPendingAnswer(qid);
             _disposeResultCapabilities(result);
             _finalizeParamCapsTracker(paramCapsTicket);
             return;
@@ -641,14 +641,14 @@ final class IncomingCallCoordinator {
             // this forwarded question uses releaseResultCaps=false. Therefore
             // Finish must only drop bookkeeping here, not dispose result.caps.
             //
-            // completeDispatchSuccessfully() runs *before* sendBytes(): if it
-            // ran after (like the plain answerTable.completeSuccessfully()
+            // tryRecordAnswer() runs *before* sendBytes(): if it
+            // ran after (like the plain answerTable.recordAnswer()
             // this used to be), qid would sit briefly untracked between the
             // two calls, which a peer that reacts to this very Return
             // through a synchronously-reentrant sink (e.g. an in-memory or
             // `sync: true` transport) could observe — see that method's doc
             // comment.
-            final completed = answerTable.completeDispatchSuccessfully(
+            final completed = answerTable.tryRecordAnswer(
               qid,
               resolved: ResolvedAnswer(result.payload.bytes, result.caps),
             );
@@ -677,7 +677,7 @@ final class IncomingCallCoordinator {
           final noFinishNeeded = resultDescriptors.isEmpty;
           // Record the answer before sending — see the comment on the
           // sendResultsToYourself branch above for why the ordering matters.
-          final completed = answerTable.completeDispatchSuccessfully(
+          final completed = answerTable.tryRecordAnswer(
             qid,
             resolved: ResolvedAnswer(result.payload.bytes, result.caps),
             resultExportIds: [
@@ -715,7 +715,7 @@ final class IncomingCallCoordinator {
         })
         .catchError((Object err) {
           if (isClosed()) {
-            answerTable.settleDispatch(qid);
+            answerTable.clearPendingAnswer(qid);
             _finalizeParamCapsTracker(paramCapsTicket);
             return;
           }
@@ -726,10 +726,7 @@ final class IncomingCallCoordinator {
           if (sendResultsToYourself) {
             // See the matching comment in the success branch above for why
             // this runs before sendBytes().
-            final completed = answerTable.completeDispatchWithError(
-              qid,
-              rpcError,
-            );
+            final completed = answerTable.tryRecordFailedAnswer(qid, rpcError);
             if (!completed) {
               _finalizeParamCapsTracker(paramCapsTicket);
               return;
@@ -741,9 +738,9 @@ final class IncomingCallCoordinator {
           // An exception Return never carries a results payload/capTable,
           // so — same reasoning as the noFinishNeeded branch above — no
           // Finish is ever needed for it, and no answer-lifecycle state
-          // needs to be recorded for this qid at all. settleDispatch() still
+          // needs to be recorded for this qid at all. clearPendingAnswer() still
           // needs to run, though, to detect a Finish that arrived early.
-          if (answerTable.settleDispatch(qid)) {
+          if (answerTable.clearPendingAnswer(qid)) {
             _finalizeParamCapsTracker(paramCapsTicket);
             return;
           }
