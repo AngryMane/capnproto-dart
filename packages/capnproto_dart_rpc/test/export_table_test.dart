@@ -57,11 +57,11 @@ void main() {
       expect(table.remoteRefCountFor(id), equals(1));
       expect(disposedHandle, isNull);
       expect(cap.disposed, isFalse);
-      expect(table.identityFor(id), same(cap));
+      expect(table.getCapability(id), same(cap));
 
       table.releaseRef(id, 1, disposeIgnoringErrors);
       expect(table.remoteRefCountFor(id), isNull);
-      expect(table.identityFor(id), isNull);
+      expect(table.getCapability(id), isNull);
       expect(disposedHandle, isNotNull);
       // releaseRef disposes ExportTable's own vendCapabilityHandle reference
       // (not `cap` directly), which — since it was the only handle vended
@@ -79,7 +79,7 @@ void main() {
       table.getOrCreate(cap); // remoteRefCount now 3.
 
       table.releaseRef(id, 3, (c) => c.dispose());
-      expect(table.identityFor(id), isNull);
+      expect(table.getCapability(id), isNull);
       expect(cap.disposed, isTrue);
     });
 

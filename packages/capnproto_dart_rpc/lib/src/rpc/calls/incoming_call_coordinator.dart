@@ -212,8 +212,8 @@ final class IncomingCallCoordinator {
       return;
     }
 
-    final identity = exportTable.identityFor(msg.targetImportId);
-    if (identity == null) {
+    final target = exportTable.getCapability(msg.targetImportId);
+    if (target == null) {
       sendBytes(
         buildReturnExceptionMessage(
           answerId: msg.questionId,
@@ -222,7 +222,7 @@ final class IncomingCallCoordinator {
       );
       return;
     }
-    _dispatchToCapability(msg, identity);
+    _dispatchToCapability(msg, target);
   }
 
   void _handlePipelinedCall(RpcMessage msg) {

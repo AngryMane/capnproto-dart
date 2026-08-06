@@ -616,8 +616,8 @@ final class CapabilityProtocol {
         // object) must unwrap it first — see unwrapVendedCapability's doc
         // comment; this is the same discipline every other decode path
         // (requireCapabilityFromResult et al.) already requires.
-        final identity = exportTable.identityFor(descriptor.id);
-        if (identity == null) {
+        final capability = exportTable.getCapability(descriptor.id);
+        if (capability == null) {
           // A well-behaved peer, honoring the protocol's causal ordering
           // guarantees, never references an export id we haven't actually
           // exported to it — this is a genuine protocol violation (a buggy
@@ -629,7 +629,7 @@ final class CapabilityProtocol {
             'unknown receiverHosted export id: ${descriptor.id}',
           );
         }
-        return vendCapabilityHandle(identity);
+        return vendCapabilityHandle(capability);
       case 4: // receiverAnswer: capability in one of our outstanding answers
         return receiverAnswerCapability(
           descriptor.questionId,

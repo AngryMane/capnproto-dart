@@ -89,9 +89,10 @@ class ExportTable {
     return entry.identity;
   }
 
-  /// The identity exported at [exportId], or `null` if nothing is exported
-  /// there.
-  Capability? identityFor(int exportId) => _exports[exportId]?.identity;
+  /// The capability registered at [exportId], or `null` if nothing is
+  /// exported there. This does not vend a new reference; callers must not
+  /// dispose the returned capability directly.
+  Capability? getCapability(int exportId) => _exports[exportId]?.identity;
 
   /// The remote refcount currently outstanding for [exportId], or `null` if
   /// nothing is exported there — used to validate an incoming `Release`
