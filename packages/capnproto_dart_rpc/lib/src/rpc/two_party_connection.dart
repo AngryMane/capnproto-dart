@@ -9,14 +9,15 @@ import '../capability/capability.dart'
 import '../capability/capability_factory.dart';
 import 'calls/answer_table.dart';
 import 'calls/incoming_call_coordinator.dart';
+import 'calls/outgoing_call.dart';
 import 'calls/outgoing_call_coordinator.dart';
 import 'calls/question_table.dart';
 import 'capabilities/capability_protocol.dart';
 import 'capabilities/embargo_table.dart';
 import 'capabilities/export_table.dart';
 import 'capabilities/import_table.dart';
-import 'capabilities/wire_capabilities.dart';
-import 'capabilities/wire_capability_context.dart';
+import 'capabilities/rpc_capability.dart';
+import 'capabilities/rpc_capability_delegate.dart';
 import 'flow_controller.dart';
 import 'rpc_connection.dart';
 import 'rpc_exception.dart';
@@ -87,7 +88,8 @@ class TwoPartyRpcConnection implements RpcConnection {
   // Resolved after the Bootstrap exchange completes. Plain [Capability] —
   // nothing here ever uses an _ImportedCapability-specific member on it,
   // only `factory.fromCapability(_bootstrapCap!)` and the `!= null` cache
-  // check — so there's no need to name the concrete wire-capability type.
+  // check — so there's no need to name the concrete RPC capability proxy
+  // type.
   Capability? _bootstrapCap;
   // Completer for the bootstrap handshake.
   Completer<int>? _bootstrapCompleter;
@@ -95,16 +97,16 @@ class TwoPartyRpcConnection implements RpcConnection {
   // can distinguish the bootstrap return from regular call returns).
   int? _bootstrapQuestionId;
 
-  // The [WireCapabilityContext] every wire capability this connection vends
-  // (ImportedCapability/WirePipelinedCapability/ReceiverAnswerCapability —
-  // see wire_capabilities.dart) is bound to. One instance per connection,
-  // for its whole lifetime, so identical(cap._conn, _wireContext) reliably
-  // means "this capability belongs to this connection" the same way
-  // `cap._conn == this` did back when those classes held a
-  // TwoPartyRpcConnection directly. `late` so the initializer can reference
-  // `this`.
-  late final WireCapabilityContext _wireContext =
-      _TwoPartyWireCapabilityContext(this);
+  // Every RPC capability proxy this connection vends
+  // (`_ImportedCapability`/`_PipelinedCapability`/`_ReceiverAnswerCapability`
+  // in `rpc_capability.dart`) is bound to this [RpcCapabilityDelegate]. One
+  // instance lives for the whole connection lifetime, so
+  // identical(cap._delegate, _rpcCapabilityDelegate) reliably means "this
+  // capability belongs to this connection", the same way `cap._delegate ==
+  // this` did back when those classes held a TwoPartyRpcConnection directly.
+  // `late` lets the initializer reference `this`.
+  late final RpcCapabilityDelegate _rpcCapabilityDelegate =
+      _TwoPartyRpcCapabilityDelegate(this);
 
   // Stable callback shared by every incoming Call's params-cap release
   // window, so opening a window does not allocate another escaping closure.
@@ -117,7 +119,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   // bookkeeping glue, senderPromise resolution, Release, Resolve, and
   // Disembargo handling — see CapabilityProtocol's own doc comment for why
   // it's a standalone, constructor-injected class rather than another
-  // private extension. `late` for the same reason as [_wireContext]: the
+  // private extension. `late` for the same reason as [_rpcCapabilityDelegate]: the
   // bound method tear-offs below capture `this`.
   late final CapabilityProtocol _capabilityProtocol = CapabilityProtocol(
     exportTable: _exportTable,
@@ -129,18 +131,25 @@ class TwoPartyRpcConnection implements RpcConnection {
     disposeIgnoringErrors: _disposeIgnoringErrors,
     isClosed: () => _closedError != null,
     tearDownConnection: (error) => _tearDown(error),
-    classifyCapability: (cap) => classifyWireCapability(_wireContext, cap),
+    tryExtractCapabilityReference:
+        (cap) => tryExtractRpcCapabilityReference(_rpcCapabilityDelegate, cap),
+    isSameConnectionPeerCapability:
+        (cap) => isSameConnectionPeerCapability(_rpcCapabilityDelegate, cap),
     importedCapabilityFromState:
-        (state) => createImportedCapabilityFromState(_wireContext, state),
+        (state) =>
+            createImportedCapabilityFromState(_rpcCapabilityDelegate, state),
     receiverAnswerCapability:
-        (questionId, path) =>
-            createReceiverAnswerCapability(_wireContext, questionId, path),
+        (questionId, path) => createReceiverAnswerCapability(
+          _rpcCapabilityDelegate,
+          questionId,
+          path,
+        ),
   );
 
   // Owns every outgoing Call this connection sends — see
   // OutgoingCallCoordinator's own doc comment for why it's a standalone,
   // constructor-injected class rather than another private extension.
-  // `late` for the same reason as [_wireContext]: the bound method
+  // `late` for the same reason as [_rpcCapabilityDelegate]: the bound method
   // tear-offs below capture `this`.
   //
   // resolveLocalAnswer MUST stay a closure literal, not simplified to a
@@ -170,7 +179,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   // building/sending its Return — see IncomingCallCoordinator's own doc
   // comment for why it's a standalone, constructor-injected class rather
   // than another private extension. `late` for the same reason as
-  // [_wireContext]: the bound method tear-offs below capture `this`.
+  // [_rpcCapabilityDelegate]: the bound method tear-offs below capture `this`.
   //
   // startUsing is a bare tear-off (safe in either construction order,
   // unlike _outgoingCalls's resolveLocalAnswer above — see its comment):
@@ -187,13 +196,14 @@ class TwoPartyRpcConnection implements RpcConnection {
     disposeIgnoringErrors: _disposeIgnoringErrors,
     isClosed: () => _closedError != null,
     tearDownConnection: (error) => _tearDown(error),
-    classifyCapability: _capabilityProtocol.classifyCapability,
+    tryExtractCapabilityReference:
+        _capabilityProtocol.tryExtractCapabilityReference,
     capabilityFromDescriptor: _capabilityProtocol.capabilityFromDescriptor,
     returnCapDescriptor: _capabilityProtocol.returnCapDescriptor,
     startUsing: _outgoingCalls.startUsing,
     beginParamCapsRelease:
         (paramsCapabilities) => beginParamCapsRelease(
-          _wireContext,
+          _rpcCapabilityDelegate,
           paramsCapabilities,
           _decrementImportReference,
         ),
@@ -403,7 +413,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     _sendRaw(buildBootstrapMessage(question.id));
 
     _bootstrapCap = createImportedCapability(
-      _wireContext,
+      _rpcCapabilityDelegate,
       _bootstrapCompleter!.future,
     );
     return factory.fromCapability(_bootstrapCap!);
@@ -623,22 +633,24 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// A future that completes when the connection is closed.
   Future<void> get done => _closedCompleter.future;
 
-  /// This connection's own [WireCapabilityContext] — test-only, alongside
-  /// [createImportedCapability]/[debugCreateWirePipelinedCapability]
-  /// (see their doc comments, and issue #64): lets a test construct a wire
-  /// capability that genuinely satisfies `identical(cap._conn, _wireContext)`
-  /// against a *real* connection (unlike `wire_capabilities_test.dart`'s
-  /// `FakeWireCapabilityContext`, which only drives `wire_capabilities.dart`
+  /// This connection's own [RpcCapabilityDelegate] — test-only, alongside
+  /// [createImportedCapability]/[debugCreatePipelinedCapability]
+  /// (see their doc comments, and issue #64): lets a test construct an RPC
+  /// capability proxy that genuinely satisfies
+  /// `identical(cap._delegate, _rpcCapabilityDelegate)` against a *real*
+  /// connection (unlike `rpc_capability_test.dart`'s
+  /// `FakeRpcCapabilityDelegate`, which only drives `rpc_capability.dart`
   /// in isolation). `CapabilityProtocol`'s own capTable-resolution side
   /// effects (export creation, refcount bumps) are independently
-  /// unit-testable via a fake `classifyCapability` closure — see
+  /// unit-testable via a fake `tryExtractCapabilityReference` closure — see
   /// `capability_protocol_test.dart` — but this getter is still what lets
   /// `rpc_test.dart` reproduce the same scenario end-to-end against the
   /// real wiring (real `_ImportedCapability`, real `TwoPartyRpcConnection`),
   /// as a regression check that the wiring itself, not just the isolated
   /// logic, keeps behaving correctly.
   @visibleForTesting
-  WireCapabilityContext get debugWireContext => _wireContext;
+  RpcCapabilityDelegate get debugRpcCapabilityDelegate =>
+      _rpcCapabilityDelegate;
 
   int get debugPendingQuestionCount => _questionTable.pendingCount;
   int get debugPendingQuestionSentCount => _questionTable.pendingSentCount;
@@ -681,15 +693,15 @@ class TwoPartyRpcConnection implements RpcConnection {
   int get debugEmbargoCount => _embargoTable.count;
 }
 
-/// [TwoPartyRpcConnection]'s [WireCapabilityContext] — see
-/// [TwoPartyRpcConnection._wireContext]. Kept separate from
+/// [TwoPartyRpcConnection]'s [RpcCapabilityDelegate] — see
+/// [TwoPartyRpcConnection._rpcCapabilityDelegate]. Kept separate from
 /// [TwoPartyRpcConnection] itself (rather than having the connection
-/// `implements WireCapabilityContext` directly) so wire-level entry points
+/// `implements RpcCapabilityDelegate` directly) so wire-level entry points
 /// like [startOutgoingCall]/[releaseImport] never become part of the
 /// connection's own public API.
-class _TwoPartyWireCapabilityContext implements WireCapabilityContext {
+class _TwoPartyRpcCapabilityDelegate implements RpcCapabilityDelegate {
   final TwoPartyRpcConnection _conn;
-  _TwoPartyWireCapabilityContext(this._conn);
+  _TwoPartyRpcCapabilityDelegate(this._conn);
 
   @override
   ImportState importStateFor(int importId) =>

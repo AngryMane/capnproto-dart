@@ -5,19 +5,21 @@ import 'package:meta/meta.dart';
 
 import '../../capability/capability.dart';
 import '../../capability/rpc_payload.dart';
+import '../calls/outgoing_call.dart';
 import '../flow_controller.dart';
 import '../rpc_exception.dart';
 import 'import_table.dart';
-import 'wire_capability_context.dart';
+import 'rpc_capability_delegate.dart';
+import 'rpc_capability_reference.dart';
 
-part 'wire_capability_util.dart';
+part 'rpc_capability_helpers.dart';
 
 // ---------------------------------------------------------------------------
 // _ImportedCapability: client-side proxy for a remote capability
 // ---------------------------------------------------------------------------
 
 class _ImportedCapability extends Capability {
-  final WireCapabilityContext _conn;
+  final RpcCapabilityDelegate _delegate;
   bool _disposed = false;
 
   // Set only for a call's freshly-imported params capabilities (see
@@ -41,13 +43,14 @@ class _ImportedCapability extends Capability {
   // capnp-rust, which scopes one FlowController per call target.
   FlowController? _flowController;
 
-  _ImportedCapability(this._conn, this._importIdFuture) : _stateFuture = null {
+  _ImportedCapability(this._delegate, this._importIdFuture)
+    : _stateFuture = null {
     // Suppress unhandled rejection if nobody awaits this future before the
     // connection closes (e.g. bootstrap() called then close() immediately).
     _importIdFuture.ignore();
   }
 
-  _ImportedCapability.fromState(this._conn, ImportState state)
+  _ImportedCapability.fromState(this._delegate, ImportState state)
     : _importIdFuture = Future.value(state.importId),
       _stateFuture = Future.value(state),
       _cachedState = state {
@@ -63,7 +66,7 @@ class _ImportedCapability extends Capability {
       _cachedState = state;
       return state;
     }
-    final state = _conn.importStateFor(await _importIdFuture);
+    final state = _delegate.importStateFor(await _importIdFuture);
     _cachedState = state;
     return state;
   }
@@ -110,7 +113,7 @@ class _ImportedCapability extends Capability {
     // cache or from the await above), so this always goes through
     // TwoPartyRpcConnection's synchronous fast path (ImportedCapabilityTarget
     // holds it directly, no Future wrapping/await indirection needed).
-    final started = _conn.startOutgoingCall(
+    final started = _delegate.startOutgoingCall(
       target: ImportedCapabilityTarget(state.importId),
       params: BuilderParams(
         (anyPtr) => anyPtr.setMessageBytes(
@@ -162,7 +165,7 @@ class _ImportedCapability extends Capability {
     state.receivedCall = true;
     // See dispatch()'s equivalent line for why this always takes the fast
     // path now that state.importId is known.
-    final started = _conn.startOutgoingCall(
+    final started = _delegate.startOutgoingCall(
       target: ImportedCapabilityTarget(state.importId),
       params: BuilderParams(build),
       interfaceId: interfaceId,
@@ -211,7 +214,7 @@ class _ImportedCapability extends Capability {
     // future takes to resolve, never the send itself, so wire ordering is
     // unaffected by window state.
     final paramsBytes = params.bytes;
-    final started = _conn.startOutgoingCall(
+    final started = _delegate.startOutgoingCall(
       target: ImportedCapabilityTarget(state.importId),
       params: SerializedParams(paramsBytes),
       interfaceId: interfaceId,
@@ -219,7 +222,9 @@ class _ImportedCapability extends Capability {
       paramsCapabilities: paramsCapabilities,
     );
     final controller =
-        _flowController ??= FlowController(windowSize: _conn.streamWindowSize);
+        _flowController ??= FlowController(
+          windowSize: _delegate.streamWindowSize,
+        );
     return controller.send(paramsBytes.lengthInBytes, started.result);
   }
 
@@ -254,14 +259,18 @@ class _ImportedCapability extends Capability {
         return _ErrorCapCall(error, cached.stackTrace);
       }
       cached.receivedCall = true;
-      final started = _conn.startOutgoingCall(
+      final started = _delegate.startOutgoingCall(
         target: ImportedCapabilityTarget(cached.importId),
         params: SerializedParams(params.bytes),
         interfaceId: interfaceId,
         methodId: methodId,
         paramsCapabilities: paramsCapabilities,
       );
-      return _WireCapCall(started.result, _conn, started.questionId);
+      return _OutgoingQuestionCapCall(
+        started.result,
+        _delegate,
+        started.questionId,
+      );
     }
     final stateFuture = _state;
     final qidCompleter = Completer<int>();
@@ -292,7 +301,7 @@ class _ImportedCapability extends Capability {
             return Future<DispatchResult>.error(error, state.stackTrace);
           }
           state.receivedCall = true;
-          final started = _conn.startOutgoingCall(
+          final started = _delegate.startOutgoingCall(
             target: ImportedCapabilityTarget(state.importId),
             params: SerializedParams(params.bytes),
             interfaceId: interfaceId,
@@ -306,7 +315,7 @@ class _ImportedCapability extends Capability {
         })
         .then((r) => r);
     result.ignore();
-    return _AsyncWireCapCall(result, _conn, qidCompleter.future);
+    return _UnresolvedImportCapCall(result, _delegate, qidCompleter.future);
   }
 
   @override
@@ -320,38 +329,38 @@ class _ImportedCapability extends Capability {
       sink(id);
       return;
     }
-    await _conn.releaseImport(id);
+    await _delegate.releaseImport(id);
   }
 }
 
 // ---------------------------------------------------------------------------
-// _WireCapCall: CapCall backed by a pending question on the wire
+// _OutgoingQuestionCapCall: CapCall backed by a pending question on the wire
 // ---------------------------------------------------------------------------
 
-class _WireCapCall implements CapCall {
+class _OutgoingQuestionCapCall implements CapCall {
   @override
   final Future<DispatchResult> result;
-  final WireCapabilityContext _conn;
+  final RpcCapabilityDelegate _delegate;
   final int _qid;
 
-  _WireCapCall(this.result, this._conn, this._qid);
+  _OutgoingQuestionCapCall(this.result, this._delegate, this._qid);
 
   @override
   Capability pipelineResult(int ptrIndex) =>
-      _WirePipelinedCapability(_conn, _qid, [ptrIndex], result);
+      _PipelinedCapability(_delegate, _qid, [ptrIndex], result);
 
   @override
   Capability pipelineResultPath(List<int> path) =>
-      _WirePipelinedCapability(_conn, _qid, path, result);
+      _PipelinedCapability(_delegate, _qid, path, result);
 }
 
-class _AsyncWireCapCall implements CapCall {
+class _UnresolvedImportCapCall implements CapCall {
   @override
   final Future<DispatchResult> result;
-  final WireCapabilityContext _conn;
+  final RpcCapabilityDelegate _delegate;
   final Future<int> _qidFuture;
 
-  _AsyncWireCapCall(this.result, this._conn, this._qidFuture);
+  _UnresolvedImportCapCall(this.result, this._delegate, this._qidFuture);
 
   @override
   Capability pipelineResult(int ptrIndex) => pipelineResultPath([ptrIndex]);
@@ -360,7 +369,7 @@ class _AsyncWireCapCall implements CapCall {
   Capability pipelineResultPath(List<int> path) => DeferredCapability(() async {
     final qid = await _qidFuture;
     if (qid >= 0) {
-      return _WirePipelinedCapability(_conn, qid, path, result);
+      return _PipelinedCapability(_delegate, qid, path, result);
     }
     final resolved = await result;
     return requireCapabilityFromResultPath(resolved, path);
@@ -368,12 +377,12 @@ class _AsyncWireCapCall implements CapCall {
 }
 
 // ---------------------------------------------------------------------------
-// _WirePipelinedCapability: targets a promisedAnswer on the wire, then
+// _PipelinedCapability: targets a promisedAnswer on the wire, then
 // switches to the resolved imported capability once the parent completes.
 // ---------------------------------------------------------------------------
 
-class _WirePipelinedCapability extends Capability {
-  final WireCapabilityContext _conn;
+class _PipelinedCapability extends Capability {
+  final RpcCapabilityDelegate _delegate;
   final int _parentQid;
   // The full getPointerField hop sequence into the parent answer (see
   // RpcCapDescriptor.path) — today always a single index, since nothing
@@ -394,8 +403,8 @@ class _WirePipelinedCapability extends Capability {
   Future<void>? _resolvedDisposeFuture;
   bool get _hasResolved => _resolved != null || _resolutionError != null;
 
-  _WirePipelinedCapability(
-    this._conn,
+  _PipelinedCapability(
+    this._delegate,
     this._parentQid,
     this._transformPath,
     Future<DispatchResult> parentResult,
@@ -467,7 +476,7 @@ class _WirePipelinedCapability extends Capability {
     if (resolutionError != null) {
       return Future.error(resolutionError, _resolutionStackTrace);
     }
-    final started = _conn.startOutgoingCall(
+    final started = _delegate.startOutgoingCall(
       target: PromisedAnswerTarget(_parentQid, transformPath: _transformPath),
       params: SerializedParams(params.bytes),
       interfaceId: interfaceId,
@@ -505,7 +514,7 @@ class _WirePipelinedCapability extends Capability {
     if (resolutionError != null) {
       return Future.error(resolutionError, _resolutionStackTrace);
     }
-    final started = _conn.startOutgoingCall(
+    final started = _delegate.startOutgoingCall(
       target: PromisedAnswerTarget(_parentQid, transformPath: _transformPath),
       params: BuilderParams(build),
       interfaceId: interfaceId,
@@ -543,16 +552,16 @@ class _WirePipelinedCapability extends Capability {
     if (resolutionError != null) {
       return _ErrorCapCall(resolutionError, _resolutionStackTrace);
     }
-    final started = _conn.startOutgoingCall(
+    final started = _delegate.startOutgoingCall(
       target: PromisedAnswerTarget(_parentQid, transformPath: _transformPath),
       params: SerializedParams(params.bytes),
       interfaceId: interfaceId,
       methodId: methodId,
       paramsCapabilities: paramsCapabilities,
     );
-    return _WireCapCall(
+    return _OutgoingQuestionCapCall(
       _trackPipelinedCall(started.result),
-      _conn,
+      _delegate,
       started.questionId,
     );
   }
@@ -565,13 +574,13 @@ class _WirePipelinedCapability extends Capability {
 }
 
 class _ReceiverAnswerCapability extends Capability {
-  final WireCapabilityContext _conn;
+  final RpcCapabilityDelegate _delegate;
   final int _questionId;
   final List<int> _path;
   bool _disposed = false;
 
   // Resolved (and vended — see requireCapabilityFromResultPath) at most
-  // once and cached, mirroring _WirePipelinedCapability: this capability
+  // once and cached, mirroring _PipelinedCapability: this capability
   // can be dispatched through multiple times before it's disposed (e.g.
   // several pipelined calls against the same receiverAnswer target), and
   // each of those calls must reuse the same resolved handle rather than
@@ -582,7 +591,7 @@ class _ReceiverAnswerCapability extends Capability {
 
   // Tracks every dispatch()/dispatchBuilding()/beginDispatch() call that was
   // admitted (started before _disposed flipped true), mirroring
-  // _WirePipelinedCapability's _pendingPipelinedCalls — but, unlike that
+  // _PipelinedCapability's _pendingPipelinedCalls — but, unlike that
   // class (which only tracks calls made *before* its target resolves, since
   // afterwards it dispatches directly against the already-resolved
   // capability with no tracking at all), every call through this class goes
@@ -604,12 +613,12 @@ class _ReceiverAnswerCapability extends Capability {
   // once the last pending call finishes.
   Completer<void>? _disposeCompleter;
 
-  _ReceiverAnswerCapability(this._conn, this._questionId, this._path);
+  _ReceiverAnswerCapability(this._delegate, this._questionId, this._path);
 
   Future<Capability> _resolve() => _resolution ??= _resolveOnce();
 
   Future<Capability> _resolveOnce() async {
-    final answer = await _conn.resolveAnswer(_questionId);
+    final answer = await _delegate.resolveAnswer(_questionId);
     return requireCapabilityFromResultPath(
       DispatchResult(
         payload: RpcPayload.fromBytes(answer.resultBytes),

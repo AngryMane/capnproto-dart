@@ -6,9 +6,10 @@ import 'package:capnproto_dart_rpc/src/capability/capability.dart';
 import 'package:capnproto_dart_rpc/src/capability/rpc_payload.dart';
 import 'package:capnproto_dart_rpc/src/rpc/calls/answer_table.dart';
 import 'package:capnproto_dart_rpc/src/rpc/calls/incoming_call_coordinator.dart';
+import 'package:capnproto_dart_rpc/src/rpc/calls/outgoing_call.dart';
 import 'package:capnproto_dart_rpc/src/rpc/calls/question_table.dart';
 import 'package:capnproto_dart_rpc/src/rpc/capabilities/export_table.dart';
-import 'package:capnproto_dart_rpc/src/rpc/capabilities/wire_capability_context.dart';
+import 'package:capnproto_dart_rpc/src/rpc/capabilities/rpc_capability_reference.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_exception.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_proto.dart';
 import 'package:test/test.dart';
@@ -112,11 +113,11 @@ class _Harness {
   /// Settable per test — defaults to "connection never closes".
   bool Function() isClosed = () => false;
 
-  /// Settable per test — defaults to "nothing classifies as a wire
-  /// capability", matching a real connection's answer for any capability
-  /// it doesn't itself construct.
-  WireCapabilityKind Function(Capability cap) classifyCapability =
-      (cap) => const NotWireCapability();
+  /// Settable per test — defaults to no reusable RPC capability reference,
+  /// matching a real connection's answer for any capability it did not
+  /// construct itself.
+  RpcCapabilityReference? Function(Capability cap)
+  tryExtractCapabilityReference = (cap) => null;
 
   /// Settable per test — defaults to a fresh [_FakeCapability] per
   /// descriptor.
@@ -152,7 +153,7 @@ class _Harness {
     disposeIgnoringErrors: disposedFromTable.add,
     isClosed: () => isClosed(),
     tearDownConnection: tearDownCalls.add,
-    classifyCapability: (cap) => classifyCapability(cap),
+    tryExtractCapabilityReference: (cap) => tryExtractCapabilityReference(cap),
     capabilityFromDescriptor:
         (descriptor) => capabilityFromDescriptor(descriptor),
     returnCapDescriptor: (cap) => returnCapDescriptor(cap),
@@ -331,11 +332,11 @@ void main() {
                     TailCall(forwardTarget, interfaceId, methodId, params);
       // Cached plain int, matching the realistic path (an _ImportedCapability
       // constructed via .fromState sets _cachedState synchronously).
-      h.classifyCapability =
+      h.tryExtractCapabilityReference =
           (cap) =>
               identical(cap, forwardTarget)
-                  ? const ImportedWireCapability(9)
-                  : const NotWireCapability();
+                  ? const ImportedCapabilityReference(9)
+                  : null;
       final exportId = h.exportTable.getOrCreate(originalCap);
 
       // Holds the forward "on the wire" open until the test explicitly lets
@@ -384,7 +385,7 @@ void main() {
             ..onTryTailCall =
                 (interfaceId, methodId, params) =>
                     TailCall(forwardTarget, interfaceId, methodId, params);
-      // classifyCapability's default (NotWireCapability for everything).
+      // tryExtractCapabilityReference defaults to `null`.
       final exportId = h.exportTable.getOrCreate(originalCap);
 
       h.coordinator.handleCall(
@@ -656,11 +657,11 @@ void main() {
             ..onTryTailCall =
                 (interfaceId, methodId, params) =>
                     TailCall(forwardTarget, interfaceId, methodId, params);
-      h.classifyCapability =
+      h.tryExtractCapabilityReference =
           (cap) =>
               identical(cap, forwardTarget)
-                  ? const ImportedWireCapability(9)
-                  : const NotWireCapability();
+                  ? const ImportedCapabilityReference(9)
+                  : null;
       final exportId = h.exportTable.getOrCreate(originalCap);
 
       h.sendBytes = (bytes) {

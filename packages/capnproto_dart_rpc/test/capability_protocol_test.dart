@@ -7,7 +7,7 @@ import 'package:capnproto_dart_rpc/src/rpc/capabilities/capability_protocol.dart
 import 'package:capnproto_dart_rpc/src/rpc/capabilities/embargo_table.dart';
 import 'package:capnproto_dart_rpc/src/rpc/capabilities/export_table.dart';
 import 'package:capnproto_dart_rpc/src/rpc/capabilities/import_table.dart';
-import 'package:capnproto_dart_rpc/src/rpc/capabilities/wire_capability_context.dart';
+import 'package:capnproto_dart_rpc/src/rpc/capabilities/rpc_capability_reference.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_exception.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_proto.dart';
 import 'package:test/test.dart';
@@ -22,8 +22,9 @@ class _FakeCapability extends Capability {
 
 /// Builds a [CapabilityProtocol] with fake, observable dependencies — no
 /// `TwoPartyRpcConnection`/sockets — proving the class extracted in Stage 4
-/// is genuinely testable standalone. `classifyCapability` defaults to
-/// reporting everything as [NotWireCapability] (i.e. genuinely local),
+/// is genuinely testable standalone. `tryExtractCapabilityReference`
+/// returns `null` for every capability by default (i.e. no reusable RPC
+/// reference),
 /// which is what a real connection would also report for any capability
 /// it doesn't itself wrap.
 class _Harness {
@@ -39,11 +40,13 @@ class _Harness {
   /// Settable per test — defaults to "connection never closes".
   bool Function() isClosed = () => false;
 
-  /// Settable per test — defaults to "nothing classifies as a wire
-  /// capability", matching a real connection's answer for any capability
-  /// it doesn't itself construct.
-  WireCapabilityKind Function(Capability cap) classifyCapability =
-      (cap) => const NotWireCapability();
+  /// Settable per test — defaults to no reusable RPC capability reference,
+  /// matching a real connection's answer for any capability it did not
+  /// construct itself.
+  RpcCapabilityReference? Function(Capability cap)
+  tryExtractCapabilityReference = (cap) => null;
+
+  bool Function(Capability cap) isSameConnectionPeerCapability = (cap) => false;
 
   late final protocol = CapabilityProtocol(
     exportTable: exportTable,
@@ -55,7 +58,9 @@ class _Harness {
     disposeIgnoringErrors: disposedFromTable.add,
     isClosed: () => isClosed(),
     tearDownConnection: tearDownCalls.add,
-    classifyCapability: (cap) => classifyCapability(cap),
+    tryExtractCapabilityReference: (cap) => tryExtractCapabilityReference(cap),
+    isSameConnectionPeerCapability:
+        (cap) => isSameConnectionPeerCapability(cap),
     importedCapabilityFromState: (state) => _FakeCapability(),
     receiverAnswerCapability: (qid, path) {
       receiverAnswerCalls.add((qid, path));
@@ -136,8 +141,8 @@ void main() {
       expect(h.sentBytes, hasLength(1));
     });
 
-    test('resolveCapTableMaybeSync resolves synchronously when every '
-        'capability classifies as NotWireCapability', () {
+    test('resolveCapTableMaybeSync resolves synchronously when no RPC '
+        'capability reference can be extracted', () {
       final h = _Harness();
       final capA = _FakeCapability();
       final capB = _FakeCapability();
@@ -155,16 +160,40 @@ void main() {
       }
     });
 
+    test('resolveCapTableMaybeSync encodes an extracted pipelined reference '
+        'as receiverAnswer', () {
+      final h = _Harness();
+      final cap = _FakeCapability();
+      h.tryExtractCapabilityReference =
+          (candidate) =>
+              identical(candidate, cap)
+                  ? const PipelinedCapabilityReference(
+                    parentQuestionId: 17,
+                    transformPath: [2, 3],
+                  )
+                  : null;
+
+      final result = h.protocol.resolveCapTableMaybeSync([
+        cap,
+      ], ensureActive: () {});
+
+      expect(result, isA<List<RpcCapDescriptor>>());
+      final descriptor = (result as List<RpcCapDescriptor>).single;
+      expect(descriptor.disc, equals(4));
+      expect(descriptor.questionId, equals(17));
+      expect(descriptor.path, equals([2, 3]));
+    });
+
     test('resolveCapTableMaybeSync falls back to async and threads '
         'ensureActive at entry and after the await', () async {
       final h = _Harness();
       final capA = _FakeCapability();
       final importId = Completer<int>();
-      h.classifyCapability =
+      h.tryExtractCapabilityReference =
           (cap) =>
               identical(cap, capA)
-                  ? ImportedWireCapability(importId.future)
-                  : const NotWireCapability();
+                  ? ImportedCapabilityReference(importId.future)
+                  : null;
 
       var ensureActiveCalls = 0;
       final result = h.protocol.resolveCapTableMaybeSync([
@@ -248,8 +277,8 @@ void main() {
 
       final exported = _FakeCapability();
       final exportId = h.exportTable.getOrCreate(exported);
-      // classifyCapability's default (NotWireCapability for everything)
-      // means the decoded receiverHosted replacement counts as local.
+      // tryExtractCapabilityReference defaults to `null`, so the decoded
+      // receiverHosted replacement counts as local.
       final msg = parseRpcMessage(
         buildResolveCapMessage(promiseId: 7, capDisc: 3, capId: exportId),
       );
@@ -261,6 +290,27 @@ void main() {
       final sent = parseRpcMessage(h.sentBytes.single);
       expect(sent.type, equals(RpcMessageType.disembargo));
       expect(sent.disembargoContextDisc, equals(0)); // senderLoopback
+    });
+
+    test('handleResolve skips Disembargo for a same-connection peer '
+        'capability even when no reusable reference can be extracted', () {
+      final h = _Harness();
+      final state = h.importTable.retain(7);
+      state.receivedCall = true;
+      h.tryExtractCapabilityReference = (cap) => null;
+      h.isSameConnectionPeerCapability = (cap) => true;
+
+      final exported = _FakeCapability();
+      final exportId = h.exportTable.getOrCreate(exported);
+      final msg = parseRpcMessage(
+        buildResolveCapMessage(promiseId: 7, capDisc: 3, capId: exportId),
+      );
+
+      h.protocol.handleResolve(msg);
+
+      expect(h.embargoTable.count, isZero);
+      expect(h.sentBytes, isEmpty);
+      expect(state.replacement, isNotNull);
     });
   });
 }
