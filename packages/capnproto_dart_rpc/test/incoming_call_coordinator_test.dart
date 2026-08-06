@@ -11,7 +11,7 @@ import 'package:capnproto_dart_rpc/src/rpc/calls/question_table.dart';
 import 'package:capnproto_dart_rpc/src/rpc/capabilities/export_table.dart';
 import 'package:capnproto_dart_rpc/src/rpc/capabilities/rpc_capability_reference.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_exception.dart';
-import 'package:capnproto_dart_rpc/src/rpc/rpc_proto.dart';
+import 'package:capnproto_dart_rpc/src/rpc/rpc_message_codec.dart';
 import 'package:test/test.dart';
 
 /// Pre-built 16-byte message: single segment (1 word), null root pointer —

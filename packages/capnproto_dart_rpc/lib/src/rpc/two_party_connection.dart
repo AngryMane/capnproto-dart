@@ -21,7 +21,7 @@ import 'capabilities/rpc_capability_delegate.dart';
 import 'flow_controller.dart';
 import 'rpc_connection.dart';
 import 'rpc_exception.dart';
-import 'rpc_proto.dart';
+import 'rpc_message_codec.dart';
 
 /// A Cap'n Proto RPC Level 1 two-party connection.
 ///

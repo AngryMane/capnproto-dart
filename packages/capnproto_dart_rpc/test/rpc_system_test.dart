@@ -7,7 +7,7 @@ import 'dart:typed_data';
 import 'package:capnproto_dart_rpc/capnproto_dart_rpc.dart';
 import 'package:capnproto_dart_rpc/src/capability/capability.dart'
     show NullCapability;
-import 'package:capnproto_dart_rpc/src/rpc/rpc_proto.dart'
+import 'package:capnproto_dart_rpc/src/rpc/rpc_message_codec.dart'
     show buildCallMessage;
 import 'package:capnproto_dart_rpc/src/rpc/two_party_connection.dart'
     show TwoPartyRpcConnection;

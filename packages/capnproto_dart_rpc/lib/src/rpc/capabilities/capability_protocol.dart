@@ -6,7 +6,7 @@ import 'package:capnproto_dart/capnproto_dart.dart';
 import '../../capability/capability.dart';
 import '../calls/question_table.dart';
 import '../rpc_exception.dart';
-import '../rpc_proto.dart';
+import '../rpc_message_codec.dart';
 import 'embargo_table.dart';
 import 'export_table.dart';
 import 'import_table.dart';

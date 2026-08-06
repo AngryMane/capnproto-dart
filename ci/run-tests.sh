@@ -632,7 +632,7 @@ fi
 # *wire* default is the unusual one — a Cap'n Proto bool field defaulting to
 # true is stored inverted, so the all-zero byte an *omitted* field leaves
 # behind decodes as true, not false), so an off-by-one in this library's own
-# bit-offset math (packages/capnproto_dart_rpc/lib/src/rpc/rpc_proto.dart)
+# bit-offset math (packages/capnproto_dart_rpc/lib/src/rpc/rpc_message_codec.dart)
 # could easily read back correctly against its own encoder while still being
 # wrong relative to the spec. This cross-checks both directions against the
 # real `capnp` CLI decoding/encoding the actual rpc.capnp Message/Return
