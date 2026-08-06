@@ -106,18 +106,12 @@ class TwoPartyRpcConnection implements RpcConnection {
   late final WireCapabilityContext _wireContext =
       _TwoPartyWireCapabilityContext(this);
 
-  // Constructs, classifies, and manages the lifecycle of every wire-backed
-  // capability this connection vends — see WireCapabilityRuntime's own doc
-  // comment for why this indirection exists (it's what lets this file stop
-  // being `part of` the same library as wire_capabilities.dart). `late` for
-  // the same reason as [_wireContext]: the initializer references `this`
-  // indirectly via [_wireContext].
-  late final WireCapabilityRuntime _wireCapabilities = WireCapabilityRuntime(
-    context: _wireContext,
-    decrementImportReference: (importId) {
-      _importTable.decrementRefcount(importId, _disposeIgnoringErrors);
-    },
-  );
+  // Stable callback shared by every incoming Call's params-cap release
+  // window, so opening a window does not allocate another escaping closure.
+  // ignore: prefer_function_declarations_over_variables, stable identity is intentional
+  late final void Function(int) _decrementImportReference = (importId) {
+    _importTable.decrementRefcount(importId, _disposeIgnoringErrors);
+  };
 
   // Capability wire protocol: descriptor encode/decode, import/export
   // bookkeeping glue, senderPromise resolution, Release, Resolve, and
@@ -135,9 +129,12 @@ class TwoPartyRpcConnection implements RpcConnection {
     disposeIgnoringErrors: _disposeIgnoringErrors,
     isClosed: () => _closedError != null,
     tearDownConnection: (error) => _tearDown(error),
-    classifyCapability: _wireCapabilities.classify,
-    importedCapabilityFromState: _wireCapabilities.createImportedFromState,
-    receiverAnswerCapability: _wireCapabilities.createReceiverAnswer,
+    classifyCapability: (cap) => classifyWireCapability(_wireContext, cap),
+    importedCapabilityFromState:
+        (state) => createImportedCapabilityFromState(_wireContext, state),
+    receiverAnswerCapability:
+        (questionId, path) =>
+            createReceiverAnswerCapability(_wireContext, questionId, path),
   );
 
   // Owns every outgoing Call this connection sends — see
@@ -194,8 +191,13 @@ class TwoPartyRpcConnection implements RpcConnection {
     capabilityFromDescriptor: _capabilityProtocol.capabilityFromDescriptor,
     returnCapDescriptor: _capabilityProtocol.returnCapDescriptor,
     startUsing: _outgoingCalls.startUsing,
-    beginParamCapsRelease: _wireCapabilities.beginParamCapsRelease,
-    finalizeParamCapsRelease: _wireCapabilities.finalizeParamCapsRelease,
+    beginParamCapsRelease:
+        (paramsCapabilities) => beginParamCapsRelease(
+          _wireContext,
+          paramsCapabilities,
+          _decrementImportReference,
+        ),
+    finalizeParamCapsRelease: finalizeParamCapsRelease,
   );
 
   // Handles the bootstrap-specific half of a Return: distinguishing the
@@ -400,7 +402,8 @@ class TwoPartyRpcConnection implements RpcConnection {
 
     _sendRaw(buildBootstrapMessage(question.id));
 
-    _bootstrapCap = _wireCapabilities.createImported(
+    _bootstrapCap = createImportedCapability(
+      _wireContext,
       _bootstrapCompleter!.future,
     );
     return factory.fromCapability(_bootstrapCap!);
@@ -621,7 +624,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   Future<void> get done => _closedCompleter.future;
 
   /// This connection's own [WireCapabilityContext] — test-only, alongside
-  /// [debugCreateImportedCapability]/[debugCreateWirePipelinedCapability]
+  /// [createImportedCapability]/[debugCreateWirePipelinedCapability]
   /// (see their doc comments, and issue #64): lets a test construct a wire
   /// capability that genuinely satisfies `identical(cap._conn, _wireContext)`
   /// against a *real* connection (unlike `wire_capabilities_test.dart`'s

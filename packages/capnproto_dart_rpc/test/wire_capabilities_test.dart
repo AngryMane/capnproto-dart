@@ -122,7 +122,7 @@ void main() {
         'known importId (ImportedCapabilityTarget)', () async {
       final context = FakeWireCapabilityContext();
       final state = ImportState(7);
-      final cap = debugCreateImportedCapabilityFromState(context, state);
+      final cap = createImportedCapabilityFromState(context, state);
 
       await cap.dispatch(1, 2, RpcPayload.fromBytes(Uint8List(0)));
 
@@ -140,7 +140,7 @@ void main() {
       () async {
         final context = FakeWireCapabilityContext();
         final state = ImportState(7);
-        final cap = debugCreateImportedCapabilityFromState(context, state);
+        final cap = createImportedCapabilityFromState(context, state);
 
         await cap.dispose();
 
@@ -163,7 +163,7 @@ void main() {
       final context = FakeWireCapabilityContext();
       final replacement = _RecordingCapability();
       final state = ImportState(7)..resolveCapability(replacement);
-      final cap = debugCreateImportedCapabilityFromState(context, state);
+      final cap = createImportedCapabilityFromState(context, state);
 
       await cap.dispatch(1, 2, RpcPayload.fromBytes(Uint8List(0)));
 
@@ -176,7 +176,7 @@ void main() {
       final context = FakeWireCapabilityContext();
       final boom = RpcException('boom', kind: ErrorKind.failed);
       final state = ImportState(7)..resolveError(boom);
-      final cap = debugCreateImportedCapabilityFromState(context, state);
+      final cap = createImportedCapabilityFromState(context, state);
 
       await expectLater(
         cap.dispatch(1, 2, RpcPayload.fromBytes(Uint8List(0))),
@@ -189,7 +189,7 @@ void main() {
         'exactly once, even if dispose() is called twice', () async {
       final context = FakeWireCapabilityContext();
       final state = ImportState(7);
-      final cap = debugCreateImportedCapabilityFromState(context, state);
+      final cap = createImportedCapabilityFromState(context, state);
 
       await cap.dispose();
       await cap.dispose();
@@ -201,7 +201,7 @@ void main() {
         'streamWindowSize and calls startOutgoingCall', () async {
       final context = FakeWireCapabilityContext()..streamWindowSize = 128;
       final state = ImportState(7);
-      final cap = debugCreateImportedCapabilityFromState(context, state);
+      final cap = createImportedCapabilityFromState(context, state);
 
       await cap.dispatchStreaming(1, 2, RpcPayload.fromBytes(Uint8List(0)));
 
@@ -216,10 +216,7 @@ void main() {
         'calling the context', () async {
       final context = FakeWireCapabilityContext();
       final importIdCompleter = Completer<int>();
-      final cap = debugCreateImportedCapability(
-        context,
-        importIdCompleter.future,
-      );
+      final cap = createImportedCapability(context, importIdCompleter.future);
 
       final dispatchFuture = cap.dispatch(
         1,
@@ -294,7 +291,7 @@ void main() {
     test('dispatch() surfaces the context\'s resolveAnswer() failure for an '
         'unknown questionId', () async {
       final context = FakeWireCapabilityContext();
-      final cap = debugCreateReceiverAnswerCapability(context, 123, const [0]);
+      final cap = createReceiverAnswerCapability(context, 123, const [0]);
 
       await expectLater(
         cap.dispatch(1, 2, RpcPayload.fromBytes(Uint8List(0))),
