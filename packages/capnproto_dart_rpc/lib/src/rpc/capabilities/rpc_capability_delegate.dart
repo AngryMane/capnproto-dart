@@ -6,8 +6,8 @@ import '../calls/outgoing_call.dart';
 import 'import_table.dart';
 
 /// The narrow set of connection operations that RPC capability
-/// implementations (`ImportedCapability`, `WirePipelinedCapability`,
-/// `ReceiverAnswerCapability` in rpc_capability.dart) need from their
+/// implementations (`_ImportedCapability`, `_PipelinedCapability`,
+/// `_ReceiverAnswerCapability` in `rpc_capability.dart`) need from their
 /// owning `TwoPartyRpcConnection`.
 ///
 /// Before this interface existed, those classes held a `TwoPartyRpcConnection`

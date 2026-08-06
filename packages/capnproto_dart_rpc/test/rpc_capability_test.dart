@@ -307,7 +307,7 @@ void main() {
     });
   });
 
-  group('WirePipelinedCapability (fake RpcCapabilityDelegate)', () {
+  group('PipelinedCapability (fake RpcCapabilityDelegate)', () {
     test('dispatch() before the parent resolves targets the parent '
         'question/transform path (PromisedAnswerTarget)', () async {
       final delegate = FakeRpcCapabilityDelegate();

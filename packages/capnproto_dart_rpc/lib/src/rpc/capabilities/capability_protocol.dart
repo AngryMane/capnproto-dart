@@ -19,9 +19,9 @@ import 'rpc_capability_reference.dart';
 /// a plain top-level class (not a `part`-file extension) so it can be
 /// constructed and tested directly, without a real connection or sockets.
 ///
-/// Five of its methods (`resolveCapTableMaybeSync` and its private helpers)
-/// need to classify a [Capability] as wire-hosted or not, and construct
-/// wire-backed capabilities — both of which would otherwise require naming
+/// Its capTable-resolution methods need to extract reusable RPC references
+/// from [Capability] values, while descriptor decoding constructs RPC
+/// capability proxies. Both operations would otherwise require naming
 /// `_ImportedCapability`/`_PipelinedCapability`, private to
 /// `rpc_capability.dart`'s library. [tryExtractCapabilityReference]/
 /// [importedCapabilityFromState]/[receiverAnswerCapability] are wired to
@@ -137,7 +137,7 @@ final class CapabilityProtocol {
         // Generated client stubs commonly hand out a fresh
         // vendCapabilityHandle wrapper every time their underlying
         // capability is accessed (e.g. a `.capability` getter), so a
-        // classification check against the wrapper itself never matches
+        // reference-extraction check against the wrapper itself never matches
         // even when it's genuinely an import/pipeline from this same
         // connection — unwrap first. See unwrapVendedCapability's doc
         // comment for the concrete failure this avoids (a receiverHosted
@@ -249,7 +249,7 @@ final class CapabilityProtocol {
     try {
       for (final rawCap in paramsCapabilities) {
         // See _resolveCapTableAsync's matching comment on why this unwraps
-        // vendCapabilityHandle wrappers before classifying.
+        // vendCapabilityHandle wrappers before extracting references.
         final cap = unwrapVendedCapability(rawCap);
         final reference = tryExtractCapabilityReference(cap);
         if (reference is ImportedCapabilityReference) {

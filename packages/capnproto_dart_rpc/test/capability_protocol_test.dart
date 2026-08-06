@@ -22,8 +22,9 @@ class _FakeCapability extends Capability {
 
 /// Builds a [CapabilityProtocol] with fake, observable dependencies — no
 /// `TwoPartyRpcConnection`/sockets — proving the class extracted in Stage 4
-/// is genuinely testable standalone. `tryExtractCapabilityReference` defaults to
-/// reporting everything as [NotWireCapability] (i.e. genuinely local),
+/// is genuinely testable standalone. `tryExtractCapabilityReference`
+/// returns `null` for every capability by default (i.e. no reusable RPC
+/// reference),
 /// which is what a real connection would also report for any capability
 /// it doesn't itself wrap.
 class _Harness {
@@ -39,9 +40,9 @@ class _Harness {
   /// Settable per test — defaults to "connection never closes".
   bool Function() isClosed = () => false;
 
-  /// Settable per test — defaults to "nothing classifies as a wire
-  /// capability", matching a real connection's answer for any capability
-  /// it doesn't itself construct.
+  /// Settable per test — defaults to no reusable RPC capability reference,
+  /// matching a real connection's answer for any capability it did not
+  /// construct itself.
   RpcCapabilityReference? Function(Capability cap)
   tryExtractCapabilityReference = (cap) => null;
 
@@ -140,8 +141,8 @@ void main() {
       expect(h.sentBytes, hasLength(1));
     });
 
-    test('resolveCapTableMaybeSync resolves synchronously when every '
-        'capability classifies as NotWireCapability', () {
+    test('resolveCapTableMaybeSync resolves synchronously when no RPC '
+        'capability reference can be extracted', () {
       final h = _Harness();
       final capA = _FakeCapability();
       final capB = _FakeCapability();
@@ -276,8 +277,8 @@ void main() {
 
       final exported = _FakeCapability();
       final exportId = h.exportTable.getOrCreate(exported);
-      // tryExtractCapabilityReference's default (NotWireCapability for everything)
-      // means the decoded receiverHosted replacement counts as local.
+      // tryExtractCapabilityReference defaults to `null`, so the decoded
+      // receiverHosted replacement counts as local.
       final msg = parseRpcMessage(
         buildResolveCapMessage(promiseId: 7, capDisc: 3, capId: exportId),
       );

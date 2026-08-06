@@ -113,9 +113,9 @@ class _Harness {
   /// Settable per test — defaults to "connection never closes".
   bool Function() isClosed = () => false;
 
-  /// Settable per test — defaults to "nothing classifies as a wire
-  /// capability", matching a real connection's answer for any capability
-  /// it doesn't itself construct.
+  /// Settable per test — defaults to no reusable RPC capability reference,
+  /// matching a real connection's answer for any capability it did not
+  /// construct itself.
   RpcCapabilityReference? Function(Capability cap)
   tryExtractCapabilityReference = (cap) => null;
 
@@ -385,7 +385,7 @@ void main() {
             ..onTryTailCall =
                 (interfaceId, methodId, params) =>
                     TailCall(forwardTarget, interfaceId, methodId, params);
-      // tryExtractCapabilityReference's default (NotWireCapability for everything).
+      // tryExtractCapabilityReference defaults to `null`.
       final exportId = h.exportTable.getOrCreate(originalCap);
 
       h.coordinator.handleCall(

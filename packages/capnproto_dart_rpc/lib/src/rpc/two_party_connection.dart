@@ -88,7 +88,8 @@ class TwoPartyRpcConnection implements RpcConnection {
   // Resolved after the Bootstrap exchange completes. Plain [Capability] —
   // nothing here ever uses an _ImportedCapability-specific member on it,
   // only `factory.fromCapability(_bootstrapCap!)` and the `!= null` cache
-  // check — so there's no need to name the concrete wire-capability type.
+  // check — so there's no need to name the concrete RPC capability proxy
+  // type.
   Capability? _bootstrapCap;
   // Completer for the bootstrap handshake.
   Completer<int>? _bootstrapCompleter;
@@ -96,14 +97,14 @@ class TwoPartyRpcConnection implements RpcConnection {
   // can distinguish the bootstrap return from regular call returns).
   int? _bootstrapQuestionId;
 
-  // The [RpcCapabilityDelegate] every wire capability this connection vends
-  // (ImportedCapability/WirePipelinedCapability/ReceiverAnswerCapability —
-  // see rpc_capability.dart) is bound to. One instance per connection,
-  // for its whole lifetime, so identical(cap._delegate, _rpcCapabilityDelegate) reliably
-  // means "this capability belongs to this connection" the same way
-  // `cap._delegate == this` did back when those classes held a
-  // TwoPartyRpcConnection directly. `late` so the initializer can reference
-  // `this`.
+  // Every RPC capability proxy this connection vends
+  // (`_ImportedCapability`/`_PipelinedCapability`/`_ReceiverAnswerCapability`
+  // in `rpc_capability.dart`) is bound to this [RpcCapabilityDelegate]. One
+  // instance lives for the whole connection lifetime, so
+  // identical(cap._delegate, _rpcCapabilityDelegate) reliably means "this
+  // capability belongs to this connection", the same way `cap._delegate ==
+  // this` did back when those classes held a TwoPartyRpcConnection directly.
+  // `late` lets the initializer reference `this`.
   late final RpcCapabilityDelegate _rpcCapabilityDelegate =
       _TwoPartyRpcCapabilityDelegate(this);
 
@@ -634,9 +635,10 @@ class TwoPartyRpcConnection implements RpcConnection {
 
   /// This connection's own [RpcCapabilityDelegate] — test-only, alongside
   /// [createImportedCapability]/[debugCreatePipelinedCapability]
-  /// (see their doc comments, and issue #64): lets a test construct a wire
-  /// capability that genuinely satisfies `identical(cap._delegate, _rpcCapabilityDelegate)`
-  /// against a *real* connection (unlike `rpc_capability_test.dart`'s
+  /// (see their doc comments, and issue #64): lets a test construct an RPC
+  /// capability proxy that genuinely satisfies
+  /// `identical(cap._delegate, _rpcCapabilityDelegate)` against a *real*
+  /// connection (unlike `rpc_capability_test.dart`'s
   /// `FakeRpcCapabilityDelegate`, which only drives `rpc_capability.dart`
   /// in isolation). `CapabilityProtocol`'s own capTable-resolution side
   /// effects (export creation, refcount bumps) are independently
