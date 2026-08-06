@@ -106,6 +106,13 @@ class TwoPartyRpcConnection implements RpcConnection {
   late final WireCapabilityContext _wireContext =
       _TwoPartyWireCapabilityContext(this);
 
+  // Stable callback shared by every incoming Call's params-cap release
+  // window, so opening a window does not allocate another escaping closure.
+  // ignore: prefer_function_declarations_over_variables, stable identity is intentional
+  late final void Function(int) _decrementImportReference = (importId) {
+    _importTable.decrementRefcount(importId, _disposeIgnoringErrors);
+  };
+
   // Capability wire protocol: descriptor encode/decode, import/export
   // bookkeeping glue, senderPromise resolution, Release, Resolve, and
   // Disembargo handling — see CapabilityProtocol's own doc comment for why
@@ -188,8 +195,7 @@ class TwoPartyRpcConnection implements RpcConnection {
         (paramsCapabilities) => beginParamCapsRelease(
           _wireContext,
           paramsCapabilities,
-          (importId) =>
-              _importTable.decrementRefcount(importId, _disposeIgnoringErrors),
+          _decrementImportReference,
         ),
     finalizeParamCapsRelease: finalizeParamCapsRelease,
   );
