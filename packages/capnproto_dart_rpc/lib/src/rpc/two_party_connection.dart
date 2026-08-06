@@ -130,8 +130,10 @@ class TwoPartyRpcConnection implements RpcConnection {
     disposeIgnoringErrors: _disposeIgnoringErrors,
     isClosed: () => _closedError != null,
     tearDownConnection: (error) => _tearDown(error),
-    classifyCapability:
-        (cap) => classifyWireCapability(_rpcCapabilityDelegate, cap),
+    tryExtractCapabilityReference:
+        (cap) => tryExtractRpcCapabilityReference(_rpcCapabilityDelegate, cap),
+    isSameConnectionPeerCapability:
+        (cap) => isSameConnectionPeerCapability(_rpcCapabilityDelegate, cap),
     importedCapabilityFromState:
         (state) =>
             createImportedCapabilityFromState(_rpcCapabilityDelegate, state),
@@ -193,7 +195,8 @@ class TwoPartyRpcConnection implements RpcConnection {
     disposeIgnoringErrors: _disposeIgnoringErrors,
     isClosed: () => _closedError != null,
     tearDownConnection: (error) => _tearDown(error),
-    classifyCapability: _capabilityProtocol.classifyCapability,
+    tryExtractCapabilityReference:
+        _capabilityProtocol.tryExtractCapabilityReference,
     capabilityFromDescriptor: _capabilityProtocol.capabilityFromDescriptor,
     returnCapDescriptor: _capabilityProtocol.returnCapDescriptor,
     startUsing: _outgoingCalls.startUsing,
@@ -637,7 +640,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// `FakeRpcCapabilityDelegate`, which only drives `rpc_capability.dart`
   /// in isolation). `CapabilityProtocol`'s own capTable-resolution side
   /// effects (export creation, refcount bumps) are independently
-  /// unit-testable via a fake `classifyCapability` closure — see
+  /// unit-testable via a fake `tryExtractCapabilityReference` closure — see
   /// `capability_protocol_test.dart` — but this getter is still what lets
   /// `rpc_test.dart` reproduce the same scenario end-to-end against the
   /// real wiring (real `_ImportedCapability`, real `TwoPartyRpcConnection`),

@@ -62,31 +62,44 @@ Capability debugCreatePipelinedCapability(
   Future<DispatchResult> parentResult,
 ) => _PipelinedCapability(delegate, parentQid, transformPath, parentResult);
 
-/// Classifies [capability] as wire-hosted or not, from [delegate]'s own
-/// point of view — see [WireCapabilityKind]'s doc comment.
-/// `_PipelinedCapability` is never constructed outside this library
-/// (only `_OutgoingQuestionCapCall`/`_UnresolvedImportCapCall` do), so unlike
-/// [createImportedCapability]/[createReceiverAnswerCapability] it has no
-/// matching `create*` function here.
-WireCapabilityKind classifyWireCapability(
+/// Tries to extract a reusable same-connection RPC reference from
+/// [capability]. A resolved pipelined capability no longer has a valid
+/// `receiverAnswer` reference, so it deliberately returns `null`.
+RpcCapabilityReference? tryExtractRpcCapabilityReference(
   RpcCapabilityDelegate delegate,
   Capability capability,
 ) {
   if (capability is _ImportedCapability &&
       identical(capability._delegate, delegate)) {
-    return ImportedWireCapability(
+    return ImportedCapabilityReference(
       capability._cachedState?.importId ?? capability._importIdFuture,
     );
   }
   if (capability is _PipelinedCapability &&
-      identical(capability._delegate, delegate)) {
-    return PipelinedWireCapability(
-      hasResolved: capability._hasResolved,
+      identical(capability._delegate, delegate) &&
+      !capability._hasResolved) {
+    return PipelinedCapabilityReference(
       parentQuestionId: capability._parentQid,
       transformPath: capability._transformPath,
     );
   }
-  return const NotWireCapability();
+  return null;
+}
+
+/// Whether [capability] is a peer capability wrapper bound to [delegate].
+/// Unlike reference extraction, a resolved pipelined wrapper remains bound
+/// to the same peer connection and therefore still returns `true`.
+bool isSameConnectionPeerCapability(
+  RpcCapabilityDelegate delegate,
+  Capability capability,
+) {
+  if (capability is _ImportedCapability) {
+    return identical(capability._delegate, delegate);
+  }
+  if (capability is _PipelinedCapability) {
+    return identical(capability._delegate, delegate);
+  }
+  return false;
 }
 
 /// Starts a deferred-release tracking window for whichever of

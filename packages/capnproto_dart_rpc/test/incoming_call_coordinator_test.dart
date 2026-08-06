@@ -116,8 +116,8 @@ class _Harness {
   /// Settable per test — defaults to "nothing classifies as a wire
   /// capability", matching a real connection's answer for any capability
   /// it doesn't itself construct.
-  WireCapabilityKind Function(Capability cap) classifyCapability =
-      (cap) => const NotWireCapability();
+  RpcCapabilityReference? Function(Capability cap)
+  tryExtractCapabilityReference = (cap) => null;
 
   /// Settable per test — defaults to a fresh [_FakeCapability] per
   /// descriptor.
@@ -153,7 +153,7 @@ class _Harness {
     disposeIgnoringErrors: disposedFromTable.add,
     isClosed: () => isClosed(),
     tearDownConnection: tearDownCalls.add,
-    classifyCapability: (cap) => classifyCapability(cap),
+    tryExtractCapabilityReference: (cap) => tryExtractCapabilityReference(cap),
     capabilityFromDescriptor:
         (descriptor) => capabilityFromDescriptor(descriptor),
     returnCapDescriptor: (cap) => returnCapDescriptor(cap),
@@ -332,11 +332,11 @@ void main() {
                     TailCall(forwardTarget, interfaceId, methodId, params);
       // Cached plain int, matching the realistic path (an _ImportedCapability
       // constructed via .fromState sets _cachedState synchronously).
-      h.classifyCapability =
+      h.tryExtractCapabilityReference =
           (cap) =>
               identical(cap, forwardTarget)
-                  ? const ImportedWireCapability(9)
-                  : const NotWireCapability();
+                  ? const ImportedCapabilityReference(9)
+                  : null;
       final exportId = h.exportTable.getOrCreate(originalCap);
 
       // Holds the forward "on the wire" open until the test explicitly lets
@@ -385,7 +385,7 @@ void main() {
             ..onTryTailCall =
                 (interfaceId, methodId, params) =>
                     TailCall(forwardTarget, interfaceId, methodId, params);
-      // classifyCapability's default (NotWireCapability for everything).
+      // tryExtractCapabilityReference's default (NotWireCapability for everything).
       final exportId = h.exportTable.getOrCreate(originalCap);
 
       h.coordinator.handleCall(
@@ -657,11 +657,11 @@ void main() {
             ..onTryTailCall =
                 (interfaceId, methodId, params) =>
                     TailCall(forwardTarget, interfaceId, methodId, params);
-      h.classifyCapability =
+      h.tryExtractCapabilityReference =
           (cap) =>
               identical(cap, forwardTarget)
-                  ? const ImportedWireCapability(9)
-                  : const NotWireCapability();
+                  ? const ImportedCapabilityReference(9)
+                  : null;
       final exportId = h.exportTable.getOrCreate(originalCap);
 
       h.sendBytes = (bytes) {

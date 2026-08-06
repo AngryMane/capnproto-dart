@@ -74,9 +74,9 @@ final _emptyResultBytes = Uint8List.fromList([
 /// depends on the other's having already finished.
 ///
 /// [beginParamCapsRelease]/[finalizeParamCapsRelease] bridge a different
-/// kind of wall than [classifyCapability]/[capabilityFromDescriptor]/
+/// kind of wall than [tryExtractCapabilityReference]/[capabilityFromDescriptor]/
 /// [returnCapDescriptor]: those three only need to *classify* or
-/// *construct* a capability, which [WireCapabilityKind] already expresses
+/// *construct* a capability, which [RpcCapabilityReference] already expresses
 /// without naming `_ImportedCapability` (private to
 /// `rpc_capability.dart`'s library); params-caps deferred-release
 /// tracking needs to *mutate* private state
@@ -110,10 +110,11 @@ final class IncomingCallCoordinator {
   final void Function(RpcException error) tearDownConnection;
 
   /// Classifies a capability as wire-hosted or not — see
-  /// [WireCapabilityKind]'s doc comment. The same closure instance
-  /// `CapabilityProtocol` itself uses (its `classifyCapability` field is
+  /// [RpcCapabilityReference]'s doc comment. The same closure instance
+  /// `CapabilityProtocol` itself uses (its `tryExtractCapabilityReference` field is
   /// public precisely so it can be shared here rather than duplicated).
-  final WireCapabilityKind Function(Capability cap) classifyCapability;
+  final RpcCapabilityReference? Function(Capability cap)
+  tryExtractCapabilityReference;
 
   final Capability Function(RpcCapDescriptor descriptor)
   capabilityFromDescriptor;
@@ -170,7 +171,7 @@ final class IncomingCallCoordinator {
     required this.disposeIgnoringErrors,
     required this.isClosed,
     required this.tearDownConnection,
-    required this.classifyCapability,
+    required this.tryExtractCapabilityReference,
     required this.capabilityFromDescriptor,
     required this.returnCapDescriptor,
     required this.startUsing,
@@ -445,7 +446,7 @@ final class IncomingCallCoordinator {
   }
 
   /// Handles a [Capability.tryTailCall] result for the call answered by
-  /// [qid]. When [tailCall]'s target classifies (via [classifyCapability])
+  /// [qid]. When [tailCall]'s target classifies (via [tryExtractCapabilityReference])
   /// as a capability imported from this same peer connection, applies the
   /// Level 1 wire optimization: forwards a new Call (flagged
   /// `sendResultsTo=yourself`) to that peer and answers [qid] immediately
@@ -455,9 +456,12 @@ final class IncomingCallCoordinator {
   /// normally, with no wire-level difference from an ordinary call.
   void _dispatchTailCall(int qid, TailCall tailCall) {
     final target = tailCall.target;
-    final kind = classifyCapability(target);
-    if (kind is ImportedWireCapability) {
-      final (forwardQid, sent) = _sendTailForwardCall(kind.importId, tailCall);
+    final reference = tryExtractCapabilityReference(target);
+    if (reference is ImportedCapabilityReference) {
+      final (forwardQid, sent) = _sendTailForwardCall(
+        reference.importId,
+        tailCall,
+      );
       // Must wait for the forwarded Call to actually be on the wire before
       // answering qid with takeFromOtherQuestion — otherwise the peer could
       // see the redirect before the call it points at, and fail to

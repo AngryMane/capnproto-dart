@@ -119,9 +119,8 @@ class _RecordingCapability extends Capability {
 }
 
 void main() {
-  group('RpcCapabilityDelegate identity', () {
-    test('recognizes only peer capability wrappers bound to the same '
-        'delegate', () async {
+  group('RPC capability reference extraction and peer binding', () {
+    test('matches the connection-relative truth table', () async {
       final delegate = FakeRpcCapabilityDelegate();
       final otherDelegate = FakeRpcCapabilityDelegate();
 
@@ -130,41 +129,44 @@ void main() {
         ImportState(7),
       );
       expect(
-        classifyWireCapability(delegate, imported),
-        isA<ImportedWireCapability>(),
+        tryExtractRpcCapabilityReference(delegate, imported),
+        isA<ImportedCapabilityReference>().having(
+          (reference) => reference.importId,
+          'importId',
+          7,
+        ),
       );
-      expect(
-        classifyWireCapability(otherDelegate, imported),
-        isA<NotWireCapability>(),
-      );
+      expect(isSameConnectionPeerCapability(delegate, imported), isTrue);
+      expect(tryExtractRpcCapabilityReference(otherDelegate, imported), isNull);
+      expect(isSameConnectionPeerCapability(otherDelegate, imported), isFalse);
 
       final parentResult = Completer<DispatchResult>();
       final pipelined = debugCreatePipelinedCapability(delegate, 99, const [
         0,
       ], parentResult.future);
       expect(
-        classifyWireCapability(delegate, pipelined),
-        isA<PipelinedWireCapability>().having(
-          (kind) => kind.hasResolved,
-          'hasResolved',
-          isFalse,
-        ),
+        tryExtractRpcCapabilityReference(delegate, pipelined),
+        isA<PipelinedCapabilityReference>()
+            .having(
+              (reference) => reference.parentQuestionId,
+              'parentQuestionId',
+              99,
+            )
+            .having((reference) => reference.transformPath, 'transformPath', [
+              0,
+            ]),
       );
+      expect(isSameConnectionPeerCapability(delegate, pipelined), isTrue);
       expect(
-        classifyWireCapability(otherDelegate, pipelined),
-        isA<NotWireCapability>(),
+        tryExtractRpcCapabilityReference(otherDelegate, pipelined),
+        isNull,
       );
+      expect(isSameConnectionPeerCapability(otherDelegate, pipelined), isFalse);
 
       parentResult.complete(DispatchResult.empty);
       await Future<void>.delayed(Duration.zero);
-      expect(
-        classifyWireCapability(delegate, pipelined),
-        isA<PipelinedWireCapability>().having(
-          (kind) => kind.hasResolved,
-          'hasResolved',
-          isTrue,
-        ),
-      );
+      expect(tryExtractRpcCapabilityReference(delegate, pipelined), isNull);
+      expect(isSameConnectionPeerCapability(delegate, pipelined), isTrue);
 
       final receiverAnswer = createReceiverAnswerCapability(
         delegate,
@@ -172,9 +174,14 @@ void main() {
         const [0],
       );
       expect(
-        classifyWireCapability(delegate, receiverAnswer),
-        isA<NotWireCapability>(),
+        tryExtractRpcCapabilityReference(delegate, receiverAnswer),
+        isNull,
       );
+      expect(isSameConnectionPeerCapability(delegate, receiverAnswer), isFalse);
+
+      final local = _RecordingCapability();
+      expect(tryExtractRpcCapabilityReference(delegate, local), isNull);
+      expect(isSameConnectionPeerCapability(delegate, local), isFalse);
     });
   });
 

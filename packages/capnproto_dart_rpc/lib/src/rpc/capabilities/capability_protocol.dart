@@ -23,13 +23,13 @@ import 'rpc_capability_reference.dart';
 /// need to classify a [Capability] as wire-hosted or not, and construct
 /// wire-backed capabilities — both of which would otherwise require naming
 /// `_ImportedCapability`/`_PipelinedCapability`, private to
-/// `rpc_capability.dart`'s library. [classifyCapability]/
+/// `rpc_capability.dart`'s library. [tryExtractCapabilityReference]/
 /// [importedCapabilityFromState]/[receiverAnswerCapability] are wired to
-/// `rpc_capability.dart`'s own top-level `classifyWireCapability`/
+/// `rpc_capability.dart`'s own top-level `tryExtractRpcCapabilityReference`/
 /// `createImportedCapabilityFromState`/`createReceiverAnswerCapability`
 /// functions at the connection's construction site, the same way
 /// [OutgoingCallCoordinator]'s own injected closures bridge its narrower
-/// needs — see [WireCapabilityKind]'s doc comment.
+/// needs — see [RpcCapabilityReference]'s doc comment.
 final class CapabilityProtocol {
   /// Shared with the owning connection — [exportTable]/[questions] are
   /// also held directly by `IncomingCallCoordinator`, so this class does
@@ -64,10 +64,14 @@ final class CapabilityProtocol {
   /// it doesn't hold).
   final void Function(RpcException error) tearDownConnection;
 
-  /// Classifies [cap] from the wire protocol's own point of view — see
-  /// [WireCapabilityKind]'s own doc comment for why this indirection
-  /// exists instead of a direct `is _ImportedCapability` check.
-  final WireCapabilityKind Function(Capability cap) classifyCapability;
+  /// Tries to extract an RPC reference reusable by this connection.
+  final RpcCapabilityReference? Function(Capability cap)
+  tryExtractCapabilityReference;
+
+  /// Whether [cap] is an imported or pipelined peer wrapper belonging to
+  /// this connection. Kept separate from reference extraction because a
+  /// resolved pipeline has no reusable reference but remains peer-bound.
+  final bool Function(Capability cap) isSameConnectionPeerCapability;
 
   /// Constructs the capability a `senderHosted`/`senderPromise` descriptor
   /// decodes to, once its [ImportState] is retained.
@@ -87,7 +91,8 @@ final class CapabilityProtocol {
     required this.disposeIgnoringErrors,
     required this.isClosed,
     required this.tearDownConnection,
-    required this.classifyCapability,
+    required this.tryExtractCapabilityReference,
+    required this.isSameConnectionPeerCapability,
     required this.importedCapabilityFromState,
     required this.receiverAnswerCapability,
   });
@@ -139,14 +144,14 @@ final class CapabilityProtocol {
         // hand-back gets mis-encoded as a brand-new senderHosted export
         // instead).
         final cap = unwrapVendedCapability(rawCap);
-        final kind = classifyCapability(cap);
-        if (kind is ImportedWireCapability) {
-          final id = await kind.importId;
+        final reference = tryExtractCapabilityReference(cap);
+        if (reference is ImportedCapabilityReference) {
+          final id = await reference.importId;
           ensureActive();
           importTable.throwIfBroken(id);
           capEntries.add(RpcCapDescriptor.receiverHosted(id));
-        } else if (kind is PipelinedWireCapability && !kind.hasResolved) {
-          // The parent Call (kind.parentQuestionId) must reach the wire
+        } else if (reference is PipelinedCapabilityReference) {
+          // The parent Call (reference.parentQuestionId) must reach the wire
           // before this receiverAnswer descriptor referencing it does —
           // otherwise the peer sees a question id it hasn't been told about
           // yet and rejects it (e.g. capnp-rust's "invalid 'receiver
@@ -154,13 +159,15 @@ final class CapabilityProtocol {
           // OutgoingCallCoordinator's own `_buildOutgoingCallBytesAsync`,
           // but for a param capability referencing another question instead
           // of this call's own target.
-          final parentSent = questions.sentCompleterFor(kind.parentQuestionId);
+          final parentSent = questions.sentCompleterFor(
+            reference.parentQuestionId,
+          );
           if (parentSent != null) await parentSent.future;
           ensureActive();
           capEntries.add(
             RpcCapDescriptor.receiverAnswer(
-              kind.parentQuestionId,
-              kind.transformPath,
+              reference.parentQuestionId,
+              reference.transformPath,
             ),
           );
         } else {
@@ -217,15 +224,15 @@ final class CapabilityProtocol {
     if (paramsCapabilities.isEmpty) return const [];
     final needsAsync = paramsCapabilities.any((rawCap) {
       final cap = unwrapVendedCapability(rawCap);
-      final kind = classifyCapability(cap);
-      return (kind is ImportedWireCapability && kind.importId is! int) ||
+      final reference = tryExtractCapabilityReference(cap);
+      return (reference is ImportedCapabilityReference &&
+              reference.importId is! int) ||
           // A not-yet-sent parent Call means the receiverAnswer branch below
           // would need to await it (see the matching comment in
           // _resolveCapTableAsync) — fall through to the async path instead
           // of racing it.
-          (kind is PipelinedWireCapability &&
-              !kind.hasResolved &&
-              questions.sentCompleterFor(kind.parentQuestionId) != null);
+          (reference is PipelinedCapabilityReference &&
+              questions.sentCompleterFor(reference.parentQuestionId) != null);
     });
     if (needsAsync) {
       return _resolveCapTableAsync(
@@ -244,21 +251,21 @@ final class CapabilityProtocol {
         // See _resolveCapTableAsync's matching comment on why this unwraps
         // vendCapabilityHandle wrappers before classifying.
         final cap = unwrapVendedCapability(rawCap);
-        final kind = classifyCapability(cap);
-        if (kind is ImportedWireCapability) {
+        final reference = tryExtractCapabilityReference(cap);
+        if (reference is ImportedCapabilityReference) {
           // needsAsync above already confirmed this is cached — a
           // still-uncached one would have routed through the async branch.
-          final id = kind.importId as int;
+          final id = reference.importId as int;
           importTable.throwIfBroken(id);
           capEntries.add(RpcCapDescriptor.receiverHosted(id));
-        } else if (kind is PipelinedWireCapability && !kind.hasResolved) {
+        } else if (reference is PipelinedCapabilityReference) {
           // Safe to encode without waiting here: needsAsync above already
           // routed any case where the parent Call hasn't been sent yet
           // through the async (awaiting) version instead.
           capEntries.add(
             RpcCapDescriptor.receiverAnswer(
-              kind.parentQuestionId,
-              kind.transformPath,
+              reference.parentQuestionId,
+              reference.transformPath,
             ),
           );
         } else {
@@ -564,9 +571,9 @@ final class CapabilityProtocol {
   ) async {
     final identity = unwrapVendedCapability(cap);
     final RpcCapDescriptor descriptor;
-    final kind = classifyCapability(identity);
-    if (kind is ImportedWireCapability) {
-      final id = await kind.importId;
+    final reference = tryExtractCapabilityReference(identity);
+    if (reference is ImportedCapabilityReference) {
+      final id = await reference.importId;
       importTable.throwIfBroken(id);
       descriptor = RpcCapDescriptor.receiverHosted(id);
     } else if (identity is DeferredCapability) {
@@ -645,7 +652,6 @@ final class CapabilityProtocol {
     return descriptor.id;
   }
 
-  bool _isLocalCapability(Capability cap) {
-    return classifyCapability(cap) is NotWireCapability;
-  }
+  bool _isLocalCapability(Capability cap) =>
+      !isSameConnectionPeerCapability(cap);
 }
