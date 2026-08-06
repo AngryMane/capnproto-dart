@@ -121,7 +121,7 @@ final class StartedCall {
 /// encoding/decoding logic (`CapabilityProtocol`) can classify a capability
 /// without needing to reference the wire-capability implementation types
 /// directly (`_ImportedCapability`/`_WirePipelinedCapability` are private to
-/// `wire_capabilities.dart`'s library) — `WireCapabilityRuntime.classify` is
+/// `wire_capabilities.dart`'s library) — `classifyWireCapability` is
 /// the only thing that can construct one of these, via its own `identical()`
 /// check against the owning connection's `WireCapabilityContext` (not `==`:
 /// `WireCapabilityContext`

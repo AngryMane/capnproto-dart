@@ -25,10 +25,11 @@ import 'wire_capability_context.dart';
 /// `_ImportedCapability`/`_WirePipelinedCapability`, private to
 /// `wire_capabilities.dart`'s library. [classifyCapability]/
 /// [importedCapabilityFromState]/[receiverAnswerCapability] are wired to
-/// `WireCapabilityRuntime`'s own methods of the same shape at the
-/// connection's construction site, the same way [OutgoingCallCoordinator]'s
-/// own injected closures bridge its narrower needs — see
-/// [WireCapabilityKind]'s doc comment.
+/// `wire_capabilities.dart`'s own top-level `classifyWireCapability`/
+/// `createImportedCapabilityFromState`/`createReceiverAnswerCapability`
+/// functions at the connection's construction site, the same way
+/// [OutgoingCallCoordinator]'s own injected closures bridge its narrower
+/// needs — see [WireCapabilityKind]'s doc comment.
 final class CapabilityProtocol {
   /// Shared with the owning connection — [exportTable]/[questions] are
   /// also held directly by `IncomingCallCoordinator`, so this class does

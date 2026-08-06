@@ -3710,13 +3710,13 @@ void main() {
       final bootstrapCap = client.bootstrap(EchoClientFactory());
       await bootstrapCap.echo('warmup');
 
-      // debugWireContext/debugCreateImportedCapability (see issue #64) are
+      // debugWireContext/createImportedCapability (see issue #64) are
       // the only way to get an _ImportedCapability whose import id is
       // still genuinely unresolved and under this test's own control --
       // every import a real Return/param descriptor hands the app is
       // already cached by the time application code sees it.
       final importId = Completer<int>();
-      final asyncCap = debugCreateImportedCapability(
+      final asyncCap = createImportedCapability(
         client.debugWireContext,
         importId.future,
       );
