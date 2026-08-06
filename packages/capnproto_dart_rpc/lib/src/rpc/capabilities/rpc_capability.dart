@@ -5,6 +5,7 @@ import 'package:meta/meta.dart';
 
 import '../../capability/capability.dart';
 import '../../capability/rpc_payload.dart';
+import '../calls/outgoing_call.dart';
 import '../flow_controller.dart';
 import '../rpc_exception.dart';
 import 'import_table.dart';

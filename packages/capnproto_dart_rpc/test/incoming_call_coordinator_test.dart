@@ -6,6 +6,7 @@ import 'package:capnproto_dart_rpc/src/capability/capability.dart';
 import 'package:capnproto_dart_rpc/src/capability/rpc_payload.dart';
 import 'package:capnproto_dart_rpc/src/rpc/calls/answer_table.dart';
 import 'package:capnproto_dart_rpc/src/rpc/calls/incoming_call_coordinator.dart';
+import 'package:capnproto_dart_rpc/src/rpc/calls/outgoing_call.dart';
 import 'package:capnproto_dart_rpc/src/rpc/calls/question_table.dart';
 import 'package:capnproto_dart_rpc/src/rpc/capabilities/export_table.dart';
 import 'package:capnproto_dart_rpc/src/rpc/capabilities/wire_capability_context.dart';

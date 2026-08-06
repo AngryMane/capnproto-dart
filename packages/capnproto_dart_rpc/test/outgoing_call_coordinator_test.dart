@@ -3,9 +3,9 @@ import 'dart:typed_data';
 
 import 'package:capnproto_dart_rpc/src/capability/capability.dart';
 import 'package:capnproto_dart_rpc/src/rpc/calls/outgoing_call_coordinator.dart';
+import 'package:capnproto_dart_rpc/src/rpc/calls/outgoing_call.dart';
 import 'package:capnproto_dart_rpc/src/rpc/calls/question_table.dart';
 import 'package:capnproto_dart_rpc/src/rpc/capabilities/import_table.dart';
-import 'package:capnproto_dart_rpc/src/rpc/capabilities/wire_capability_context.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_exception.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_proto.dart';
 import 'package:test/test.dart';

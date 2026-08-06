@@ -11,6 +11,7 @@ import '../capabilities/wire_capability_context.dart';
 import '../rpc_exception.dart';
 import '../rpc_proto.dart';
 import 'answer_table.dart';
+import 'outgoing_call.dart';
 import 'question_table.dart';
 
 // 24-byte message: struct with 0 data words, 1 pointer word = CapabilityPointer(0).

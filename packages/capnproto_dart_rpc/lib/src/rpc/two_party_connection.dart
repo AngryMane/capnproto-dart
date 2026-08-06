@@ -9,6 +9,7 @@ import '../capability/capability.dart'
 import '../capability/capability_factory.dart';
 import 'calls/answer_table.dart';
 import 'calls/incoming_call_coordinator.dart';
+import 'calls/outgoing_call.dart';
 import 'calls/outgoing_call_coordinator.dart';
 import 'calls/question_table.dart';
 import 'capabilities/capability_protocol.dart';
