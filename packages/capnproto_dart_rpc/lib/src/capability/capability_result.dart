@@ -5,7 +5,7 @@ part of 'capability.dart';
 ///
 /// Used for *local*, single-hop pipelining where [ptrIndex] is a
 /// schema-known constant baked into generated code — `_DeferredCapCall`,
-/// `_FutureCapCall`, `_ErrorCapCall`, and `_AsyncWireCapCall`'s
+/// `_FutureCapCall`, `_ErrorCapCall`, and `_UnresolvedImportCapCall`'s
 /// already-settled fallback in the RPC layer. Wire-level `receiverAnswer`/
 /// `promisedAnswer` targets instead go through
 /// [requireCapabilityFromResultPath], since those can name a capability

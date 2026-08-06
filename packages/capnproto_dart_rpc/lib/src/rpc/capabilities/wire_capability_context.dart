@@ -9,7 +9,7 @@ import 'import_table.dart';
 
 /// The narrow set of connection operations that wire-backed capability
 /// implementations (`ImportedCapability`, `WirePipelinedCapability`,
-/// `ReceiverAnswerCapability` in wire_capabilities.dart) need from their
+/// `ReceiverAnswerCapability` in rpc_capability.dart) need from their
 /// owning `TwoPartyRpcConnection`.
 ///
 /// Before this interface existed, those classes held a `TwoPartyRpcConnection`
@@ -18,7 +18,7 @@ import 'import_table.dart';
 /// unavoidably coupled to the connection's full implementation, so its core
 /// dispatch/dispose logic could only be exercised through a real connection.
 /// Depending on this interface instead means that logic can be driven by any
-/// fake implementation — see wire_capabilities.dart's `debugCreate*`
+/// fake implementation — see rpc_capability.dart's `debugCreate*`
 /// functions and their tests.
 ///
 /// See https://github.com/AngryMane/capnproto-dart/issues/64.
@@ -120,8 +120,8 @@ final class StartedCall {
 /// outgoing questions (`PipelinedWireCapability`). Exists so capTable
 /// encoding/decoding logic (`CapabilityProtocol`) can classify a capability
 /// without needing to reference the wire-capability implementation types
-/// directly (`_ImportedCapability`/`_WirePipelinedCapability` are private to
-/// `wire_capabilities.dart`'s library) — `classifyWireCapability` is
+/// directly (`_ImportedCapability`/`_PipelinedCapability` are private to
+/// `rpc_capability.dart`'s library) — `classifyWireCapability` is
 /// the only thing that can construct one of these, via its own `identical()`
 /// check against the owning connection's `WireCapabilityContext` (not `==`:
 /// `WireCapabilityContext`

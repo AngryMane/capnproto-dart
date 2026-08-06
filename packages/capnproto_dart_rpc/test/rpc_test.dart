@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:capnproto_dart_rpc/capnproto_dart_rpc.dart';
 import 'package:capnproto_dart_rpc/src/capability/capability.dart';
-import 'package:capnproto_dart_rpc/src/rpc/capabilities/wire_capabilities.dart';
+import 'package:capnproto_dart_rpc/src/rpc/capabilities/rpc_capability.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_proto.dart';
 import 'package:capnproto_dart_rpc/src/rpc/two_party_connection.dart';
 import 'package:test/test.dart';
@@ -5322,10 +5322,10 @@ void main() {
       'dispose() does not tear down the resolved target while a dispatch() '
       'call through the same receiverAnswer capability is still in flight',
       () async {
-        // Empirical check for a reviewed concern: unlike _WirePipelinedCapability
+        // Empirical check for a reviewed concern: unlike _PipelinedCapability
         // (which defers disposing its resolved target until every pipelined
         // call made *before* resolution has settled — see
-        // _WirePipelinedCapability's _pendingPipelinedCalls),
+        // _PipelinedCapability's _pendingPipelinedCalls),
         // _ReceiverAnswerCapability's dispose() has no equivalent tracking at
         // all. This drives a dispatch() call all the way to actually blocking
         // inside the resolved target (DisposeOrderProbeCapability, gated on
@@ -5595,7 +5595,7 @@ void main() {
 
       // A plain (non-pipelined) call: awaits the full Return directly, so
       // the only reference to the promise's import is the one this test
-      // holds itself — no _WirePipelinedCapability involved to also
+      // holds itself — no _PipelinedCapability involved to also
       // retain it.
       final result = await bootstrapCap.cap.dispatch(
         _echoInterfaceId,

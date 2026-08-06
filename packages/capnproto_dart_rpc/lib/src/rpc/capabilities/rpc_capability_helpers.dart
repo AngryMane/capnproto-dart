@@ -1,4 +1,4 @@
-part of 'wire_capabilities.dart';
+part of 'rpc_capability.dart';
 
 /// Tracks a single `IncomingCallCoordinator._runDispatch` call's params-caps
 /// deferred-release window — see that class's own
@@ -15,7 +15,7 @@ part of 'wire_capabilities.dart';
 /// A plain data class, not a `Capability` — it exists only to be mutated by
 /// [beginParamCapsRelease]/[finalizeParamCapsRelease] below, so it lives
 /// here with its only callers rather than alongside the actual `Capability`
-/// implementations in wire_capabilities.dart.
+/// implementations in rpc_capability.dart.
 class _ParamCapsReleaseTracker {
   final List<_ImportedCapability> wrappers;
   final List<int> disposedImportIds = [];
@@ -48,24 +48,24 @@ Capability createReceiverAnswerCapability(
 ) => _ReceiverAnswerCapability(context, questionId, path);
 
 /// Builds the [Capability] a `promisedAnswer`/pipelined call target
-/// resolves to (see [_WireCapCall.pipelineResult]), bound to [context]
+/// resolves to (see [_OutgoingQuestionCapCall.pipelineResult]), bound to [context]
 /// instead of a real connection. Test-only: nothing in production
-/// constructs a `_WirePipelinedCapability` directly — it's always vended
-/// internally by `_WireCapCall`/`_AsyncWireCapCall` once a call is in
+/// constructs a `_PipelinedCapability` directly — it's always vended
+/// internally by `_OutgoingQuestionCapCall`/`_UnresolvedImportCapCall` once a call is in
 /// flight, so unlike the `create*` functions above it has no non-debug
 /// counterpart.
 @visibleForTesting
-Capability debugCreateWirePipelinedCapability(
+Capability debugCreatePipelinedCapability(
   WireCapabilityContext context,
   int parentQid,
   List<int> transformPath,
   Future<DispatchResult> parentResult,
-) => _WirePipelinedCapability(context, parentQid, transformPath, parentResult);
+) => _PipelinedCapability(context, parentQid, transformPath, parentResult);
 
 /// Classifies [capability] as wire-hosted or not, from [context]'s own
 /// point of view — see [WireCapabilityKind]'s doc comment.
-/// `_WirePipelinedCapability` is never constructed outside this library
-/// (only `_WireCapCall`/`_AsyncWireCapCall` do), so unlike
+/// `_PipelinedCapability` is never constructed outside this library
+/// (only `_OutgoingQuestionCapCall`/`_UnresolvedImportCapCall` do), so unlike
 /// [createImportedCapability]/[createReceiverAnswerCapability] it has no
 /// matching `create*` function here.
 WireCapabilityKind classifyWireCapability(
@@ -78,7 +78,7 @@ WireCapabilityKind classifyWireCapability(
       capability._cachedState?.importId ?? capability._importIdFuture,
     );
   }
-  if (capability is _WirePipelinedCapability &&
+  if (capability is _PipelinedCapability &&
       identical(capability._conn, context)) {
     return PipelinedWireCapability(
       hasResolved: capability._hasResolved,

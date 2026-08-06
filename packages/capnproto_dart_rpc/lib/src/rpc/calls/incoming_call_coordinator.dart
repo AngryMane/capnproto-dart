@@ -77,7 +77,7 @@ final _emptyResultBytes = Uint8List.fromList([
 /// [returnCapDescriptor]: those three only need to *classify* or
 /// *construct* a capability, which [WireCapabilityKind] already expresses
 /// without naming `_ImportedCapability` (private to
-/// `wire_capabilities.dart`'s library); params-caps deferred-release
+/// `rpc_capability.dart`'s library); params-caps deferred-release
 /// tracking needs to *mutate* private state
 /// (`_ImportedCapability._deferredReleaseSink`) and read accumulated
 /// results back later, so it's threaded through as an opaque `Object?`
@@ -139,7 +139,7 @@ final class IncomingCallCoordinator {
   /// see [_runDispatch]'s own doc comment for why this tracking exists.
   /// Opaque because setting it up means writing a deferred-release sink
   /// onto each `_ImportedCapability` wrapper, private to
-  /// `wire_capabilities.dart`'s library.
+  /// `rpc_capability.dart`'s library.
   final Object? Function(List<Capability> paramsCapabilities)
   beginParamCapsRelease;
 

@@ -22,10 +22,10 @@ import 'wire_capability_context.dart';
 /// Five of its methods (`resolveCapTableMaybeSync` and its private helpers)
 /// need to classify a [Capability] as wire-hosted or not, and construct
 /// wire-backed capabilities — both of which would otherwise require naming
-/// `_ImportedCapability`/`_WirePipelinedCapability`, private to
-/// `wire_capabilities.dart`'s library. [classifyCapability]/
+/// `_ImportedCapability`/`_PipelinedCapability`, private to
+/// `rpc_capability.dart`'s library. [classifyCapability]/
 /// [importedCapabilityFromState]/[receiverAnswerCapability] are wired to
-/// `wire_capabilities.dart`'s own top-level `classifyWireCapability`/
+/// `rpc_capability.dart`'s own top-level `classifyWireCapability`/
 /// `createImportedCapabilityFromState`/`createReceiverAnswerCapability`
 /// functions at the connection's construction site, the same way
 /// [OutgoingCallCoordinator]'s own injected closures bridge its narrower

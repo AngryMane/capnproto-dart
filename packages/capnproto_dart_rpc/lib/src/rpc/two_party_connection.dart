@@ -15,7 +15,7 @@ import 'capabilities/capability_protocol.dart';
 import 'capabilities/embargo_table.dart';
 import 'capabilities/export_table.dart';
 import 'capabilities/import_table.dart';
-import 'capabilities/wire_capabilities.dart';
+import 'capabilities/rpc_capability.dart';
 import 'capabilities/wire_capability_context.dart';
 import 'flow_controller.dart';
 import 'rpc_connection.dart';
@@ -97,7 +97,7 @@ class TwoPartyRpcConnection implements RpcConnection {
 
   // The [WireCapabilityContext] every wire capability this connection vends
   // (ImportedCapability/WirePipelinedCapability/ReceiverAnswerCapability —
-  // see wire_capabilities.dart) is bound to. One instance per connection,
+  // see rpc_capability.dart) is bound to. One instance per connection,
   // for its whole lifetime, so identical(cap._conn, _wireContext) reliably
   // means "this capability belongs to this connection" the same way
   // `cap._conn == this` did back when those classes held a
@@ -624,11 +624,11 @@ class TwoPartyRpcConnection implements RpcConnection {
   Future<void> get done => _closedCompleter.future;
 
   /// This connection's own [WireCapabilityContext] — test-only, alongside
-  /// [createImportedCapability]/[debugCreateWirePipelinedCapability]
+  /// [createImportedCapability]/[debugCreatePipelinedCapability]
   /// (see their doc comments, and issue #64): lets a test construct a wire
   /// capability that genuinely satisfies `identical(cap._conn, _wireContext)`
-  /// against a *real* connection (unlike `wire_capabilities_test.dart`'s
-  /// `FakeWireCapabilityContext`, which only drives `wire_capabilities.dart`
+  /// against a *real* connection (unlike `rpc_capability_test.dart`'s
+  /// `FakeWireCapabilityContext`, which only drives `rpc_capability.dart`
   /// in isolation). `CapabilityProtocol`'s own capTable-resolution side
   /// effects (export creation, refcount bumps) are independently
   /// unit-testable via a fake `classifyCapability` closure — see

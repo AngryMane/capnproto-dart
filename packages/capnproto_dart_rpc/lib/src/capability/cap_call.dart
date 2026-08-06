@@ -30,7 +30,7 @@ abstract interface class CapCall {
   /// ```
   /// (this is exactly what every `implements CapCall` class in this library
   /// does unless it can actually resolve deeper paths before [result]
-  /// completes — see `_WirePipelinedCapability` in the RPC layer for the
+  /// completes — see `_PipelinedCapability` in the RPC layer for the
   /// one that can). Note that — unlike an `abstract class` — `interface
   /// class` member bodies aren't inherited by `implements`, so every
   /// implementation, including this library's own, must define this method

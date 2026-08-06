@@ -10,7 +10,7 @@ import '../rpc_exception.dart';
 import 'import_table.dart';
 import 'wire_capability_context.dart';
 
-part 'wire_capability_util.dart';
+part 'rpc_capability_helpers.dart';
 
 // ---------------------------------------------------------------------------
 // _ImportedCapability: client-side proxy for a remote capability
@@ -261,7 +261,11 @@ class _ImportedCapability extends Capability {
         methodId: methodId,
         paramsCapabilities: paramsCapabilities,
       );
-      return _WireCapCall(started.result, _conn, started.questionId);
+      return _OutgoingQuestionCapCall(
+        started.result,
+        _conn,
+        started.questionId,
+      );
     }
     final stateFuture = _state;
     final qidCompleter = Completer<int>();
@@ -306,7 +310,7 @@ class _ImportedCapability extends Capability {
         })
         .then((r) => r);
     result.ignore();
-    return _AsyncWireCapCall(result, _conn, qidCompleter.future);
+    return _UnresolvedImportCapCall(result, _conn, qidCompleter.future);
   }
 
   @override
@@ -325,33 +329,33 @@ class _ImportedCapability extends Capability {
 }
 
 // ---------------------------------------------------------------------------
-// _WireCapCall: CapCall backed by a pending question on the wire
+// _OutgoingQuestionCapCall: CapCall backed by a pending question on the wire
 // ---------------------------------------------------------------------------
 
-class _WireCapCall implements CapCall {
+class _OutgoingQuestionCapCall implements CapCall {
   @override
   final Future<DispatchResult> result;
   final WireCapabilityContext _conn;
   final int _qid;
 
-  _WireCapCall(this.result, this._conn, this._qid);
+  _OutgoingQuestionCapCall(this.result, this._conn, this._qid);
 
   @override
   Capability pipelineResult(int ptrIndex) =>
-      _WirePipelinedCapability(_conn, _qid, [ptrIndex], result);
+      _PipelinedCapability(_conn, _qid, [ptrIndex], result);
 
   @override
   Capability pipelineResultPath(List<int> path) =>
-      _WirePipelinedCapability(_conn, _qid, path, result);
+      _PipelinedCapability(_conn, _qid, path, result);
 }
 
-class _AsyncWireCapCall implements CapCall {
+class _UnresolvedImportCapCall implements CapCall {
   @override
   final Future<DispatchResult> result;
   final WireCapabilityContext _conn;
   final Future<int> _qidFuture;
 
-  _AsyncWireCapCall(this.result, this._conn, this._qidFuture);
+  _UnresolvedImportCapCall(this.result, this._conn, this._qidFuture);
 
   @override
   Capability pipelineResult(int ptrIndex) => pipelineResultPath([ptrIndex]);
@@ -360,7 +364,7 @@ class _AsyncWireCapCall implements CapCall {
   Capability pipelineResultPath(List<int> path) => DeferredCapability(() async {
     final qid = await _qidFuture;
     if (qid >= 0) {
-      return _WirePipelinedCapability(_conn, qid, path, result);
+      return _PipelinedCapability(_conn, qid, path, result);
     }
     final resolved = await result;
     return requireCapabilityFromResultPath(resolved, path);
@@ -368,11 +372,11 @@ class _AsyncWireCapCall implements CapCall {
 }
 
 // ---------------------------------------------------------------------------
-// _WirePipelinedCapability: targets a promisedAnswer on the wire, then
+// _PipelinedCapability: targets a promisedAnswer on the wire, then
 // switches to the resolved imported capability once the parent completes.
 // ---------------------------------------------------------------------------
 
-class _WirePipelinedCapability extends Capability {
+class _PipelinedCapability extends Capability {
   final WireCapabilityContext _conn;
   final int _parentQid;
   // The full getPointerField hop sequence into the parent answer (see
@@ -394,7 +398,7 @@ class _WirePipelinedCapability extends Capability {
   Future<void>? _resolvedDisposeFuture;
   bool get _hasResolved => _resolved != null || _resolutionError != null;
 
-  _WirePipelinedCapability(
+  _PipelinedCapability(
     this._conn,
     this._parentQid,
     this._transformPath,
@@ -550,7 +554,7 @@ class _WirePipelinedCapability extends Capability {
       methodId: methodId,
       paramsCapabilities: paramsCapabilities,
     );
-    return _WireCapCall(
+    return _OutgoingQuestionCapCall(
       _trackPipelinedCall(started.result),
       _conn,
       started.questionId,
@@ -571,7 +575,7 @@ class _ReceiverAnswerCapability extends Capability {
   bool _disposed = false;
 
   // Resolved (and vended — see requireCapabilityFromResultPath) at most
-  // once and cached, mirroring _WirePipelinedCapability: this capability
+  // once and cached, mirroring _PipelinedCapability: this capability
   // can be dispatched through multiple times before it's disposed (e.g.
   // several pipelined calls against the same receiverAnswer target), and
   // each of those calls must reuse the same resolved handle rather than
@@ -582,7 +586,7 @@ class _ReceiverAnswerCapability extends Capability {
 
   // Tracks every dispatch()/dispatchBuilding()/beginDispatch() call that was
   // admitted (started before _disposed flipped true), mirroring
-  // _WirePipelinedCapability's _pendingPipelinedCalls — but, unlike that
+  // _PipelinedCapability's _pendingPipelinedCalls — but, unlike that
   // class (which only tracks calls made *before* its target resolves, since
   // afterwards it dispatches directly against the already-resolved
   // capability with no tracking at all), every call through this class goes

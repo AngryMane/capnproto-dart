@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:capnproto_dart_rpc/capnproto_dart_rpc.dart';
 import 'package:capnproto_dart_rpc/src/rpc/calls/answer_table.dart';
 import 'package:capnproto_dart_rpc/src/rpc/capabilities/import_table.dart';
-import 'package:capnproto_dart_rpc/src/rpc/capabilities/wire_capabilities.dart';
+import 'package:capnproto_dart_rpc/src/rpc/capabilities/rpc_capability.dart';
 import 'package:capnproto_dart_rpc/src/rpc/capabilities/wire_capability_context.dart';
 import 'package:capnproto_dart_rpc/src/rpc/two_party_connection.dart';
 import 'package:test/test.dart';
@@ -27,7 +27,7 @@ class StartOutgoingCallInvocation {
 }
 
 /// A [WireCapabilityContext] test double: records every call it receives
-/// instead of driving a real wire connection, so wire_capabilities.dart's
+/// instead of driving a real wire connection, so rpc_capability.dart's
 /// dispatch/dispose logic can be exercised without a real
 /// [TwoPartyRpcConnection]/socket pair. See issue #64.
 class FakeWireCapabilityContext implements WireCapabilityContext {
@@ -244,7 +244,7 @@ void main() {
         'question/transform path (PromisedAnswerTarget)', () async {
       final context = FakeWireCapabilityContext();
       final parentResult = Completer<DispatchResult>();
-      final cap = debugCreateWirePipelinedCapability(context, 99, const [
+      final cap = debugCreatePipelinedCapability(context, 99, const [
         0,
       ], parentResult.future);
 
@@ -265,7 +265,7 @@ void main() {
       () async {
         final context = FakeWireCapabilityContext();
         final parentResult = Completer<DispatchResult>();
-        final cap = debugCreateWirePipelinedCapability(context, 99, const [
+        final cap = debugCreatePipelinedCapability(context, 99, const [
           0,
         ], parentResult.future);
 
