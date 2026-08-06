@@ -9,7 +9,7 @@ import '../../capability/rpc_payload.dart';
 import '../capabilities/export_table.dart';
 import '../capabilities/rpc_capability_reference.dart';
 import '../rpc_exception.dart';
-import '../rpc_proto.dart';
+import '../rpc_message_codec.dart';
 import 'answer_table.dart';
 import 'outgoing_call.dart';
 import 'question_table.dart';

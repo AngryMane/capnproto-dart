@@ -7,7 +7,7 @@ import 'package:capnproto_dart_rpc/src/rpc/calls/outgoing_call.dart';
 import 'package:capnproto_dart_rpc/src/rpc/calls/question_table.dart';
 import 'package:capnproto_dart_rpc/src/rpc/capabilities/import_table.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_exception.dart';
-import 'package:capnproto_dart_rpc/src/rpc/rpc_proto.dart';
+import 'package:capnproto_dart_rpc/src/rpc/rpc_message_codec.dart';
 import 'package:test/test.dart';
 
 // A minimal, fully-encoded, valid Cap'n Proto message (1 segment, 1 word,

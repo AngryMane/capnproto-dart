@@ -198,7 +198,7 @@ const int _capDescReceiverHosted = 3;
 const int _capDescReceiverAnswer = 4;
 
 // ---------------------------------------------------------------------------
-// StructReader / StructBuilder subclasses (internal, rpc_proto only)
+// StructReader / StructBuilder subclasses (internal, rpc_message_codec only)
 // ---------------------------------------------------------------------------
 
 class _MsgReader extends StructReader {
@@ -662,7 +662,7 @@ final class RpcMessage {
   // Populated wherever exceptionReason is (Return-exception, Resolve-
   // exception, Abort) from the wire Exception.type field, which is defined
   // (rpc.capnp) with the same 4 values, in the same order, as ErrorKind —
-  // see rpc_proto.dart's build*ExceptionMessage/buildAbortMessage.
+  // see rpc_message_codec.dart's build*ExceptionMessage/buildAbortMessage.
   final ErrorKind exceptionKind;
   // senderHosted export IDs from the return payload's capTable, in order.
   final List<int> capTableExportIds;

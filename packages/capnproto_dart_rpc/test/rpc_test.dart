@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:capnproto_dart_rpc/capnproto_dart_rpc.dart';
 import 'package:capnproto_dart_rpc/src/capability/capability.dart';
 import 'package:capnproto_dart_rpc/src/rpc/capabilities/rpc_capability.dart';
-import 'package:capnproto_dart_rpc/src/rpc/rpc_proto.dart';
+import 'package:capnproto_dart_rpc/src/rpc/rpc_message_codec.dart';
 import 'package:capnproto_dart_rpc/src/rpc/two_party_connection.dart';
 import 'package:test/test.dart';
 
@@ -1384,7 +1384,7 @@ Future<void> _expectStillPending(
 // ---------------------------------------------------------------------------
 
 void main() {
-  group('rpc_proto — RPC-001 promisedAnswer encoding', () {
+  group('rpc_message_codec — RPC-001 promisedAnswer encoding', () {
     test('buildCallMessage with promisedAnswer target encodes disc=1', () {
       final mb = MessageBuilder();
       mb.initRoot(_TextParamFactory()).setTextField(0, 'x');
@@ -1598,7 +1598,7 @@ void main() {
     });
   });
 
-  group('rpc_proto — #53 tail call (Level 1) wire encoding', () {
+  group('rpc_message_codec — #53 tail call (Level 1) wire encoding', () {
     test('buildCallMessage(sendResultsToYourself: true) round-trips', () {
       final bytes = buildCallMessage(
         questionId: 9,
@@ -4229,7 +4229,7 @@ void main() {
     );
   });
 
-  group('rpc_proto — message encoding/decoding', () {
+  group('rpc_message_codec — message encoding/decoding', () {
     test('bootstrap round-trip', () {
       final bytes = buildBootstrapMessage(42);
       final msg = parseRpcMessage(bytes);
@@ -4543,7 +4543,7 @@ void main() {
     });
   });
 
-  group('rpc_proto — RPC-003 receiverHosted encoding', () {
+  group('rpc_message_codec — RPC-003 receiverHosted encoding', () {
     test('preserves an unsupported thirdPartyHosted descriptor', () {
       final descriptor =
           parseRpcMessage(
@@ -4612,7 +4612,7 @@ void main() {
     });
   });
 
-  group('rpc_proto — RPC-007 Unimplemented encoding', () {
+  group('rpc_message_codec — RPC-007 Unimplemented encoding', () {
     test('buildUnimplementedMessage has disc=0 (unimplemented)', () {
       final original = buildAbortMessage('test');
       final unimpl = buildUnimplementedMessage(original);

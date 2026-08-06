@@ -19,7 +19,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:capnproto_dart/capnproto_dart.dart';
-import 'package:capnproto_dart_rpc/src/rpc/rpc_proto.dart';
+import 'package:capnproto_dart_rpc/src/rpc/rpc_message_codec.dart';
 
 // 16-byte message: single segment (1 word), null root pointer — the
 // smallest legal Cap'n Proto message, used as Return.results.content here
@@ -40,7 +40,8 @@ void main(List<String> args) {
       final bytes = switch (kind) {
         'results' => buildReturnResultsMessageFromReader(
           answerId: 5,
-          resultsRoot: MessageReader.deserialize(_emptyResultBytes).getRootRaw(),
+          resultsRoot:
+              MessageReader.deserialize(_emptyResultBytes).getRootRaw(),
           releaseParamCaps: releaseParamCaps,
           noFinishNeeded: noFinishNeeded,
         ),
