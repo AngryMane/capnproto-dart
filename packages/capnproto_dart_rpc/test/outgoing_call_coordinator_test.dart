@@ -6,6 +6,7 @@ import 'package:capnproto_dart_rpc/src/rpc/calls/outgoing_call_coordinator.dart'
 import 'package:capnproto_dart_rpc/src/rpc/calls/outgoing_call.dart';
 import 'package:capnproto_dart_rpc/src/rpc/calls/question_table.dart';
 import 'package:capnproto_dart_rpc/src/rpc/capabilities/import_table.dart';
+import 'package:capnproto_dart_rpc/src/rpc/capabilities/wire_capability_reference.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_exception.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_message_codec.dart';
 import 'package:test/test.dart';
@@ -68,7 +69,7 @@ class _Harness {
     questions: questions,
     imports: imports,
     sendBytes: sentBytes.add,
-    resolveParameterCapabilityDescriptors: (
+    resolveParameterCapabilityReferences: (
       paramsCapabilities, {
       qid,
       required ensureActive,
@@ -88,7 +89,7 @@ class _Harness {
         ensureActive();
         postGateSideEffects.add(42);
         if (qid != null) questions.recordParamExportIds(qid, [42]);
-        return const [RpcCapabilityDescriptor.senderHosted(42)];
+        return const [SenderHostedCapabilityReference(42)];
       });
     },
     releaseParameterCapabilityExports: releasedExportIds.add,

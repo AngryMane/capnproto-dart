@@ -60,9 +60,9 @@ final class OutgoingCallCoordinator {
 
   final void Function(Uint8List bytes) sendBytes;
 
-  /// Resolves a Call's params capabilities into wire descriptors,
+  /// Resolves a Call's params capabilities into wire references,
   /// synchronously when possible — see the matching doc comment this method
-  /// carries as `CapabilityProtocol.resolveParameterCapabilityDescriptors`.
+  /// carries as `CapabilityProtocol.resolveParameterCapabilityReferences`.
   ///
   /// [ensureActive] must be called before any side effect with lasting
   /// state (an export creation, a refcount bump, recording bookkeeping
@@ -79,12 +79,12 @@ final class OutgoingCallCoordinator {
   /// `QuestionTable`, which `tearDown` has, by then, already dropped
   /// entirely — so a side effect started *after* that point would never be
   /// rolled back by anything.
-  final FutureOr<List<RpcCapabilityDescriptor>> Function(
+  final FutureOr<List<WireCapabilityReference>> Function(
     List<Capability> paramsCapabilities, {
     int? qid,
     required void Function() ensureActive,
   })
-  resolveParameterCapabilityDescriptors;
+  resolveParameterCapabilityReferences;
 
   final void Function(List<int> exportIds) releaseParameterCapabilityExports;
   final Capability Function(WireCapabilityReference reference)
@@ -103,7 +103,7 @@ final class OutgoingCallCoordinator {
     required this.questions,
     required this.imports,
     required this.sendBytes,
-    required this.resolveParameterCapabilityDescriptors,
+    required this.resolveParameterCapabilityReferences,
     required this.releaseParameterCapabilityExports,
     required this.acquireCapabilityFromWireReference,
     required this.resolveLocalAnswer,
@@ -177,8 +177,8 @@ final class OutgoingCallCoordinator {
       interfaceId: interfaceId,
       methodId: methodId,
       buildParams: buildParams,
-      resolveDescriptors:
-          () => resolveParameterCapabilityDescriptors(
+      resolveReferences:
+          () => resolveParameterCapabilityReferences(
             paramsCapabilities,
             qid: qid,
             ensureActive: _throwIfTornDown,
@@ -249,7 +249,7 @@ final class OutgoingCallCoordinator {
       methodId: methodId,
       buildParams: buildParams,
       resolveCapTable:
-          () async => await resolveParameterCapabilityDescriptors(
+          () async => await resolveParameterCapabilityReferences(
             paramsCapabilities,
             qid: qid,
             ensureActive: _throwIfTornDown,

@@ -174,7 +174,7 @@ Uint8List _callWithCapDescriptorDisc(int disc) {
     interfaceId: _echoInterfaceId,
     methodId: _echoMethodId,
     paramsBytes: params,
-    capTableDescriptors: const [RpcCapabilityDescriptor.none()],
+    capabilityTableReferences: const [NoCapabilityReference()],
   );
   final withSenderHosted = buildCallMessage(
     questionId: 1,
@@ -182,7 +182,7 @@ Uint8List _callWithCapDescriptorDisc(int disc) {
     interfaceId: _echoInterfaceId,
     methodId: _echoMethodId,
     paramsBytes: params,
-    capTableDescriptors: const [RpcCapabilityDescriptor.senderHosted(0)],
+    capabilityTableReferences: const [SenderHostedCapabilityReference(0)],
   );
   final differences = <int>[
     for (var i = 0; i < withNone.length; i++)
@@ -209,9 +209,9 @@ Uint8List _callWithReceiverHostedThenCapDescriptorDisc(int disc) {
     interfaceId: _echoInterfaceId,
     methodId: _echoMethodId,
     paramsBytes: params,
-    capTableDescriptors: const [
-      RpcCapabilityDescriptor.receiverHosted(0),
-      RpcCapabilityDescriptor.none(),
+    capabilityTableReferences: const [
+      ReceiverHostedCapabilityReference(0),
+      NoCapabilityReference(),
     ],
   );
   final withSenderHostedSecond = buildCallMessage(
@@ -220,9 +220,9 @@ Uint8List _callWithReceiverHostedThenCapDescriptorDisc(int disc) {
     interfaceId: _echoInterfaceId,
     methodId: _echoMethodId,
     paramsBytes: params,
-    capTableDescriptors: const [
-      RpcCapabilityDescriptor.receiverHosted(0),
-      RpcCapabilityDescriptor.senderHosted(0),
+    capabilityTableReferences: const [
+      ReceiverHostedCapabilityReference(0),
+      SenderHostedCapabilityReference(0),
     ],
   );
   final differences = <int>[
@@ -1471,8 +1471,8 @@ void main() {
           interfaceId: 0xABCD,
           methodId: 0,
           paramsBytes: params,
-          capTableDescriptors: const [
-            RpcCapabilityDescriptor.receiverAnswer(9, [0, 2, 1]),
+          capabilityTableReferences: const [
+            ReceiverAnswerCapabilityReference(9, [0, 2, 1]),
           ],
         );
         final msg = parseRpcMessage(bytes);
@@ -4297,7 +4297,7 @@ void main() {
         buildParams:
             (anyPtr) =>
                 anyPtr.initStruct(_TextParamFactory()).setTextField(0, 'hello'),
-        descriptors: const [],
+        references: const [],
       );
       final msg = parseRpcMessage(bytes);
       expect(msg.type, RpcMessageType.call);
@@ -4454,8 +4454,7 @@ void main() {
     test('resolve cap round-trip', () {
       final bytes = buildResolveCapMessage(
         promiseId: 11,
-        capDisc: 2,
-        capId: 42,
+        reference: const SenderPromiseCapabilityReference(42),
       );
       final msg = parseRpcMessage(bytes);
       expect(msg.type, RpcMessageType.resolve);
@@ -4633,8 +4632,8 @@ void main() {
         interfaceId: 0xABCD,
         methodId: 0,
         paramsBytes: params,
-        capTableDescriptors: const [
-          RpcCapabilityDescriptor.receiverAnswer(9, [2]),
+        capabilityTableReferences: const [
+          ReceiverAnswerCapabilityReference(9, [2]),
         ],
       );
       final msg = parseRpcMessage(bytes);
@@ -4804,7 +4803,7 @@ void main() {
           interfaceId: _echoInterfaceId,
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
-          capTableDescriptors: const [RpcCapabilityDescriptor.receiverHosted(99999)],
+          capabilityTableReferences: const [ReceiverHostedCapabilityReference(99999)],
         ),
       );
       await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -4871,9 +4870,9 @@ void main() {
             interfaceId: _echoInterfaceId,
             methodId: _echoMethodId,
             paramsBytes: _buildEchoParams(''),
-            capTableDescriptors: const [
-              RpcCapabilityDescriptor.senderHosted(10),
-              RpcCapabilityDescriptor.receiverHosted(99999),
+            capabilityTableReferences: const [
+              SenderHostedCapabilityReference(10),
+              ReceiverHostedCapabilityReference(99999),
             ],
           ),
         );
@@ -4949,7 +4948,7 @@ void main() {
             interfaceId: _echoInterfaceId,
             methodId: _echoMethodId,
             paramsBytes: _buildEchoParams(''),
-            capTableDescriptors: const [RpcCapabilityDescriptor.receiverHosted(99999)],
+            capabilityTableReferences: const [ReceiverHostedCapabilityReference(99999)],
           ),
         );
         await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -5310,8 +5309,8 @@ void main() {
           interfaceId: _echoInterfaceId,
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
-          capTableDescriptors: [
-            RpcCapabilityDescriptor.receiverAnswer(1, [0]),
+          capabilityTableReferences: [
+            ReceiverAnswerCapabilityReference(1, [0]),
           ],
         ),
       );
@@ -5402,8 +5401,8 @@ void main() {
             interfaceId: _echoInterfaceId,
             methodId: _echoMethodId,
             paramsBytes: _buildEchoParams(''),
-            capTableDescriptors: [
-              RpcCapabilityDescriptor.receiverAnswer(1, [0]),
+            capabilityTableReferences: [
+              ReceiverAnswerCapabilityReference(1, [0]),
             ],
           ),
         );
@@ -5489,8 +5488,8 @@ void main() {
             interfaceId: _echoInterfaceId,
             methodId: _echoMethodId,
             paramsBytes: _buildEchoParams(''),
-            capTableDescriptors: [
-              RpcCapabilityDescriptor.receiverAnswer(1, [0]),
+            capabilityTableReferences: [
+              ReceiverAnswerCapabilityReference(1, [0]),
             ],
           ),
         );
@@ -5576,8 +5575,8 @@ void main() {
           interfaceId: _echoInterfaceId,
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
-          capTableDescriptors: [
-            RpcCapabilityDescriptor.receiverAnswer(1, [0]),
+          capabilityTableReferences: [
+            ReceiverAnswerCapabilityReference(1, [0]),
           ],
         ),
       );
@@ -6034,7 +6033,7 @@ void main() {
           bootstrap: EchoServer(),
         );
 
-        input.add(buildResolveCapMessage(promiseId: 9, capDisc: 1, capId: 42));
+        input.add(buildResolveCapMessage(promiseId: 9, reference: const SenderHostedCapabilityReference(42)));
         await Future<void>.delayed(Duration.zero);
 
         expect(
@@ -6105,7 +6104,7 @@ void main() {
           interfaceId: _echoInterfaceId,
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
-          capTableDescriptors: const [RpcCapabilityDescriptor.senderPromise(10)],
+          capabilityTableReferences: const [SenderPromiseCapabilityReference(10)],
         ),
       );
       await Future<void>.delayed(Duration.zero);
@@ -6160,9 +6159,9 @@ void main() {
           interfaceId: _echoInterfaceId,
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
-          capTableDescriptors: const [
-            RpcCapabilityDescriptor.senderHosted(20),
-            RpcCapabilityDescriptor.senderPromise(10),
+          capabilityTableReferences: const [
+            SenderHostedCapabilityReference(20),
+            SenderPromiseCapabilityReference(10),
           ],
         ),
       );
@@ -6285,10 +6284,10 @@ void main() {
           interfaceId: _echoInterfaceId,
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
-          capTableDescriptors: const [
-            RpcCapabilityDescriptor.senderHosted(20),
-            RpcCapabilityDescriptor.senderHosted(21),
-            RpcCapabilityDescriptor.senderHosted(22),
+          capabilityTableReferences: const [
+            SenderHostedCapabilityReference(20),
+            SenderHostedCapabilityReference(21),
+            SenderHostedCapabilityReference(22),
           ],
         ),
       );
@@ -6403,7 +6402,7 @@ void main() {
           buildReturnResultsWithCapDescriptorsMessage(
             answerId: 0,
             resultsBytes: _buildEchoParams(''),
-            descriptors: const [RpcCapabilityDescriptor.senderPromise(10)],
+            references: const [SenderPromiseCapabilityReference(10)],
           ),
         );
         await Future<void>.delayed(Duration.zero);
@@ -6425,7 +6424,7 @@ void main() {
 
         captured.clear();
         serverToClient.add(
-          buildResolveCapMessage(promiseId: 10, capDisc: 3, capId: 1),
+          buildResolveCapMessage(promiseId: 10, reference: const ReceiverHostedCapabilityReference(1)),
         );
         final disembargo = await _waitForMessageType(
           captured,
@@ -6480,7 +6479,7 @@ void main() {
           buildReturnResultsWithCapDescriptorsMessage(
             answerId: 0,
             resultsBytes: _buildEchoParams(''),
-            descriptors: const [RpcCapabilityDescriptor.senderPromise(10)],
+            references: const [SenderPromiseCapabilityReference(10)],
           ),
         );
         await Future<void>.delayed(Duration.zero);
@@ -6497,7 +6496,7 @@ void main() {
 
         captured.clear();
         serverToClient.add(
-          buildResolveCapMessage(promiseId: 10, capDisc: 3, capId: 1),
+          buildResolveCapMessage(promiseId: 10, reference: const ReceiverHostedCapabilityReference(1)),
         );
         await _waitForMessageType(captured, RpcMessageType.disembargo);
         expect(client.debugEmbargoCount, equals(1));
@@ -6544,7 +6543,7 @@ void main() {
         buildReturnResultsWithCapDescriptorsMessage(
           answerId: 0,
           resultsBytes: _buildEchoParams(''),
-          descriptors: const [RpcCapabilityDescriptor.senderPromise(10)],
+          references: const [SenderPromiseCapabilityReference(10)],
         ),
       );
       await Future<void>.delayed(Duration.zero);
@@ -6561,7 +6560,7 @@ void main() {
 
       captured.clear();
       serverToClient.add(
-        buildResolveCapMessage(promiseId: 10, capDisc: 3, capId: 1),
+        buildResolveCapMessage(promiseId: 10, reference: const ReceiverHostedCapabilityReference(1)),
       );
       await _waitForMessageType(captured, RpcMessageType.disembargo);
       expect(client.debugEmbargoCount, equals(1));

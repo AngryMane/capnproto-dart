@@ -780,7 +780,7 @@ Uint8List buildCallMessage({
   required int methodId,
   required Uint8List paramsBytes,
   List<(int, int)> capTableEntries = const [],
-  List<RpcCapabilityDescriptor>? capTableDescriptors,
+  List<WireCapabilityReference>? capabilityTableReferences,
   bool sendResultsToYourself = false,
 }) => buildCallMessageWithParamsBuilderSync(
   questionId: questionId,
@@ -792,10 +792,10 @@ Uint8List buildCallMessage({
   buildParams:
       (anyPtr) =>
           anyPtr.setMessageBytes(paramsBytes, preserveCapabilityPointers: true),
-  descriptors:
-      capTableDescriptors ??
+  references:
+      capabilityTableReferences ??
       capTableEntries
-          .map((entry) => _legacyEntryToCapDescriptor(entry.$1, entry.$2))
+          .map((entry) => _legacyEntryToCapabilityReference(entry.$1, entry.$2))
           .toList(growable: false),
   sendResultsToYourself: sendResultsToYourself,
 );
@@ -820,7 +820,7 @@ Future<Uint8List> buildCallMessageWithParamsBuilder({
   required int interfaceId,
   required int methodId,
   required void Function(AnyPointerBuilder) buildParams,
-  required Future<List<RpcCapabilityDescriptor>> Function() resolveCapTable,
+  required Future<List<WireCapabilityReference>> Function() resolveCapTable,
   bool sendResultsToYourself = false,
 }) async {
   final (mb, params) = _beginCallMessage(
@@ -833,8 +833,8 @@ Future<Uint8List> buildCallMessageWithParamsBuilder({
     sendResultsToYourself: sendResultsToYourself,
   );
   buildParams(params.initAnyPointerField(0));
-  final descriptors = await resolveCapTable();
-  return _finishCallMessage(mb, params, descriptors);
+  final references = await resolveCapTable();
+  return _finishCallMessage(mb, params, references);
 }
 
 /// Synchronous counterpart of [buildCallMessageWithParamsBuilder] for callers that
@@ -848,7 +848,7 @@ Uint8List buildCallMessageWithParamsBuilderSync({
   required int interfaceId,
   required int methodId,
   required void Function(AnyPointerBuilder) buildParams,
-  required List<RpcCapabilityDescriptor> descriptors,
+  required List<WireCapabilityReference> references,
   bool sendResultsToYourself = false,
 }) {
   final (mb, params) = _beginCallMessage(
@@ -861,19 +861,19 @@ Uint8List buildCallMessageWithParamsBuilderSync({
     sendResultsToYourself: sendResultsToYourself,
   );
   buildParams(params.initAnyPointerField(0));
-  return _finishCallMessage(mb, params, descriptors);
+  return _finishCallMessage(mb, params, references);
 }
 
 /// Like [buildCallMessageWithParamsBuilder], but for callers whose capTable
-/// descriptors might be resolvable with no `await` at all — the common
+/// references might be resolvable with no `await` at all — the common
 /// case for an already-resolved call target with capability params that
 /// are all locally resolvable already. Returns the finished bytes
 /// synchronously in that case, instead of forcing every caller through a
-/// `Future`/microtask; falls back to actually awaiting [resolveDescriptors]
+/// `Future`/microtask; falls back to actually awaiting [resolveReferences]
 /// only when it returns a `Future` (some param genuinely isn't resolvable
 /// yet). [buildParams] always runs synchronously either way, so any
 /// capabilities it appends as a side effect (see [buildCallMessageWithParamsBuilder]'s
-/// doc comment) are visible to [resolveDescriptors] exactly as they would
+/// doc comment) are visible to [resolveReferences] exactly as they would
 /// be with the fully-async version.
 FutureOr<Uint8List> buildCallMessageWithParamsBuilderMaybeSync({
   required int questionId,
@@ -883,7 +883,8 @@ FutureOr<Uint8List> buildCallMessageWithParamsBuilderMaybeSync({
   required int interfaceId,
   required int methodId,
   required void Function(AnyPointerBuilder) buildParams,
-  required FutureOr<List<RpcCapabilityDescriptor>> Function() resolveDescriptors,
+  required FutureOr<List<WireCapabilityReference>> Function()
+  resolveReferences,
   bool sendResultsToYourself = false,
 }) {
   final (mb, params) = _beginCallMessage(
@@ -896,12 +897,12 @@ FutureOr<Uint8List> buildCallMessageWithParamsBuilderMaybeSync({
     sendResultsToYourself: sendResultsToYourself,
   );
   buildParams(params.initAnyPointerField(0));
-  final descriptorsOrFuture = resolveDescriptors();
-  if (descriptorsOrFuture is List<RpcCapabilityDescriptor>) {
-    return _finishCallMessage(mb, params, descriptorsOrFuture);
+  final referencesOrFuture = resolveReferences();
+  if (referencesOrFuture is List<WireCapabilityReference>) {
+    return _finishCallMessage(mb, params, referencesOrFuture);
   }
-  return descriptorsOrFuture.then(
-    (descriptors) => _finishCallMessage(mb, params, descriptors),
+  return referencesOrFuture.then(
+    (references) => _finishCallMessage(mb, params, references),
   );
 }
 
@@ -942,12 +943,12 @@ FutureOr<Uint8List> buildCallMessageWithParamsBuilderMaybeSync({
 Uint8List _finishCallMessage(
   MessageBuilder mb,
   _PayloadBuilder params,
-  List<RpcCapabilityDescriptor> descriptors,
+  List<WireCapabilityReference> references,
 ) {
-  if (descriptors.isNotEmpty) {
-    final capTable = params.initCapTable(descriptors.length);
-    for (int i = 0; i < descriptors.length; i++) {
-      _writeCapDescriptor(capTable[i], descriptors[i]);
+  if (references.isNotEmpty) {
+    final capTable = params.initCapTable(references.length);
+    for (int i = 0; i < references.length; i++) {
+      _writeCapabilityReference(capTable[i], references[i]);
     }
   }
   return mb.serialize();
@@ -973,7 +974,7 @@ Uint8List buildReturnResultsMessage({
 Uint8List buildReturnResultsMessageFromReader({
   required int answerId,
   required RawStructReader resultsRoot,
-  List<RpcCapabilityDescriptor> descriptors = const [],
+  List<WireCapabilityReference> references = const [],
   bool releaseParamCaps = true,
   bool noFinishNeeded = false,
 }) {
@@ -989,10 +990,10 @@ Uint8List buildReturnResultsMessageFromReader({
   ret.setDiscResults();
   final payload = ret.initResults();
   payload.setContentFromRawStruct(resultsRoot);
-  if (descriptors.isNotEmpty) {
-    final capTable = payload.initCapTable(descriptors.length);
-    for (int i = 0; i < descriptors.length; i++) {
-      _writeCapDescriptor(capTable[i], descriptors[i]);
+  if (references.isNotEmpty) {
+    final capTable = payload.initCapTable(references.length);
+    for (int i = 0; i < references.length; i++) {
+      _writeCapabilityReference(capTable[i], references[i]);
     }
   }
   return mb.serialize();
@@ -1010,8 +1011,8 @@ Uint8List buildReturnResultsWithCapsMessage({
   return buildReturnResultsWithCapDescriptorsMessage(
     answerId: answerId,
     resultsBytes: resultsBytes,
-    descriptors: exportIds
-        .map(RpcCapabilityDescriptor.senderHosted)
+    references: exportIds
+        .map(SenderHostedCapabilityReference.new)
         .toList(growable: false),
     releaseParamCaps: releaseParamCaps,
     noFinishNeeded: noFinishNeeded,
@@ -1038,26 +1039,25 @@ Uint8List buildRawReturnVariantMessage({
   return mb.serialize();
 }
 
-/// Serializes a Return-results message with raw capTable descriptors.
+/// Serializes a Return-results message with explicit capTable references.
 Uint8List buildReturnResultsWithCapDescriptorsMessage({
   required int answerId,
   required Uint8List resultsBytes,
-  required List<RpcCapabilityDescriptor> descriptors,
+  required List<WireCapabilityReference> references,
   bool releaseParamCaps = true,
   bool noFinishNeeded = false,
 }) => buildReturnResultsMessageFromReader(
   answerId: answerId,
   resultsRoot: MessageReader.deserialize(resultsBytes).getRootRaw(),
-  descriptors: descriptors,
+  references: references,
   releaseParamCaps: releaseParamCaps,
   noFinishNeeded: noFinishNeeded,
 );
 
-/// Serializes a Resolve message resolving [promiseId] to [capDisc]/[capId].
+/// Serializes a Resolve message resolving [promiseId] to [reference].
 Uint8List buildResolveCapMessage({
   required int promiseId,
-  required int capDisc,
-  required int capId,
+  required WireCapabilityReference reference,
 }) {
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
@@ -1067,10 +1067,7 @@ Uint8List buildResolveCapMessage({
   final resolve = msg.initResolve();
   resolve.setPromiseId(promiseId);
   resolve.setDiscCap();
-  _writeCapDescriptor(
-    resolve.initCap(),
-    _legacyEntryToCapDescriptor(capDisc, capId),
-  );
+  _writeCapabilityReference(resolve.initCap(), reference);
   return mb.serialize();
 }
 
@@ -1271,24 +1268,6 @@ Uint8List buildAbortMessage(
   return mb.serialize();
 }
 
-void _writeCapDescriptor(_CapDescriptorBuilder builder, RpcCapabilityDescriptor descriptor) {
-  switch (descriptor.disc) {
-    case _capDescSenderPromise:
-      builder.setSenderPromise(descriptor.id);
-    case _capDescReceiverHosted:
-      builder.setReceiverHosted(descriptor.id);
-    case _capDescReceiverAnswer:
-      builder.setReceiverAnswer(descriptor.questionId, descriptor.path);
-    case _capDescSenderHosted:
-      builder.setSenderHosted(descriptor.id);
-    default:
-      // The current builder only needs to construct usable Level 1
-      // descriptors. Unknown descriptors are encoded as none to avoid
-      // accidentally manufacturing references with the wrong semantics.
-      builder.setUint16Field(_capDescDisc, _capDescNone);
-  }
-}
-
 RpcCapabilityDescriptor _legacyEntryToCapDescriptor(int disc, int id) {
   switch (disc) {
     case _capDescSenderHosted:
@@ -1301,6 +1280,23 @@ RpcCapabilityDescriptor _legacyEntryToCapDescriptor(int disc, int id) {
       // Preserve descriptors we do not implement so the connection layer can
       // reject them explicitly instead of treating them as application nulls.
       return RpcCapabilityDescriptor._(disc: disc, id: id);
+  }
+}
+
+/// [_legacyEntryToCapDescriptor]'s [WireCapabilityReference] counterpart —
+/// used to keep the raw `(disc, id)` legacy capTable representation
+/// (`buildCallMessage`'s `capTableEntries`) working as an encode-side
+/// fallback alongside the semantic one, until it's removed.
+WireCapabilityReference _legacyEntryToCapabilityReference(int disc, int id) {
+  switch (disc) {
+    case _capDescSenderHosted:
+      return SenderHostedCapabilityReference(id);
+    case _capDescSenderPromise:
+      return SenderPromiseCapabilityReference(id);
+    case _capDescReceiverHosted:
+      return ReceiverHostedCapabilityReference(id);
+    default:
+      return UnsupportedCapabilityReference(disc);
   }
 }
 

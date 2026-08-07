@@ -167,7 +167,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     questions: _questionTable,
     imports: _importTable,
     sendBytes: _sendRaw,
-    resolveParameterCapabilityDescriptors: _capabilityProtocol.resolveParameterCapabilityDescriptors,
+    resolveParameterCapabilityReferences: _capabilityProtocol.resolveParameterCapabilityReferences,
     releaseParameterCapabilityExports:
         _capabilityProtocol.releaseParameterCapabilityExports,
     acquireCapabilityFromWireReference: _capabilityProtocol.acquireCapabilityFromWireReference,
@@ -200,7 +200,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     tryExtractCapabilityReference:
         _capabilityProtocol.tryExtractCapabilityReference,
     acquireCapabilityFromWireReference: _capabilityProtocol.acquireCapabilityFromWireReference,
-    exportResultCapabilityAsDescriptor: _capabilityProtocol.exportResultCapabilityAsDescriptor,
+    exportResultCapabilityAsWireReference: _capabilityProtocol.exportResultCapabilityAsWireReference,
     startCallWithAllocatedQuestion: _outgoingCalls.startCallWithAllocatedQuestion,
     startParameterCapabilityDisposalTracking:
         (paramsCapabilities) => startParameterCapabilityDisposalTracking(

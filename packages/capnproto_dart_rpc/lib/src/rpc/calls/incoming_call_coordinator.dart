@@ -76,8 +76,8 @@ final _emptyResultBytes = Uint8List.fromList([
 ///
 /// [startParameterCapabilityDisposalTracking] and
 /// [finishParameterCapabilityDisposalTracking] bridge a different
-/// boundary from [tryExtractCapabilityReference]/[acquireCapabilityFromDescriptor]/
-/// [exportResultCapabilityAsDescriptor]. Those callbacks only extract a public
+/// boundary from [tryExtractCapabilityReference]/[acquireCapabilityFromWireReference]/
+/// [exportResultCapabilityAsWireReference]. Those callbacks only extract a public
 /// [RpcCapabilityReference] or construct a [Capability]. Params-capability
 /// release tracking instead mutates private
 /// `_ImportedCapability._deferredReleaseSink` state and reads accumulated
@@ -117,8 +117,8 @@ final class IncomingCallCoordinator {
 
   final Capability Function(WireCapabilityReference reference)
   acquireCapabilityFromWireReference;
-  final RpcCapabilityDescriptor Function(Capability cap)
-  exportResultCapabilityAsDescriptor;
+  final WireCapabilityReference Function(Capability cap)
+  exportResultCapabilityAsWireReference;
 
   /// `OutgoingCallCoordinator.startCallWithAllocatedQuestion` — see this class's own doc
   /// comment for why this closure, not a direct reference to that
@@ -175,7 +175,7 @@ final class IncomingCallCoordinator {
     required this.tearDownConnection,
     required this.tryExtractCapabilityReference,
     required this.acquireCapabilityFromWireReference,
-    required this.exportResultCapabilityAsDescriptor,
+    required this.exportResultCapabilityAsWireReference,
     required this.startCallWithAllocatedQuestion,
     required this.startParameterCapabilityDisposalTracking,
     required this.finishParameterCapabilityDisposalTracking,
@@ -680,24 +680,26 @@ final class IncomingCallCoordinator {
             return;
           }
 
-          final resultDescriptors = <RpcCapabilityDescriptor>[];
+          final resultReferences = <WireCapabilityReference>[];
           for (final c in result.caps) {
-            resultDescriptors.add(exportResultCapabilityAsDescriptor(c));
+            resultReferences.add(exportResultCapabilityAsWireReference(c));
           }
           // No capabilities anywhere in the results means no wire-level
           // pipelined call against this answer could ever resolve to
           // anything but "not a capability" — so it's safe to tell the peer
           // no Finish is needed and immediately drop the answer's
           // pipelining bookkeeping ourselves, instead of waiting for it.
-          final noFinishNeeded = resultDescriptors.isEmpty;
+          final noFinishNeeded = resultReferences.isEmpty;
           // Record the answer before sending — see the comment on the
           // sendResultsToYourself branch above for why the ordering matters.
           final completed = answerTable.tryRecordAnswer(
             qid,
             resolved: ResolvedAnswer(result.payload.bytes, result.caps),
             resultExportIds: [
-              for (final d in resultDescriptors)
-                if (d.disc == 1 || d.disc == 2) d.id,
+              for (final d in resultReferences)
+                if (d case SenderHostedCapabilityReference(:final exportId) ||
+                    SenderPromiseCapabilityReference(:final exportId))
+                  exportId,
             ],
           );
           if (!completed) {
@@ -719,7 +721,7 @@ final class IncomingCallCoordinator {
             buildReturnResultsMessageFromReader(
               answerId: qid,
               resultsRoot: result.payload.getRootRaw(),
-              descriptors: resultDescriptors,
+              references: resultReferences,
               releaseParamCaps: releaseParamCaps,
               noFinishNeeded: noFinishNeeded,
             ),
