@@ -1,7 +1,11 @@
 import 'dart:collection';
 
 import '../../capability/capability.dart'
-    show Capability, CapabilityLease, acquireCapabilityLease;
+    show
+        Capability,
+        CapabilityLease,
+        DeferredCapability,
+        acquireCapabilityLease;
 
 /// Tracks a single locally-exported capability and the peer's remote
 /// reference count for it — see [ExportTable].
@@ -186,6 +190,9 @@ class ExportTable {
   /// clears the table — called once when the owning connection tears down.
   void tearDown(void Function(Capability) disposeIgnoringErrors) {
     for (final entry in _exports.values) {
+      if (entry.identity case final DeferredCapability promise) {
+        promise.abandon();
+      }
       disposeIgnoringErrors(entry.ownedReference);
     }
     _exports.clear();

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:capnproto_dart_rpc/src/capability/capability.dart';
 import 'package:capnproto_dart_rpc/src/rpc/capabilities/export_table.dart';
 import 'package:test/test.dart';
@@ -137,6 +139,21 @@ void main() {
       expect(table.count, equals(0));
       expect(capA.disposed, isTrue);
       expect(capB.disposed, isTrue);
+    });
+
+    test('tearDown abandons unresolved deferred exports without leaking a late resolution', () async {
+      final table = ExportTable();
+      final resolution = Completer<Capability>();
+      final deferred = DeferredCapability(resolution.future);
+      final resolved = _FakeCapability();
+      table.retainOrCreateExportId(deferred);
+
+      table.tearDown((cap) => cap.dispose());
+      await deferred.dispose().timeout(const Duration(seconds: 1));
+
+      resolution.complete(resolved);
+      await Future<void>.delayed(Duration.zero);
+      expect(resolved.disposed, isTrue);
     });
 
     test('promise-resolution scheduling tracks watchers without affecting '
