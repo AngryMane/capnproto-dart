@@ -122,6 +122,10 @@ class _Harness {
   /// Settable per test — defaults to "connection never closes".
   bool Function() isClosed = () => false;
 
+  /// Settable per test — defaults to only recording the teardown request.
+  /// Tests that need the real teardown ordering can release the tables here.
+  void Function(RpcException error) onTearDownConnection = (_) {};
+
   /// Settable per test — defaults to no reusable RPC capability reference,
   /// matching a real connection's answer for any capability it did not
   /// construct itself.
@@ -164,7 +168,10 @@ class _Harness {
     disposeLeaseForConnectionTeardown:
         (lease) => lease.disposeForConnectionTeardown(),
     isClosed: () => isClosed(),
-    tearDownConnection: tearDownCalls.add,
+    tearDownConnection: (error) {
+      tearDownCalls.add(error);
+      onTearDownConnection(error);
+    },
     tryExtractCapabilityReference: (cap) => tryExtractCapabilityReference(cap),
     acquireCapabilityFromWireReference:
         (reference) => acquireCapabilityFromWireReference(reference),
@@ -298,6 +305,38 @@ void main() {
       expect(sent.isReturnException, isTrue);
       expect(sent.answerId, equals(201));
       expect(sent.exceptionReason, contains('is not a capability'));
+    });
+
+    test('duplicate pipelined question id releases its target lease with '
+        'teardown semantics after export teardown', () async {
+      final h = _Harness();
+      final resolution = Completer<Capability>();
+      final deferred = DeferredCapability(resolution.future);
+
+      h.exportTable.retainOrCreateExportId(deferred);
+      h.answerTable.recordAnswer(
+        1,
+        resolved: ResolvedAnswer(_singleCapResultBytes, [deferred]),
+      );
+      h.answerTable.recordAnswer(200);
+      h.onTearDownConnection = (error) {
+        h.answerTable.tearDown(error);
+        h.exportTable.tearDown(
+          (lease) => lease.disposeForConnectionTeardown(),
+        );
+      };
+
+      h.coordinator.handleCall(
+        parseRpcMessage(_buildPipelinedCall(questionId: 200, parentQid: 1)),
+      );
+
+      expect(h.tearDownCalls, hasLength(1));
+      await deferred.dispose().timeout(const Duration(seconds: 1));
+
+      final resolved = _FakeCapability();
+      resolution.complete(resolved);
+      await Future<void>.delayed(Duration.zero);
+      expect(resolved.disposeCount, equals(1));
     });
 
     test('handleCall with a still-pending promisedAnswer parent queues and '

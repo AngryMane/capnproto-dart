@@ -357,7 +357,9 @@ final class IncomingCallCoordinator {
 
     final qid = msg.questionId;
     if (_rejectDuplicateQuestionId(qid)) {
-      disposeOwnedTarget();
+      if (disposeTargetAfterDispatch) {
+        disposeLeaseForConnectionTeardown(cap as CapabilityLease);
+      }
       return;
     }
     final paramsContent = msg.paramsContent;
