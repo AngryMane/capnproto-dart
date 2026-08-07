@@ -75,11 +75,11 @@ final class FinishedBeforeCompletionState extends AnswerState {
 /// table's API.
 ///
 /// Deliberately doesn't know how to actually send a Return/Finish, or how to
-/// release an export — [recordPeerFinish] only ever hands back the result
+/// release an export — [applyPeerFinish] only ever hands back the result
 /// export ids
 /// that need releasing; the caller (today, `IncomingCallCoordinator`) owns
-/// translating that into an actual `ExportTable.release` call and any wire
-/// traffic.
+/// translating that into an actual `ExportTable.releaseReference` call and
+/// any wire traffic.
 class AnswerTable {
   final Map<int, AnswerState> _answers = {};
 
@@ -224,7 +224,7 @@ class AnswerTable {
   ///
   /// Only an [AnsweredState] with no result capabilities is valid here. A
   /// missing entry is also a no-op because synchronously sending the Return
-  /// can reenter [recordPeerFinish], which may consume the state first.
+  /// can reenter [applyPeerFinish], which may consume the state first.
   /// This never cancels a dispatch or releases an export.
   void clearAnswerForNoFinishNeeded(int qid) {
     final state = _answers[qid];
@@ -246,7 +246,8 @@ class AnswerTable {
   /// Applies an incoming Finish for [qid]: drops its answer state and
   /// returns the result export ids a `releaseResultCaps: true` Finish
   /// should release (the caller is responsible for actually releasing them
-  /// — see [ExportTable.release] — this only ever returns what needs it).
+  /// — see [ExportTable.releaseReference] — this only ever returns what needs
+  /// it).
   ///
   /// Returns `null` if [qid]'s dispatch was still pending when Finish
   /// arrived — in that case, this instead marks it as finished (so the
@@ -257,7 +258,7 @@ class AnswerTable {
   ///
   /// TODO(#109): Do not cancel while an already-received pipelined call
   /// still depends on this answer.
-  List<int>? recordPeerFinish(int qid) {
+  List<int>? applyPeerFinish(int qid) {
     final state = _answers[qid];
     switch (state) {
       case null:

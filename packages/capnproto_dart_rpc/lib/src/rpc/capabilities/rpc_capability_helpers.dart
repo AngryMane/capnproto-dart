@@ -3,7 +3,7 @@ part of 'rpc_capability.dart';
 /// Tracks parameter-capability disposal during one
 /// `IncomingCallCoordinator._executeIncomingDispatch` call — see that
 /// class's own
-/// `_finishParameterCapabilityDisposalTrackingAndReleaseExports`,
+/// `_finishParameterCapabilityDisposalTrackingAndSendReleases`,
 /// [startParameterCapabilityDisposalTracking], and
 /// [finishParameterCapabilityDisposalTracking].
 /// [wrappers] are every freshly-imported `_ImportedCapability` created for
@@ -158,9 +158,7 @@ Object? startParameterCapabilityDisposalTracking(
 /// one that's still outstanding goes through the normal (non-deferred)
 /// [RpcCapabilityDelegate.releaseImport] path.
 ({bool allDisposed, List<int> explicitReleaseIds})
-finishParameterCapabilityDisposalTracking(
-  Object? ticket,
-) {
+finishParameterCapabilityDisposalTracking(Object? ticket) {
   final tracker = ticket as _ParameterCapabilityDisposalTracker?;
   if (tracker == null) {
     return (allDisposed: true, explicitReleaseIds: const []);

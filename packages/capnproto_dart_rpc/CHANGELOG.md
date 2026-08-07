@@ -1,4 +1,33 @@
-## 0.1.1
+## 0.2.0
+
+### Breaking changes
+
+The RPC capability API now uses names that describe dispatch, pipelining, and
+reference ownership more explicitly:
+
+- `CapCall` was renamed to `DispatchHandle`.
+- `DispatchContext` was renamed to `DispatchCancellationContext`.
+- `TailCall` was renamed to `TailCallRequest`.
+- `vendCapabilityHandle()` was renamed to `acquireCapabilityLease()`.
+- `Capability.beginDispatch()` was renamed to
+  `Capability.dispatchForPipelining()`.
+- `Capability.dispatchBuilding()` was renamed to
+  `Capability.dispatchWithParamsBuilder()`.
+- `CapCall.pipelineResult()` was renamed to
+  `DispatchHandle.pipelinedCapability()`.
+- `CapCall.pipelineResultPath()` was renamed to
+  `DispatchHandle.pipelinedCapabilityFromResultPath()`.
+
+For example:
+
+```dart
+final DispatchHandle handle = capability.dispatchForPipelining(
+  interfaceId,
+  methodId,
+  params,
+);
+final Capability resultCapability = handle.pipelinedCapability(0);
+```
 
 - Added `WeakCapabilityRef`, a non-owning reference to a `Capability` for holding onto a peer-supplied capability (e.g. as a long-lived callback/observer) without keeping it reachable or needing to `dispose()` it yourself.
 - `Release` messages for imports are now batched: several `dispose()` calls issued without an intervening `await` (e.g. disposing a whole observer list in one synchronous pass, or `Future.wait([...].map((c) => c.dispose()))`) coalesce into a single `Release` per import ID with `referenceCount > 1`, instead of one wire message each.

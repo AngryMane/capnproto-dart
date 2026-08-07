@@ -11,7 +11,7 @@ ResolvedAnswer _answer([List<Capability> caps = const []]) =>
 
 void main() {
   group('AnswerTable', () {
-    test('Finish arriving while dispatch is still pending: recordPeerFinish() '
+    test('Finish arriving while dispatch is still pending: applyPeerFinish() '
         'returns null, marks the answer finished, and cancels the live '
         'dispatch — the eventual dispatch result must then be dropped '
         'instead of resurrecting answer state', () async {
@@ -21,7 +21,7 @@ void main() {
       pending.future.ignore();
       table.recordPendingAnswer(1, pending.future, cancellation);
 
-      final resultExportIds = table.recordPeerFinish(1);
+      final resultExportIds = table.applyPeerFinish(1);
       expect(resultExportIds, isNull);
       expect(cancellation.context.isCanceled, isTrue);
       expect(
@@ -51,15 +51,15 @@ void main() {
       pending.future.ignore();
       table.recordPendingAnswer(1, pending.future, cancellation);
 
-      expect(table.recordPeerFinish(1), isNull);
-      expect(table.recordPeerFinish(1), isNull);
+      expect(table.applyPeerFinish(1), isNull);
+      expect(table.applyPeerFinish(1), isNull);
       expect(table.isTracked(1), isTrue);
       expect(table.clearPendingAnswer(1), isTrue);
     });
 
     test('Finish for an unknown qid is a no-op returning null', () {
       final table = AnswerTable();
-      expect(table.recordPeerFinish(42), isNull);
+      expect(table.applyPeerFinish(42), isNull);
     });
 
     test('clearAnswerForNoFinishNeeded removes only completed local '
@@ -81,7 +81,7 @@ void main() {
         'Finish already consumed the completed answer', () {
       final table = AnswerTable();
       table.recordAnswer(2, resolved: _answer());
-      expect(table.recordPeerFinish(2), equals(const []));
+      expect(table.applyPeerFinish(2), equals(const []));
 
       expect(() => table.clearAnswerForNoFinishNeeded(2), returnsNormally);
       expect(table.isTracked(2), isFalse);
@@ -108,7 +108,7 @@ void main() {
 
       expect(() => table.clearAnswerForNoFinishNeeded(4), throwsStateError);
       expect(table.isTracked(4), isTrue);
-      expect(table.recordPeerFinish(4), equals([7]));
+      expect(table.applyPeerFinish(4), equals([7]));
     });
 
     test(
@@ -135,7 +135,7 @@ void main() {
         expect(table.isTracked(1), isTrue);
         expect(table.resolvedFor(1), same(resolved));
         expect(table.pendingFor(1), isNull, reason: 'no longer pending');
-        expect(table.recordPeerFinish(1), equals([7]));
+        expect(table.applyPeerFinish(1), equals([7]));
       },
     );
 
@@ -151,7 +151,7 @@ void main() {
         DispatchCancellationController(),
       );
       expect(
-        table.recordPeerFinish(1),
+        table.applyPeerFinish(1),
         isNull,
       ); // Finish arrives before dispatch settles.
 
@@ -176,7 +176,7 @@ void main() {
       final completed = table.tryRecordFailedAnswer(2, error);
       expect(completed, isTrue);
       expect(table.errorFor(2), same(error));
-      expect(table.recordPeerFinish(2), equals(const []));
+      expect(table.applyPeerFinish(2), equals(const []));
     });
 
     test('tryRecordFailedAnswer for a qid finished early: returns '
@@ -189,7 +189,7 @@ void main() {
         pending.future,
         DispatchCancellationController(),
       );
-      expect(table.recordPeerFinish(2), isNull);
+      expect(table.applyPeerFinish(2), isNull);
 
       final completed = table.tryRecordFailedAnswer(
         2,
@@ -206,7 +206,7 @@ void main() {
       final table = AnswerTable();
       table.recordAnswer(2, resolved: _answer(), resultExportIds: [10, 11]);
 
-      final resultExportIds = table.recordPeerFinish(2);
+      final resultExportIds = table.applyPeerFinish(2);
       expect(resultExportIds, equals([10, 11]));
       expect(table.resolvedFor(2), isNull);
       expect(table.isTracked(2), isFalse);
@@ -218,7 +218,7 @@ void main() {
       table.tryRecordFailedAnswer(2, const CapnpException('boom'));
       expect(table.errorFor(2), isNotNull);
 
-      final resultExportIds = table.recordPeerFinish(2);
+      final resultExportIds = table.applyPeerFinish(2);
       expect(resultExportIds, equals(const []));
       expect(table.errorFor(2), isNull);
       expect(table.isTracked(2), isFalse);
@@ -243,7 +243,7 @@ void main() {
 
       table.recordAnswer(3, resolved: _answer());
       expect(table.isTracked(3), isTrue, reason: 'resolved, awaiting Finish');
-      table.recordPeerFinish(3);
+      table.applyPeerFinish(3);
       expect(table.isTracked(3), isFalse);
 
       table.tryRecordFailedAnswer(3, const CapnpException('boom'));
@@ -256,7 +256,7 @@ void main() {
       table.recordAnswer(4);
       expect(table.isTracked(4), isTrue);
       expect(table.resolvedFor(4), isNull);
-      expect(table.recordPeerFinish(4), equals(const []));
+      expect(table.applyPeerFinish(4), equals(const []));
     });
 
     test('resolvedFor/pendingFor/errorFor each only report data for their '

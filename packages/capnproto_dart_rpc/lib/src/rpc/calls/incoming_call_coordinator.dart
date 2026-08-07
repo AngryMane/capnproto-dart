@@ -157,7 +157,7 @@ final class IncomingCallCoordinator {
   /// positional one with names in the type signature, which wouldn't
   /// actually create `.allDisposed`/`.explicitReleaseIds` getters — so the
   /// two can't be collapsed into one ambiguous empty list at the call site
-  /// (see [_finishParameterCapabilityDisposalTrackingAndReleaseExports], this
+  /// (see [_finishParameterCapabilityDisposalTrackingAndSendReleases], this
   /// class's own wrapper around this closure that does the actual sending).
   final ({bool allDisposed, List<int> explicitReleaseIds}) Function(
     Object? ticket,
@@ -599,7 +599,7 @@ final class IncomingCallCoordinator {
     // deferred release sink for the lifetime of this dispatch, so
     // Return.releaseParamCaps can be set without an extra wire Release
     // when the callee turns out not to need them past the call — see
-    // _finishParameterCapabilityDisposalTrackingAndReleaseExports.
+    // _finishParameterCapabilityDisposalTrackingAndSendReleases.
     final parameterCapabilityDisposalTicket =
         startParameterCapabilityDisposalTracking(paramsCapabilities);
 
@@ -635,7 +635,7 @@ final class IncomingCallCoordinator {
           if (isClosed()) {
             answerTable.clearPendingAnswer(qid);
             _disposeResultCapabilities(result);
-            _finishParameterCapabilityDisposalTrackingAndReleaseExports(
+            _finishParameterCapabilityDisposalTrackingAndSendReleases(
               parameterCapabilityDisposalTicket,
             );
             return;
@@ -664,7 +664,7 @@ final class IncomingCallCoordinator {
             );
             if (!completed) {
               _disposeResultCapabilities(result);
-              _finishParameterCapabilityDisposalTrackingAndReleaseExports(
+              _finishParameterCapabilityDisposalTrackingAndSendReleases(
                 parameterCapabilityDisposalTicket,
               );
               return;
@@ -673,7 +673,7 @@ final class IncomingCallCoordinator {
             // No Return field exists on this variant to carry
             // releaseParamCaps, so just flush any deferred params releases
             // as ordinary Release messages.
-            _finishParameterCapabilityDisposalTrackingAndReleaseExports(
+            _finishParameterCapabilityDisposalTrackingAndSendReleases(
               parameterCapabilityDisposalTicket,
             );
             return;
@@ -701,13 +701,13 @@ final class IncomingCallCoordinator {
           );
           if (!completed) {
             _disposeResultCapabilities(result);
-            _finishParameterCapabilityDisposalTrackingAndReleaseExports(
+            _finishParameterCapabilityDisposalTrackingAndSendReleases(
               parameterCapabilityDisposalTicket,
             );
             return;
           }
           final releaseParamCaps =
-              _finishParameterCapabilityDisposalTrackingAndReleaseExports(
+              _finishParameterCapabilityDisposalTrackingAndSendReleases(
                 parameterCapabilityDisposalTicket,
               );
           // getRootRaw() resolves in place for an envelope- or
@@ -735,7 +735,7 @@ final class IncomingCallCoordinator {
         .catchError((Object err) {
           if (isClosed()) {
             answerTable.clearPendingAnswer(qid);
-            _finishParameterCapabilityDisposalTrackingAndReleaseExports(
+            _finishParameterCapabilityDisposalTrackingAndSendReleases(
               parameterCapabilityDisposalTicket,
             );
             return;
@@ -749,13 +749,13 @@ final class IncomingCallCoordinator {
             // this runs before sendBytes().
             final completed = answerTable.tryRecordFailedAnswer(qid, rpcError);
             if (!completed) {
-              _finishParameterCapabilityDisposalTrackingAndReleaseExports(
+              _finishParameterCapabilityDisposalTrackingAndSendReleases(
                 parameterCapabilityDisposalTicket,
               );
               return;
             }
             sendBytes(buildReturnResultsSentElsewhereMessage(answerId: qid));
-            _finishParameterCapabilityDisposalTrackingAndReleaseExports(
+            _finishParameterCapabilityDisposalTrackingAndSendReleases(
               parameterCapabilityDisposalTicket,
             );
             return;
@@ -766,13 +766,13 @@ final class IncomingCallCoordinator {
           // needs to be recorded for this qid at all. clearPendingAnswer() still
           // needs to run, though, to detect a Finish that arrived early.
           if (answerTable.clearPendingAnswer(qid)) {
-            _finishParameterCapabilityDisposalTrackingAndReleaseExports(
+            _finishParameterCapabilityDisposalTrackingAndSendReleases(
               parameterCapabilityDisposalTicket,
             );
             return;
           }
           final releaseParamCaps =
-              _finishParameterCapabilityDisposalTrackingAndReleaseExports(
+              _finishParameterCapabilityDisposalTrackingAndSendReleases(
                 parameterCapabilityDisposalTicket,
               );
           sendBytes(
@@ -788,7 +788,7 @@ final class IncomingCallCoordinator {
   }
 
   void handleFinish(RpcMessage msg) {
-    final resultExportIds = answerTable.recordPeerFinish(msg.questionId);
+    final resultExportIds = answerTable.applyPeerFinish(msg.questionId);
     if (resultExportIds == null || !msg.releaseResultCaps) return;
     for (final eid in resultExportIds) {
       exportTable.releaseReference(eid, disposeIgnoringErrors);
@@ -861,13 +861,13 @@ final class IncomingCallCoordinator {
   /// `allDisposed` as `Return.releaseParamCaps` — see
   /// [finishParameterCapabilityDisposalTracking]'s own doc comment for the
   /// actual decision logic.
-  bool _finishParameterCapabilityDisposalTrackingAndReleaseExports(
+  bool _finishParameterCapabilityDisposalTrackingAndSendReleases(
     Object? ticket,
   ) {
-    final (:allDisposed, :explicitReleaseIds) =
-        finishParameterCapabilityDisposalTracking(
-          ticket,
-        );
+    final (
+      :allDisposed,
+      :explicitReleaseIds,
+    ) = finishParameterCapabilityDisposalTracking(ticket);
     // sendBytes() would silently no-op post-teardown anyway (a real
     // connection's own send path already does), but this coordinator
     // shouldn't rely on that — skip the send outright rather than depend on
