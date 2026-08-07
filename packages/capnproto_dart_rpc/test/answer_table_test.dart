@@ -9,6 +9,8 @@ import 'package:test/test.dart';
 ResolvedAnswer _answer([List<Capability> caps = const []]) =>
     ResolvedAnswer(Uint8List(0), caps);
 
+const _tornDownProbeError = CapnpException('connection torn down (probe)');
+
 void main() {
   group('AnswerTable', () {
     test('Finish arriving while dispatch is still pending with no '
@@ -353,8 +355,8 @@ void main() {
       expect(table.cancellationCount, equals(0));
     });
 
-    test('tearDown cancels every live dispatch and clears all tracked '
-        'state', () {
+    test('tearDown cancels every live dispatch, clears all tracked state, '
+        'and makes tornDown() fail with the given error', () async {
       final table = AnswerTable();
       final pending = Completer<ResolvedAnswer>();
       pending.future.ignore();
@@ -363,10 +365,31 @@ void main() {
       table.recordAnswer(2, resolved: _answer());
       table.tryRecordFailedAnswer(3, const CapnpException('x'));
 
-      table.tearDown();
+      final error = const CapnpException('connection torn down');
+      table.tearDown(error);
       expect(cancellation.context.isCanceled, isTrue);
       expect(table.count, equals(0));
       expect(table.cancellationCount, equals(0));
+      // tearDown() already ran, so tornDown() resolves the "already torn
+      // down" branch immediately — safe to await directly here (unlike a
+      // real caller racing a still-pending dispatch, which must attach its
+      // listener *before* whatever triggers tearDown runs).
+      await expectLater(table.tornDown(), throwsA(same(error)));
+    });
+
+    test('tornDown() called before tearDown() still fails once tearDown() '
+        'eventually runs — the queued-waiter path, as opposed to the '
+        'already-torn-down path the previous test exercises', () async {
+      final table = AnswerTable();
+      final matcher = expectLater(
+        table.tornDown(),
+        throwsA(same(_tornDownProbeError)),
+      );
+      // Nothing has torn the table down yet — tornDown() must not resolve
+      // (successfully or otherwise) until tearDown() actually runs.
+      await Future<void>.delayed(Duration.zero);
+      table.tearDown(_tornDownProbeError);
+      await matcher;
     });
 
     group('pipelined dependents (issue #109)', () {

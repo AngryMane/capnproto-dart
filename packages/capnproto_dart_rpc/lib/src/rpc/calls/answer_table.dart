@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:capnproto_dart/capnproto_dart.dart';
@@ -189,6 +190,9 @@ final class FinishedBeforeCompletionState extends AnswerState {
 /// any wire traffic.
 class AnswerTable {
   final Map<int, AnswerState> _answers = {};
+
+  Object? _tearDownError;
+  final List<Completer<Never>> _tearDownWaiters = [];
 
   /// Number of incoming calls with some tracked answer-lifecycle state:
   /// dispatch in flight, a resolved-but-not-yet-finished answer, or a
@@ -542,12 +546,63 @@ class AnswerTable {
     }
   }
 
-  /// Drops every tracked answer's state, canceling any still-live dispatch
+  /// A fresh `Future<Never>` every time it's called: never completes
+  /// successfully, only with whatever error [tearDown] eventually runs
+  /// with (immediately, if it already has). `Future<Never>` so it
+  /// type-checks directly as a `Future<T>` for any `T` — e.g. in a
+  /// `Future.any([someTypedFuture, tornDown()])` race — since `Never` is a
+  /// subtype of everything.
+  ///
+  /// Exists for a dispatch whose own settlement is being awaited directly
+  /// rather than through this table's own Return/Finish bookkeeping — today,
+  /// only `IncomingCallCoordinator.resolveLocalAnswer`'s `pendingFor(qid)`
+  /// branch, used to correlate a peer's `Return.takeFromOtherQuestion` for a
+  /// tail-called dispatch. [DispatchCancellationController.cancel] (which
+  /// [tearDown] also triggers) is only ever a cooperative *request* — a
+  /// dispatch implementation is free to ignore it and keep running — so
+  /// without racing against this, a caller like that would otherwise wait
+  /// on the dispatch's raw future directly and could observe it succeed
+  /// from purely local state *after* the connection that correlated it is
+  /// already gone, unlike every other still-pending call on this
+  /// connection (see `QuestionTable.tearDown`, which this is meant to
+  /// match — see issue #99).
+  ///
+  /// Each call gets its own private [Completer], immediately returned to
+  /// (and thus about to be raced/awaited by) the caller that asked for it
+  /// — either resolved on the spot if [tearDown] already ran, or parked in
+  /// [_tearDownWaiters] to be completed once it does. Whoever calls this
+  /// must make sure a listener (e.g. via `Future.any`/`await`) is attached
+  /// to the returned Future — or to something chained from it — *before*
+  /// whatever triggers [tearDown] runs, same as any other Future a caller
+  /// intends to observe: attaching one only afterward leaves a real window
+  /// where the Future has already settled as an error with nothing
+  /// listening yet, which Dart reports as an unhandled async error
+  /// regardless of a listener arriving moments later.
+  Future<Never> tornDown() {
+    final waiter = Completer<Never>();
+    final error = _tearDownError;
+    if (error != null) {
+      waiter.completeError(error);
+    } else {
+      _tearDownWaiters.add(waiter);
+    }
+    return waiter.future;
+  }
+
+  /// Drops every tracked answer's state, canceling any still-live dispatch,
+  /// and makes every pending and future [tornDown] call fail with [error]
   /// — called once when the owning connection tears down.
-  void tearDown() {
+  void tearDown(Object error) {
     for (final state in _answers.values) {
       if (state is PendingAnswerState) state.cancellation.cancel();
     }
     _answers.clear();
+    if (_tearDownError == null) {
+      _tearDownError = error;
+      for (final waiter in _tearDownWaiters) {
+        waiter.completeError(error);
+      }
+      _tearDownWaiters.clear();
+    }
   }
 }
