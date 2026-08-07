@@ -366,11 +366,11 @@ class TwoPartyRpcConnection implements RpcConnection {
       disembargoTimeout,
       preFramed,
     );
-    // Unwrap first, like every ExportTable.getOrCreate caller — bootstrap
+    // Unwrap first, like every ExportTable.retainOrCreateExportId caller — bootstrap
     // is registered as export 0 through the same ExportTable machinery, so
     // its identity must satisfy the same "always unwrapped" invariant those
     // rely on for deduplication (e.g. this same underlying capability being
-    // handed back to ExportTable.getOrCreate again later, via a normal
+    // handed back to ExportTable.retainOrCreateExportId again later, via a normal
     // export, must dedupe against this entry instead of creating a
     // redundant second export for it).
     final bootstrapIdentity = unwrapCapabilityLease(bootstrap);

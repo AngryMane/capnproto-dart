@@ -341,7 +341,7 @@ void main() {
               identical(cap, forwardTarget)
                   ? const ImportedCapabilityReference(9)
                   : null;
-      final exportId = h.exportTable.getOrCreate(originalCap);
+      final exportId = h.exportTable.retainOrCreateExportId(originalCap);
 
       // Holds the forward "on the wire" open until the test explicitly lets
       // it through — proves the redirect actually waits for it, rather than
@@ -394,7 +394,7 @@ void main() {
                   params,
                 );
       // tryExtractCapabilityReference defaults to `null`.
-      final exportId = h.exportTable.getOrCreate(originalCap);
+      final exportId = h.exportTable.retainOrCreateExportId(originalCap);
 
       h.coordinator.handleCall(
         parseRpcMessage(_buildCall(questionId: 51, targetExportId: exportId)),
@@ -415,7 +415,7 @@ void main() {
       final h = _Harness();
       final cap =
           _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
-      final exportId = h.exportTable.getOrCreate(cap);
+      final exportId = h.exportTable.retainOrCreateExportId(cap);
 
       h.coordinator.handleCall(
         parseRpcMessage(_buildCall(questionId: 60, targetExportId: exportId)),
@@ -433,7 +433,7 @@ void main() {
       final h = _Harness();
       final cap =
           _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
-      final exportId = h.exportTable.getOrCreate(cap);
+      final exportId = h.exportTable.retainOrCreateExportId(cap);
       var sentReentrantFinish = false;
       h.sendBytes = (bytes) {
         h.sentBytes.add(bytes);
@@ -465,7 +465,7 @@ void main() {
               'boom',
               kind: ErrorKind.overloaded,
             );
-      final exportId = h.exportTable.getOrCreate(cap);
+      final exportId = h.exportTable.retainOrCreateExportId(cap);
 
       h.coordinator.handleCall(
         parseRpcMessage(_buildCall(questionId: 61, targetExportId: exportId)),
@@ -487,7 +487,7 @@ void main() {
       succeedingCap.onDispatch = (_, _, _) => DispatchResult.empty;
       succeedingCap.onTryTailCall =
           (_, _, _) => throw StateError('must not be called');
-      final exportId1 = h.exportTable.getOrCreate(succeedingCap);
+      final exportId1 = h.exportTable.retainOrCreateExportId(succeedingCap);
       h.coordinator.handleCall(
         parseRpcMessage(
           _buildCall(
@@ -504,7 +504,7 @@ void main() {
 
       final failingCap =
           _FakeCapability()..throwOnDispatch = const RpcException('boom');
-      final exportId2 = h.exportTable.getOrCreate(failingCap);
+      final exportId2 = h.exportTable.retainOrCreateExportId(failingCap);
       h.coordinator.handleCall(
         parseRpcMessage(
           _buildCall(
@@ -531,7 +531,7 @@ void main() {
           (ticket) => (allDisposed: true, explicitReleaseIds: const []);
       final cap1 =
           _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
-      final exportId1 = h.exportTable.getOrCreate(cap1);
+      final exportId1 = h.exportTable.retainOrCreateExportId(cap1);
       h.coordinator.handleCall(
         parseRpcMessage(_buildCall(questionId: 80, targetExportId: exportId1)),
       );
@@ -543,7 +543,7 @@ void main() {
           (ticket) => (allDisposed: false, explicitReleaseIds: const [7, 8]);
       final cap2 =
           _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
-      final exportId2 = h.exportTable.getOrCreate(cap2);
+      final exportId2 = h.exportTable.retainOrCreateExportId(cap2);
       h.coordinator.handleCall(
         parseRpcMessage(_buildCall(questionId: 81, targetExportId: exportId2)),
       );
@@ -566,7 +566,7 @@ void main() {
           (ticket) => (allDisposed: false, explicitReleaseIds: const []);
       final cap3 =
           _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
-      final exportId3 = h.exportTable.getOrCreate(cap3);
+      final exportId3 = h.exportTable.retainOrCreateExportId(cap3);
       h.coordinator.handleCall(
         parseRpcMessage(_buildCall(questionId: 82, targetExportId: exportId3)),
       );
@@ -584,7 +584,7 @@ void main() {
       // questionId, the second reusing still-tracked answer state.
       final dupCap =
           _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
-      final dupExportId = h.exportTable.getOrCreate(dupCap);
+      final dupExportId = h.exportTable.retainOrCreateExportId(dupCap);
       h.coordinator.handleCall(
         parseRpcMessage(
           _buildCall(questionId: 999, targetExportId: dupExportId),
@@ -702,7 +702,7 @@ void main() {
               identical(cap, forwardTarget)
                   ? const ImportedCapabilityReference(9)
                   : null;
-      final exportId = h.exportTable.getOrCreate(originalCap);
+      final exportId = h.exportTable.retainOrCreateExportId(originalCap);
 
       h.sendBytes = (bytes) {
         h.sentBytes.add(bytes);

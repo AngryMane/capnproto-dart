@@ -183,7 +183,7 @@ final class IncomingCallCoordinator {
   void handleBootstrap(RpcMessage msg) {
     if (_rejectDuplicateQuestionId(msg.questionId)) return;
     // Each Bootstrap request hands the peer a new reference to export 0,
-    // exactly like ExportTable.getOrCreate does for capabilities returned
+    // exactly like ExportTable.retainOrCreateExportId does for capabilities returned
     // from ordinary calls — without this, a peer that bootstraps twice and
     // later disposes just one of the two resulting capabilities would drop
     // this side's refcount to 0 and dispose the capability out from under
@@ -791,7 +791,7 @@ final class IncomingCallCoordinator {
     final resultExportIds = answerTable.recordPeerFinish(msg.questionId);
     if (resultExportIds == null || !msg.releaseResultCaps) return;
     for (final eid in resultExportIds) {
-      exportTable.release(eid, disposeIgnoringErrors);
+      exportTable.releaseReference(eid, disposeIgnoringErrors);
     }
   }
 

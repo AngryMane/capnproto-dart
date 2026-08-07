@@ -66,8 +66,8 @@ class ExportTable {
   /// Registers [identity] as export 0 (bootstrap) — see
   /// `TwoPartyRpcConnection.server`'s own doc comment for the ownership
   /// contract this establishes. Its remote refcount starts at 0, not 1
-  /// (unlike [getOrCreate]'s default for ordinary exports): the entry
-  /// needs to exist immediately so incoming Call/Bootstrap messages can
+  /// (unlike [retainOrCreateExportId]'s default for ordinary exports): the
+  /// entry needs to exist immediately so incoming Call/Bootstrap messages can
   /// route to it, but the peer doesn't actually hold a reference until it
   /// sends its own Bootstrap request — see [retainExisting], which
   /// increments this on every one answered.
@@ -78,8 +78,7 @@ class ExportTable {
 
   /// Increments the remote refcount for the export already registered at
   /// [exportId] and returns its identity — or `null` if nothing is
-  /// currently exported there. Unlike [getOrCreate], never creates a new
-  /// export; used for a fresh Bootstrap request handing the peer another
+  /// currently exported there. Unlike [retainOrCreateExportId], never creates a new export; used for a fresh Bootstrap request handing the peer another
   /// reference to the same export-0 capability (see [registerBootstrap]'s
   /// doc comment).
   Capability? retainExisting(int exportId) {
@@ -96,9 +95,8 @@ class ExportTable {
 
   /// The remote refcount currently outstanding for [exportId], or `null` if
   /// nothing is exported there — used to validate an incoming `Release`
-  /// before applying it (see [releaseRef]'s doc comment: a peer legitimately
-  /// releasing more references than it holds is a protocol violation the
-  /// caller needs the actual count to report).
+  /// before applying it (see [releaseReferences]'s doc comment: a peer
+  /// legitimately releasing more references than it holds is a protocol violation; the caller needs the actual count to report).
   int? remoteRefCountFor(int exportId) => _exports[exportId]?.remoteRefCount;
 
   /// Whether [exportId] is still exported and is (by identity) [expected] —
@@ -110,14 +108,13 @@ class ExportTable {
   }
 
   /// Returns the existing export ID for [identity] (incrementing its remote
-  /// ref count), or allocates a new export ID — with its own
-  /// a [CapabilityLease] in [_ExportEntry.ownedReference] — if this is the
-  /// first export. [identity] must already be unwrapped (see
+  /// ref count), or allocates a new export ID — with a [CapabilityLease] in
+  /// [_ExportEntry.ownedReference] — if this is the first export. [identity] must already be unwrapped (see
   /// `unwrapCapabilityLease`): every caller of this method unwraps first,
   /// so that two different capability leases for the same underlying
   /// capability dedupe to the same export instead of each creating their
   /// own.
-  int getOrCreate(Capability identity) {
+  int retainOrCreateExportId(Capability identity) {
     final existing = _exportIds[identity];
     if (existing != null) {
       _exports[existing]!.remoteRefCount++;
@@ -133,14 +130,15 @@ class ExportTable {
   /// returning whether it wasn't already (matching `Set.add`'s own return
   /// convention) — a caller that gets `false` back must not schedule a
   /// second, redundant resolution watcher for the same promise.
-  bool markScheduled(int promiseId) => _senderPromiseResolves.add(promiseId);
+  bool markPromiseResolutionScheduled(int promiseId) =>
+      _senderPromiseResolves.add(promiseId);
 
   /// Clears [promiseId]'s scheduled-resolution marker, once its resolution
   /// watcher actually completes (successfully or not) — allowing a later
   /// re-export of the same promise (if it's still exported under a
   /// different id, or re-exported after being released and re-created) to
   /// be scheduled again.
-  void clearScheduled(int promiseId) =>
+  void clearPromiseResolutionScheduled(int promiseId) =>
       _senderPromiseResolves.remove(promiseId);
 
   /// Core effect of releasing [referenceCount] references to [exportId]:
@@ -157,7 +155,7 @@ class ExportTable {
   /// is done here) and for applying `Return.releaseParamCaps` locally (the
   /// count released there is exactly what this vat itself put in the
   /// matching Call's own capTable, so it's trusted without re-validation).
-  void releaseRef(
+  void releaseReferences(
     int exportId,
     int referenceCount,
     void Function(Capability) disposeIgnoringErrors,
@@ -174,12 +172,14 @@ class ExportTable {
   }
 
   /// Unconditionally releases exactly one reference to [exportId] — see
-  /// [releaseRef]'s matching doc comment. Used when this vat itself decides
-  /// an export is no longer needed (e.g. `Finish(releaseResultCaps: true)`
+  /// [releaseReferences]'s matching doc comment. Used when this vat itself decides an export is no longer needed (e.g. `Finish(releaseResultCaps: true)`
   /// on the answer that exported it), as opposed to an explicit release
   /// count from the peer.
-  void release(int exportId, void Function(Capability) disposeIgnoringErrors) {
-    releaseRef(exportId, 1, disposeIgnoringErrors);
+  void releaseReference(
+    int exportId,
+    void Function(Capability) disposeIgnoringErrors,
+  ) {
+    releaseReferences(exportId, 1, disposeIgnoringErrors);
   }
 
   /// Disposes every export's own reference to its underlying capability and

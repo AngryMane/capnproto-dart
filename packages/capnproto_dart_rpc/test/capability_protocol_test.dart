@@ -74,7 +74,7 @@ void main() {
     test('handleRelease tears the connection down for a non-positive '
         'referenceCount, without releasing', () {
       final h = _Harness();
-      final id = h.exportTable.getOrCreate(_FakeCapability());
+      final id = h.exportTable.retainOrCreateExportId(_FakeCapability());
 
       h.protocol.handleRelease(parseRpcMessage(buildReleaseMessage(id, 0)));
 
@@ -85,7 +85,7 @@ void main() {
     test('handleRelease tears the connection down for a referenceCount '
         'exceeding the outstanding remote refcount, without releasing', () {
       final h = _Harness();
-      final id = h.exportTable.getOrCreate(_FakeCapability());
+      final id = h.exportTable.retainOrCreateExportId(_FakeCapability());
 
       h.protocol.handleRelease(parseRpcMessage(buildReleaseMessage(id, 2)));
 
@@ -96,7 +96,7 @@ void main() {
     test('handleRelease releases the reference for a valid release, and '
         'never tears the connection down', () {
       final h = _Harness();
-      final id = h.exportTable.getOrCreate(_FakeCapability());
+      final id = h.exportTable.retainOrCreateExportId(_FakeCapability());
 
       h.protocol.handleRelease(parseRpcMessage(buildReleaseMessage(id, 1)));
 
@@ -236,7 +236,7 @@ void main() {
       expect(promiseState.isPromise, isTrue);
 
       final exported = _FakeCapability();
-      final exportId = h.exportTable.getOrCreate(exported);
+      final exportId = h.exportTable.retainOrCreateExportId(exported);
       final lease = h.protocol.acquireCapabilityFromDescriptor(
         RpcCapabilityDescriptor.receiverHosted(exportId),
       );
@@ -276,7 +276,7 @@ void main() {
       state.receivedCall = true;
 
       final exported = _FakeCapability();
-      final exportId = h.exportTable.getOrCreate(exported);
+      final exportId = h.exportTable.retainOrCreateExportId(exported);
       // tryExtractCapabilityReference defaults to `null`, so the decoded
       // receiverHosted replacement counts as local.
       final msg = parseRpcMessage(
@@ -301,7 +301,7 @@ void main() {
       h.isSameConnectionPeerCapability = (cap) => true;
 
       final exported = _FakeCapability();
-      final exportId = h.exportTable.getOrCreate(exported);
+      final exportId = h.exportTable.retainOrCreateExportId(exported);
       final msg = parseRpcMessage(
         buildResolveCapMessage(promiseId: 7, capDisc: 3, capId: exportId),
       );

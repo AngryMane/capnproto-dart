@@ -109,14 +109,14 @@ final class CapabilityProtocol {
   /// loop, at the top of every iteration, and immediately after each
   /// `await` inside it — i.e. at every point execution resumes after a
   /// suspension that `tearDown` could have run during, and before the very
-  /// next side effect (`exportTable.getOrCreate`, adding to [capEntries])
+  /// next side effect (`exportTable.retainOrCreateExportId`, adding to [capEntries])
   /// that resuming would otherwise lead to. Once torn down,
   /// [ExportTable.tearDown]/[QuestionTable.tearDown] have already disposed
   /// and cleared everything this loop could have created *before* that
   /// point — but nothing ever revisits an export created *after* it, since
   /// [qid]'s own `QuestionTable` tracking (where such an export's ID would
   /// otherwise be recorded for rollback) is already gone by then too. This
-  /// loop must never reach a new [ExportTable.getOrCreate] call past that
+  /// loop must never reach a new [ExportTable.retainOrCreateExportId] call past that
   /// point, since nothing would ever release it.
   Future<List<RpcCapabilityDescriptor>> _resolveCapTableAsync(
     List<Capability> paramsCapabilities, {
@@ -128,7 +128,7 @@ final class CapabilityProtocol {
     // try/finally, not a plain trailing call: a broken import or a rejected
     // importIdFuture partway through this loop (importTable.throwIfBroken/
     // await above) must still record whatever senderHosted/senderPromise exports
-    // getOrCreate already created for entries processed *before*
+    // retainOrCreateExportId already created for entries processed *before*
     // that point — otherwise their refcount bump would never be visible to
     // a rollback and would leak. See that method's doc comment for the
     // failure this guards against.
@@ -174,7 +174,7 @@ final class CapabilityProtocol {
         } else {
           ensureActive();
           capEntries.add(
-            RpcCapabilityDescriptor.senderHosted(exportTable.getOrCreate(cap)),
+            RpcCapabilityDescriptor.senderHosted(exportTable.retainOrCreateExportId(cap)),
           );
         }
       }
@@ -205,7 +205,7 @@ final class CapabilityProtocol {
   /// except an imported capability whose own import ID isn't cached yet),
   /// falling back to [_resolveCapTableAsync] as a whole otherwise. Checking
   /// "is everything resolvable" up front, before touching anything with a
-  /// side effect (like `ExportTable.getOrCreate`, which isn't idempotent —
+  /// side effect (like `ExportTable.retainOrCreateExportId`, which isn't idempotent —
   /// it bumps a refcount on every call), avoids resolving some entries
   /// synchronously and then re-resolving the whole list again through
   /// [_resolveCapTableAsync].
@@ -271,7 +271,7 @@ final class CapabilityProtocol {
           );
         } else {
           capEntries.add(
-            RpcCapabilityDescriptor.senderHosted(exportTable.getOrCreate(cap)),
+            RpcCapabilityDescriptor.senderHosted(exportTable.retainOrCreateExportId(cap)),
           );
         }
       }
@@ -358,7 +358,7 @@ final class CapabilityProtocol {
       );
       return;
     }
-    exportTable.releaseRef(
+    exportTable.releaseReferences(
       msg.releaseId,
       msg.referenceCount,
       disposeIgnoringErrors,
@@ -373,7 +373,7 @@ final class CapabilityProtocol {
   ///    capabilities, from [_recordParamExportIds]), the same effect an
   ///    explicit `Release(id, 1)` from the peer would have had, without the
   ///    peer needing to actually send one.
-  /// 2. Undoing [_recordParamExportIds]/`ExportTable.getOrCreate`'s refcount
+  /// 2. Undoing [_recordParamExportIds]/`ExportTable.retainOrCreateExportId`'s refcount
   ///    bump for an outgoing Call's params capabilities when the Call itself
   ///    never reached [sendBytes] — e.g. `importIdFuture` rejects, or a
   ///    broken-import check throws, after cap table resolution already ran.
@@ -387,7 +387,7 @@ final class CapabilityProtocol {
   ///    to track.
   void releaseParameterCapabilityExports(List<int> exportIds) {
     for (final id in exportIds) {
-      exportTable.releaseRef(id, 1, disposeIgnoringErrors);
+      exportTable.releaseReferences(id, 1, disposeIgnoringErrors);
     }
   }
 
@@ -471,10 +471,10 @@ final class CapabilityProtocol {
   /// part of its own result (or relaying it into a call on a different
   /// connection — see [ExportTable]'s `_ExportEntry.ownedReference`) —
   /// so it's unwrapped to its real identity before being used as
-  /// [ExportTable.getOrCreate]'s dedup key.
+  /// [ExportTable.retainOrCreateExportId]'s dedup key.
   ///
   /// `DispatchResult.caps` transfers ownership of [cap] to this connection
-  /// — [ExportTable.getOrCreate] establishes (or reuses) this connection's
+  /// — [ExportTable.retainOrCreateExportId] establishes (or reuses) this connection's
   /// own owning reference to [identity], so if [cap] was itself a distinct
   /// [CapabilityLease], it's now redundant with that owning reference and is
   /// disposed here: otherwise its share of [identity]'s refcount (see
@@ -485,12 +485,12 @@ final class CapabilityProtocol {
     final identity = unwrapCapabilityLease(cap);
     final RpcCapabilityDescriptor descriptor;
     if (identity is DeferredCapability) {
-      final promiseId = exportTable.getOrCreate(identity);
+      final promiseId = exportTable.retainOrCreateExportId(identity);
       _scheduleSenderPromiseResolve(promiseId, identity);
       descriptor = RpcCapabilityDescriptor.senderPromise(promiseId);
     } else {
       descriptor = RpcCapabilityDescriptor.senderHosted(
-        exportTable.getOrCreate(identity),
+        exportTable.retainOrCreateExportId(identity),
       );
     }
     if (!identical(cap, identity)) {
@@ -503,12 +503,12 @@ final class CapabilityProtocol {
     int promiseId,
     DeferredCapability promise,
   ) {
-    if (!exportTable.markScheduled(promiseId)) return;
+    if (!exportTable.markPromiseResolutionScheduled(promiseId)) return;
 
     promise.resolution
         .then(
           (resolved) async {
-            exportTable.clearScheduled(promiseId);
+            exportTable.clearPromiseResolutionScheduled(promiseId);
             if (!_isStillExportedPromise(promiseId, promise)) return;
 
             final RpcCapabilityDescriptor descriptor;
@@ -527,7 +527,7 @@ final class CapabilityProtocol {
             }
             if (!_isStillExportedPromise(promiseId, promise)) {
               if (descriptor.disc == 1 || descriptor.disc == 2) {
-                exportTable.release(descriptor.id, disposeIgnoringErrors);
+                exportTable.releaseReference(descriptor.id, disposeIgnoringErrors);
               }
               return;
             }
@@ -541,7 +541,7 @@ final class CapabilityProtocol {
             );
           },
           onError: (Object error) {
-            exportTable.clearScheduled(promiseId);
+            exportTable.clearPromiseResolutionScheduled(promiseId);
             if (!_isStillExportedPromise(promiseId, promise)) return;
             sendBytes(
               buildResolveExceptionMessage(
@@ -559,7 +559,9 @@ final class CapabilityProtocol {
       exportTable.isCurrentIdentity(promiseId, promise);
 
   /// See [exportResultCapabilityAsDescriptor]'s doc comment. [cap] is
-  /// unwrapped to its real identity first, and a redundant [CapabilityLease] passed as [cap] is disposed at the end, for the same ownership-transfer reason (this resolves a promise
+  /// unwrapped to its real identity first, and a redundant [CapabilityLease]
+  /// passed as [cap] is disposed at the end for the same ownership-transfer
+  /// reason (this resolves a promise
   /// a [DeferredCapability] returned from `DispatchResult.caps` settled
   /// to, which transfers ownership exactly like an already-settled result
   /// capability does). The `receiverHosted` branch establishes no owning
@@ -577,12 +579,12 @@ final class CapabilityProtocol {
       importTable.throwIfBroken(id);
       descriptor = RpcCapabilityDescriptor.receiverHosted(id);
     } else if (identity is DeferredCapability) {
-      final nestedPromiseId = exportTable.getOrCreate(identity);
+      final nestedPromiseId = exportTable.retainOrCreateExportId(identity);
       _scheduleSenderPromiseResolve(nestedPromiseId, identity);
       descriptor = RpcCapabilityDescriptor.senderPromise(nestedPromiseId);
     } else {
       descriptor = RpcCapabilityDescriptor.senderHosted(
-        exportTable.getOrCreate(identity),
+        exportTable.retainOrCreateExportId(identity),
       );
     }
     if (!identical(cap, identity)) {
