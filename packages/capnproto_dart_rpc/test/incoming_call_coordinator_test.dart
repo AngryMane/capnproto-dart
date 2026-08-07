@@ -60,6 +60,12 @@ class _FakeCapability extends Capability {
   TailCallRequest? Function(int interfaceId, int methodId, RpcPayload params)?
   onTryTailCall;
 
+  /// Settable per test — if non-null, [dispatch] awaits this before
+  /// returning [onDispatch]'s result, so a test can observe state exactly
+  /// while this capability's own dispatch is still in flight (started, but
+  /// not yet finished).
+  Future<void>? dispatchGate;
+
   @override
   Future<DispatchResult> dispatch(
     int interfaceId,
@@ -70,6 +76,8 @@ class _FakeCapability extends Capability {
     dispatches.add((interfaceId, methodId));
     final failure = throwOnDispatch;
     if (failure != null) throw failure;
+    final gate = dispatchGate;
+    if (gate != null) await gate;
     return onDispatch?.call(interfaceId, methodId, params) ??
         DispatchResult.empty;
   }
@@ -731,6 +739,486 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(h.answerTable.isTracked(50), isFalse);
+    });
+
+    group('early Finish while a pipelined call still depends on it '
+        '(issue #109)', () {
+      test('a pipelined call queued behind a pending parent when Finish '
+          'arrives for the parent: the parent still completes normally '
+          'with Return.results (noFinishNeeded: false, never '
+          'Return.canceled, since the result carries a live capability the '
+          'dependent needs), the dependent still dispatches successfully '
+          'once it resolves, and the parent export is released once the '
+          'dependent has drained', () async {
+        final h = _Harness();
+        final targetCap =
+            _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
+        final resultExportId = h.exportTable.retainOrCreateExportId(
+          targetCap,
+        );
+        h.exportResultCapabilityAsWireReference =
+            (cap) => SenderHostedCapabilityReference(resultExportId);
+        final parentCap =
+            _FakeCapability()
+              ..onDispatch =
+                  (_, _, _) => DispatchResult(
+                    payload: RpcPayload.fromBytes(_singleCapResultBytes),
+                    caps: [targetCap],
+                  );
+        final parentExportId = h.exportTable.retainOrCreateExportId(
+          parentCap,
+        );
+
+        h.coordinator.handleCall(
+          parseRpcMessage(
+            _buildCall(questionId: 1, targetExportId: parentExportId),
+          ),
+        );
+        h.coordinator.handleCall(
+          parseRpcMessage(_buildPipelinedCall(questionId: 2, parentQid: 1)),
+        );
+        h.coordinator.handleFinish(parseRpcMessage(buildFinishMessage(1)));
+
+        expect(targetCap.dispatches, isEmpty);
+        expect(h.sentBytes, isEmpty);
+
+        await Future<void>.delayed(Duration.zero);
+
+        expect(targetCap.dispatches, hasLength(1));
+        final parentReturn = h.sentBytes
+            .map(parseRpcMessage)
+            .firstWhere((m) => m.answerId == 1);
+        expect(parentReturn.isReturnResults, isTrue);
+        expect(parentReturn.returnNoFinishNeeded, isFalse);
+        final dependentReturn = h.sentBytes
+            .map(parseRpcMessage)
+            .firstWhere((m) => m.answerId == 2);
+        expect(dependentReturn.isReturnResults, isTrue);
+        expect(
+          h.disposedFromTable,
+          hasLength(1),
+          reason: 'the parent export is released exactly once',
+        );
+      });
+
+      test("a pipelined dependent's parent export is released once the "
+          'dependent has started its own dispatch, without waiting for '
+          'that dispatch to finish — proves export release depends on the '
+          'dependent having started, not completed', () async {
+        final h = _Harness();
+        final targetCap = _FakeCapability();
+        final resultExportId = h.exportTable.retainOrCreateExportId(
+          targetCap,
+        );
+        h.exportResultCapabilityAsWireReference =
+            (cap) => SenderHostedCapabilityReference(resultExportId);
+        final dispatchGate = Completer<void>();
+        targetCap.dispatchGate = dispatchGate.future;
+        targetCap.onDispatch = (_, _, _) => DispatchResult.empty;
+
+        final parentCap =
+            _FakeCapability()
+              ..onDispatch =
+                  (_, _, _) => DispatchResult(
+                    payload: RpcPayload.fromBytes(_singleCapResultBytes),
+                    caps: [targetCap],
+                  );
+        final parentExportId = h.exportTable.retainOrCreateExportId(
+          parentCap,
+        );
+
+        h.coordinator.handleCall(
+          parseRpcMessage(
+            _buildCall(questionId: 1, targetExportId: parentExportId),
+          ),
+        );
+        h.coordinator.handleCall(
+          parseRpcMessage(_buildPipelinedCall(questionId: 2, parentQid: 1)),
+        );
+        h.coordinator.handleFinish(parseRpcMessage(buildFinishMessage(1)));
+
+        await Future<void>.delayed(Duration.zero);
+
+        // The dependent has started its own dispatch (recorded) but not
+        // finished it (still gated open) — the parent's export must
+        // already be released.
+        expect(targetCap.dispatches, hasLength(1));
+        expect(h.disposedFromTable, hasLength(1));
+        expect(
+          h.sentBytes.map(parseRpcMessage).where((m) => m.answerId == 2),
+          isEmpty,
+          reason: "the dependent's own Return hasn't gone out yet",
+        );
+
+        dispatchGate.complete();
+        await Future<void>.delayed(Duration.zero);
+
+        final dependentReturn = h.sentBytes
+            .map(parseRpcMessage)
+            .firstWhere((m) => m.answerId == 2);
+        expect(dependentReturn.isReturnResults, isTrue);
+      });
+
+      test('releaseResultCaps=false on the early Finish: the pipelined '
+          'dependent still dispatches normally, but the parent export is '
+          'never auto-released', () async {
+        final h = _Harness();
+        final targetCap =
+            _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
+        final resultExportId = h.exportTable.retainOrCreateExportId(
+          targetCap,
+        );
+        h.exportResultCapabilityAsWireReference =
+            (cap) => SenderHostedCapabilityReference(resultExportId);
+        final parentCap =
+            _FakeCapability()
+              ..onDispatch =
+                  (_, _, _) => DispatchResult(
+                    payload: RpcPayload.fromBytes(_singleCapResultBytes),
+                    caps: [targetCap],
+                  );
+        final parentExportId = h.exportTable.retainOrCreateExportId(
+          parentCap,
+        );
+
+        h.coordinator.handleCall(
+          parseRpcMessage(
+            _buildCall(questionId: 1, targetExportId: parentExportId),
+          ),
+        );
+        h.coordinator.handleCall(
+          parseRpcMessage(_buildPipelinedCall(questionId: 2, parentQid: 1)),
+        );
+        h.coordinator.handleFinish(
+          parseRpcMessage(buildFinishMessage(1, releaseResultCaps: false)),
+        );
+
+        await Future<void>.delayed(Duration.zero);
+
+        expect(targetCap.dispatches, hasLength(1));
+        expect(h.disposedFromTable, isEmpty);
+      });
+
+      test('a pending parent Finished with no pipelined dependents: '
+          'nothing is sent synchronously from handleFinish; once the '
+          'dispatch settles, Return.canceled is sent with the '
+          'correctly-resolved releaseParamCaps (covering all-disposed / '
+          'partial / none-disposed parameter capability combinations)', () async {
+        Future<void> run(
+          ({bool allDisposed, List<int> explicitReleaseIds}) trackingResult,
+        ) async {
+          final h = _Harness();
+          h.startParameterCapabilityDisposalTracking =
+              (paramsCapabilities) => 'ticket';
+          h.finishParameterCapabilityDisposalTracking =
+              (ticket) => trackingResult;
+          final cap = _FakeCapability();
+          final dispatchGate = Completer<void>();
+          cap.dispatchGate = dispatchGate.future;
+          cap.onDispatch = (_, _, _) => DispatchResult.empty;
+          final exportId = h.exportTable.retainOrCreateExportId(cap);
+
+          h.coordinator.handleCall(
+            parseRpcMessage(
+              _buildCall(questionId: 90, targetExportId: exportId),
+            ),
+          );
+          await Future<void>.delayed(Duration.zero);
+          expect(h.sentBytes, isEmpty, reason: 'dispatch still in flight');
+
+          h.coordinator.handleFinish(parseRpcMessage(buildFinishMessage(90)));
+          expect(
+            h.sentBytes,
+            isEmpty,
+            reason: 'Return(canceled) is deferred to settle time',
+          );
+
+          dispatchGate.complete();
+          await Future<void>.delayed(Duration.zero);
+
+          final sent = h.sentBytes
+              .map(parseRpcMessage)
+              .firstWhere((m) => m.type == RpcMessageType.return_);
+          expect(sent.answerId, equals(90));
+          expect(sent.returnDisc, equals(2)); // canceled
+          expect(
+            sent.returnReleaseParamCaps,
+            equals(trackingResult.allDisposed),
+          );
+          final releaseMessages =
+              h.sentBytes
+                  .map(parseRpcMessage)
+                  .where((m) => m.type == RpcMessageType.release)
+                  .toList();
+          expect(
+            releaseMessages.map((m) => m.releaseId),
+            unorderedEquals(trackingResult.explicitReleaseIds),
+          );
+        }
+
+        await run((allDisposed: true, explicitReleaseIds: const []));
+        await run((allDisposed: false, explicitReleaseIds: const [7, 8]));
+        await run((allDisposed: false, explicitReleaseIds: const []));
+      });
+
+      test('a new pipelined call targeting a parent that already has an '
+          'outstanding dependent and already received Finish is rejected '
+          'with "unknown promisedAnswer questionId"', () async {
+        final h = _Harness();
+        final dispatchGate = Completer<void>();
+        final targetCap =
+            _FakeCapability()
+              ..dispatchGate = dispatchGate.future
+              ..onDispatch = (_, _, _) => DispatchResult.empty;
+        final resultExportId = h.exportTable.retainOrCreateExportId(
+          targetCap,
+        );
+        h.exportResultCapabilityAsWireReference =
+            (cap) => SenderHostedCapabilityReference(resultExportId);
+        final parentCap =
+            _FakeCapability()
+              ..dispatchGate = dispatchGate.future
+              ..onDispatch =
+                  (_, _, _) => DispatchResult(
+                    payload: RpcPayload.fromBytes(_singleCapResultBytes),
+                    caps: [targetCap],
+                  );
+        final parentExportId = h.exportTable.retainOrCreateExportId(
+          parentCap,
+        );
+
+        h.coordinator.handleCall(
+          parseRpcMessage(
+            _buildCall(questionId: 1, targetExportId: parentExportId),
+          ),
+        );
+        h.coordinator.handleCall(
+          parseRpcMessage(_buildPipelinedCall(questionId: 2, parentQid: 1)),
+        );
+        h.coordinator.handleFinish(parseRpcMessage(buildFinishMessage(1)));
+
+        // A brand-new pipelined call targeting the same still-pending
+        // (dispatch gated open), already-Finished parent must be rejected
+        // immediately — it doesn't need to wait for the parent to settle.
+        h.coordinator.handleCall(
+          parseRpcMessage(_buildPipelinedCall(questionId: 3, parentQid: 1)),
+        );
+
+        final rejected = parseRpcMessage(h.sentBytes.single);
+        expect(rejected.answerId, equals(3));
+        expect(rejected.isReturnException, isTrue);
+        expect(
+          rejected.exceptionReason,
+          contains('unknown promisedAnswer questionId'),
+        );
+
+        dispatchGate.complete();
+        await Future<void>.delayed(Duration.zero);
+      });
+
+      test('two Finish messages for the same still-pending, '
+          'dependent-having parent: the second is a no-op — cancellation '
+          'is not double-notified and the dependent still resolves '
+          'normally', () async {
+        final h = _Harness();
+        final targetCap =
+            _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
+        final resultExportId = h.exportTable.retainOrCreateExportId(
+          targetCap,
+        );
+        h.exportResultCapabilityAsWireReference =
+            (cap) => SenderHostedCapabilityReference(resultExportId);
+        final parentCap =
+            _FakeCapability()
+              ..onDispatch =
+                  (_, _, _) => DispatchResult(
+                    payload: RpcPayload.fromBytes(_singleCapResultBytes),
+                    caps: [targetCap],
+                  );
+        final parentExportId = h.exportTable.retainOrCreateExportId(
+          parentCap,
+        );
+
+        h.coordinator.handleCall(
+          parseRpcMessage(
+            _buildCall(questionId: 1, targetExportId: parentExportId),
+          ),
+        );
+        h.coordinator.handleCall(
+          parseRpcMessage(_buildPipelinedCall(questionId: 2, parentQid: 1)),
+        );
+        h.coordinator.handleFinish(parseRpcMessage(buildFinishMessage(1)));
+        h.coordinator.handleFinish(
+          parseRpcMessage(buildFinishMessage(1)),
+        ); // duplicate
+
+        await Future<void>.delayed(Duration.zero);
+
+        expect(targetCap.dispatches, hasLength(1));
+        final parentReturn = h.sentBytes
+            .map(parseRpcMessage)
+            .firstWhere((m) => m.answerId == 1);
+        expect(parentReturn.isReturnResults, isTrue);
+        expect(
+          h.disposedFromTable,
+          hasLength(1),
+          reason: 'released exactly once, not twice',
+        );
+      });
+
+      test('sendResultsToYourself with an early Finish and no pipelined '
+          'dependents: Return.canceled is sent at settle time instead of '
+          'Return.resultsSentElsewhere, on both success and failure', () async {
+        final h1 = _Harness();
+        final succeedingCap = _FakeCapability();
+        final dispatchGate = Completer<void>();
+        succeedingCap.dispatchGate = dispatchGate.future;
+        succeedingCap.onDispatch = (_, _, _) => DispatchResult.empty;
+        final exportId1 = h1.exportTable.retainOrCreateExportId(
+          succeedingCap,
+        );
+        h1.coordinator.handleCall(
+          parseRpcMessage(
+            _buildCall(
+              questionId: 40,
+              targetExportId: exportId1,
+              sendResultsToYourself: true,
+            ),
+          ),
+        );
+        h1.coordinator.handleFinish(parseRpcMessage(buildFinishMessage(40)));
+        expect(h1.sentBytes, isEmpty);
+        dispatchGate.complete();
+        await Future<void>.delayed(Duration.zero);
+        final sent1 = parseRpcMessage(h1.sentBytes.single);
+        expect(sent1.answerId, equals(40));
+        expect(sent1.returnDisc, equals(2)); // canceled, not resultsSentElsewhere(3)
+
+        final h2 = _Harness();
+        final failingCap =
+            _FakeCapability()..throwOnDispatch = const RpcException('boom');
+        final exportId2 = h2.exportTable.retainOrCreateExportId(failingCap);
+        h2.coordinator.handleCall(
+          parseRpcMessage(
+            _buildCall(
+              questionId: 41,
+              targetExportId: exportId2,
+              sendResultsToYourself: true,
+            ),
+          ),
+        );
+        h2.coordinator.handleFinish(parseRpcMessage(buildFinishMessage(41)));
+        expect(h2.sentBytes, isEmpty);
+        await Future<void>.delayed(Duration.zero);
+        final sent2 = parseRpcMessage(h2.sentBytes.single);
+        expect(sent2.answerId, equals(41));
+        expect(sent2.returnDisc, equals(2));
+      });
+
+      test('resolveLocalAnswer still resolves a still-pending '
+          'sendResultsToYourself dispatch correctly — regression guard '
+          'that the pipelined-dependency rewrite of resolvedFor/pendingFor '
+          "lookups left this unrelated correlation path untouched", () async {
+        final h = _Harness();
+        final resultCap = _FakeCapability();
+        final cap =
+            _FakeCapability()
+              ..onDispatch =
+                  (_, _, _) => DispatchResult(
+                    payload: RpcPayload.fromBytes(_singleCapResultBytes),
+                    caps: [resultCap],
+                  );
+        final exportId = h.exportTable.retainOrCreateExportId(cap);
+
+        h.coordinator.handleCall(
+          parseRpcMessage(
+            _buildCall(
+              questionId: 60,
+              targetExportId: exportId,
+              sendResultsToYourself: true,
+            ),
+          ),
+        );
+
+        final resolved = await h.coordinator.resolveLocalAnswer(60);
+        expect(resolved.caps, equals([resultCap]));
+      });
+
+      test('a reentrant peer that synchronously reuses a qid during its '
+          'own noFinishNeeded Return (early Finish + an existing pipelined '
+          'dependent, no result capabilities of its own) does not have '
+          'that new answer state corrupted by the old '
+          'clearAnswerForNoFinishNeeded cleanup — regression test for the '
+          'id-reuse-during-send hazard the dependency ticket design exists '
+          'to avoid', () async {
+        final h = _Harness();
+        final dispatchGate = Completer<void>();
+        final parentCap =
+            _FakeCapability()
+              ..dispatchGate = dispatchGate.future
+              ..onDispatch = (_, _, _) => DispatchResult.empty;
+        final parentExportId = h.exportTable.retainOrCreateExportId(
+          parentCap,
+        );
+
+        final newCallGate = Completer<void>();
+        final newCap =
+            _FakeCapability()
+              ..dispatchGate = newCallGate.future
+              ..onDispatch = (_, _, _) => DispatchResult.empty;
+        final newExportId = h.exportTable.retainOrCreateExportId(newCap);
+
+        var reentered = false;
+        h.sendBytes = (bytes) {
+          h.sentBytes.add(bytes);
+          final msg = parseRpcMessage(bytes);
+          if (!reentered &&
+              msg.answerId == 1 &&
+              msg.isReturnResults &&
+              msg.returnNoFinishNeeded) {
+            reentered = true;
+            // Simulates a peer reacting to this vat's own Return through a
+            // synchronously-reentrant sink (an in-memory or `sync: true`
+            // transport): question id 1's protocol lifecycle is over from
+            // the peer's perspective the instant it sees this Return, so
+            // it legally reuses that same id for a brand-new, unrelated
+            // Call before this send even returns.
+            h.coordinator.handleCall(
+              parseRpcMessage(
+                _buildCall(questionId: 1, targetExportId: newExportId),
+              ),
+            );
+          }
+        };
+
+        h.coordinator.handleCall(
+          parseRpcMessage(
+            _buildCall(questionId: 1, targetExportId: parentExportId),
+          ),
+        );
+        h.coordinator.handleCall(
+          parseRpcMessage(_buildPipelinedCall(questionId: 2, parentQid: 1)),
+        );
+        h.coordinator.handleFinish(parseRpcMessage(buildFinishMessage(1)));
+
+        dispatchGate.complete();
+        await Future<void>.delayed(Duration.zero);
+
+        expect(reentered, isTrue);
+        // The new call reusing qid 1 must be completely untouched by the
+        // old call's post-send cleanup — still a live, pending answer, not
+        // thrown away or corrupted by a StateError leaking into the old
+        // dispatch's own completion handling.
+        expect(h.answerTable.pendingFor(1), isNotNull);
+        expect(newCap.dispatches, hasLength(1));
+
+        newCallGate.complete();
+        await Future<void>.delayed(Duration.zero);
+        final newReturn = h.sentBytes
+            .map(parseRpcMessage)
+            .lastWhere((m) => m.answerId == 1);
+        expect(newReturn.isReturnResults, isTrue);
+      });
     });
   });
 }

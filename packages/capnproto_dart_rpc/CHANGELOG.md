@@ -1,3 +1,7 @@
+## Unreleased
+
+- Fixed a protocol-correctness bug (#109): a `Finish` received from the peer before an incoming call's dispatch had completed unconditionally canceled that dispatch and dropped its eventual result — even when a pipelined call already queued behind it (`{promisedAnswer: {questionId: ...}}`) still depended on that result. Cancellation is now deferred until every such pipelined dependent has finished with the result; the dispatch is left to complete normally and answered with an ordinary `Return` in that case, exactly as Cap'n Proto's RPC spec permits. Also implemented `Return(canceled)`, which this vat never sent at all before: when cancellation is genuinely accepted (no pipelined dependents), it's now sent once the dispatch actually settles, with the correct `Return.releaseParamCaps`.
+
 ## 0.2.0
 
 ### Breaking changes

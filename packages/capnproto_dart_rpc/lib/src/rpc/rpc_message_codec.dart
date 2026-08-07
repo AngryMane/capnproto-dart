@@ -959,10 +959,11 @@ Uint8List buildReturnResultsWithCapsMessage({
 }
 
 /// Serializes a `Return` message with a raw disc value and no payload —
-/// covers the variants this vat doesn't implement (canceled,
-/// resultsSentElsewhere, takeFromOtherQuestion, acceptFromThirdParty; see
-/// [describeReturnVariant]). Used to test how a vat reacts to receiving
-/// one of these from a peer, since this vat never sends them itself.
+/// covers every variant that isn't built through its own dedicated
+/// builder ([buildReturnCanceledMessage], [buildReturnResultsSentElsewhereMessage],
+/// [buildReturnTakeFromOtherQuestionMessage]) plus `acceptFromThirdParty`,
+/// which this vat doesn't implement at all (see [describeReturnVariant]).
+/// Used to test how a vat reacts to receiving one of these from a peer.
 Uint8List buildRawReturnVariantMessage({
   required int answerId,
   required int disc,
@@ -1147,6 +1148,33 @@ Uint8List buildReturnResultsSentElsewhereMessage({required int answerId}) {
   final ret = msg.initReturn();
   ret.setAnswerId(answerId);
   ret.setDiscRaw(_retResultsSentElsewhere);
+  return mb.serialize();
+}
+
+/// Serializes a Return with `canceled` set.
+///
+/// Sent when this vat accepts a peer's premature Finish (received before
+/// the call it names had completed) and, once that call's dispatch
+/// actually settles, chooses not to answer it for real — see
+/// `AnswerTable.applyPeerFinish`/`tryRecordAnswer`'s `completed: false`
+/// case and `IncomingCallCoordinator._sendCanceledReturn`. Deliberately
+/// not sent the moment Finish arrives: `releaseParamCaps` isn't knowable
+/// until the dispatch's params-capability disposal tracking resolves, and
+/// sending any Return earlier would let the peer legally reuse `answerId`
+/// before this vat's own pending dispatch has actually finished with it.
+Uint8List buildReturnCanceledMessage({
+  required int answerId,
+  bool releaseParamCaps = true,
+}) {
+  final mb = MessageBuilder(
+    initialCapacityWords: _initialEnvelopeCapacityWords,
+  );
+  final msg = mb.initRoot(_rpcMessageFactory);
+  msg.setDisc(_msgReturn);
+  final ret = msg.initReturn();
+  ret.setAnswerId(answerId);
+  ret.setReleaseParamCaps(value: releaseParamCaps);
+  ret.setDiscRaw(_retCanceled);
   return mb.serialize();
 }
 
@@ -1373,13 +1401,18 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
         );
       } else {
         // canceled(2) / resultsSentElsewhere(3) / acceptFromThirdParty(5) —
-        // none of these are implemented (see OutgoingCallCoordinator's
-        // internal _awaitAndProcessReturn), but the disc is still preserved here
+        // canceled is the only one of these this vat itself ever sends (see
+        // buildReturnCanceledMessage); none are otherwise interpreted as a
+        // real outcome (see OutgoingCallCoordinator's internal
+        // _awaitAndProcessReturn), but the disc is still preserved here
         // rather than silently discarded, so callers can report exactly
-        // what happened.
+        // what happened. releaseParamCaps is a top-level Return field valid
+        // for every variant, not just results/exception, so it's read the
+        // same way here too.
         return RpcMessage._(
           type: RpcMessageType.return_,
           answerId: ret?.answerId ?? 0,
+          returnReleaseParamCaps: ret?.releaseParamCaps ?? true,
           returnDisc: retDisc,
         );
       }
