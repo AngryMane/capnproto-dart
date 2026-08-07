@@ -297,7 +297,7 @@ class _MessageTargetBuilder extends StructBuilder {
   }
 
   /// [transformPath] is the full sequence of `getPointerField` hops (see
-  /// [RpcCapDescriptor.path]) — not just a single index — so a capability
+  /// [RpcCapabilityDescriptor.path]) — not just a single index — so a capability
   /// nested more than one struct deep in the target answer round-trips
   /// correctly.
   void setPromisedAnswer(int questionId, List<int> transformPath) {
@@ -348,8 +348,8 @@ class _PayloadReader extends StructReader {
   // content (ptr 0): AnyPointer, read in place — no copy, no re-parse.
   AnyPointerReader? get content => getAnyPointerField(0);
   // capTable (ptr 1): composite list of CapDescriptor.
-  ListReader<_CapDescReader>? get capTable =>
-      getStructListFieldWith(1, _CapDescReader.new);
+  ListReader<_CapDescriptorReader>? get capTable =>
+      getStructListFieldWith(1, _CapDescriptorReader.new);
 }
 
 class _PayloadBuilder extends StructBuilder {
@@ -366,12 +366,12 @@ class _PayloadBuilder extends StructBuilder {
     0,
   ).setFromRawStruct(v, preserveCapabilityPointers: true);
   // capTable built via initCapTable
-  ListBuilder<_CapDescBuilder> initCapTable(int count) =>
-      initStructListFieldWith(1, count, _CapDescBuilder.new, 1, 1);
+  ListBuilder<_CapDescriptorBuilder> initCapTable(int count) =>
+      initStructListFieldWith(1, count, _CapDescriptorBuilder.new, 1, 1);
 }
 
-class _CapDescReader extends StructReader {
-  _CapDescReader(super.raw);
+class _CapDescriptorReader extends StructReader {
+  _CapDescriptorReader(super.raw);
   int get disc => getUint16Field(_capDescDisc);
   int get id => getUint32Field(_capDescData);
   int get senderHostedId => id;
@@ -379,8 +379,8 @@ class _CapDescReader extends StructReader {
       getStructFieldWith(0, _PromisedAnswerReader.new);
 }
 
-class _CapDescBuilder extends StructBuilder {
-  _CapDescBuilder(super.raw);
+class _CapDescriptorBuilder extends StructBuilder {
+  _CapDescriptorBuilder(super.raw);
   @override
   StructReader asReader() => throw UnsupportedError('internal');
   void setSenderHosted(int exportId) {
@@ -452,7 +452,7 @@ class _ResolveReader extends StructReader {
   _ResolveReader(super.raw);
   int get promiseId => getUint32Field(_resolvePromiseId);
   int get disc => getUint16Field(_resolveDisc);
-  _CapDescReader? get cap => getStructFieldWith(0, _CapDescReader.new);
+  _CapDescriptorReader? get cap => getStructFieldWith(0, _CapDescriptorReader.new);
   _ExceptionReader? get exception =>
       getStructFieldWith(0, _ExceptionReader.new);
 }
@@ -464,8 +464,8 @@ class _ResolveBuilder extends StructBuilder {
   void setPromiseId(int v) => setUint32Field(_resolvePromiseId, v);
   void setDiscCap() => setUint16Field(_resolveDisc, _resolveCap);
   void setDiscException() => setUint16Field(_resolveDisc, _resolveException);
-  _CapDescBuilder initCap() =>
-      initStructFieldWith(0, _CapDescBuilder.new, 1, 1);
+  _CapDescriptorBuilder initCap() =>
+      initStructFieldWith(0, _CapDescriptorBuilder.new, 1, 1);
   _ExceptionBuilder initException() =>
       initStructFieldWith(0, _ExceptionBuilder.new, 1, 2);
 }
@@ -573,37 +573,37 @@ enum RpcMessageType {
 /// A decoded CapDescriptor from an RPC Payload capTable.
 ///
 /// For hosted descriptors [id] carries the ExportId / ImportId. For
-/// [RpcCapDescriptor.receiverAnswer], [questionId] and [path] identify the
+/// [RpcCapabilityDescriptor.receiverAnswer], [questionId] and [path] identify the
 /// promised answer pipeline path: [path] is the full sequence of
 /// `getPointerField` hops a `PromisedAnswer.transform` names (`noop` entries
 /// are dropped — see `_readTransformPath`), so a capability nested more than
 /// one struct deep in the answer (e.g. `result.a.b`, a two-hop path) is
 /// represented faithfully rather than collapsed to just its first hop.
-final class RpcCapDescriptor {
+final class RpcCapabilityDescriptor {
   final int disc;
   final int id;
   final int questionId;
   final List<int> path;
 
-  const RpcCapDescriptor._({
+  const RpcCapabilityDescriptor._({
     required this.disc,
     this.id = 0,
     this.questionId = 0,
     this.path = const [],
   });
 
-  const RpcCapDescriptor.none() : this._(disc: _capDescNone);
+  const RpcCapabilityDescriptor.none() : this._(disc: _capDescNone);
 
-  const RpcCapDescriptor.senderHosted(int exportId)
+  const RpcCapabilityDescriptor.senderHosted(int exportId)
     : this._(disc: _capDescSenderHosted, id: exportId);
 
-  const RpcCapDescriptor.senderPromise(int exportId)
+  const RpcCapabilityDescriptor.senderPromise(int exportId)
     : this._(disc: _capDescSenderPromise, id: exportId);
 
-  const RpcCapDescriptor.receiverHosted(int importId)
+  const RpcCapabilityDescriptor.receiverHosted(int importId)
     : this._(disc: _capDescReceiverHosted, id: importId);
 
-  const RpcCapDescriptor.receiverAnswer(int questionId, List<int> path)
+  const RpcCapabilityDescriptor.receiverAnswer(int questionId, List<int> path)
     : this._(disc: _capDescReceiverAnswer, questionId: questionId, path: path);
 
   (int, int) get legacyEntry => (disc, id);
@@ -623,7 +623,7 @@ final class RpcMessage {
   final int targetImportId;
   final bool targetIsPromisedAnswer;
   final int targetPromisedAnswerQid;
-  // Full getPointerField hop sequence (see RpcCapDescriptor.path) — not
+  // Full getPointerField hop sequence (see RpcCapabilityDescriptor.path) — not
   // just the first hop.
   final List<int> targetTransformPath;
   final AnyPointerReader? paramsContent;
@@ -669,14 +669,14 @@ final class RpcMessage {
   // Raw (disc, id) descriptors from the return payload's capTable, in order.
   // disc: 0=none, 1=senderHosted, 2=senderPromise, 3=receiverHosted.
   final List<(int, int)> capTableEntries;
-  final List<RpcCapDescriptor> capTableDescriptors;
+  final List<RpcCapabilityDescriptor> capTableDescriptors;
 
   // resolve
   final int promiseId;
   final bool isResolveCap;
   final bool isResolveException;
   final (int, int)? resolveCap;
-  final RpcCapDescriptor? resolveCapDescriptor;
+  final RpcCapabilityDescriptor? resolveCapDescriptor;
 
   // disembargo
   final int disembargoContextDisc;
@@ -757,7 +757,7 @@ Uint8List buildBootstrapMessage(int questionId) {
 /// - To target an already-imported cap: set [targetImportId] (default).
 /// - To target a pending question result: set [targetPromisedAnswerQid] and
 ///   [targetTransformPath] (the getPointerField hop sequence inside the
-///   result struct — see [RpcCapDescriptor.path]).
+///   result struct — see [RpcCapabilityDescriptor.path]).
 ///
 /// [capTableEntries] is an ordered list of `(disc, id)` pairs for the capTable:
 ///   - disc=1 (senderHosted): we export [id] to the peer
@@ -771,7 +771,7 @@ Uint8List buildCallMessage({
   required int methodId,
   required Uint8List paramsBytes,
   List<(int, int)> capTableEntries = const [],
-  List<RpcCapDescriptor>? capTableDescriptors,
+  List<RpcCapabilityDescriptor>? capTableDescriptors,
   bool sendResultsToYourself = false,
 }) => buildCallMessageWithParamsBuilderSync(
   questionId: questionId,
@@ -811,7 +811,7 @@ Future<Uint8List> buildCallMessageWithParamsBuilder({
   required int interfaceId,
   required int methodId,
   required void Function(AnyPointerBuilder) buildParams,
-  required Future<List<RpcCapDescriptor>> Function() resolveCapTable,
+  required Future<List<RpcCapabilityDescriptor>> Function() resolveCapTable,
   bool sendResultsToYourself = false,
 }) async {
   final (mb, params) = _beginCallMessage(
@@ -839,7 +839,7 @@ Uint8List buildCallMessageWithParamsBuilderSync({
   required int interfaceId,
   required int methodId,
   required void Function(AnyPointerBuilder) buildParams,
-  required List<RpcCapDescriptor> descriptors,
+  required List<RpcCapabilityDescriptor> descriptors,
   bool sendResultsToYourself = false,
 }) {
   final (mb, params) = _beginCallMessage(
@@ -874,7 +874,7 @@ FutureOr<Uint8List> buildCallMessageWithParamsBuilderMaybeSync({
   required int interfaceId,
   required int methodId,
   required void Function(AnyPointerBuilder) buildParams,
-  required FutureOr<List<RpcCapDescriptor>> Function() resolveDescriptors,
+  required FutureOr<List<RpcCapabilityDescriptor>> Function() resolveDescriptors,
   bool sendResultsToYourself = false,
 }) {
   final (mb, params) = _beginCallMessage(
@@ -888,7 +888,7 @@ FutureOr<Uint8List> buildCallMessageWithParamsBuilderMaybeSync({
   );
   buildParams(params.initAnyPointerField(0));
   final descriptorsOrFuture = resolveDescriptors();
-  if (descriptorsOrFuture is List<RpcCapDescriptor>) {
+  if (descriptorsOrFuture is List<RpcCapabilityDescriptor>) {
     return _finishCallMessage(mb, params, descriptorsOrFuture);
   }
   return descriptorsOrFuture.then(
@@ -933,7 +933,7 @@ FutureOr<Uint8List> buildCallMessageWithParamsBuilderMaybeSync({
 Uint8List _finishCallMessage(
   MessageBuilder mb,
   _PayloadBuilder params,
-  List<RpcCapDescriptor> descriptors,
+  List<RpcCapabilityDescriptor> descriptors,
 ) {
   if (descriptors.isNotEmpty) {
     final capTable = params.initCapTable(descriptors.length);
@@ -964,7 +964,7 @@ Uint8List buildReturnResultsMessage({
 Uint8List buildReturnResultsMessageFromReader({
   required int answerId,
   required RawStructReader resultsRoot,
-  List<RpcCapDescriptor> descriptors = const [],
+  List<RpcCapabilityDescriptor> descriptors = const [],
   bool releaseParamCaps = true,
   bool noFinishNeeded = false,
 }) {
@@ -1002,7 +1002,7 @@ Uint8List buildReturnResultsWithCapsMessage({
     answerId: answerId,
     resultsBytes: resultsBytes,
     descriptors: exportIds
-        .map(RpcCapDescriptor.senderHosted)
+        .map(RpcCapabilityDescriptor.senderHosted)
         .toList(growable: false),
     releaseParamCaps: releaseParamCaps,
     noFinishNeeded: noFinishNeeded,
@@ -1030,7 +1030,7 @@ Uint8List buildReturnOtherMessage({required int answerId, required int disc}) {
 Uint8List buildReturnResultsWithCapDescriptorsMessage({
   required int answerId,
   required Uint8List resultsBytes,
-  required List<RpcCapDescriptor> descriptors,
+  required List<RpcCapabilityDescriptor> descriptors,
   bool releaseParamCaps = true,
   bool noFinishNeeded = false,
 }) => buildReturnResultsMessageFromReader(
@@ -1259,7 +1259,7 @@ Uint8List buildAbortMessage(
   return mb.serialize();
 }
 
-void _writeCapDescriptor(_CapDescBuilder builder, RpcCapDescriptor descriptor) {
+void _writeCapDescriptor(_CapDescriptorBuilder builder, RpcCapabilityDescriptor descriptor) {
   switch (descriptor.disc) {
     case _capDescSenderPromise:
       builder.setSenderPromise(descriptor.id);
@@ -1277,25 +1277,25 @@ void _writeCapDescriptor(_CapDescBuilder builder, RpcCapDescriptor descriptor) {
   }
 }
 
-RpcCapDescriptor _legacyEntryToCapDescriptor(int disc, int id) {
+RpcCapabilityDescriptor _legacyEntryToCapDescriptor(int disc, int id) {
   switch (disc) {
     case _capDescSenderHosted:
-      return RpcCapDescriptor.senderHosted(id);
+      return RpcCapabilityDescriptor.senderHosted(id);
     case _capDescSenderPromise:
-      return RpcCapDescriptor.senderPromise(id);
+      return RpcCapabilityDescriptor.senderPromise(id);
     case _capDescReceiverHosted:
-      return RpcCapDescriptor.receiverHosted(id);
+      return RpcCapabilityDescriptor.receiverHosted(id);
     default:
       // Preserve descriptors we do not implement so the connection layer can
       // reject them explicitly instead of treating them as application nulls.
-      return RpcCapDescriptor._(disc: disc, id: id);
+      return RpcCapabilityDescriptor._(disc: disc, id: id);
   }
 }
 
-RpcCapDescriptor _readCapDescriptor(_CapDescReader entry) {
+RpcCapabilityDescriptor _readCapDescriptor(_CapDescriptorReader entry) {
   if (entry.disc == _capDescReceiverAnswer) {
     final promisedAnswer = entry.receiverAnswer;
-    return RpcCapDescriptor.receiverAnswer(
+    return RpcCapabilityDescriptor.receiverAnswer(
       promisedAnswer?.questionId ?? 0,
       _readTransformPath(promisedAnswer?.transform),
     );
@@ -1350,7 +1350,7 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
       final params = call?.params;
       final callCapTable = params?.capTable;
       final capTablePairs = <(int, int)>[];
-      final capTableDescriptors = <RpcCapDescriptor>[];
+      final capTableDescriptors = <RpcCapabilityDescriptor>[];
       if (callCapTable != null) {
         for (int i = 0; i < callCapTable.length; i++) {
           final entry = callCapTable[i];
@@ -1390,7 +1390,7 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
         final capTable = payload?.capTable;
         final exportIds = <int>[];
         final capTablePairs = <(int, int)>[];
-        final capTableDescriptors = <RpcCapDescriptor>[];
+        final capTableDescriptors = <RpcCapabilityDescriptor>[];
         if (capTable != null) {
           for (int i = 0; i < capTable.length; i++) {
             final entry = capTable[i];

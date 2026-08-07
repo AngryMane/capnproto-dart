@@ -78,7 +78,7 @@ final class OutgoingCallCoordinator {
   /// `QuestionTable`, which `tearDown` has, by then, already dropped
   /// entirely — so a side effect started *after* that point would never be
   /// rolled back by anything.
-  final FutureOr<List<RpcCapDescriptor>> Function(
+  final FutureOr<List<RpcCapabilityDescriptor>> Function(
     List<Capability> paramsCapabilities, {
     int? qid,
     required void Function() ensureActive,
@@ -86,7 +86,7 @@ final class OutgoingCallCoordinator {
   resolveCapTableMaybeSync;
 
   final void Function(List<int> exportIds) releaseParameterCapabilityExports;
-  final Capability Function(RpcCapDescriptor descriptor)
+  final Capability Function(RpcCapabilityDescriptor descriptor)
   capabilityFromDescriptor;
   final Future<ResolvedAnswer> Function(int qid) resolveLocalAnswer;
 

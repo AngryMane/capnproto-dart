@@ -114,9 +114,9 @@ final class IncomingCallCoordinator {
   final RpcCapabilityReference? Function(Capability cap)
   tryExtractCapabilityReference;
 
-  final Capability Function(RpcCapDescriptor descriptor)
+  final Capability Function(RpcCapabilityDescriptor descriptor)
   capabilityFromDescriptor;
-  final RpcCapDescriptor Function(Capability cap) returnCapDescriptor;
+  final RpcCapabilityDescriptor Function(Capability cap) returnCapDescriptor;
 
   /// `OutgoingCallCoordinator.startCallWithAllocatedQuestion` — see this class's own doc
   /// comment for why this closure, not a direct reference to that
@@ -678,7 +678,7 @@ final class IncomingCallCoordinator {
             return;
           }
 
-          final resultDescriptors = <RpcCapDescriptor>[];
+          final resultDescriptors = <RpcCapabilityDescriptor>[];
           for (final c in result.caps) {
             resultDescriptors.add(returnCapDescriptor(c));
           }

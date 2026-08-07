@@ -152,8 +152,8 @@ void main() {
         capB,
       ], ensureActive: () {});
 
-      expect(result, isA<List<RpcCapDescriptor>>());
-      final descriptors = result as List<RpcCapDescriptor>;
+      expect(result, isA<List<RpcCapabilityDescriptor>>());
+      final descriptors = result as List<RpcCapabilityDescriptor>;
       expect(descriptors, hasLength(2));
       for (final d in descriptors) {
         expect(d.disc, equals(1)); // senderHosted
@@ -177,8 +177,8 @@ void main() {
         cap,
       ], ensureActive: () {});
 
-      expect(result, isA<List<RpcCapDescriptor>>());
-      final descriptor = (result as List<RpcCapDescriptor>).single;
+      expect(result, isA<List<RpcCapabilityDescriptor>>());
+      final descriptor = (result as List<RpcCapabilityDescriptor>).single;
       expect(descriptor.disc, equals(4));
       expect(descriptor.questionId, equals(17));
       expect(descriptor.path, equals([2, 3]));
@@ -200,12 +200,12 @@ void main() {
         capA,
       ], ensureActive: () => ensureActiveCalls++);
 
-      expect(result, isA<Future<List<RpcCapDescriptor>>>());
+      expect(result, isA<Future<List<RpcCapabilityDescriptor>>>());
       final callsBeforeResolve = ensureActiveCalls;
       expect(callsBeforeResolve, greaterThanOrEqualTo(1));
 
       importId.complete(9);
-      final descriptors = await (result as Future<List<RpcCapDescriptor>>);
+      final descriptors = await (result as Future<List<RpcCapabilityDescriptor>>);
 
       expect(ensureActiveCalls, greaterThan(callsBeforeResolve));
       expect(descriptors.single.disc, equals(3)); // receiverHosted
@@ -217,12 +217,12 @@ void main() {
       final h = _Harness();
 
       expect(
-        h.protocol.capabilityFromDescriptor(const RpcCapDescriptor.none()),
+        h.protocol.capabilityFromDescriptor(const RpcCapabilityDescriptor.none()),
         isA<NullCapability>(),
       );
 
       h.protocol.capabilityFromDescriptor(
-        const RpcCapDescriptor.senderHosted(5),
+        const RpcCapabilityDescriptor.senderHosted(5),
       );
       expect(h.importTable.isTracked(5), isTrue);
 
@@ -230,7 +230,7 @@ void main() {
         6,
       ); // capture before retain, to check isPromise
       h.protocol.capabilityFromDescriptor(
-        const RpcCapDescriptor.senderPromise(6),
+        const RpcCapabilityDescriptor.senderPromise(6),
       );
       expect(h.importTable.isTracked(6), isTrue);
       expect(promiseState.isPromise, isTrue);
@@ -238,7 +238,7 @@ void main() {
       final exported = _FakeCapability();
       final exportId = h.exportTable.getOrCreate(exported);
       final lease = h.protocol.capabilityFromDescriptor(
-        RpcCapDescriptor.receiverHosted(exportId),
+        RpcCapabilityDescriptor.receiverHosted(exportId),
       );
       expect(identical(unwrapCapabilityLease(lease), exported), isTrue);
     });
@@ -248,10 +248,10 @@ void main() {
       final h = _Harness();
 
       h.protocol.capabilityFromDescriptor(
-        RpcCapDescriptor.receiverAnswer(7, const [1, 2]),
+        RpcCapabilityDescriptor.receiverAnswer(7, const [1, 2]),
       );
       h.protocol.capabilityFromDescriptor(
-        RpcCapDescriptor.receiverAnswer(8, const []),
+        RpcCapabilityDescriptor.receiverAnswer(8, const []),
       );
 
       // Compared component-wise, not via equals() on the whole record list:

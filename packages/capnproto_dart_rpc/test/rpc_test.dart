@@ -159,7 +159,7 @@ Uint8List _callWithCapDescriptorDisc(int disc) {
     interfaceId: _echoInterfaceId,
     methodId: _echoMethodId,
     paramsBytes: params,
-    capTableDescriptors: const [RpcCapDescriptor.none()],
+    capTableDescriptors: const [RpcCapabilityDescriptor.none()],
   );
   final withSenderHosted = buildCallMessage(
     questionId: 1,
@@ -167,7 +167,7 @@ Uint8List _callWithCapDescriptorDisc(int disc) {
     interfaceId: _echoInterfaceId,
     methodId: _echoMethodId,
     paramsBytes: params,
-    capTableDescriptors: const [RpcCapDescriptor.senderHosted(0)],
+    capTableDescriptors: const [RpcCapabilityDescriptor.senderHosted(0)],
   );
   final differences = <int>[
     for (var i = 0; i < withNone.length; i++)
@@ -195,8 +195,8 @@ Uint8List _callWithReceiverHostedThenCapDescriptorDisc(int disc) {
     methodId: _echoMethodId,
     paramsBytes: params,
     capTableDescriptors: const [
-      RpcCapDescriptor.receiverHosted(0),
-      RpcCapDescriptor.none(),
+      RpcCapabilityDescriptor.receiverHosted(0),
+      RpcCapabilityDescriptor.none(),
     ],
   );
   final withSenderHostedSecond = buildCallMessage(
@@ -206,8 +206,8 @@ Uint8List _callWithReceiverHostedThenCapDescriptorDisc(int disc) {
     methodId: _echoMethodId,
     paramsBytes: params,
     capTableDescriptors: const [
-      RpcCapDescriptor.receiverHosted(0),
-      RpcCapDescriptor.senderHosted(0),
+      RpcCapabilityDescriptor.receiverHosted(0),
+      RpcCapabilityDescriptor.senderHosted(0),
     ],
   );
   final differences = <int>[
@@ -1457,7 +1457,7 @@ void main() {
           methodId: 0,
           paramsBytes: params,
           capTableDescriptors: const [
-            RpcCapDescriptor.receiverAnswer(9, [0, 2, 1]),
+            RpcCapabilityDescriptor.receiverAnswer(9, [0, 2, 1]),
           ],
         );
         final msg = parseRpcMessage(bytes);
@@ -4601,7 +4601,7 @@ void main() {
         methodId: 0,
         paramsBytes: params,
         capTableDescriptors: const [
-          RpcCapDescriptor.receiverAnswer(9, [2]),
+          RpcCapabilityDescriptor.receiverAnswer(9, [2]),
         ],
       );
       final msg = parseRpcMessage(bytes);
@@ -4768,7 +4768,7 @@ void main() {
           interfaceId: _echoInterfaceId,
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
-          capTableDescriptors: const [RpcCapDescriptor.receiverHosted(99999)],
+          capTableDescriptors: const [RpcCapabilityDescriptor.receiverHosted(99999)],
         ),
       );
       await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -4836,8 +4836,8 @@ void main() {
             methodId: _echoMethodId,
             paramsBytes: _buildEchoParams(''),
             capTableDescriptors: const [
-              RpcCapDescriptor.senderHosted(10),
-              RpcCapDescriptor.receiverHosted(99999),
+              RpcCapabilityDescriptor.senderHosted(10),
+              RpcCapabilityDescriptor.receiverHosted(99999),
             ],
           ),
         );
@@ -4913,7 +4913,7 @@ void main() {
             interfaceId: _echoInterfaceId,
             methodId: _echoMethodId,
             paramsBytes: _buildEchoParams(''),
-            capTableDescriptors: const [RpcCapDescriptor.receiverHosted(99999)],
+            capTableDescriptors: const [RpcCapabilityDescriptor.receiverHosted(99999)],
           ),
         );
         await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -5274,7 +5274,7 @@ void main() {
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
           capTableDescriptors: [
-            RpcCapDescriptor.receiverAnswer(1, [0]),
+            RpcCapabilityDescriptor.receiverAnswer(1, [0]),
           ],
         ),
       );
@@ -5366,7 +5366,7 @@ void main() {
             methodId: _echoMethodId,
             paramsBytes: _buildEchoParams(''),
             capTableDescriptors: [
-              RpcCapDescriptor.receiverAnswer(1, [0]),
+              RpcCapabilityDescriptor.receiverAnswer(1, [0]),
             ],
           ),
         );
@@ -5453,7 +5453,7 @@ void main() {
             methodId: _echoMethodId,
             paramsBytes: _buildEchoParams(''),
             capTableDescriptors: [
-              RpcCapDescriptor.receiverAnswer(1, [0]),
+              RpcCapabilityDescriptor.receiverAnswer(1, [0]),
             ],
           ),
         );
@@ -5540,7 +5540,7 @@ void main() {
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
           capTableDescriptors: [
-            RpcCapDescriptor.receiverAnswer(1, [0]),
+            RpcCapabilityDescriptor.receiverAnswer(1, [0]),
           ],
         ),
       );
@@ -6062,7 +6062,7 @@ void main() {
           interfaceId: _echoInterfaceId,
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
-          capTableDescriptors: const [RpcCapDescriptor.senderPromise(10)],
+          capTableDescriptors: const [RpcCapabilityDescriptor.senderPromise(10)],
         ),
       );
       await Future<void>.delayed(Duration.zero);
@@ -6118,8 +6118,8 @@ void main() {
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
           capTableDescriptors: const [
-            RpcCapDescriptor.senderHosted(20),
-            RpcCapDescriptor.senderPromise(10),
+            RpcCapabilityDescriptor.senderHosted(20),
+            RpcCapabilityDescriptor.senderPromise(10),
           ],
         ),
       );
@@ -6243,9 +6243,9 @@ void main() {
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
           capTableDescriptors: const [
-            RpcCapDescriptor.senderHosted(20),
-            RpcCapDescriptor.senderHosted(21),
-            RpcCapDescriptor.senderHosted(22),
+            RpcCapabilityDescriptor.senderHosted(20),
+            RpcCapabilityDescriptor.senderHosted(21),
+            RpcCapabilityDescriptor.senderHosted(22),
           ],
         ),
       );
@@ -6360,7 +6360,7 @@ void main() {
           buildReturnResultsWithCapDescriptorsMessage(
             answerId: 0,
             resultsBytes: _buildEchoParams(''),
-            descriptors: const [RpcCapDescriptor.senderPromise(10)],
+            descriptors: const [RpcCapabilityDescriptor.senderPromise(10)],
           ),
         );
         await Future<void>.delayed(Duration.zero);
@@ -6437,7 +6437,7 @@ void main() {
           buildReturnResultsWithCapDescriptorsMessage(
             answerId: 0,
             resultsBytes: _buildEchoParams(''),
-            descriptors: const [RpcCapDescriptor.senderPromise(10)],
+            descriptors: const [RpcCapabilityDescriptor.senderPromise(10)],
           ),
         );
         await Future<void>.delayed(Duration.zero);
@@ -6501,7 +6501,7 @@ void main() {
         buildReturnResultsWithCapDescriptorsMessage(
           answerId: 0,
           resultsBytes: _buildEchoParams(''),
-          descriptors: const [RpcCapDescriptor.senderPromise(10)],
+          descriptors: const [RpcCapabilityDescriptor.senderPromise(10)],
         ),
       );
       await Future<void>.delayed(Duration.zero);

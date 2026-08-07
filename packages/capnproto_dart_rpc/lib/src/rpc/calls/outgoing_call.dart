@@ -29,7 +29,7 @@ final class ImportedCapabilityTarget extends OutgoingCallTarget {
 /// Targets a pending question's result (wire-level promise pipelining).
 /// [transformPath] is the full getPointerField hop sequence into the parent
 /// answer — not just a single index, so a capability nested more than one
-/// struct deep is expressible (see `RpcCapDescriptor`'s path field).
+/// struct deep is expressible (see `RpcCapabilityDescriptor`'s path field).
 final class PromisedAnswerTarget extends OutgoingCallTarget {
   final int questionId;
   final List<int> transformPath;

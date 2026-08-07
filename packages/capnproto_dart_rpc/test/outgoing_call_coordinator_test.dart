@@ -88,7 +88,7 @@ class _Harness {
         ensureActive();
         postGateSideEffects.add(42);
         if (qid != null) questions.recordParamExportIds(qid, [42]);
-        return const [RpcCapDescriptor.senderHosted(42)];
+        return const [RpcCapabilityDescriptor.senderHosted(42)];
       });
     },
     releaseParameterCapabilityExports: releasedExportIds.add,

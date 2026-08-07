@@ -121,13 +121,13 @@ class _Harness {
 
   /// Settable per test — defaults to a fresh [_FakeCapability] per
   /// descriptor.
-  Capability Function(RpcCapDescriptor descriptor) capabilityFromDescriptor =
+  Capability Function(RpcCapabilityDescriptor descriptor) capabilityFromDescriptor =
       (descriptor) => _FakeCapability();
 
   /// Settable per test — defaults to a `none` descriptor for every result
   /// capability.
-  RpcCapDescriptor Function(Capability cap) returnCapDescriptor =
-      (cap) => const RpcCapDescriptor.none();
+  RpcCapabilityDescriptor Function(Capability cap) returnCapDescriptor =
+      (cap) => const RpcCapabilityDescriptor.none();
 
   /// Settable per test — defaults to completing [OutgoingQuestion.sentCompleter]
   /// immediately (mirrors `OutgoingCallCoordinator.startCallWithAllocatedQuestion`'s synchronous
@@ -188,7 +188,7 @@ Uint8List _buildCall({
   int interfaceId = 1,
   int methodId = 2,
   bool sendResultsToYourself = false,
-  List<RpcCapDescriptor>? capTableDescriptors,
+  List<RpcCapabilityDescriptor>? capTableDescriptors,
 }) => buildCallMessage(
   questionId: questionId,
   targetImportId: targetExportId,
@@ -205,7 +205,7 @@ Uint8List _buildPipelinedCall({
   List<int> transformPath = const [0],
   int interfaceId = 1,
   int methodId = 2,
-  List<RpcCapDescriptor>? capTableDescriptors,
+  List<RpcCapabilityDescriptor>? capTableDescriptors,
 }) => buildCallMessage(
   questionId: questionId,
   targetPromisedAnswerQid: parentQid,
@@ -621,7 +621,7 @@ void main() {
           _buildPipelinedCall(
             questionId: 2,
             parentQid: 1,
-            capTableDescriptors: const [RpcCapDescriptor.senderHosted(7)],
+            capTableDescriptors: const [RpcCapabilityDescriptor.senderHosted(7)],
           ),
         ),
       );
