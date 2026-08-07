@@ -3728,7 +3728,7 @@ void main() {
       // Regression coverage for a gap the earlier startCallWithAllocatedQuestion()/
       // _throwIfTornDown() guards (see OutgoingCallCoordinator) don't
       // close on their own: they stop a *build* from resuming after
-      // tearDown, but resolveParameterCapabilityDescriptors's own loop can itself be
+      // tearDown, but resolveParameterCapabilityReferences's own loop can itself be
       // suspended mid-params-list -- on an unresolved import id here,
       // just as easily on a pipelined param's parent being sent -- with
       // some entries already resolved (and exported) and others not yet
@@ -3736,7 +3736,7 @@ void main() {
       // so nothing rolls back a *new* export the loop creates after
       // resuming from that suspension -- ensureActive() (threaded into
       // _resolveCapTableAsync as this call's OutgoingCallCoordinator
-      // resolveParameterCapabilityDescriptors's ensureActive parameter) exists
+      // resolveParameterCapabilityReferences's ensureActive parameter) exists
       // specifically to stop the loop from ever reaching that new export
       // in the first place.
       final localCapA = CountingCapability();
@@ -4811,11 +4811,11 @@ void main() {
     },
   );
 
-  group('acquireCapabilityFromDescriptor: receiverHosted validation', () {
+  group('acquireCapabilityFromWireReference: receiverHosted validation', () {
     test('a receiverHosted descriptor naming an export id we never exported '
         'fails only that one call with Return.exception, and does not tear '
         'down the connection', () async {
-      // Regression test: CapabilityProtocol.acquireCapabilityFromDescriptor's
+      // Regression test: CapabilityProtocol.acquireCapabilityFromWireReference's
       // receiverHosted case
       // (disc=3) used to silently map an unknown export id to
       // NullCapability instead of treating it as the protocol violation
@@ -4886,7 +4886,7 @@ void main() {
       'a descriptor that fails partway through a multi-entry capTable does '
       'not leak the capabilities that resolved successfully before it',
       () async {
-        // Regression test: when acquireCapabilityFromDescriptor throws partway
+        // Regression test: when acquireCapabilityFromWireReference throws partway
         // through decoding a Call's capTable, everything already decoded
         // before the failing entry (an import refcount bump, in this
         // case) used to just sit in the local `paramsCapabilities` list
@@ -5088,7 +5088,7 @@ void main() {
       // handler does *not* separately dispose `capabilityLease` itself; the
       // runtime is
       // solely responsible for it from that point on. Before
-      // CapabilityProtocol.exportResultCapabilityAsDescriptor disposed a redundant
+      // CapabilityProtocol.exportResultCapabilityAsWireReference disposed a redundant
       // a [CapabilityLease] passed as `cap` once its own owning export reference was established,
       // `capabilityLease` was simply dropped — leaking its share of the underlying identity's
       // refcount forever, so vat A's export never actually cleared even
@@ -5139,7 +5139,7 @@ void main() {
       // peer A → relay → peer B, then B hands the *same* capability back
       // to relay as a params capability of a further call — wire-encoded
       // as receiverHosted, since it's relay's own export as far as B's
-      // connection is concerned. Before acquireCapabilityFromDescriptor's
+      // connection is concerned. Before acquireCapabilityFromWireReference's
       // receiverHosted case acquired a fresh lease instead of returning
       // the export's raw identity directly, relay's dispatch handler
       // disposing that received params capability tore down the shared
@@ -6226,7 +6226,7 @@ void main() {
       // dispatch()'s params list is processed in order: freshCap (not an
       // import) creates a fresh export first, *then* brokenParam's
       // throwIfBroken throws — exercising
-      // CapabilityProtocol.resolveParameterCapabilityDescriptors's partial-list-then-throw
+      // CapabilityProtocol.resolveParameterCapabilityReferences's partial-list-then-throw
       // path.
       final freshCap = _TrackedCapability();
       await expectLater(

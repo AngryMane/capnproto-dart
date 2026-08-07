@@ -35,22 +35,22 @@ class _Harness {
   final releasedExportIds = <List<int>>[];
   final returnsSeenByHook = <RpcMessage>[];
 
-  /// When set, [resolveParameterCapabilityDescriptors] throws this instead of resolving.
+  /// When set, [resolveParameterCapabilityReferences] throws this instead of resolving.
   Object? failWith;
 
-  /// Number of times [resolveParameterCapabilityDescriptors] has actually run — used to
+  /// Number of times [resolveParameterCapabilityReferences] has actually run — used to
   /// prove a torn-down coordinator bails out *before* triggering its real
   /// side effects (export creation, refcount bumps), not just before
   /// [sendBytes].
   var resolveCapTableCallCount = 0;
 
-  /// When set, [resolveParameterCapabilityDescriptors] doesn't resolve until this
+  /// When set, [resolveParameterCapabilityReferences] doesn't resolve until this
   /// completes — used to open a window between a build's capTable
   /// resolution starting and finishing, for tests that need `tearDown()` to
   /// land inside it.
   Completer<void>? capTableGate;
 
-  /// Recorded every time [resolveParameterCapabilityDescriptors]'s fake reaches the
+  /// Recorded every time [resolveParameterCapabilityReferences]'s fake reaches the
   /// point past [capTableGate] where a real resolver (e.g.
   /// `CapabilityProtocol`'s internal `_resolveCapTableAsync`) would commit
   /// a side effect with lasting state — `ExportTable.retainOrCreateExportId`, recording a
@@ -343,10 +343,10 @@ void main() {
       expect(h.sentBytes, isEmpty);
     });
 
-    test('resolveParameterCapabilityDescriptors side effects that would resume after '
+    test('resolveParameterCapabilityReferences side effects that would resume after '
         'tearDown during the gate wait never run, and are never recorded '
         'against the question', () async {
-      // Reproduces the gap a real resolver has: resolveParameterCapabilityDescriptors
+      // Reproduces the gap a real resolver has: resolveParameterCapabilityReferences
       // isn't a pure function — a real implementation
       // (_resolveCapTableAsync) creates exports and records their ids
       // against qid as a side effect. _failIfTornDown alone can't roll
@@ -388,7 +388,7 @@ void main() {
       expect(h.questions.takeParamExportIds(question.id), isNull);
     });
 
-    test('resolveParameterCapabilityDescriptors side effects past the gate still run '
+    test('resolveParameterCapabilityReferences side effects past the gate still run '
         'normally, and still send, when tearDown never happens', () async {
       // Companion to the test above: proves ensureActive() only blocks the
       // torn-down case, not every gated resolution.

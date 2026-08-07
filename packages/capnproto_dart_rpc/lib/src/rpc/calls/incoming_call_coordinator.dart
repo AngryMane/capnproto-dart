@@ -360,11 +360,11 @@ final class IncomingCallCoordinator {
 
       // A disc this vat doesn't implement at all (e.g. thirdPartyHosted) is
       // a bigger deal than a single bad call — see the `default` case in
-      // CapabilityProtocol.acquireCapabilityFromDescriptor and the "tears down the
+      // CapabilityProtocol.acquireCapabilityFromWireReference and the "tears down the
       // connection as unimplemented" test for this exact behavior — so let
       // that kind keep propagating to this listener's own outer try/catch,
       // which tears the whole connection down. Same for anything that
-      // isn't even an RpcException: acquireCapabilityFromDescriptor itself never
+      // isn't even an RpcException: acquireCapabilityFromWireReference itself never
       // throws anything else today, but this being a peer-triggered decode
       // loop, silently downgrading an unexpected failure type to an
       // ordinary per-call Return.exception would be the wrong default.
@@ -549,7 +549,8 @@ final class IncomingCallCoordinator {
     // resolution categorizes as receiverHosted (no export created) — but a
     // receiverHosted-descriptor param on the *original* incoming call
     // resolves to this vat's own capability object (see
-    // CapabilityProtocol.acquireCapabilityFromDescriptor's disc-3 case), which
+    // CapabilityProtocol.acquireCapabilityFromWireReference's
+    // ReceiverHostedCapabilityReference case), which
     // *does* get a fresh senderHosted export when forwarded here.
     startCallWithAllocatedQuestion(
       question: question,
@@ -594,7 +595,7 @@ final class IncomingCallCoordinator {
     final cancellation = DispatchCancellationController();
 
     // Params capabilities freshly imported for this call (see
-    // _dispatchToCapability/CapabilityProtocol.acquireCapabilityFromDescriptor —
+    // _dispatchToCapability/CapabilityProtocol.acquireCapabilityFromWireReference —
     // every senderHosted/senderPromise entry in the incoming Call's
     // capTable creates a brand new _ImportedCapability wrapper) get a
     // deferred release sink for the lifetime of this dispatch, so

@@ -99,18 +99,18 @@ final class CapabilityProtocol {
   });
 
   /// Canonical async capTable resolution — the fallback
-  /// [resolveParameterCapabilityDescriptors] delegates to when it can't resolve everything synchronously. When [qid]
+  /// [resolveParameterCapabilityReferences] delegates to when it can't resolve everything synchronously. When [qid]
   /// is given, records every senderHosted/senderPromise export ID produced
   /// (this call's own params capabilities) against it — see
   /// [_recordParamExportIds].
   ///
   /// [ensureActive] (see
-  /// `OutgoingCallCoordinator.resolveParameterCapabilityDescriptors`'s doc
+  /// `OutgoingCallCoordinator.resolveParameterCapabilityReferences`'s doc
   /// comment for the invariant this establishes) is called before the
   /// loop, at the top of every iteration, and immediately after each
   /// `await` inside it — i.e. at every point execution resumes after a
   /// suspension that `tearDown` could have run during, and before the very
-  /// next side effect (`exportTable.retainOrCreateExportId`, adding to [capEntries])
+  /// next side effect (`exportTable.retainOrCreateExportId`, adding to [capabilityReferences])
   /// that resuming would otherwise lead to. Once torn down,
   /// [ExportTable.tearDown]/[QuestionTable.tearDown] have already disposed
   /// and cleared everything this loop could have created *before* that
@@ -125,7 +125,7 @@ final class CapabilityProtocol {
     required void Function() ensureActive,
   }) async {
     ensureActive();
-    final capEntries = <WireCapabilityReference>[];
+    final capabilityReferences = <WireCapabilityReference>[];
     // try/finally, not a plain trailing call: a broken import or a rejected
     // importIdFuture partway through this loop (importTable.throwIfBroken/
     // await above) must still record whatever senderHosted/senderPromise exports
@@ -151,7 +151,7 @@ final class CapabilityProtocol {
           final id = await reference.importId;
           ensureActive();
           importTable.throwIfBroken(id);
-          capEntries.add(ReceiverHostedCapabilityReference(id));
+          capabilityReferences.add(ReceiverHostedCapabilityReference(id));
         } else if (reference is PipelinedCapabilityReference) {
           // The parent Call (reference.parentQuestionId) must reach the wire
           // before this receiverAnswer descriptor referencing it does —
@@ -166,7 +166,7 @@ final class CapabilityProtocol {
           );
           if (parentSent != null) await parentSent.future;
           ensureActive();
-          capEntries.add(
+          capabilityReferences.add(
             ReceiverAnswerCapabilityReference(
               reference.parentQuestionId,
               reference.transformPath,
@@ -174,7 +174,7 @@ final class CapabilityProtocol {
           );
         } else {
           ensureActive();
-          capEntries.add(
+          capabilityReferences.add(
             SenderHostedCapabilityReference(
               exportTable.retainOrCreateExportId(cap),
             ),
@@ -182,12 +182,12 @@ final class CapabilityProtocol {
         }
       }
     } finally {
-      if (qid != null) _recordParamExportIds(qid, capEntries);
+      if (qid != null) _recordParamExportIds(qid, capabilityReferences);
     }
-    return capEntries;
+    return capabilityReferences;
   }
 
-  /// Records the senderHosted/senderPromise export IDs among [capEntries]
+  /// Records the senderHosted/senderPromise export IDs among [capabilityReferences]
   /// (an outgoing Call's own capTable — this vat's params capabilities)
   /// against [qid], so `OutgoingCallCoordinator`'s internal `_awaitAndProcessReturn`
   /// can apply `Return.releaseParamCaps` locally once the matching Return
@@ -196,11 +196,11 @@ final class CapabilityProtocol {
   /// to release either way.
   void _recordParamExportIds(
     int qid,
-    List<WireCapabilityReference> capEntries,
+    List<WireCapabilityReference> capabilityReferences,
   ) {
     final ids = <int>[
-      for (final d in capEntries)
-        if (d case SenderHostedCapabilityReference(:final exportId) ||
+      for (final reference in capabilityReferences)
+        if (reference case SenderHostedCapabilityReference(:final exportId) ||
             SenderPromiseCapabilityReference(:final exportId))
           exportId,
     ];
@@ -251,7 +251,7 @@ final class CapabilityProtocol {
       );
     }
 
-    final capEntries = <WireCapabilityReference>[];
+    final capabilityReferences = <WireCapabilityReference>[];
     // See _resolveCapTableAsync's matching comment: try/finally so a broken
     // import discovered partway through still records whatever exports
     // earlier entries in this loop already created.
@@ -266,19 +266,19 @@ final class CapabilityProtocol {
           // still-uncached one would have routed through the async branch.
           final id = reference.importId as int;
           importTable.throwIfBroken(id);
-          capEntries.add(ReceiverHostedCapabilityReference(id));
+          capabilityReferences.add(ReceiverHostedCapabilityReference(id));
         } else if (reference is PipelinedCapabilityReference) {
           // Safe to encode without waiting here: needsAsync above already
           // routed any case where the parent Call hasn't been sent yet
           // through the async (awaiting) version instead.
-          capEntries.add(
+          capabilityReferences.add(
             ReceiverAnswerCapabilityReference(
               reference.parentQuestionId,
               reference.transformPath,
             ),
           );
         } else {
-          capEntries.add(
+          capabilityReferences.add(
             SenderHostedCapabilityReference(
               exportTable.retainOrCreateExportId(cap),
             ),
@@ -286,9 +286,9 @@ final class CapabilityProtocol {
         }
       }
     } finally {
-      if (qid != null) _recordParamExportIds(qid, capEntries);
+      if (qid != null) _recordParamExportIds(qid, capabilityReferences);
     }
-    return capEntries;
+    return capabilityReferences;
   }
 
   /// The returned Future always completes successfully (never with an
