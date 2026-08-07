@@ -9,6 +9,8 @@ import 'package:test/test.dart';
 ResolvedAnswer _answer([List<Capability> caps = const []]) =>
     ResolvedAnswer(Uint8List(0), caps);
 
+const _tornDownProbeError = CapnpException('connection torn down (probe)');
+
 void main() {
   group('AnswerTable', () {
     test('Finish arriving while dispatch is still pending with no '
@@ -353,8 +355,9 @@ void main() {
       expect(table.cancellationCount, equals(0));
     });
 
-    test('tearDown cancels every live dispatch and clears all tracked '
-        'state', () {
+    test('tearDown cancels every live dispatch, clears all tracked state, '
+        'and makes a fresh failOnTearDown call fail with the given error '
+        'immediately', () async {
       final table = AnswerTable();
       final pending = Completer<ResolvedAnswer>();
       pending.future.ignore();
@@ -363,10 +366,80 @@ void main() {
       table.recordAnswer(2, resolved: _answer());
       table.tryRecordFailedAnswer(3, const CapnpException('x'));
 
-      table.tearDown();
+      final error = const CapnpException('connection torn down');
+      table.tearDown(error);
       expect(cancellation.context.isCanceled, isTrue);
       expect(table.count, equals(0));
       expect(table.cancellationCount, equals(0));
+      // tearDown() already ran, so failOnTearDown resolves the "already
+      // torn down" branch immediately — safe to await directly here
+      // (unlike a real caller racing a still-pending operation, which must
+      // call failOnTearDown *before* whatever triggers tearDown runs).
+      final neverCompletes = Completer<ResolvedAnswer>().future..ignore();
+      await expectLater(
+        table.failOnTearDown(neverCompletes),
+        throwsA(same(error)),
+      );
+    });
+
+    group('failOnTearDown registration lifecycle (issue #113 review)', () {
+      test('resolves with the operation\'s own result when it wins the '
+          'race, and does not leave a registration behind', () async {
+        final table = AnswerTable();
+        final operation = Completer<ResolvedAnswer>();
+        final resolved = _answer();
+
+        final raced = table.failOnTearDown(operation.future);
+        expect(table.pendingTearDownRegistrationCount, equals(1));
+
+        operation.complete(resolved);
+        expect(await raced, same(resolved));
+        expect(
+          table.pendingTearDownRegistrationCount,
+          equals(0),
+          reason:
+              'the registration must be cleaned up once the operation '
+              'itself wins the race, not just when tearDown wins it',
+        );
+      });
+
+      test('does not accumulate registrations across many successful '
+          'races — the resource leak this API replaced a caller-managed '
+          '"watch" handle to avoid', () async {
+        final table = AnswerTable();
+        for (var i = 0; i < 100; i++) {
+          final operation = Completer<ResolvedAnswer>();
+          final raced = table.failOnTearDown(operation.future);
+          operation.complete(_answer());
+          await raced;
+        }
+        expect(table.pendingTearDownRegistrationCount, equals(0));
+      });
+
+      test('fails with the teardown error when tearDown wins the race, and '
+          'does not leave a registration behind either — the operation '
+          'itself is left running, uninterrupted, in the background', () async {
+        final table = AnswerTable();
+        final operation = Completer<ResolvedAnswer>();
+        operation.future.ignore();
+
+        final raced = table.failOnTearDown(operation.future);
+        expect(table.pendingTearDownRegistrationCount, equals(1));
+
+        table.tearDown(_tornDownProbeError);
+        expect(
+          table.pendingTearDownRegistrationCount,
+          equals(0),
+          reason: 'tearDown itself clears every outstanding registration',
+        );
+        await expectLater(raced, throwsA(same(_tornDownProbeError)));
+
+        // The operation was never touched by any of this — it can still
+        // complete normally later, exactly as issue #99 requires.
+        final resolved = _answer();
+        operation.complete(resolved);
+        expect(await operation.future, same(resolved));
+      });
     });
 
     group('pipelined dependents (issue #109)', () {

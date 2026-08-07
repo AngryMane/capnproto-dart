@@ -1935,10 +1935,10 @@ void main() {
       await client.close();
     });
 
-    test('known bug (#99): a tail-call-forwarded original call does not '
-        'fail on teardown -- it can succeed later from purely local '
-        'state, once the (uncancelled) forwarded dispatch eventually '
-        'finishes', () async {
+    test('a tail-call-forwarded original call fails with a connection '
+        'error on teardown, exactly like every other pending call -- even '
+        'though the (uncancelled) forwarded dispatch keeps running '
+        'locally in the background', () async {
       // target is hosted on the CLIENT; TailCallServer (on the server)
       // receives it as an import and tail-calls into it -- same wiring
       // as "tail call to a same-connection import" above, but with a
@@ -2006,31 +2006,50 @@ void main() {
       // _resolveLocalAnswer continuation even starts running.
       await _waitUntil(() => client.debugPendingQuestionCount == 0);
 
-      await client.close();
-      await serverConn.done.catchError((_) {});
-
-      // Known bug, tracked as https://github.com/AngryMane/capnproto-dart/issues/99
-      // -- characterized here, not fixed: AnswerTable.tearDown only
-      // cancels the forwarded dispatch's DispatchCancellationContext -- it has no
-      // way to reach into the Future _awaitAndProcessReturn already extracted via
-      // _resolveLocalAnswer for the original call. SlowEchoServer
-      // ignores cancellation and keeps blocking on target.complete, so
-      // the original call stays genuinely pending, not failed, even
-      // though the whole connection is already gone. Every other
-      // "connection torn down while pending" scenario in this file fails
-      // with a connection error instead; a tail call is supposed to be a
-      // transparent wire optimization, so this asymmetry is a real gap,
-      // not an accepted design choice -- see the linked issue.
-      expect(target.lastContext?.isCanceled, isTrue);
-      await _expectStillPending(
+      // Fixed, was https://github.com/AngryMane/capnproto-dart/issues/99:
+      // AnswerTable.tornDown races the raw dispatch Future
+      // _awaitAndProcessReturn extracted via resolveLocalAnswer against the
+      // connection tearing down, so the original call observes the same
+      // disconnection failure every other still-pending call gets on
+      // teardown -- instead of staying pending and later succeeding from
+      // purely local state after the connection that correlated it is
+      // already gone. This does not abort the forwarded dispatch itself:
+      // SlowEchoServer still legally ignores cancellation and keeps
+      // running (isCanceled is still observed true, cooperative
+      // cancellation is still requested exactly as before) -- only what
+      // the *original caller* is told about it changes.
+      //
+      // expectLater is started (not awaited) *before* close() below, not
+      // after: callFuture's whole chain settles synchronously-ish inside
+      // close() once AnswerTable.tearDown runs, and attaching a listener
+      // only afterward would leave a real window where it has already
+      // rejected with nothing listening yet -- which Dart reports as an
+      // unhandled async error regardless of a listener arriving moments
+      // later, independent of anything AnswerTable/IncomingCallCoordinator
+      // do differently on their own end.
+      final callFailsWithConnectionError = expectLater(
         callFuture,
-        duration: const Duration(milliseconds: 100),
+        throwsA(
+          isA<RpcException>().having(
+            (error) => error.kind,
+            'kind',
+            ErrorKind.disconnected,
+          ),
+        ),
       );
 
+      await client.close();
+      await serverConn.done.catchError((_) {});
+      await callFailsWithConnectionError;
+      expect(target.lastContext?.isCanceled, isTrue);
+
+      // The forwarded dispatch itself keeps running in the background
+      // regardless -- completing it late (after the original caller has
+      // already moved on) must not throw or otherwise misbehave.
       target.complete.complete();
-      final result = await callFuture.timeout(const Duration(seconds: 2));
-      expect(_parseEchoResult(result.payload), equals('done'));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
     });
+
   });
 
   group('TwoPartyRpcConnection — capability identity', () {

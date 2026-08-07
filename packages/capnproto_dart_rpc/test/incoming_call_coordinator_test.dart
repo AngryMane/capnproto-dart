@@ -646,7 +646,7 @@ void main() {
       );
 
       h.isClosed = () => true;
-      h.answerTable.tearDown();
+      h.answerTable.tearDown(const RpcException('connection torn down'));
 
       pending.complete(ResolvedAnswer(_singleCapResultBytes, [target]));
       await Future<void>.delayed(Duration.zero);

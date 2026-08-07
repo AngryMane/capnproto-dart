@@ -609,7 +609,7 @@ class TwoPartyRpcConnection implements RpcConnection {
       _bootstrapCompleter!.completeError(err);
     }
 
-    _answerTable.tearDown();
+    _answerTable.tearDown(err);
 
     // Dispose all exported capabilities (each export's own owned
     // reference — see ExportTable's own doc comment).

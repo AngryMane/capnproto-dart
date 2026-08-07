@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:capnproto_dart/capnproto_dart.dart';
@@ -189,6 +190,9 @@ final class FinishedBeforeCompletionState extends AnswerState {
 /// any wire traffic.
 class AnswerTable {
   final Map<int, AnswerState> _answers = {};
+
+  Object? _tearDownError;
+  final List<Completer<Never>> _tearDownWaiters = [];
 
   /// Number of incoming calls with some tracked answer-lifecycle state:
   /// dispatch in flight, a resolved-but-not-yet-finished answer, or a
@@ -542,12 +546,70 @@ class AnswerTable {
     }
   }
 
-  /// Drops every tracked answer's state, canceling any still-live dispatch
-  /// — called once when the owning connection tears down.
-  void tearDown() {
+  /// Number of teardown registrations [failOnTearDown] currently has
+  /// outstanding — i.e. calls still racing [operation] against this table
+  /// tearing down, neither having settled yet. Test/introspection only:
+  /// this should return to `0` after every such race settles, whichever
+  /// side wins; a value that only grows across many successful calls
+  /// would mean [failOnTearDown] is leaking a registration per call
+  /// instead of cleaning up its losing side.
+  int get pendingTearDownRegistrationCount => _tearDownWaiters.length;
+
+  /// Races [operation] against this table tearing down, resolving/failing
+  /// with whichever finishes first — without needing to abort [operation]
+  /// itself, which keeps running in the background regardless of which
+  /// side of the race wins (see `DispatchCancellationController.cancel`,
+  /// only ever a cooperative *request* a dispatch is free to ignore).
+  ///
+  /// Exists for a dispatch whose own settlement is being awaited directly
+  /// rather than through this table's own Return/Finish bookkeeping —
+  /// today, only `IncomingCallCoordinator.resolveLocalAnswer`'s
+  /// `pendingFor(qid)` branch, used to correlate a peer's
+  /// `Return.takeFromOtherQuestion` for a tail-called dispatch. Without
+  /// this race, a caller like that would observe [operation] succeed from
+  /// purely local state even *after* the connection that correlated it is
+  /// already gone, unlike every other still-pending call on this
+  /// connection (see `QuestionTable.tearDown`, which this is meant to
+  /// match — see issue #99).
+  ///
+  /// The registration this needs internally to be notified once [tearDown]
+  /// runs is torn down again the moment the race settles, *whichever side
+  /// wins* — including when [operation] itself wins, the common/successful
+  /// case — via `whenComplete`. A caller-visible "watch" handle the caller
+  /// would need to remember to cancel was deliberately rejected in favor of
+  /// this: leaving that lifecycle to a call site risks exactly the leak a
+  /// missed `cancel()` would cause — one abandoned registration per
+  /// successful call, for the lifetime of the connection — so it is kept
+  /// entirely internal instead, impossible to forget from the outside.
+  Future<T> failOnTearDown<T>(Future<T> operation) {
+    final error = _tearDownError;
+    if (error != null) return Future.error(error);
+    final waiter = Completer<Never>();
+    _tearDownWaiters.add(waiter);
+    return Future.any<T>([
+      operation,
+      waiter.future,
+    ]).whenComplete(() => _tearDownWaiters.remove(waiter));
+  }
+
+  /// Drops every tracked answer's state, canceling any still-live dispatch,
+  /// and fails every outstanding (and future) [failOnTearDown] race with
+  /// [error] — called once when the owning connection tears down.
+  void tearDown(Object error) {
     for (final state in _answers.values) {
       if (state is PendingAnswerState) state.cancellation.cancel();
     }
     _answers.clear();
+    if (_tearDownError == null) {
+      _tearDownError = error;
+      for (final waiter in _tearDownWaiters) {
+        waiter.completeError(error);
+      }
+      // failOnTearDown's own `whenComplete` clears each entry as its race
+      // settles — but that runs asynchronously (at least one microtask
+      // after completeError above), so clearing eagerly here too avoids
+      // this list holding already-losing Completers in the meantime.
+      _tearDownWaiters.clear();
+    }
   }
 }

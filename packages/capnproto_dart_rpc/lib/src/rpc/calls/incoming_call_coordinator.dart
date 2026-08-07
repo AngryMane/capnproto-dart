@@ -897,11 +897,21 @@ final class IncomingCallCoordinator {
   /// `takeFromOtherQuestion` that races with the failure still observes
   /// the original server exception rather than a misleading "unknown
   /// question id".
+  ///
+  /// A still-pending dispatch is raced against connection teardown via
+  /// [AnswerTable.failOnTearDown] rather than returned directly: dispatch
+  /// cancellation on teardown is only ever a cooperative request the
+  /// dispatch is free to ignore (see that method's own doc comment), so
+  /// without this race, a caller correlating a tail-called dispatch
+  /// through this method could observe it succeed later from purely local
+  /// state even though the connection that correlated it is already gone
+  /// — unlike every other still-pending call on this connection (see issue
+  /// #99).
   Future<ResolvedAnswer> resolveLocalAnswer(int qid) {
     final resolved = answerTable.resolvedFor(qid);
     if (resolved != null) return Future.value(resolved);
     final pending = answerTable.pendingFor(qid);
-    if (pending != null) return pending;
+    if (pending != null) return answerTable.failOnTearDown(pending);
     final error = answerTable.errorFor(qid);
     if (error != null) throw error;
     throw RpcException(
