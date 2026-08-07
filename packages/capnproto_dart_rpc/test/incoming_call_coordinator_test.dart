@@ -56,7 +56,7 @@ class _FakeCapability extends Capability {
 
   /// Settable per test — defaults to never tail-calling, matching
   /// [Capability]'s own default.
-  TailCall? Function(int interfaceId, int methodId, RpcPayload params)?
+  TailCallRequest? Function(int interfaceId, int methodId, RpcPayload params)?
   onTryTailCall;
 
   @override
@@ -74,7 +74,7 @@ class _FakeCapability extends Capability {
   }
 
   @override
-  TailCall? tryTailCall(
+  TailCallRequest? tryTailCall(
     int interfaceId,
     int methodId,
     RpcPayload params, {
@@ -328,8 +328,12 @@ void main() {
       final originalCap =
           _FakeCapability()
             ..onTryTailCall =
-                (interfaceId, methodId, params) =>
-                    TailCall(forwardTarget, interfaceId, methodId, params);
+                (interfaceId, methodId, params) => TailCallRequest(
+                  forwardTarget,
+                  interfaceId,
+                  methodId,
+                  params,
+                );
       // Cached plain int, matching the realistic path (an _ImportedCapability
       // constructed via .fromState sets _cachedState synchronously).
       h.tryExtractCapabilityReference =
@@ -383,8 +387,12 @@ void main() {
       final originalCap =
           _FakeCapability()
             ..onTryTailCall =
-                (interfaceId, methodId, params) =>
-                    TailCall(forwardTarget, interfaceId, methodId, params);
+                (interfaceId, methodId, params) => TailCallRequest(
+                  forwardTarget,
+                  interfaceId,
+                  methodId,
+                  params,
+                );
       // tryExtractCapabilityReference defaults to `null`.
       final exportId = h.exportTable.getOrCreate(originalCap);
 
@@ -683,8 +691,12 @@ void main() {
       final originalCap =
           _FakeCapability()
             ..onTryTailCall =
-                (interfaceId, methodId, params) =>
-                    TailCall(forwardTarget, interfaceId, methodId, params);
+                (interfaceId, methodId, params) => TailCallRequest(
+                  forwardTarget,
+                  interfaceId,
+                  methodId,
+                  params,
+                );
       h.tryExtractCapabilityReference =
           (cap) =>
               identical(cap, forwardTarget)

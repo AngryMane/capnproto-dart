@@ -67,9 +67,12 @@ buildDispatchResult<R extends StructReader, B extends StructBuilder>(
   return DispatchResult(payload: RpcPayload.fromBuilder(results), caps: caps);
 }
 
-/// Describes a tail call: the entire result of the current dispatch should
-/// be exactly the result of calling [target]'s [interfaceId]/[methodId]
+/// Describes a request to perform a tail call: the entire result of the
+/// current dispatch should be exactly the result of calling [target]'s [interfaceId]/[methodId]
 /// method with [params]/[paramsCapabilities].
+///
+/// This is a declarative request consumed by the RPC runtime, not a protocol
+/// wire message or an in-progress call.
 ///
 /// Returned by [Capability.tryTailCall]. When [target] is a capability
 /// imported from the same peer connection that is asking for the current
@@ -78,7 +81,7 @@ buildDispatchResult<R extends StructReader, B extends StructBuilder>(
 /// `Return.takeFromOtherQuestion`), avoiding an extra network round trip.
 /// Otherwise this is a transparent pass-through with no special wire
 /// behavior — semantically identical, just without the optimization.
-class TailCall {
+class TailCallRequest {
   /// The capability the current dispatch's result should be taken from.
   final Capability target;
 
@@ -94,9 +97,9 @@ class TailCall {
   /// Capabilities referenced by [params], in capTable order.
   final List<Capability> paramsCapabilities;
 
-  /// Creates a tail call describing a dispatch to [target]'s
+  /// Creates a tail-call request describing a dispatch to [target]'s
   /// [interfaceId]/[methodId] method with [params]/[paramsCapabilities].
-  const TailCall(
+  const TailCallRequest(
     this.target,
     this.interfaceId,
     this.methodId,

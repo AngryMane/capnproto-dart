@@ -405,9 +405,9 @@ final class IncomingCallCoordinator {
     // real Return once it settles.
     final sendResultsToYourself = msg.sendResultsToDisc == 1;
     if (!sendResultsToYourself) {
-      final TailCall? tailCall;
+      final TailCallRequest? tailCallRequest;
       try {
-        tailCall = cap.tryTailCall(
+        tailCallRequest = cap.tryTailCall(
           msg.interfaceId,
           msg.methodId,
           params,
@@ -424,8 +424,8 @@ final class IncomingCallCoordinator {
         );
         return;
       }
-      if (tailCall != null) {
-        _dispatchTailCall(qid, tailCall);
+      if (tailCallRequest != null) {
+        _dispatchTailCall(qid, tailCallRequest);
         return;
       }
     }
@@ -443,7 +443,7 @@ final class IncomingCallCoordinator {
 
   /// Handles a [Capability.tryTailCall] result for the call answered by
   /// [qid]. When [tryExtractCapabilityReference] yields an
-  /// [ImportedCapabilityReference] for [tailCall]'s target, that target is
+  /// [ImportedCapabilityReference] for [request]'s target, that target is
   /// an import from this same peer connection, so this applies the Level 1
   /// wire optimization: forwards a new Call (flagged
   /// `sendResultsTo=yourself`) to that peer and answers [qid] immediately
@@ -451,13 +451,13 @@ final class IncomingCallCoordinator {
   /// to complete. Otherwise, falls back to a transparent proxy —
   /// dispatching the tail-called method directly and answering [qid]
   /// normally, with no wire-level difference from an ordinary call.
-  void _dispatchTailCall(int qid, TailCall tailCall) {
-    final target = tailCall.target;
+  void _dispatchTailCall(int qid, TailCallRequest request) {
+    final target = request.target;
     final reference = tryExtractCapabilityReference(target);
     if (reference is ImportedCapabilityReference) {
       final (forwardQid, sent) = _sendTailForwardCall(
         reference.importId,
-        tailCall,
+        request,
       );
       // Must wait for the forwarded Call to actually be on the wire before
       // answering qid with takeFromOtherQuestion — otherwise the peer could
@@ -505,10 +505,10 @@ final class IncomingCallCoordinator {
     _runDispatch(
       qid,
       target,
-      tailCall.interfaceId,
-      tailCall.methodId,
-      tailCall.params,
-      tailCall.paramsCapabilities,
+      request.interfaceId,
+      request.methodId,
+      request.params,
+      request.paramsCapabilities,
     );
   }
 
@@ -529,14 +529,14 @@ final class IncomingCallCoordinator {
   /// expects a real result).
   (int, Future<void>) _sendTailForwardCall(
     FutureOr<int> targetImportId,
-    TailCall tailCall,
+    TailCallRequest request,
   ) {
     final question = questions.allocate();
     final qid = question.id;
     final completer = question.returnCompleter;
     final sentCompleter = question.sentCompleter!;
 
-    // Usually a no-op rollback target: tailCall's params are almost always
+    // Usually a no-op rollback target: request's params are almost always
     // _ImportedCapability from this same connection, which capTable
     // resolution categorizes as receiverHosted (no export created) — but a
     // receiverHosted-descriptor param on the *original* incoming call
@@ -546,10 +546,10 @@ final class IncomingCallCoordinator {
     startUsing(
       question: question,
       target: ImportedCapabilityTarget(targetImportId),
-      params: SerializedParams(tailCall.params.bytes),
-      interfaceId: tailCall.interfaceId,
-      methodId: tailCall.methodId,
-      paramsCapabilities: tailCall.paramsCapabilities,
+      params: SerializedParams(request.params.bytes),
+      interfaceId: request.interfaceId,
+      methodId: request.methodId,
+      paramsCapabilities: request.paramsCapabilities,
       sendResultsToYourself: true,
     );
 

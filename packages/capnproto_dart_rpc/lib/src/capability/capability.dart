@@ -91,14 +91,14 @@ abstract class Capability {
     paramsCapabilities: paramsCapabilities,
   );
 
-  /// Optional hook for the tail-call wire optimization (see [TailCall]).
+  /// Optional hook for the tail-call wire optimization (see [TailCallRequest]).
   ///
   /// Called before [dispatchWithContext] with the same arguments a normal
   /// dispatch would receive. Returning non-null means "don't run this
-  /// dispatch at all — forward to [TailCall.target] instead". The default
+  /// dispatch at all — forward to [TailCallRequest.target] instead". The default
   /// implementation returns null (never tail-calls), so existing
   /// implementations are unaffected.
-  TailCall? tryTailCall(
+  TailCallRequest? tryTailCall(
     int interfaceId,
     int methodId,
     RpcPayload params, {

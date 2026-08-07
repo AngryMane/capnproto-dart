@@ -990,14 +990,14 @@ const int _tailCallMethodId = 8;
 
 class TailCallServer extends Capability {
   @override
-  TailCall? tryTailCall(
+  TailCallRequest? tryTailCall(
     int interfaceId,
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
   }) {
     if (methodId != _tailCallMethodId) return null;
-    return TailCall(
+    return TailCallRequest(
       paramsCapabilities[0],
       _echoInterfaceId,
       _echoMethodId,
@@ -1039,14 +1039,14 @@ class TailCallLocalServer extends Capability {
   TailCallLocalServer(this.local);
 
   @override
-  TailCall? tryTailCall(
+  TailCallRequest? tryTailCall(
     int interfaceId,
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
   }) {
     if (methodId != _tailCallLocalMethodId) return null;
-    return TailCall(
+    return TailCallRequest(
       local,
       _echoInterfaceId,
       _echoMethodId,
@@ -1070,7 +1070,7 @@ class TailCallLocalServer extends Capability {
 
 class ThrowingTryTailCallServer extends Capability {
   @override
-  TailCall? tryTailCall(
+  TailCallRequest? tryTailCall(
     int interfaceId,
     int methodId,
     RpcPayload params, {

@@ -147,7 +147,7 @@ class CapabilityLease extends Capability {
   );
 
   @override
-  TailCall? tryTailCall(
+  TailCallRequest? tryTailCall(
     int interfaceId,
     int methodId,
     RpcPayload params, {
