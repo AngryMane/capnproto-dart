@@ -97,14 +97,15 @@ final class CapabilityProtocol {
     required this.receiverAnswerCapability,
   });
 
-  /// Canonical async capTable resolution — the fallback [resolveCapTableMaybeSync]
-  /// delegates to when it can't resolve everything synchronously. When [qid]
+  /// Canonical async capTable resolution — the fallback
+  /// [resolveParameterCapabilityDescriptors] delegates to when it can't resolve everything synchronously. When [qid]
   /// is given, records every senderHosted/senderPromise export ID produced
   /// (this call's own params capabilities) against it — see
   /// [_recordParamExportIds].
   ///
-  /// [ensureActive] (see `OutgoingCallCoordinator.resolveCapTableMaybeSync`'s
-  /// doc comment for the invariant this establishes) is called before the
+  /// [ensureActive] (see
+  /// `OutgoingCallCoordinator.resolveParameterCapabilityDescriptors`'s doc
+  /// comment for the invariant this establishes) is called before the
   /// loop, at the top of every iteration, and immediately after each
   /// `await` inside it — i.e. at every point execution resumes after a
   /// suspension that `tearDown` could have run during, and before the very
@@ -215,7 +216,7 @@ final class CapabilityProtocol {
   /// [_resolveCapTableAsync]; the one entry call below is there purely so
   /// every route into capTable resolution checks up front, not because this
   /// branch specifically needs a re-check partway through.
-  FutureOr<List<RpcCapabilityDescriptor>> resolveCapTableMaybeSync(
+  FutureOr<List<RpcCapabilityDescriptor>> resolveParameterCapabilityDescriptors(
     List<Capability> paramsCapabilities, {
     int? qid,
     required void Function() ensureActive,
@@ -418,7 +419,7 @@ final class CapabilityProtocol {
     }
 
     final state = importTable.getOrCreateState(msg.promiseId);
-    final replacement = capabilityFromDescriptor(descriptor);
+    final replacement = acquireCapabilityFromDescriptor(descriptor);
     if (state.receivedCall && _isLocalCapability(replacement)) {
       final completer = Completer<void>();
       final embargoId = embargoTable.register(
@@ -480,7 +481,7 @@ final class CapabilityProtocol {
   /// [acquireCapabilityLease]) would never be released, leaking the
   /// underlying capability even after every other reference to it —
   /// including this connection's own owning one — is properly disposed.
-  RpcCapabilityDescriptor returnCapDescriptor(Capability cap) {
+  RpcCapabilityDescriptor exportResultCapabilityAsDescriptor(Capability cap) {
     final identity = unwrapCapabilityLease(cap);
     final RpcCapabilityDescriptor descriptor;
     if (identity is DeferredCapability) {
@@ -557,9 +558,8 @@ final class CapabilityProtocol {
   bool _isStillExportedPromise(int promiseId, DeferredCapability promise) =>
       exportTable.isCurrentIdentity(promiseId, promise);
 
-  /// See [returnCapDescriptor]'s doc comment — [cap] is unwrapped to its
-  /// real identity first, and a redundant [CapabilityLease] passed as [cap] is disposed at the
-  /// end, for the same ownership-transfer reason (this resolves a promise
+  /// See [exportResultCapabilityAsDescriptor]'s doc comment. [cap] is
+  /// unwrapped to its real identity first, and a redundant [CapabilityLease] passed as [cap] is disposed at the end, for the same ownership-transfer reason (this resolves a promise
   /// a [DeferredCapability] returned from `DispatchResult.caps` settled
   /// to, which transfers ownership exactly like an already-settled result
   /// capability does). The `receiverHosted` branch establishes no owning
@@ -591,7 +591,14 @@ final class CapabilityProtocol {
     return descriptor;
   }
 
-  Capability capabilityFromDescriptor(RpcCapabilityDescriptor descriptor) {
+  /// Acquires the runtime [Capability] represented by [descriptor].
+  ///
+  /// Sender-hosted descriptors retain an import; receiver-hosted descriptors
+  /// acquire a [CapabilityLease]. Other variants construct the corresponding
+  /// local capability wrapper.
+  Capability acquireCapabilityFromDescriptor(
+    RpcCapabilityDescriptor descriptor,
+  ) {
     switch (descriptor.disc) {
       case 0: // none
         return NullCapability();
@@ -646,7 +653,13 @@ final class CapabilityProtocol {
     }
   }
 
-  int? importIdFromDescriptor(RpcCapabilityDescriptor descriptor) {
+  /// Retains and returns the import ID represented by [descriptor].
+  ///
+  /// Returns `null` without side effects when [descriptor] is not a
+  /// sender-hosted or sender-promise descriptor.
+  int? tryRetainImportIdFromCapabilityDescriptor(
+    RpcCapabilityDescriptor descriptor,
+  ) {
     if (descriptor.disc != 1 && descriptor.disc != 2) return null;
     importTable.retain(descriptor.id, isPromise: descriptor.disc == 2);
     return descriptor.id;

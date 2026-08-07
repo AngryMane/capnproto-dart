@@ -61,7 +61,7 @@ final class OutgoingCallCoordinator {
 
   /// Resolves a Call's params capabilities into wire descriptors,
   /// synchronously when possible — see the matching doc comment this method
-  /// carries as `CapabilityProtocol.resolveCapTableMaybeSync`.
+  /// carries as `CapabilityProtocol.resolveParameterCapabilityDescriptors`.
   ///
   /// [ensureActive] must be called before any side effect with lasting
   /// state (an export creation, a refcount bump, recording bookkeeping
@@ -83,11 +83,11 @@ final class OutgoingCallCoordinator {
     int? qid,
     required void Function() ensureActive,
   })
-  resolveCapTableMaybeSync;
+  resolveParameterCapabilityDescriptors;
 
   final void Function(List<int> exportIds) releaseParameterCapabilityExports;
   final Capability Function(RpcCapabilityDescriptor descriptor)
-  capabilityFromDescriptor;
+  acquireCapabilityFromDescriptor;
   final Future<ResolvedAnswer> Function(int qid) resolveLocalAnswer;
 
   /// Invoked from [handleReturn], right after confirming a live completer
@@ -102,17 +102,17 @@ final class OutgoingCallCoordinator {
     required this.questions,
     required this.imports,
     required this.sendBytes,
-    required this.resolveCapTableMaybeSync,
+    required this.resolveParameterCapabilityDescriptors,
     required this.releaseParameterCapabilityExports,
-    required this.capabilityFromDescriptor,
+    required this.acquireCapabilityFromDescriptor,
     required this.resolveLocalAnswer,
     this.onReturn,
   });
 
   /// True when starting a Call against [target] needs to `await` something
   /// before any side effect (an export refcount bump, [sendBytes]) can run —
-  /// see [resolveCapTableMaybeSync]'s matching doc comment for why this must
-  /// be checked before touching anything with a side effect.
+  /// see [resolveParameterCapabilityDescriptors]'s matching doc comment for why
+  /// this must be checked before touching anything with a side effect.
   bool _targetRequiresAsyncResolution(OutgoingCallTarget target) =>
       switch (target) {
         ImportedCapabilityTarget(importId: final id) => id is! int,
@@ -177,7 +177,7 @@ final class OutgoingCallCoordinator {
       methodId: methodId,
       buildParams: buildParams,
       resolveDescriptors:
-          () => resolveCapTableMaybeSync(
+          () => resolveParameterCapabilityDescriptors(
             paramsCapabilities,
             qid: qid,
             ensureActive: _throwIfTornDown,
@@ -229,11 +229,11 @@ final class OutgoingCallCoordinator {
     }
     // Whatever we just awaited (the target import id, or the promisedAnswer
     // target's parent being sent) may have taken long enough for tearDown()
-    // to run in the meantime. resolveCapTableMaybeSync has real side effects
+    // to run in the meantime. resolveParameterCapabilityDescriptors has real side effects
     // (export creation, refcount bumps) that nothing will ever clean up on a
     // torn-down connection — bail out before it even starts, same as
     // [startCallWithAllocatedQuestion]'s own entry guard does for the fully-synchronous path.
-    // This alone isn't enough once resolveCapTableMaybeSync itself starts
+    // This alone isn't enough once resolveParameterCapabilityDescriptors itself starts
     // running, though: it may need its own further `await`s (an unresolved
     // *params* capability's import id, a *different* pipelined param's
     // parent being sent) — [ensureActive] is threaded into it precisely so
@@ -248,7 +248,7 @@ final class OutgoingCallCoordinator {
       methodId: methodId,
       buildParams: buildParams,
       resolveCapTable:
-          () async => await resolveCapTableMaybeSync(
+          () async => await resolveParameterCapabilityDescriptors(
             paramsCapabilities,
             qid: qid,
             ensureActive: _throwIfTornDown,
@@ -293,15 +293,15 @@ final class OutgoingCallCoordinator {
   /// (this coordinator is already closed) and again once an async build
   /// finishes (`tearDown` ran while it was still in flight): [sendBytes]
   /// must never run for either case, and any params export refs
-  /// `resolveCapTableMaybeSync` already recorded against [qid] *before*
+  /// `resolveParameterCapabilityDescriptors` already recorded against [qid] *before*
   /// tearDown ran are rolled back here the same way a build failure's would
   /// be. That rollback only reaches bookkeeping recorded before tearDown,
   /// though — `QuestionTable.tearDown` drops [question]'s tracking entirely,
-  /// so nothing here can roll back a side effect `resolveCapTableMaybeSync`
+  /// so nothing here can roll back a side effect `resolveParameterCapabilityDescriptors`
   /// starts *after* that point (e.g. resuming from an `await` mid-resolution
   /// with tearDown having landed during the wait). Preventing that is
-  /// `resolveCapTableMaybeSync`'s own job, via the `ensureActive` callback
-  /// this class passes it — see [resolveCapTableMaybeSync]'s doc comment.
+  /// `resolveParameterCapabilityDescriptors`'s own job, via the `ensureActive` callback
+  /// this class passes it — see [resolveParameterCapabilityDescriptors]'s doc comment.
   void startCallWithAllocatedQuestion({
     required OutgoingQuestion question,
     required OutgoingCallTarget target,
@@ -457,7 +457,7 @@ final class OutgoingCallCoordinator {
     // Convert capTable entries into ImportedCapabilities.
     final caps = <Capability>[];
     for (final descriptor in ret.capTableDescriptors) {
-      caps.add(capabilityFromDescriptor(descriptor));
+      caps.add(acquireCapabilityFromDescriptor(descriptor));
     }
 
     final resultsContent = ret.resultsContent;

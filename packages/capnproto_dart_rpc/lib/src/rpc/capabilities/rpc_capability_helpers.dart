@@ -35,7 +35,7 @@ Capability createImportedCapability(
 ) => _ImportedCapability(delegate, importIdFuture);
 
 /// As [createImportedCapability], for an import whose [ImportState] is
-/// already known — see `CapabilityProtocol.capabilityFromDescriptor`'s
+/// already known — see `CapabilityProtocol.acquireCapabilityFromDescriptor`'s
 /// senderHosted/senderPromise branches, the only real caller.
 Capability createImportedCapabilityFromState(
   RpcCapabilityDelegate delegate,
@@ -43,7 +43,7 @@ Capability createImportedCapabilityFromState(
 ) => _ImportedCapability.fromState(delegate, state);
 
 /// Builds the [Capability] a `receiverAnswer` capTable entry resolves to —
-/// see `CapabilityProtocol.capabilityFromDescriptor`'s receiverAnswer
+/// see `CapabilityProtocol.acquireCapabilityFromDescriptor`'s receiverAnswer
 /// branch.
 Capability createReceiverAnswerCapability(
   RpcCapabilityDelegate delegate,

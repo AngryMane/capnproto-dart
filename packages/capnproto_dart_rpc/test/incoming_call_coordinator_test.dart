@@ -121,12 +121,12 @@ class _Harness {
 
   /// Settable per test — defaults to a fresh [_FakeCapability] per
   /// descriptor.
-  Capability Function(RpcCapabilityDescriptor descriptor) capabilityFromDescriptor =
+  Capability Function(RpcCapabilityDescriptor descriptor) acquireCapabilityFromDescriptor =
       (descriptor) => _FakeCapability();
 
   /// Settable per test — defaults to a `none` descriptor for every result
   /// capability.
-  RpcCapabilityDescriptor Function(Capability cap) returnCapDescriptor =
+  RpcCapabilityDescriptor Function(Capability cap) exportResultCapabilityAsDescriptor =
       (cap) => const RpcCapabilityDescriptor.none();
 
   /// Settable per test — defaults to completing [OutgoingQuestion.sentCompleter]
@@ -154,9 +154,9 @@ class _Harness {
     isClosed: () => isClosed(),
     tearDownConnection: tearDownCalls.add,
     tryExtractCapabilityReference: (cap) => tryExtractCapabilityReference(cap),
-    capabilityFromDescriptor:
-        (descriptor) => capabilityFromDescriptor(descriptor),
-    returnCapDescriptor: (cap) => returnCapDescriptor(cap),
+    acquireCapabilityFromDescriptor:
+        (descriptor) => acquireCapabilityFromDescriptor(descriptor),
+    exportResultCapabilityAsDescriptor: (cap) => exportResultCapabilityAsDescriptor(cap),
     startCallWithAllocatedQuestion: ({
       required OutgoingQuestion question,
       required OutgoingCallTarget target,
@@ -611,7 +611,7 @@ void main() {
       );
 
       var descriptorDecodeCount = 0;
-      h.capabilityFromDescriptor = (descriptor) {
+      h.acquireCapabilityFromDescriptor = (descriptor) {
         descriptorDecodeCount++;
         return _FakeCapability();
       };

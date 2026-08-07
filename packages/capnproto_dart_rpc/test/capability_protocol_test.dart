@@ -141,13 +141,13 @@ void main() {
       expect(h.sentBytes, hasLength(1));
     });
 
-    test('resolveCapTableMaybeSync resolves synchronously when no RPC '
+    test('resolveParameterCapabilityDescriptors resolves synchronously when no RPC '
         'capability reference can be extracted', () {
       final h = _Harness();
       final capA = _FakeCapability();
       final capB = _FakeCapability();
 
-      final result = h.protocol.resolveCapTableMaybeSync([
+      final result = h.protocol.resolveParameterCapabilityDescriptors([
         capA,
         capB,
       ], ensureActive: () {});
@@ -160,7 +160,7 @@ void main() {
       }
     });
 
-    test('resolveCapTableMaybeSync encodes an extracted pipelined reference '
+    test('resolveParameterCapabilityDescriptors encodes an extracted pipelined reference '
         'as receiverAnswer', () {
       final h = _Harness();
       final cap = _FakeCapability();
@@ -173,7 +173,7 @@ void main() {
                   )
                   : null;
 
-      final result = h.protocol.resolveCapTableMaybeSync([
+      final result = h.protocol.resolveParameterCapabilityDescriptors([
         cap,
       ], ensureActive: () {});
 
@@ -184,7 +184,7 @@ void main() {
       expect(descriptor.path, equals([2, 3]));
     });
 
-    test('resolveCapTableMaybeSync falls back to async and threads '
+    test('resolveParameterCapabilityDescriptors falls back to async and threads '
         'ensureActive at entry and after the await', () async {
       final h = _Harness();
       final capA = _FakeCapability();
@@ -196,7 +196,7 @@ void main() {
                   : null;
 
       var ensureActiveCalls = 0;
-      final result = h.protocol.resolveCapTableMaybeSync([
+      final result = h.protocol.resolveParameterCapabilityDescriptors([
         capA,
       ], ensureActive: () => ensureActiveCalls++);
 
@@ -212,16 +212,16 @@ void main() {
       expect(descriptors.single.id, equals(9));
     });
 
-    test('capabilityFromDescriptor routes none/senderHosted/senderPromise/'
+    test('acquireCapabilityFromDescriptor routes none/senderHosted/senderPromise/'
         'receiverHosted to the right dependency', () {
       final h = _Harness();
 
       expect(
-        h.protocol.capabilityFromDescriptor(const RpcCapabilityDescriptor.none()),
+        h.protocol.acquireCapabilityFromDescriptor(const RpcCapabilityDescriptor.none()),
         isA<NullCapability>(),
       );
 
-      h.protocol.capabilityFromDescriptor(
+      h.protocol.acquireCapabilityFromDescriptor(
         const RpcCapabilityDescriptor.senderHosted(5),
       );
       expect(h.importTable.isTracked(5), isTrue);
@@ -229,7 +229,7 @@ void main() {
       final promiseState = h.importTable.getOrCreateState(
         6,
       ); // capture before retain, to check isPromise
-      h.protocol.capabilityFromDescriptor(
+      h.protocol.acquireCapabilityFromDescriptor(
         const RpcCapabilityDescriptor.senderPromise(6),
       );
       expect(h.importTable.isTracked(6), isTrue);
@@ -237,20 +237,20 @@ void main() {
 
       final exported = _FakeCapability();
       final exportId = h.exportTable.getOrCreate(exported);
-      final lease = h.protocol.capabilityFromDescriptor(
+      final lease = h.protocol.acquireCapabilityFromDescriptor(
         RpcCapabilityDescriptor.receiverHosted(exportId),
       );
       expect(identical(unwrapCapabilityLease(lease), exported), isTrue);
     });
 
-    test('capabilityFromDescriptor delegates receiverAnswer construction to '
+    test('acquireCapabilityFromDescriptor delegates receiverAnswer construction to '
         'receiverAnswerCapability, normalizing an empty path to [0]', () {
       final h = _Harness();
 
-      h.protocol.capabilityFromDescriptor(
+      h.protocol.acquireCapabilityFromDescriptor(
         RpcCapabilityDescriptor.receiverAnswer(7, const [1, 2]),
       );
-      h.protocol.capabilityFromDescriptor(
+      h.protocol.acquireCapabilityFromDescriptor(
         RpcCapabilityDescriptor.receiverAnswer(8, const []),
       );
 

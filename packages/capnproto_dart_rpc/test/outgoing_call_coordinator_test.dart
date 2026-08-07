@@ -34,22 +34,22 @@ class _Harness {
   final releasedExportIds = <List<int>>[];
   final returnsSeenByHook = <RpcMessage>[];
 
-  /// When set, [resolveCapTableMaybeSync] throws this instead of resolving.
+  /// When set, [resolveParameterCapabilityDescriptors] throws this instead of resolving.
   Object? failWith;
 
-  /// Number of times [resolveCapTableMaybeSync] has actually run — used to
+  /// Number of times [resolveParameterCapabilityDescriptors] has actually run — used to
   /// prove a torn-down coordinator bails out *before* triggering its real
   /// side effects (export creation, refcount bumps), not just before
   /// [sendBytes].
   var resolveCapTableCallCount = 0;
 
-  /// When set, [resolveCapTableMaybeSync] doesn't resolve until this
+  /// When set, [resolveParameterCapabilityDescriptors] doesn't resolve until this
   /// completes — used to open a window between a build's capTable
   /// resolution starting and finishing, for tests that need `tearDown()` to
   /// land inside it.
   Completer<void>? capTableGate;
 
-  /// Recorded every time [resolveCapTableMaybeSync]'s fake reaches the
+  /// Recorded every time [resolveParameterCapabilityDescriptors]'s fake reaches the
   /// point past [capTableGate] where a real resolver (e.g.
   /// `CapabilityProtocol`'s internal `_resolveCapTableAsync`) would commit
   /// a side effect with lasting state — `ExportTable.getOrCreate`, recording a
@@ -68,7 +68,7 @@ class _Harness {
     questions: questions,
     imports: imports,
     sendBytes: sentBytes.add,
-    resolveCapTableMaybeSync: (
+    resolveParameterCapabilityDescriptors: (
       paramsCapabilities, {
       qid,
       required ensureActive,
@@ -92,7 +92,7 @@ class _Harness {
       });
     },
     releaseParameterCapabilityExports: releasedExportIds.add,
-    capabilityFromDescriptor: (descriptor) => _NeverDisposedCapability(),
+    acquireCapabilityFromDescriptor: (descriptor) => _NeverDisposedCapability(),
     resolveLocalAnswer:
         (qid) => Future.error(
           const RpcException('resolveLocalAnswer not stubbed for this test'),
@@ -342,10 +342,10 @@ void main() {
       expect(h.sentBytes, isEmpty);
     });
 
-    test('resolveCapTableMaybeSync side effects that would resume after '
+    test('resolveParameterCapabilityDescriptors side effects that would resume after '
         'tearDown during the gate wait never run, and are never recorded '
         'against the question', () async {
-      // Reproduces the gap a real resolver has: resolveCapTableMaybeSync
+      // Reproduces the gap a real resolver has: resolveParameterCapabilityDescriptors
       // isn't a pure function — a real implementation
       // (_resolveCapTableAsync) creates exports and records their ids
       // against qid as a side effect. _failIfTornDown alone can't roll
@@ -387,7 +387,7 @@ void main() {
       expect(h.questions.takeParamExportIds(question.id), isNull);
     });
 
-    test('resolveCapTableMaybeSync side effects past the gate still run '
+    test('resolveParameterCapabilityDescriptors side effects past the gate still run '
         'normally, and still send, when tearDown never happens', () async {
       // Companion to the test above: proves ensureActive() only blocks the
       // torn-down case, not every gated resolution.

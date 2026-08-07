@@ -58,7 +58,7 @@ Capability requireCapabilityFromResult(DispatchResult result, int ptrIndex) {
 /// entry but the last is followed as a nested struct pointer, the last as
 /// the capability itself). Returns null instead of throwing on any
 /// resolution failure.
-Capability? capabilityFromResultPath(DispatchResult result, List<int> path) {
+Capability? tryGetCapabilityFromResultPath(DispatchResult result, List<int> path) {
   try {
     return requireCapabilityFromResultPath(result, path);
   } catch (_) {
@@ -66,7 +66,7 @@ Capability? capabilityFromResultPath(DispatchResult result, List<int> path) {
   }
 }
 
-/// Throwing counterpart of [capabilityFromResultPath] — see
+/// Throwing counterpart of [tryGetCapabilityFromResultPath] — see
 /// [requireCapabilityFromResult] for the single-hop version this
 /// generalizes.
 Capability requireCapabilityFromResultPath(

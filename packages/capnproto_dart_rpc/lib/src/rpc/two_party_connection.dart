@@ -167,10 +167,10 @@ class TwoPartyRpcConnection implements RpcConnection {
     questions: _questionTable,
     imports: _importTable,
     sendBytes: _sendRaw,
-    resolveCapTableMaybeSync: _capabilityProtocol.resolveCapTableMaybeSync,
+    resolveParameterCapabilityDescriptors: _capabilityProtocol.resolveParameterCapabilityDescriptors,
     releaseParameterCapabilityExports:
         _capabilityProtocol.releaseParameterCapabilityExports,
-    capabilityFromDescriptor: _capabilityProtocol.capabilityFromDescriptor,
+    acquireCapabilityFromDescriptor: _capabilityProtocol.acquireCapabilityFromDescriptor,
     resolveLocalAnswer: (qid) => _incomingCalls.resolveLocalAnswer(qid),
     onReturn: _handleBootstrapReturn,
   );
@@ -199,8 +199,8 @@ class TwoPartyRpcConnection implements RpcConnection {
     tearDownConnection: (error) => _tearDown(error),
     tryExtractCapabilityReference:
         _capabilityProtocol.tryExtractCapabilityReference,
-    capabilityFromDescriptor: _capabilityProtocol.capabilityFromDescriptor,
-    returnCapDescriptor: _capabilityProtocol.returnCapDescriptor,
+    acquireCapabilityFromDescriptor: _capabilityProtocol.acquireCapabilityFromDescriptor,
+    exportResultCapabilityAsDescriptor: _capabilityProtocol.exportResultCapabilityAsDescriptor,
     startCallWithAllocatedQuestion: _outgoingCalls.startCallWithAllocatedQuestion,
     startParameterCapabilityDisposalTracking:
         (paramsCapabilities) => startParameterCapabilityDisposalTracking(
@@ -225,9 +225,10 @@ class TwoPartyRpcConnection implements RpcConnection {
     final bootstrapQid = _bootstrapQuestionId!;
     _bootstrapQuestionId = null;
     if (msg.isReturnResults && msg.capTableEntries.isNotEmpty) {
-      final importId = _capabilityProtocol.importIdFromDescriptor(
-        msg.capTableDescriptors.first,
-      );
+      final importId =
+          _capabilityProtocol.tryRetainImportIdFromCapabilityDescriptor(
+            msg.capTableDescriptors.first,
+          );
       if (_bootstrapCompleter != null && !_bootstrapCompleter!.isCompleted) {
         if (importId == null) {
           _bootstrapCompleter!.completeError(
