@@ -265,7 +265,7 @@ void main() {
       expect(delegate.releasedImportIds, [7]);
     });
 
-    test('dispatchStreaming() sizes its FlowController from the delegate\'s '
+    test('dispatchStreaming() sizes its StreamingCallFlowController from the delegate\'s '
         'streamWindowSize and calls startOutgoingCall', () async {
       final delegate = FakeRpcCapabilityDelegate()..streamWindowSize = 128;
       final state = ImportState(7);

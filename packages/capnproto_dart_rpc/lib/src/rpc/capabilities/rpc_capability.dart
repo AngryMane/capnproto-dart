@@ -40,8 +40,8 @@ class _ImportedCapability extends Capability {
   // Lazily created on the first `-> stream` call through this capability
   // reference, then reused for every subsequent streaming call so the
   // window is shared/accumulated across the whole call sequence — matching
-  // capnp-rust, which scopes one FlowController per call target.
-  FlowController? _flowController;
+  // capnp-rust, which scopes one StreamingCallFlowController per call target.
+  StreamingCallFlowController? _flowController;
 
   _ImportedCapability(this._delegate, this._importIdFuture)
     : _stateFuture = null {
@@ -222,10 +222,10 @@ class _ImportedCapability extends Capability {
       paramsCapabilities: paramsCapabilities,
     );
     final controller =
-        _flowController ??= FlowController(
+        _flowController ??= StreamingCallFlowController(
           windowSize: _delegate.streamWindowSize,
         );
-    return controller.send(paramsBytes.lengthInBytes, started.result);
+    return controller.trackCall(paramsBytes.lengthInBytes, started.result);
   }
 
   @override

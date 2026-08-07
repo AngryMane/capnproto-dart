@@ -298,7 +298,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   ///
   /// [streamWindowSize] sets the flow-control window (in bytes) used by
   /// `-> stream` method calls made through capabilities on this connection —
-  /// see [FlowController].
+  /// see [StreamingCallFlowController].
   ///
   /// [disembargoTimeout] bounds how long this vat waits for the peer's
   /// receiverLoopback reply to a Disembargo it sent (see
@@ -318,7 +318,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     required Stream<Uint8List> incoming,
     required StreamSink<Uint8List> outgoing,
     void Function(Object error, StackTrace stackTrace)? onDisposeError,
-    int streamWindowSize = FlowController.defaultWindowSize,
+    int streamWindowSize = StreamingCallFlowController.defaultWindowSize,
     Duration? disembargoTimeout = defaultDisembargoTimeout,
     bool preFramed = false,
   }) {
@@ -349,7 +349,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     required StreamSink<Uint8List> outgoing,
     required Capability bootstrap,
     void Function(Object error, StackTrace stackTrace)? onDisposeError,
-    int streamWindowSize = FlowController.defaultWindowSize,
+    int streamWindowSize = StreamingCallFlowController.defaultWindowSize,
     Duration? disembargoTimeout = defaultDisembargoTimeout,
     bool preFramed = false,
   }) {

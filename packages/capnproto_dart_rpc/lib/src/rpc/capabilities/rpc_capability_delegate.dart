@@ -45,6 +45,6 @@ abstract interface class RpcCapabilityDelegate {
   Future<ResolvedAnswer> resolveAnswer(int questionId);
 
   /// Flow-control window size (bytes) for streaming (`-> stream`) calls —
-  /// see `FlowController`.
+  /// see `StreamingCallFlowController`.
   int get streamWindowSize;
 }

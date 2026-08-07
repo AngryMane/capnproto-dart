@@ -35,11 +35,11 @@ class RpcSystem {
   /// operation, so this is the only way to observe it.
   ///
   /// [streamWindowSize] sets the flow-control window (in bytes) for
-  /// `-> stream` method calls — see [FlowController].
+  /// `-> stream` method calls — see [StreamingCallFlowController].
   static Future<RpcConnection> connect(
     Uri address, {
     void Function(Object error, StackTrace stackTrace)? onDisposeError,
-    int streamWindowSize = FlowController.defaultWindowSize,
+    int streamWindowSize = StreamingCallFlowController.defaultWindowSize,
   }) async {
     switch (address.scheme) {
       case 'tcp':
@@ -105,7 +105,7 @@ class RpcSystem {
     Uri address,
     Capability bootstrap, {
     void Function(Object error, StackTrace stackTrace)? onDisposeError,
-    int streamWindowSize = FlowController.defaultWindowSize,
+    int streamWindowSize = StreamingCallFlowController.defaultWindowSize,
     int? maxConnections = 1024,
     SecurityContext? securityContext,
   }) async {
@@ -166,7 +166,7 @@ class _RpcServeOptions {
 
   const _RpcServeOptions({
     this.onDisposeError,
-    this.streamWindowSize = FlowController.defaultWindowSize,
+    this.streamWindowSize = StreamingCallFlowController.defaultWindowSize,
     this.maxConnections = 1024,
     this.securityContext,
   });

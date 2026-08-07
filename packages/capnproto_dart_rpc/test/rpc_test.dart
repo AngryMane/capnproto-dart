@@ -1260,7 +1260,7 @@ class SlowCapResultServer extends Capability {
 
 // A server whose calls each stay pending until individually released via
 // completeNext(), in call order — used to control exactly when each
-// streaming call's "ack" (Return) lands, to test FlowController windowing
+// streaming call's "ack" (Return) lands, to test StreamingCallFlowController windowing
 // deterministically.
 class QueuedSlowServer extends Capability {
   final List<Completer<DispatchResult>> _pending = [];
