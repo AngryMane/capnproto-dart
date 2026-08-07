@@ -350,11 +350,11 @@ class _OutgoingQuestionDispatchHandle implements DispatchHandle {
   _OutgoingQuestionDispatchHandle(this.result, this._delegate, this._qid);
 
   @override
-  Capability pipelineResult(int ptrIndex) =>
+  Capability pipelinedCapability(int ptrIndex) =>
       _PipelinedCapability(_delegate, _qid, [ptrIndex], result);
 
   @override
-  Capability pipelineResultPath(List<int> path) =>
+  Capability pipelinedCapabilityFromResultPath(List<int> path) =>
       _PipelinedCapability(_delegate, _qid, path, result);
 }
 
@@ -367,10 +367,10 @@ class _UnresolvedImportDispatchHandle implements DispatchHandle {
   _UnresolvedImportDispatchHandle(this.result, this._delegate, this._qidFuture);
 
   @override
-  Capability pipelineResult(int ptrIndex) => pipelineResultPath([ptrIndex]);
+  Capability pipelinedCapability(int ptrIndex) => pipelinedCapabilityFromResultPath([ptrIndex]);
 
   @override
-  Capability pipelineResultPath(List<int> path) => DeferredCapability(() async {
+  Capability pipelinedCapabilityFromResultPath(List<int> path) => DeferredCapability(() async {
     final qid = await _qidFuture;
     if (qid >= 0) {
       return _PipelinedCapability(_delegate, qid, path, result);
@@ -790,12 +790,12 @@ class _FutureDispatchHandle implements DispatchHandle {
   _FutureDispatchHandle(this.result);
 
   @override
-  Capability pipelineResult(int ptrIndex) => DeferredCapability(
+  Capability pipelinedCapability(int ptrIndex) => DeferredCapability(
     result.then((r) => requireCapabilityFromResult(r, ptrIndex)),
   );
 
   @override
-  Capability pipelineResultPath(List<int> path) => DeferredCapability(
+  Capability pipelinedCapabilityFromResultPath(List<int> path) => DeferredCapability(
     result.then((r) => requireCapabilityFromResultPath(r, path)),
   );
 }
@@ -810,12 +810,12 @@ class _ErrorDispatchHandle implements DispatchHandle {
   }
 
   @override
-  Capability pipelineResult(int ptrIndex) => DeferredCapability(
+  Capability pipelinedCapability(int ptrIndex) => DeferredCapability(
     result.then((r) => requireCapabilityFromResult(r, ptrIndex)),
   );
 
   @override
-  Capability pipelineResultPath(List<int> path) => DeferredCapability(
+  Capability pipelinedCapabilityFromResultPath(List<int> path) => DeferredCapability(
     result.then((r) => requireCapabilityFromResultPath(r, path)),
   );
 }

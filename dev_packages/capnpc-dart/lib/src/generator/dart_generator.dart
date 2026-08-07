@@ -1416,7 +1416,7 @@ Map<int, String> _resolvePipelineClassNames(
       fieldDecls.add('  final ${capIfaceName}Client $fname;');
       fieldInits.add(
         '    $fname = ${capIfaceName}Client('
-        'call.pipelineResultPath([...$basePathExpr, ${fieldBody.offset}]))',
+        'call.pipelinedCapabilityFromResultPath([...$basePathExpr, ${fieldBody.offset}]))',
       );
     } else if (type is StructRefType && type.typeArgs.isEmpty) {
       if (!_structContainsCapability(type.typeId, nodeMap, memo)) continue;

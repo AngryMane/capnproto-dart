@@ -1881,7 +1881,7 @@ void main() {
         RpcPayload.fromBytes(_buildEchoParams('')),
         paramsCapabilities: [target],
       );
-      final pipelinedCap = call.pipelineResult(0);
+      final pipelinedCap = call.pipelinedCapability(0);
 
       await expectLater(
         pipelinedCap.dispatch(
@@ -2068,7 +2068,7 @@ void main() {
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
       );
-      final pipelinedCap = call.pipelineResult(0);
+      final pipelinedCap = call.pipelinedCapability(0);
 
       // Dispatch a second call on the pipelined cap before the first returns.
       final secondCall = pipelinedCap.dispatch(
@@ -2121,7 +2121,7 @@ void main() {
           RpcPayload.fromBytes(_buildEchoParams('')),
         );
         // Pipeline onto ptr slot 1 (not slot 0), where the capability lives.
-        final pipelinedCap = call.pipelineResult(1);
+        final pipelinedCap = call.pipelinedCapability(1);
 
         final secondResult = await pipelinedCap.dispatch(
           _echoInterfaceId,
@@ -2169,7 +2169,7 @@ void main() {
           _pipelineMethodId,
           RpcPayload.fromBytes(_buildEchoParams('')),
         );
-        final pipelinedCap = parent.pipelineResult(0);
+        final pipelinedCap = parent.pipelinedCapability(0);
         final paramCall = bootstrapCap.cap.dispatch(
           _echoInterfaceId,
           _echoMethodId,
@@ -2220,8 +2220,8 @@ void main() {
           _echoMethodId,
           RpcPayload.fromBytes(_buildEchoParams('test')),
         );
-        // pipelineResult on a non-RPC cap returns a DeferredCapability.
-        final piped = call.pipelineResult(0);
+        // pipelinedCapability on a non-RPC cap returns a DeferredCapability.
+        final piped = call.pipelinedCapability(0);
         expect(piped, isA<DeferredCapability>());
         // The result future still completes correctly.
         final result = await call.result;
@@ -2301,7 +2301,7 @@ void main() {
           _pipelineMethodId,
           RpcPayload.fromBytes(_buildEchoParams('')),
         );
-        final pipelinedCap = call.pipelineResult(0);
+        final pipelinedCap = call.pipelinedCapability(0);
         await call.result;
 
         await pipelinedCap.dispose();
@@ -2352,7 +2352,7 @@ void main() {
           _pipelineMethodId,
           RpcPayload.fromBytes(_buildEchoParams('')),
         );
-        final pipelinedCap = call.pipelineResult(0);
+        final pipelinedCap = call.pipelinedCapability(0);
         await call.result;
 
         captured.clear();
@@ -2422,7 +2422,7 @@ void main() {
           _pipelineMethodId,
           RpcPayload.fromBytes(_buildEchoParams('')),
         );
-        final pipelinedCap = call.pipelineResult(0);
+        final pipelinedCap = call.pipelinedCapability(0);
 
         await pipelinedCap.dispose();
         expect(
@@ -2488,7 +2488,7 @@ void main() {
                 _pipelineMethodId,
                 RpcPayload.fromBytes(_buildEchoParams('')),
               );
-              final pipelinedCap = parent.pipelineResult(0);
+              final pipelinedCap = parent.pipelinedCapability(0);
               final pipelinedCall = pipelinedCap.dispatch(
                 _echoInterfaceId,
                 _echoMethodId,
@@ -2539,7 +2539,7 @@ void main() {
           999,
           RpcPayload.fromBytes(_buildEchoParams('')),
         );
-        final pipelinedCap = call.pipelineResult(0);
+        final pipelinedCap = call.pipelinedCapability(0);
 
         await expectLater(call.result, throwsA(isA<RpcException>()));
         await Future<void>.delayed(Duration.zero);
@@ -2707,7 +2707,7 @@ void main() {
         _mixedMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
       );
-      final pipelinedCap = call.pipelineResult(0);
+      final pipelinedCap = call.pipelinedCapability(0);
       await call.result;
       await Future<void>.delayed(Duration.zero);
 
@@ -2736,7 +2736,7 @@ void main() {
     test('disposing a pipelined capability does not invalidate the same '
         'capability independently read from the awaited result', () async {
       // Regression test: the eagerly-pipelined capability
-      // (call.pipelineResult(0)) and the capability independently resolved
+      // (call.pipelinedCapability(0)) and the capability independently resolved
       // from the awaited result (requireCapabilityFromResult(result, 0))
       // both resolve to the identical underlying capability object (the
       // same DispatchResult.caps entry). Disposing one must not silently
@@ -2753,7 +2753,7 @@ void main() {
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
       );
-      final pipelinedCap = call.pipelineResult(0);
+      final pipelinedCap = call.pipelinedCapability(0);
 
       final result = await call.result;
       final resolvedCap = requireCapabilityFromResult(result, 0);
@@ -3528,7 +3528,7 @@ void main() {
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
       );
-      final pipelinedCap = call.pipelineResult(0);
+      final pipelinedCap = call.pipelinedCapability(0);
       await call.result;
       await Future<void>.delayed(Duration.zero);
 
@@ -3600,7 +3600,7 @@ void main() {
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
       );
-      final pipelinedCap = parent.pipelineResult(0);
+      final pipelinedCap = parent.pipelinedCapability(0);
       final pipelinedCall = pipelinedCap.dispatch(
         _echoInterfaceId,
         _echoMethodId,
@@ -3664,7 +3664,7 @@ void main() {
           RpcPayload.fromBytes(_buildEchoParams('')),
           paramsCapabilities: [clientSideCap],
         );
-        call.pipelineResult(0); // capability lease, deliberately left undisposed
+        call.pipelinedCapability(0); // capability lease, deliberately left undisposed
         await call.result;
         await Future<void>.delayed(Duration.zero);
 
@@ -5801,7 +5801,7 @@ void main() {
           _pipelineMethodId,
           RpcPayload.fromBytes(_buildEchoParams('')),
         );
-        final pipelinedCap = parent.pipelineResult(0);
+        final pipelinedCap = parent.pipelinedCapability(0);
         final pipelinedCall = pipelinedCap.dispatch(
           _echoInterfaceId,
           _echoMethodId,
@@ -5872,7 +5872,7 @@ void main() {
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
       );
-      final pipelinedCap = parent.pipelineResult(0);
+      final pipelinedCap = parent.pipelinedCapability(0);
       final pipelinedCall = pipelinedCap.dispatch(
         _echoInterfaceId,
         _echoMethodId,
@@ -5940,7 +5940,7 @@ void main() {
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
       );
-      final pipelinedCap = parent.pipelineResult(0);
+      final pipelinedCap = parent.pipelinedCapability(0);
       await parent.result;
 
       final ret = await _waitForMessageType(

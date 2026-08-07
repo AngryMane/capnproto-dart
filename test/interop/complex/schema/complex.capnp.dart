@@ -9893,7 +9893,7 @@ final class RepositoryOpenCursorResult {
 
 final class RepositoryOpenCursorPipeline {
   RepositoryOpenCursorPipeline._(DispatchHandle call)
-      :     cursor = CursorClient(call.pipelineResultPath([...const <int>[], 0])),
+      :     cursor = CursorClient(call.pipelinedCapabilityFromResultPath([...const <int>[], 0])),
     result = call.result.then((r) => r.payload.getTyped(repositoryOpenCursorResultsFactory, capabilities: r.caps));
 
   final Future<RepositoryOpenCursorResultsReader> result;
@@ -9911,7 +9911,7 @@ final class RepositoryWatchResult {
 
 final class RepositoryWatchPipeline {
   RepositoryWatchPipeline._(DispatchHandle call)
-      :     subscription = SubscriptionClient(call.pipelineResultPath([...const <int>[], 0])),
+      :     subscription = SubscriptionClient(call.pipelinedCapabilityFromResultPath([...const <int>[], 0])),
     result = call.result.then((r) => r.payload.getTyped(repositoryWatchResultsFactory, capabilities: r.caps));
 
   final Future<RepositoryWatchResultsReader> result;
@@ -10366,7 +10366,7 @@ final class CapabilityFactoryNewCellResult {
 
 final class CapabilityFactoryNewCellPipeline {
   CapabilityFactoryNewCellPipeline._(DispatchHandle call)
-      :     cell = ReadWriteClient(call.pipelineResultPath([...const <int>[], 0])),
+      :     cell = ReadWriteClient(call.pipelinedCapabilityFromResultPath([...const <int>[], 0])),
     result = call.result.then((r) => r.payload.getTyped(capabilityFactoryNewCellResultsFactory, capabilities: r.caps));
 
   final Future<CapabilityFactoryNewCellResultsReader> result;
@@ -10384,7 +10384,7 @@ final class CapabilityFactoryNewEmptyCellResult {
 
 final class CapabilityFactoryNewEmptyCellPipeline {
   CapabilityFactoryNewEmptyCellPipeline._(DispatchHandle call)
-      :     cell = ReadWriteClient(call.pipelineResultPath([...const <int>[], 0])),
+      :     cell = ReadWriteClient(call.pipelinedCapabilityFromResultPath([...const <int>[], 0])),
     result = call.result.then((r) => r.payload.getTyped(capabilityFactoryNewEmptyCellResultsFactory, capabilities: r.caps));
 
   final Future<CapabilityFactoryNewEmptyCellResultsReader> result;
@@ -10402,7 +10402,7 @@ final class CapabilityFactoryNewRepositoryResult {
 
 final class CapabilityFactoryNewRepositoryPipeline {
   CapabilityFactoryNewRepositoryPipeline._(DispatchHandle call)
-      :     repository = RepositoryClient(call.pipelineResultPath([...const <int>[], 0])),
+      :     repository = RepositoryClient(call.pipelinedCapabilityFromResultPath([...const <int>[], 0])),
     result = call.result.then((r) => r.payload.getTyped(capabilityFactoryNewRepositoryResultsFactory, capabilities: r.caps));
 
   final Future<CapabilityFactoryNewRepositoryResultsReader> result;
@@ -11089,7 +11089,7 @@ final class PipelineTargetGetChildResult {
 
 final class PipelineTargetGetChildPipeline {
   PipelineTargetGetChildPipeline._(DispatchHandle call)
-      :     child = PipelineTargetClient(call.pipelineResultPath([...const <int>[], 0])),
+      :     child = PipelineTargetClient(call.pipelinedCapabilityFromResultPath([...const <int>[], 0])),
     result = call.result.then((r) => r.payload.getTyped(pipelineTargetGetChildResultsFactory, capabilities: r.caps));
 
   final Future<PipelineTargetGetChildResultsReader> result;
@@ -11107,7 +11107,7 @@ final class PipelineTargetGetRepositoryResult {
 
 final class PipelineTargetGetRepositoryPipeline {
   PipelineTargetGetRepositoryPipeline._(DispatchHandle call)
-      :     repository = RepositoryClient(call.pipelineResultPath([...const <int>[], 0])),
+      :     repository = RepositoryClient(call.pipelinedCapabilityFromResultPath([...const <int>[], 0])),
     result = call.result.then((r) => r.payload.getTyped(pipelineTargetGetRepositoryResultsFactory, capabilities: r.caps));
 
   final Future<PipelineTargetGetRepositoryResultsReader> result;
@@ -11291,7 +11291,7 @@ final class ComplexTestServiceMakePipelineResult {
 
 final class ComplexTestServiceMakePipelinePipeline {
   ComplexTestServiceMakePipelinePipeline._(DispatchHandle call)
-      :     target = PipelineTargetClient(call.pipelineResultPath([...const <int>[], 0])),
+      :     target = PipelineTargetClient(call.pipelinedCapabilityFromResultPath([...const <int>[], 0])),
     result = call.result.then((r) => r.payload.getTyped(complexTestServiceMakePipelineResultsFactory, capabilities: r.caps));
 
   final Future<ComplexTestServiceMakePipelineResultsReader> result;
@@ -11309,7 +11309,7 @@ final class ComplexTestServiceOpenUploadResult {
 
 final class ComplexTestServiceOpenUploadPipeline {
   ComplexTestServiceOpenUploadPipeline._(DispatchHandle call)
-      :     sink = ByteSinkClient(call.pipelineResultPath([...const <int>[], 0])),
+      :     sink = ByteSinkClient(call.pipelinedCapabilityFromResultPath([...const <int>[], 0])),
     result = call.result.then((r) => r.payload.getTyped(complexTestServiceOpenUploadResultsFactory, capabilities: r.caps));
 
   final Future<ComplexTestServiceOpenUploadResultsReader> result;
@@ -11327,7 +11327,7 @@ final class ComplexTestServiceOpenDownloadResult {
 
 final class ComplexTestServiceOpenDownloadPipeline {
   ComplexTestServiceOpenDownloadPipeline._(DispatchHandle call)
-      :     source = ByteSourceClient(call.pipelineResultPath([...const <int>[], 0])),
+      :     source = ByteSourceClient(call.pipelinedCapabilityFromResultPath([...const <int>[], 0])),
     result = call.result.then((r) => r.payload.getTyped(complexTestServiceOpenDownloadResultsFactory, capabilities: r.caps));
 
   final Future<ComplexTestServiceOpenDownloadResultsReader> result;
@@ -11345,7 +11345,7 @@ final class ComplexTestServiceGetRepositoryResult {
 
 final class ComplexTestServiceGetRepositoryPipeline {
   ComplexTestServiceGetRepositoryPipeline._(DispatchHandle call)
-      :     repository = RepositoryClient(call.pipelineResultPath([...const <int>[], 0])),
+      :     repository = RepositoryClient(call.pipelinedCapabilityFromResultPath([...const <int>[], 0])),
     result = call.result.then((r) => r.payload.getTyped(complexTestServiceGetRepositoryResultsFactory, capabilities: r.caps));
 
   final Future<ComplexTestServiceGetRepositoryResultsReader> result;
@@ -11363,7 +11363,7 @@ final class ComplexTestServiceGetFactoryResult {
 
 final class ComplexTestServiceGetFactoryPipeline {
   ComplexTestServiceGetFactoryPipeline._(DispatchHandle call)
-      :     factory = CapabilityFactoryClient(call.pipelineResultPath([...const <int>[], 0])),
+      :     factory = CapabilityFactoryClient(call.pipelinedCapabilityFromResultPath([...const <int>[], 0])),
     result = call.result.then((r) => r.payload.getTyped(complexTestServiceGetFactoryResultsFactory, capabilities: r.caps));
 
   final Future<ComplexTestServiceGetFactoryResultsReader> result;
@@ -11381,7 +11381,7 @@ final class ComplexTestServiceMakePromisedPipelineResult {
 
 final class ComplexTestServiceMakePromisedPipelinePipeline {
   ComplexTestServiceMakePromisedPipelinePipeline._(DispatchHandle call)
-      :     target = PipelineTargetClient(call.pipelineResultPath([...const <int>[], 0])),
+      :     target = PipelineTargetClient(call.pipelinedCapabilityFromResultPath([...const <int>[], 0])),
     result = call.result.then((r) => r.payload.getTyped(complexTestServiceMakePromisedPipelineResultsFactory, capabilities: r.caps));
 
   final Future<ComplexTestServiceMakePromisedPipelineResultsReader> result;
@@ -11399,7 +11399,7 @@ final class ComplexTestServiceEchoPipelineTargetLaterResult {
 
 final class ComplexTestServiceEchoPipelineTargetLaterPipeline {
   ComplexTestServiceEchoPipelineTargetLaterPipeline._(DispatchHandle call)
-      :     target = PipelineTargetClient(call.pipelineResultPath([...const <int>[], 0])),
+      :     target = PipelineTargetClient(call.pipelinedCapabilityFromResultPath([...const <int>[], 0])),
     result = call.result.then((r) => r.payload.getTyped(complexTestServiceEchoPipelineTargetLaterResultsFactory, capabilities: r.caps));
 
   final Future<ComplexTestServiceEchoPipelineTargetLaterResultsReader> result;
@@ -11931,7 +11931,7 @@ abstract class ComplexTestServiceServer extends Capability {
 final class ComplexResponsePipeline {
   ComplexResponsePipeline(DispatchHandle call, List<int> basePath)
     :     echoed = ComplexRequestPipeline(call, [...basePath, 2]),
-          serverCapability = PipelineTargetClient(call.pipelineResultPath([...basePath, 4]));
+          serverCapability = PipelineTargetClient(call.pipelinedCapabilityFromResultPath([...basePath, 4]));
 
   final ComplexRequestPipeline echoed;
   final PipelineTargetClient serverCapability;
@@ -11948,7 +11948,7 @@ final class ComplexRequestPipeline {
 
 final class CapabilityBundlePipeline {
   CapabilityBundlePipeline(DispatchHandle call, List<int> basePath)
-    :     primary = PipelineTargetClient(call.pipelineResultPath([...basePath, 0]));
+    :     primary = PipelineTargetClient(call.pipelinedCapabilityFromResultPath([...basePath, 0]));
 
   final PipelineTargetClient primary;
 }

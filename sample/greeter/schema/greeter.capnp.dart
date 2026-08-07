@@ -403,7 +403,7 @@ final class GreeterNewSessionResult {
 
 final class GreeterNewSessionPipeline {
   GreeterNewSessionPipeline._(DispatchHandle call)
-      :     session = GreetSessionClient(call.pipelineResultPath([...const <int>[], 0])),
+      :     session = GreetSessionClient(call.pipelinedCapabilityFromResultPath([...const <int>[], 0])),
     result = call.result.then((r) => r.payload.getTyped(greeterNewSessionResultsFactory, capabilities: r.caps));
 
   final Future<GreeterNewSessionResultsReader> result;

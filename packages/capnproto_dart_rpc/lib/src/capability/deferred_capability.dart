@@ -6,19 +6,19 @@ class _DeferredDispatchHandle implements DispatchHandle {
   _DeferredDispatchHandle(this.result);
 
   @override
-  Capability pipelineResult(int ptrIndex) => DeferredCapability(
+  Capability pipelinedCapability(int ptrIndex) => DeferredCapability(
     result.then((r) => requireCapabilityFromResult(r, ptrIndex)),
   );
 
   @override
-  Capability pipelineResultPath(List<int> path) => DeferredCapability(
+  Capability pipelinedCapabilityFromResultPath(List<int> path) => DeferredCapability(
     result.then((r) => requireCapabilityFromResultPath(r, path)),
   );
 }
 
 /// A capability backed by a [Future] that resolves to the real capability.
 ///
-/// Used as the fallback for [DispatchHandle.pipelineResult] when the underlying
+/// Used as the fallback for [DispatchHandle.pipelinedCapability] when the underlying
 /// [Capability] is not an RPC-connected imported cap and therefore cannot
 /// send wire-level promisedAnswer messages.
 class DeferredCapability extends Capability {

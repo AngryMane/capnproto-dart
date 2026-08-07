@@ -48,7 +48,7 @@ Capability createReceiverAnswerCapability(
 ) => _ReceiverAnswerCapability(delegate, questionId, path);
 
 /// Builds the [Capability] a `promisedAnswer`/pipelined call target
-/// resolves to (see [_OutgoingQuestionDispatchHandle.pipelineResult]), bound to [delegate]
+/// resolves to (see [_OutgoingQuestionDispatchHandle.pipelinedCapability]), bound to [delegate]
 /// instead of a real connection. Test-only: nothing in production
 /// constructs a `_PipelinedCapability` directly — it is always created
 /// internally by `_OutgoingQuestionDispatchHandle`/

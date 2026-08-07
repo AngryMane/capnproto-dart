@@ -219,7 +219,7 @@ Future<(Capability, List<Capability>)> _pipelineCapability(
     _returnCapabilityMethod,
     _payload('pipeline-parent'),
   );
-  final pipelined = parent.pipelineResult(0);
+  final pipelined = parent.pipelinedCapability(0);
   final reply = await _echoThrough(pipelined, 'pipelined-call');
   if (reply != 'pipelined-call') {
     throw StateError('pipelined call returned an invalid result');

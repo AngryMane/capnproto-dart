@@ -1450,7 +1450,7 @@ void main() {
       expect(src, contains('final class GreeterNewSessionPipeline'));
       expect(
         src,
-        contains('call.pipelineResultPath([...const <int>[], 0])'),
+        contains('call.pipelinedCapabilityFromResultPath([...const <int>[], 0])'),
       );
     });
 
@@ -1499,7 +1499,7 @@ void main() {
 
       expect(
         s,
-        contains('call.pipelineResultPath([...const <int>[], 2])'),
+        contains('call.pipelinedCapabilityFromResultPath([...const <int>[], 2])'),
       );
       expect(
         s,
@@ -1509,7 +1509,7 @@ void main() {
       );
       expect(
         s,
-        isNot(contains('call.pipelineResultPath([...const <int>[], 0])')),
+        isNot(contains('call.pipelinedCapabilityFromResultPath([...const <int>[], 0])')),
       );
     });
   });
@@ -1568,7 +1568,7 @@ void main() {
         expect(
           s,
           contains(
-            'session = SessionClient(call.pipelineResultPath([...basePath, 0]))',
+            'session = SessionClient(call.pipelinedCapabilityFromResultPath([...basePath, 0]))',
           ),
         );
         expect(s, contains('final SessionClient session;'));
