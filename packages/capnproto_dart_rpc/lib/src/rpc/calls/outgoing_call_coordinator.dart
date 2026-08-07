@@ -113,11 +113,12 @@ final class OutgoingCallCoordinator {
   /// before any side effect (an export refcount bump, [sendBytes]) can run —
   /// see [resolveCapTableMaybeSync]'s matching doc comment for why this must
   /// be checked before touching anything with a side effect.
-  bool _targetNeedsAsync(OutgoingCallTarget target) => switch (target) {
-    ImportedCapabilityTarget(importId: final id) => id is! int,
-    PromisedAnswerTarget(questionId: final qid) =>
-      questions.sentCompleterFor(qid) != null,
-  };
+  bool _targetRequiresAsyncResolution(OutgoingCallTarget target) =>
+      switch (target) {
+        ImportedCapabilityTarget(importId: final id) => id is! int,
+        PromisedAnswerTarget(questionId: final qid) =>
+          questions.sentCompleterFor(qid) != null,
+      };
 
   /// Builds an outgoing Call's wire bytes against [target]/[params],
   /// synchronously when possible (mirrors the old `_startResolvedImportCall`
@@ -140,7 +141,7 @@ final class OutgoingCallCoordinator {
       BuilderParams(build: final b) => b,
     };
 
-    if (_targetNeedsAsync(target)) {
+    if (_targetRequiresAsyncResolution(target)) {
       return _buildOutgoingCallBytesAsync(
         qid: qid,
         target: target,
@@ -157,7 +158,8 @@ final class OutgoingCallCoordinator {
     var targetTransformPath = const <int>[];
     switch (target) {
       case ImportedCapabilityTarget(importId: final id):
-        targetImportId = id as int; // _targetNeedsAsync confirmed this above
+        targetImportId =
+            id as int; // _targetRequiresAsyncResolution confirmed this above
         imports.throwIfBroken(targetImportId);
       case PromisedAnswerTarget(
         questionId: final pqid,
@@ -277,7 +279,7 @@ final class OutgoingCallCoordinator {
   /// The single site wiring [QuestionTable.markSent] (on success) and
   /// [QuestionTable.failBeforeSend] + [applyReleaseParamCaps] (on failure)
   /// together for an outgoing Call — shared by [start] and
-  /// `_sendTailForwardCall` (via this method directly), so this pairing is
+  /// `_sendForwardedTailCall` (via this method directly), so this pairing is
   /// never wired up ad hoc at a third call site. Every path that reaches
   /// [onError] does so before [sendBytes] ever runs (nothing after that
   /// point in [_buildOutgoingCallBytes]/[_buildOutgoingCallBytesAsync] can
@@ -383,11 +385,11 @@ final class OutgoingCallCoordinator {
 
     return StartedCall(
       question.id,
-      _awaitReturn(question.id, question.returnCompleter!),
+      _awaitAndProcessReturn(question.id, question.returnCompleter!),
     );
   }
 
-  Future<DispatchResult> _awaitReturn(
+  Future<DispatchResult> _awaitAndProcessReturn(
     int qid,
     Completer<RpcMessage> completer,
   ) async {
@@ -441,8 +443,8 @@ final class OutgoingCallCoordinator {
       // these are implemented by this vat. Surfacing them as an explicit
       // error is important specifically for resultsSentElsewhere: it's only
       // ever valid as the Return to a call *we* sent with
-      // sendResultsTo=yourself (see `_sendTailForwardCall`, which never
-      // routes through [_awaitReturn]), so seeing it here means a peer sent
+      // sendResultsTo=yourself (see `_sendForwardedTailCall`, which never
+      // routes through [_awaitAndProcessReturn]), so seeing it here means a peer sent
       // it unprompted — treating it as an empty success would silently hand
       // the caller a bogus empty-struct result instead of the real one.
       throw RpcException(

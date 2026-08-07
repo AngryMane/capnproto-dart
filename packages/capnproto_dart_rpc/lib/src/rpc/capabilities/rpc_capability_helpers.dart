@@ -1,6 +1,6 @@
 part of 'rpc_capability.dart';
 
-/// Tracks a single `IncomingCallCoordinator._runDispatch` call's params-caps
+/// Tracks a single `IncomingCallCoordinator._executeIncomingDispatch` call's params-caps
 /// deferred-release window — see that class's own
 /// `_finalizeParamCapsTracker`/`beginParamCapsRelease`/`finalizeParamCapsRelease`.
 /// [wrappers] are every freshly-imported `_ImportedCapability` created for
@@ -106,7 +106,7 @@ bool isSameConnectionPeerCapability(
 /// Starts a deferred-release tracking window for whichever of
 /// [paramsCapabilities] are same-connection `_ImportedCapability` wrappers
 /// freshly imported for a call, bound to [delegate] — see
-/// `IncomingCallCoordinator._runDispatch`'s own doc comment for why.
+/// `IncomingCallCoordinator._executeIncomingDispatch`'s own doc comment for why.
 /// [decrementImportReference] is called with an import id exactly once for
 /// each wrapper disposed while the window is open. Returns an opaque
 /// ticket (`null` if there's nothing to track) to pass back to

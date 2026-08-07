@@ -185,7 +185,7 @@ final class CapabilityProtocol {
 
   /// Records the senderHosted/senderPromise export IDs among [capEntries]
   /// (an outgoing Call's own capTable — this vat's params capabilities)
-  /// against [qid], so `OutgoingCallCoordinator`'s internal `_awaitReturn`
+  /// against [qid], so `OutgoingCallCoordinator`'s internal `_awaitAndProcessReturn`
   /// can apply `Return.releaseParamCaps` locally once the matching Return
   /// arrives. A call with no such entries (no capability params, or every
   /// one an import/promisedAnswer pass-through) records nothing — nothing

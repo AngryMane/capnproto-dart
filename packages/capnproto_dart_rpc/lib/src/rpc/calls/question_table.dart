@@ -67,7 +67,7 @@ class QuestionTable {
 
   /// Allocates a fresh question id plus its matching `Return` completer and
   /// sent completer — used by every real outgoing Call
-  /// (`OutgoingCallCoordinator.start`, `_sendTailForwardCall`).
+  /// (`OutgoingCallCoordinator.start`, `_sendForwardedTailCall`).
   OutgoingQuestion allocate() {
     final qid = _nextQuestionId++;
     final question = OutgoingQuestion(
@@ -152,7 +152,7 @@ class QuestionTable {
 
   /// Removes and returns the question object for [qid], if it's still
   /// tracked.
-  OutgoingQuestion? remove(int qid) => _questions.remove(qid);
+  OutgoingQuestion? takeQuestion(int qid) => _questions.remove(qid);
 
   /// Fails [question] with [err] before it ever reaches the wire, clears its
   /// tracking, and returns any recorded parameter export ids that must be

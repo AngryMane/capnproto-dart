@@ -119,7 +119,7 @@ const int _returnTakeFromOtherQuestionOff = 8;
 const int _retResults = 0;
 const int _retException = 1;
 // Not implemented by this vat (see OutgoingCallCoordinator's internal
-// _awaitReturn, in outgoing_call_coordinator.dart).
+// _awaitAndProcessReturn, in outgoing_call_coordinator.dart).
 const int _retCanceled = 2;
 const int _retResultsSentElsewhere = 3;
 const int _retTakeFromOtherQuestion = 4;
@@ -1141,7 +1141,7 @@ Uint8List buildReturnExceptionMessage({
   // Exceptions never carry a results payload/capTable, so it's always
   // *wire-format*-safe to set this — but the sender must also make sure it
   // doesn't need the peer's Finish for its own answer-table bookkeeping
-  // (see incoming_call_coordinator.dart's _runDispatch, the only call site that
+  // (see incoming_call_coordinator.dart's _executeIncomingDispatch, the only call site that
   // passes true) before opting in. Defaults to false so every other call
   // site (unknown-export-id/pipelining-error/tail-call-error Returns, which
   // still rely on Finish to clear their `_answers` entry) keeps its
@@ -1438,7 +1438,7 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
       } else {
         // canceled(2) / resultsSentElsewhere(3) / acceptFromThirdParty(5) —
         // none of these are implemented (see OutgoingCallCoordinator's
-        // internal _awaitReturn), but the disc is still preserved here
+        // internal _awaitAndProcessReturn), but the disc is still preserved here
         // rather than silently discarded, so callers can report exactly
         // what happened.
         return RpcMessage._(

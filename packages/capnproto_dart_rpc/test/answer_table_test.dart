@@ -30,7 +30,7 @@ void main() {
         reason: 'finished-before-completion is still tracked',
       );
 
-      // The dispatch eventually settles — _runDispatch calls clearPendingAnswer()
+      // The dispatch eventually settles — _executeIncomingDispatch calls clearPendingAnswer()
       // (a path that ends up recording nothing further) or
       // tryRecordAnswer()/tryRecordFailedAnswer() (a path
       // that does) to both drop dispatch-in-flight bookkeeping and learn

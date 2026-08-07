@@ -1961,13 +1961,13 @@ void main() {
       // async deframing/dispatch pipeline still needs a beat). Closing
       // too early would cancel the incoming subscription while those
       // already-in-flight bytes are still queued, discarding them
-      // before _awaitReturn ever gets to call _resolveLocalAnswer —
+      // before _awaitAndProcessReturn ever gets to call _resolveLocalAnswer —
       // which would make this test exercise "outgoing question dropped
       // before its Return arrived" (already covered elsewhere) instead
       // of the tail-call-specific race this test is about. Waiting for
       // debugPendingQuestionCount to drop is deterministic here:
       // _handleReturn's very first line (QuestionTable.takeReturn)
-      // clears this synchronously, before _awaitReturn's own
+      // clears this synchronously, before _awaitAndProcessReturn's own
       // _resolveLocalAnswer continuation even starts running.
       await _waitUntil(() => client.debugPendingQuestionCount == 0);
 
@@ -1977,7 +1977,7 @@ void main() {
       // Known bug, tracked as https://github.com/AngryMane/capnproto-dart/issues/99
       // -- characterized here, not fixed: AnswerTable.tearDown only
       // cancels the forwarded dispatch's DispatchContext -- it has no
-      // way to reach into the Future _awaitReturn already extracted via
+      // way to reach into the Future _awaitAndProcessReturn already extracted via
       // _resolveLocalAnswer for the original call. SlowEchoServer
       // ignores cancellation and keeps blocking on target.complete, so
       // the original call stays genuinely pending, not failed, even
@@ -3629,7 +3629,7 @@ void main() {
       // any answer-table state that teardown already cleared. Waiting on
       // child.disposeCount (rather than a fixed delay) proves the late-
       // completion path actually ran: once the parent dispatch resolves
-      // after the connection is already closed, _runDispatch's
+      // after the connection is already closed, _executeIncomingDispatch's
       // _closedError branch disposes its result capabilities (since they
       // were never going to be sent as a Return) instead of leaking them
       // -- child's disposal is a direct signal that path executed, not

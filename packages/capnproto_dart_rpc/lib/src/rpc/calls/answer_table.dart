@@ -60,8 +60,8 @@ final class FailedAnswerState extends AnswerState {
 /// The peer already sent Finish for this question while its dispatch was
 /// still running. The eventual dispatch result must be dropped instead of
 /// resurrecting answer state for it.
-final class FinishedBeforeCompletion extends AnswerState {
-  const FinishedBeforeCompletion();
+final class FinishedBeforeCompletionState extends AnswerState {
+  const FinishedBeforeCompletionState();
 }
 
 /// Owns every incoming call a `TwoPartyRpcConnection` is currently (or has
@@ -147,7 +147,7 @@ class AnswerTable {
   /// sends the Return before its own follow-up call can observe (see those
   /// methods' doc comments).
   bool clearPendingAnswer(int qid) {
-    final wasFinishedEarly = _answers[qid] is FinishedBeforeCompletion;
+    final wasFinishedEarly = _answers[qid] is FinishedBeforeCompletionState;
     _answers.remove(qid);
     return wasFinishedEarly;
   }
@@ -174,7 +174,7 @@ class AnswerTable {
     ResolvedAnswer? resolved,
     List<int> resultExportIds = const [],
   }) {
-    if (_answers[qid] is FinishedBeforeCompletion) {
+    if (_answers[qid] is FinishedBeforeCompletionState) {
       _answers.remove(qid);
       return false;
     }
@@ -192,7 +192,7 @@ class AnswerTable {
   /// carry. Same atomicity contract: call before sending, `false` means
   /// discard the failure instead of answering it.
   bool tryRecordFailedAnswer(int qid, CapnpException error) {
-    if (_answers[qid] is FinishedBeforeCompletion) {
+    if (_answers[qid] is FinishedBeforeCompletionState) {
       _answers.remove(qid);
       return false;
     }
@@ -261,10 +261,10 @@ class AnswerTable {
     final state = _answers[qid];
     switch (state) {
       case null:
-      case FinishedBeforeCompletion():
+      case FinishedBeforeCompletionState():
         return null;
       case PendingAnswerState(:final cancellation):
-        _answers[qid] = const FinishedBeforeCompletion();
+        _answers[qid] = const FinishedBeforeCompletionState();
         cancellation.cancel();
         return null;
       case AnsweredState(:final resultExportIds):

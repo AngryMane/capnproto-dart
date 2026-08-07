@@ -261,7 +261,7 @@ void main() {
       final h = _Harness();
       h.coordinator.tearDown(const RpcException('connection torn down'));
 
-      // Mirrors _sendTailForwardCall: allocates its own question, then
+      // Mirrors _sendForwardedTailCall: allocates its own question, then
       // calls startUsing directly — never through start(), so startUsing's
       // own entry guard is the only thing that can catch this.
       final question = h.questions.allocate();
@@ -316,7 +316,7 @@ void main() {
       // target-await guard the previous test already covers.
       final question = h.questions.allocate();
       // Mirrors start()'s own defensive ignore() for the sent completer —
-      // startUsing() is called directly here (like _sendTailForwardCall
+      // startUsing() is called directly here (like _sendForwardedTailCall
       // does), so nothing else ever attaches to it, and tearDown() below
       // completes it with an error unconditionally (unlike the return
       // completer, QuestionTable.tearDown doesn't ignore() this one itself,

@@ -66,7 +66,7 @@ final _emptyResultBytes = Uint8List.fromList([
 /// fake either by implementing it — narrow closures keep this class's own
 /// test harness as lightweight as its two siblings'. [startUsing] closes
 /// the one genuine circular dependency in this refactor:
-/// `_sendTailForwardCall` needs `OutgoingCallCoordinator.startUsing`, while
+/// `_sendForwardedTailCall` needs `OutgoingCallCoordinator.startUsing`, while
 /// `OutgoingCallCoordinator`'s own `resolveLocalAnswer` field needs
 /// [resolveLocalAnswer] — see the wiring site
 /// (`two_party_connection.dart`) for how both directions are kept
@@ -97,7 +97,7 @@ final class IncomingCallCoordinator {
   final void Function(Capability) disposeIgnoringErrors;
 
   /// Whether the owning connection has already torn down — checked in
-  /// [_dispatchTailCall]/[_runDispatch]'s async continuations, which may
+  /// [_dispatchTailCall]/[_executeIncomingDispatch]'s async continuations, which may
   /// run after teardown has already cleared the answer tables they'd
   /// otherwise touch.
   final bool Function() isClosed;
@@ -134,7 +134,7 @@ final class IncomingCallCoordinator {
   /// params capabilities are same-connection imports freshly created for
   /// it, returning an opaque ticket (`null` if there's nothing to track)
   /// to pass back to [finalizeParamCapsRelease] once the call settles —
-  /// see [_runDispatch]'s own doc comment for why this tracking exists.
+  /// see [_executeIncomingDispatch]'s own doc comment for why this tracking exists.
   /// Opaque because setting it up means writing a deferred-release sink
   /// onto each `_ImportedCapability` wrapper, private to
   /// `rpc_capability.dart`'s library.
@@ -191,7 +191,7 @@ final class IncomingCallCoordinator {
     // Return through a synchronously-reentrant sink (an in-memory or
     // `sync: true` transport) could otherwise observe a pipelined call
     // targeting this answer, a Finish for it, or a Release for export 0,
-    // before this bookkeeping exists (see _runDispatch's own matching
+    // before this bookkeeping exists (see _executeIncomingDispatch's own matching
     // comment for why the same ordering matters there).
     final bootstrapCap = exportTable.retainExisting(0);
     if (bootstrapCap != null) {
@@ -241,7 +241,7 @@ final class IncomingCallCoordinator {
     // Already resolved: dispatch immediately.
     final resolved = answerTable.resolvedFor(parentQid);
     if (resolved != null) {
-      final cap = _capFromPath(resolved, path);
+      final cap = _tryGetCapabilityFromAnswerPath(resolved, path);
       if (cap == null) {
         sendBytes(
           buildReturnExceptionMessage(
@@ -276,7 +276,7 @@ final class IncomingCallCoordinator {
           // no-op anyway, so there's nothing left to do for a peer that's
           // no longer there.
           if (isClosed()) return;
-          final cap = _capFromPath(resolved, path);
+          final cap = _tryGetCapabilityFromAnswerPath(resolved, path);
           if (cap == null) {
             sendBytes(
               buildReturnExceptionMessage(
@@ -301,14 +301,16 @@ final class IncomingCallCoordinator {
         .ignore();
   }
 
-  Capability? _capFromPath(ResolvedAnswer resolved, List<int> path) =>
-      capabilityFromResultPath(
-        DispatchResult(
-          payload: RpcPayload.fromBytes(resolved.resultBytes),
-          caps: resolved.caps,
-        ),
-        path,
-      );
+  Capability? _tryGetCapabilityFromAnswerPath(
+    ResolvedAnswer resolved,
+    List<int> path,
+  ) => capabilityFromResultPath(
+    DispatchResult(
+      payload: RpcPayload.fromBytes(resolved.resultBytes),
+      caps: resolved.caps,
+    ),
+    path,
+  );
 
   void _dispatchToCapability(RpcMessage msg, Capability cap) {
     final qid = msg.questionId;
@@ -430,7 +432,7 @@ final class IncomingCallCoordinator {
       }
     }
 
-    _runDispatch(
+    _executeIncomingDispatch(
       qid,
       cap,
       msg.interfaceId,
@@ -455,7 +457,7 @@ final class IncomingCallCoordinator {
     final target = request.target;
     final reference = tryExtractCapabilityReference(target);
     if (reference is ImportedCapabilityReference) {
-      final (forwardQid, sent) = _sendTailForwardCall(
+      final (forwardQid, sent) = _sendForwardedTailCall(
         reference.importId,
         request,
       );
@@ -475,7 +477,7 @@ final class IncomingCallCoordinator {
             // pending answer state is deliberately never populated here.
             //
             // Recorded *before* sending the Return — same reentrancy
-            // reasoning as _runDispatch/handleBootstrap: a peer reacting to
+            // reasoning as _executeIncomingDispatch/handleBootstrap: a peer reacting to
             // this Return through a synchronously-reentrant sink could
             // otherwise send a Finish for qid before this bookkeeping
             // exists, which would then be silently dropped as a no-op
@@ -502,7 +504,7 @@ final class IncomingCallCoordinator {
     }
     // Not a same-connection import: no wire optimization possible, just
     // dispatch the tail-called method directly and answer qid normally.
-    _runDispatch(
+    _executeIncomingDispatch(
       qid,
       target,
       request.interfaceId,
@@ -525,9 +527,9 @@ final class IncomingCallCoordinator {
   /// correlates via `takeFromOtherQuestion` (see [resolveLocalAnswer]), not
   /// to us. This just needs to send Finish once any Return arrives, so it
   /// talks to the wire directly via [startUsing] rather than going through
-  /// `OutgoingCallCoordinator.start`/its internal `_awaitReturn` (which
+  /// `OutgoingCallCoordinator.start`/its internal `_awaitAndProcessReturn` (which
   /// expects a real result).
-  (int, Future<void>) _sendTailForwardCall(
+  (int, Future<void>) _sendForwardedTailCall(
     FutureOr<int> targetImportId,
     TailCallRequest request,
   ) {
@@ -574,7 +576,7 @@ final class IncomingCallCoordinator {
   /// generalized so it also serves [_dispatchTailCall]'s fallback path and
   /// calls received with `sendResultsTo=yourself` — [sendResultsToYourself]
   /// only changes which kind of Return is sent on completion.
-  void _runDispatch(
+  void _executeIncomingDispatch(
     int qid,
     Capability cap,
     int interfaceId,
@@ -636,7 +638,7 @@ final class IncomingCallCoordinator {
             // outgoing calls receives Return.takeFromOtherQuestion=qid —
             // nothing is put on the wire for this Return.
             // The answer table is a non-owning rendezvous point in this path:
-            // `_awaitReturn()` hands the same local capabilities to the
+            // `_awaitAndProcessReturn()` hands the same local capabilities to the
             // original caller as its DispatchResult, and the later Finish for
             // this forwarded question uses releaseResultCaps=false. Therefore
             // Finish must only drop bookkeeping here, not dispose result.caps.

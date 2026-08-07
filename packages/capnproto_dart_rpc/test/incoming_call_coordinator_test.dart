@@ -18,7 +18,7 @@ import 'package:test/test.dart';
 /// same shape as `IncomingCallCoordinator`'s own `_emptyResultBytes`. Used
 /// both as [buildCallMessage]'s `paramsBytes` and, for a "resolved answer"
 /// fixture, as a result whose root has zero pointer words — so a transform
-/// path into it never resolves to a capability (`_capFromPath` returns
+/// path into it never resolves to a capability (`_tryGetCapabilityFromAnswerPath` returns
 /// null).
 final _emptyMessageBytes = Uint8List.fromList([
   0, 0, 0, 0, 1, 0, 0, 0, //
