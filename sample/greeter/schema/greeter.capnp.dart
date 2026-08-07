@@ -257,7 +257,7 @@ final class GreeterNewSessionResultsReader extends StructReader {
 
   GreetSessionClient? get session {
     final cap = getCapabilityObjectField(0);
-    return cap == null ? null : GreetSessionClient(vendCapabilityHandle(cap as Capability));
+    return cap == null ? null : GreetSessionClient(acquireCapabilityLease(cap as Capability));
   }
 
   int get sessionCapIndex => getCapabilityField(0);

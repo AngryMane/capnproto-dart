@@ -583,12 +583,12 @@ class _ReceiverAnswerCapability extends Capability {
   final List<int> _path;
   bool _disposed = false;
 
-  // Resolved (and vended — see requireCapabilityFromResultPath) at most
+  // Resolved to a CapabilityLease (see requireCapabilityFromResultPath) at most
   // once and cached, mirroring _PipelinedCapability: this capability
   // can be dispatched through multiple times before it's disposed (e.g.
   // several pipelined calls against the same receiverAnswer target), and
-  // each of those calls must reuse the same resolved handle rather than
-  // vending — and then never disposing — a fresh one every time, which
+  // each of those calls must reuse the same resolved lease rather than
+  // leasing — and then never disposing — a fresh one every time, which
   // would permanently pin the underlying identity's shared refcount by one
   // for every call ever made through this capability.
   Future<Capability>? _resolution;
@@ -601,7 +601,7 @@ class _ReceiverAnswerCapability extends Capability {
   // capability with no tracking at all), every call through this class goes
   // through _resolve() and is tracked, since there's no untracked
   // "already resolved, dispatch directly" fast path here. Without this,
-  // dispose() could release the shared resolved handle — tearing down its
+  // dispose() could release the shared resolved lease — tearing down its
   // real target — while one of these calls was still using it.
   int _pendingCalls = 0;
   Future<void>? _resolvedDisposeFuture;
@@ -658,7 +658,7 @@ class _ReceiverAnswerCapability extends Capability {
     final existing = _resolvedDisposeFuture;
     if (existing != null) return existing;
     // A resolution that failed (e.g. an invalid questionId — see
-    // _resolveOnce) never produced a handle in the first place, so there's
+    // _resolveOnce) never produced a lease in the first place, so there's
     // nothing to dispose — swallow that here the same way the previous
     // (untracked) implementation's try/catch did. Note this `onError` only
     // ever fires for `resolution`'s own failure, per Future.then's

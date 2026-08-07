@@ -1,7 +1,7 @@
 import 'dart:collection';
 
 import '../../capability/capability.dart'
-    show Capability, CapabilityLease, vendCapabilityHandle;
+    show Capability, CapabilityLease, acquireCapabilityLease;
 
 /// Tracks a single locally-exported capability and the peer's remote
 /// reference count for it — see [ExportTable].
@@ -11,15 +11,15 @@ class _ExportEntry {
   /// Never disposed directly; see [ownedReference].
   final Capability identity;
 
-  /// A [vendCapabilityHandle] reference this export table owns for
-  /// [identity], sharing the same refcount as any other handle another
+  /// A [CapabilityLease] this export table owns for
+  /// [identity], sharing the same refcount as any other lease that another
   /// piece of code may still hold for it — e.g. when [identity] was
   /// obtained from a different connection (or from this same connection's
   /// own result-reading helpers) and relayed here while the code that
-  /// vended it is still holding its own handle. Disposing *this* reference
+  /// acquired it is still holding its own lease. Disposing *this* reference
   /// (instead of [identity] itself) once the peer's references reach zero
   /// ensures [identity] is only really torn down once every other
-  /// outstanding reference to it is gone too — see vendCapabilityHandle's
+  /// outstanding reference to it is gone too — see acquireCapabilityLease's
   /// doc comment for the shared-refcount mechanism this participates in.
   final CapabilityLease ownedReference;
 
@@ -28,7 +28,7 @@ class _ExportEntry {
   int remoteRefCount;
 
   _ExportEntry(this.identity)
-    : ownedReference = vendCapabilityHandle(identity),
+    : ownedReference = acquireCapabilityLease(identity),
       remoteRefCount = 1;
 }
 
@@ -66,7 +66,7 @@ class ExportTable {
   /// Registers [identity] as export 0 (bootstrap) — see
   /// `TwoPartyRpcConnection.server`'s own doc comment for the ownership
   /// contract this establishes. Its remote refcount starts at 0, not 1
-  /// (unlike [getOrCreate]'s default for ordinary export vends): the entry
+  /// (unlike [getOrCreate]'s default for ordinary exports): the entry
   /// needs to exist immediately so incoming Call/Bootstrap messages can
   /// route to it, but the peer doesn't actually hold a reference until it
   /// sends its own Bootstrap request — see [retainExisting], which
@@ -90,7 +90,7 @@ class ExportTable {
   }
 
   /// The capability registered at [exportId], or `null` if nothing is
-  /// exported there. This does not vend a new reference; callers must not
+  /// exported there. This does not acquire a new lease; callers must not
   /// dispose the returned capability directly.
   Capability? getCapability(int exportId) => _exports[exportId]?.identity;
 
@@ -111,10 +111,10 @@ class ExportTable {
 
   /// Returns the existing export ID for [identity] (incrementing its remote
   /// ref count), or allocates a new export ID — with its own
-  /// [vendCapabilityHandle] [_ExportEntry.ownedReference] — if this is the
+  /// a [CapabilityLease] in [_ExportEntry.ownedReference] — if this is the
   /// first export. [identity] must already be unwrapped (see
-  /// `unwrapVendedCapability`): every caller of this method unwraps first,
-  /// so that two different vended handles for the same underlying
+  /// `unwrapCapabilityLease`): every caller of this method unwraps first,
+  /// so that two different capability leases for the same underlying
   /// capability dedupe to the same export instead of each creating their
   /// own.
   int getOrCreate(Capability identity) {
@@ -148,7 +148,7 @@ class ExportTable {
   /// export and disposes this export's own reference to the underlying
   /// capability via [disposeIgnoringErrors] (see [_ExportEntry.ownedReference]
   /// — this only tears the capability down for real once every other
-  /// outstanding `vendCapabilityHandle` reference to it, held anywhere
+  /// outstanding [CapabilityLease] to it, held anywhere
   /// else, has also been disposed). A no-op if [exportId] isn't currently
   /// exported.
   ///

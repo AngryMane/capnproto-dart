@@ -5,7 +5,7 @@ import 'package:capnproto_dart/capnproto_dart.dart';
 import 'package:meta/meta.dart';
 
 import '../capability/capability.dart'
-    show Capability, DispatchCancellationController, unwrapVendedCapability;
+    show Capability, DispatchCancellationController, unwrapCapabilityLease;
 import '../capability/capability_factory.dart';
 import 'calls/answer_table.dart';
 import 'calls/incoming_call_coordinator.dart';
@@ -97,7 +97,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   // can distinguish the bootstrap return from regular call returns).
   int? _bootstrapQuestionId;
 
-  // Every RPC capability proxy this connection vends
+  // Every RPC capability proxy this connection leases
   // (`_ImportedCapability`/`_PipelinedCapability`/`_ReceiverAnswerCapability`
   // in `rpc_capability.dart`) is bound to this [RpcCapabilityDelegate]. One
   // instance lives for the whole connection lifetime, so
@@ -370,14 +370,14 @@ class TwoPartyRpcConnection implements RpcConnection {
     // handed back to ExportTable.getOrCreate again later, via a normal
     // export, must dedupe against this entry instead of creating a
     // redundant second export for it).
-    final bootstrapIdentity = unwrapVendedCapability(bootstrap);
+    final bootstrapIdentity = unwrapCapabilityLease(bootstrap);
     // See ExportTable.registerBootstrap's doc comment for why its remote
     // refcount starts at 0, not 1.
     conn._exportTable.registerBootstrap(bootstrapIdentity);
     // bootstrap's ownership transfers to this connection (see doc comment
     // above) — the entry just created its own ownedReference for
-    // bootstrapIdentity, so if the caller passed an already-vended handle
-    // rather than a bare capability, that handle is now redundant with it
+    // bootstrapIdentity, so if the caller passed an already-acquired lease
+    // rather than a bare capability, that lease is now redundant with it
     // and must be released, or its outstanding share of bootstrapIdentity's
     // refcount would never be balanced.
     if (!identical(bootstrap, bootstrapIdentity)) {

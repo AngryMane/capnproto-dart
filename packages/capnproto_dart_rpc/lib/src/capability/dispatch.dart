@@ -17,17 +17,16 @@ final Future<void> _neverCanceledFuture = Completer<void>().future;
 /// the answer is discarded before a Return can be sent (the connection
 /// closed, or a Finish canceled it first) — disposes them itself.
 ///
-/// This applies equally whether an entry is a bare capability or itself a
-/// [vendCapabilityHandle] handle (e.g. one read out of another call's own
+/// This applies equally whether an entry is a bare capability or a
+/// [CapabilityLease] (e.g. one read out of another call's own
 /// result via [requireCapabilityFromResult] and forwarded here) — the
-/// runtime unwraps it to decide what to export, and disposes the handle you
+/// runtime unwraps it to decide what to export, and disposes the lease you
 /// handed it once that export is established (see `CapabilityProtocol`'s
 /// `returnCapDescriptor`/internal `_resolveDescriptorForCapability`).
-/// Reusing that same handle — or the bare
-/// capability it wrapped — for anything *after* returning it here is a
+/// Reusing that same lease — or the bare capability it wrapped — for anything *after* returning it here is a
 /// use-after-ownership-transfer bug: if every reference to the underlying
-/// capability happens to have been released by then, [vendCapabilityHandle]
-/// catches the reuse itself rather than silently handing back a handle to
+/// capability happens to have been released by then, [acquireCapabilityLease]
+/// catches the reuse itself rather than silently returning a lease for
 /// an already-torn-down object.
 class DispatchResult {
   /// The method results — see [RpcPayload].

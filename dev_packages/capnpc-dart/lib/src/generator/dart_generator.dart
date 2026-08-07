@@ -1903,7 +1903,7 @@ void _writeReaderField(
     sb.writeln('  ${capIfaceName}Client? get $fname {');
     sb.writeln('    final cap = getCapabilityObjectField($offset);');
     sb.writeln(
-      '    return cap == null ? null : ${capIfaceName}Client(vendCapabilityHandle(cap as Capability));',
+      '    return cap == null ? null : ${capIfaceName}Client(acquireCapabilityLease(cap as Capability));',
     );
     sb.writeln('  }');
     sb.writeln();
@@ -2500,7 +2500,7 @@ String _dartBytesLiteral(Uint8List bytes) =>
   final name = _dartClassName(node?.displayName ?? 'UnknownInterface');
   return (
     'ListReader<${name}Client?>?',
-    'getCapabilityListFieldWith<${name}Client>($ptrIndex, (cap) => ${name}Client(vendCapabilityHandle(cap as Capability)))',
+    'getCapabilityListFieldWith<${name}Client>($ptrIndex, (cap) => ${name}Client(acquireCapabilityLease(cap as Capability)))',
   );
 }
 

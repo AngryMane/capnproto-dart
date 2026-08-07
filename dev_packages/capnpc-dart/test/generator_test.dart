@@ -436,7 +436,7 @@ void main() {
       expect(
         src,
         contains(
-          'ListReader<SessionClient?>? get sessions => getCapabilityListFieldWith<SessionClient>(0, (cap) => SessionClient(vendCapabilityHandle(cap as Capability)))',
+          'ListReader<SessionClient?>? get sessions => getCapabilityListFieldWith<SessionClient>(0, (cap) => SessionClient(acquireCapabilityLease(cap as Capability)))',
         ),
       );
       expect(

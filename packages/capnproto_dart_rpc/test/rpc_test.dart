@@ -377,8 +377,8 @@ class SyncThrowingDisposeCapability extends Capability {
 }
 
 // Lets a test control exactly when a real (asynchronous, multi-event-loop-
-// -turn) dispose() call completes — e.g. to probe vendCapabilityHandle's
-// behavior for a handle vended *while* an earlier cycle's disposal of the
+// -turn) dispose() call completes — e.g. to probe acquireCapabilityLease's
+// behavior for a lease acquired *while* an earlier cycle's disposal of the
 // same target is still in flight, not yet actually finished.
 class SlowDisposeCapability extends Capability {
   int disposeCount = 0;
@@ -831,11 +831,11 @@ class _TrackedCapability extends Capability {
   }
 }
 
-// Returns [vended] as caps[0] on `_pipelineMethodId`, matching
+// Returns [returnedCapability] as caps[0] on `_pipelineMethodId`, matching
 // PipelineServer's result-encoding convention above.
-class _CapVendingServer extends Capability {
-  final Capability vended;
-  _CapVendingServer(this.vended);
+class _CapabilityReturningServer extends Capability {
+  final Capability returnedCapability;
+  _CapabilityReturningServer(this.returnedCapability);
 
   @override
   Future<DispatchResult> dispatch(
@@ -850,7 +850,7 @@ class _CapVendingServer extends Capability {
       root.setCapabilityField(0, 0);
       return DispatchResult(
         payload: RpcPayload.fromBuilder(root),
-        caps: [vended],
+        caps: [returnedCapability],
       );
     }
     throw RpcException('unknown method: $methodId');
@@ -903,7 +903,7 @@ class CapReceivingServer extends Capability {
 }
 
 // Combines CapReceivingServer's params-recording (_echoMethodId) with
-// PipelineServer's result-capability-vending (_pipelineMethodId, returning
+// PipelineServer's result-capability-returning (_pipelineMethodId, returning
 // `caps: [leaf]`) and dispose-count tracking on itself — used to probe
 // _ReceiverAnswerCapability's handling of a capability that's actually this
 // same vat's own prior answer, handed back via a raw receiverAnswer
@@ -3647,15 +3647,15 @@ void main() {
         final serverSideCap = CountingCapability();
         final clientSideCap = CountingCapability();
         final (client, serverConn) = _makePipe(
-          _CapVendingServer(serverSideCap),
+          _CapabilityReturningServer(serverSideCap),
         );
 
         final bootstrapCap = client.bootstrap(EchoClientFactory());
 
-        // _CapVendingServer's _pipelineMethodId never disposes
+        // _CapabilityReturningServer's _pipelineMethodId never disposes
         // paramsCapabilities and never returns them either, so
         // clientSideCap stays a live import on the server / live export on
-        // the client, and the vended serverSideCap (deliberately never
+        // the client, and the capability lease for serverSideCap (deliberately never
         // disposed here) stays a live export on the server / live import on
         // the client -- beyond just the single bootstrap pair.
         final call = bootstrapCap.cap.dispatchForPipelining(
@@ -3664,13 +3664,13 @@ void main() {
           RpcPayload.fromBytes(_buildEchoParams('')),
           paramsCapabilities: [clientSideCap],
         );
-        call.pipelineResult(0); // vended cap, deliberately left undisposed
+        call.pipelineResult(0); // capability lease, deliberately left undisposed
         await call.result;
         await Future<void>.delayed(Duration.zero);
 
         expect(client.debugExportCount, equals(1)); // clientSideCap
-        expect(client.debugImportCount, equals(2)); // bootstrap + vended cap
-        expect(serverConn.debugExportCount, equals(2)); // bootstrap + vended
+        expect(client.debugImportCount, equals(2)); // bootstrap + capability lease
+        expect(serverConn.debugExportCount, equals(2)); // bootstrap + capability lease
         expect(serverConn.debugImportCount, equals(1)); // clientSideCap
 
         await client.close();
@@ -4660,15 +4660,15 @@ void main() {
           );
 
           // The server should have received its own capability (identity
-          // check) — through a fresh vendCapabilityHandle, per the
+          // check) — through a fresh acquireCapabilityLease, per the
           // cross-connection/receiverHosted ownership fix (disposing a
           // received params capability must not be able to tear down the
           // export's own still-live reference to the same identity), so
           // the check unwraps first, exactly as any code that needs to
-          // recognize a possibly-vended capability's concrete identity
-          // must (see unwrapVendedCapability's doc comment).
+          // recognize a capability wrapped in a CapabilityLease's concrete identity
+          // must (see unwrapCapabilityLease's doc comment).
           expect(server.lastParams, hasLength(1));
-          expect(unwrapVendedCapability(server.lastParams[0]), same(server));
+          expect(unwrapCapabilityLease(server.lastParams[0]), same(server));
 
           await client.close();
           await serverConn.close();
@@ -4938,27 +4938,27 @@ void main() {
 
   group('ownership: capability relayed across two different connections', () {
     test('a peer B releasing a relayed capability does not invalidate the '
-        'relay\'s own still-held handle to it, and vat A only sees a Release '
-        'once the relay disposes that handle too', () async {
-      // peer A → relay → peer B, per three-vat relay diagrams: vat A vends
-      // `probe`; the relay reads it (vendCapabilityHandle'd handle `h`),
+        'relay\'s own still-held lease to it, and vat A only sees a Release '
+        'once the relay disposes that lease too', () async {
+      // peer A → relay → peer B: vat A returns `probe`, and the relay reads it
+      // as `capabilityLease` through a generated accessor,
       // forwards it to vat B as a params capability of a call on a
       // completely different TwoPartyRpcConnection, and vat B immediately
       // releases its own reference to it. Before the _ExportEntry
       // identity/ownedReference split, the relay's connection-B export
       // table disposed the *raw* underlying capability directly on that
-      // Release — invalidating `h` out from under the relay even though
-      // the relay never disposed it itself.
+      // Release — invalidating `capabilityLease` out from under the relay even
+      // though the relay never disposed it itself.
       final probe = EchoServer();
-      final (relayToA, vatAConn) = _makePipe(_CapVendingServer(probe));
+      final (relayToA, vatAConn) = _makePipe(_CapabilityReturningServer(probe));
       final vatABootstrap = relayToA.bootstrap(EchoClientFactory()).cap;
 
-      final vendResult = await vatABootstrap.dispatch(
+      final capabilityResult = await vatABootstrap.dispatch(
         _echoInterfaceId,
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
       );
-      final h = requireCapabilityFromResult(vendResult, 0);
+      final capabilityLease = requireCapabilityFromResult(capabilityResult, 0);
 
       final (relayToB, vatBConn) = _makePipe(_DisposingReceiver());
       final vatBBootstrap = relayToB.bootstrap(EchoClientFactory()).cap;
@@ -4966,30 +4966,30 @@ void main() {
         _echoInterfaceId,
         _echoMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
-        paramsCapabilities: [h],
+        paramsCapabilities: [capabilityLease],
       );
       // Let vat B's Release of its params capability reach the relay's
       // connection-B export table.
       await Future<void>.delayed(const Duration(milliseconds: 20));
 
-      // The relay's own handle `h` must still be live: neither disposed
-      // nor failing subsequent calls.
-      final echoViaH = await h.dispatch(
+      // The relay's own lease `capabilityLease` must still be live: it must neither be disposed
+      // nor fail subsequent calls.
+      final echoViaLease = await capabilityLease.dispatch(
         _echoInterfaceId,
         _echoMethodId,
         RpcPayload.fromBytes(_buildEchoParams('still alive')),
       );
-      expect(_parseEchoResult(echoViaH.payload), equals('echo: still alive'));
+      expect(_parseEchoResult(echoViaLease.payload), equals('echo: still alive'));
 
       // Vat A must not have seen a Release yet for `probe`'s export — the
-      // relay hasn't disposed its own handle. (2, not 1: the bootstrap
+      // relay hasn't disposed its own lease. (2, not 1: the bootstrap
       // capability itself is also export 0 on this connection.)
       expect(vatAConn.debugExportCount, equals(2));
 
-      // Now the relay disposes its own handle: only *now* should vat A's
+      // Now the relay disposes its own lease: only *now* should vat A's
       // export of `probe` be released and the underlying capability torn
       // down — leaving only the still-live bootstrap export behind.
-      await h.dispose();
+      await capabilityLease.dispose();
       await Future<void>.delayed(const Duration(milliseconds: 20));
 
       expect(vatAConn.debugExportCount, equals(1));
@@ -5000,49 +5000,52 @@ void main() {
       await vatBConn.close();
     });
 
-    test('a vended handle returned in DispatchResult.caps does not leak vat '
+    test('a capability lease returned in DispatchResult.caps does not leak vat '
         'A\'s export once the recipient releases it', () async {
       // Same peer A → relay → peer C shape as the params-forwarding test
-      // above, but this time relay forwards `h` as its own *result*
+      // above, but this time relay forwards `capabilityLease` as its own
+      // *result*
       // capability (DispatchResult.caps) instead of a call parameter —
       // the ownership-transfer contract there means relay's dispatch
-      // handler does *not* separately dispose `h` itself; the runtime is
+      // handler does *not* separately dispose `capabilityLease` itself; the
+      // runtime is
       // solely responsible for it from that point on. Before
       // CapabilityProtocol.returnCapDescriptor disposed a redundant
-      // vended `cap` once its own owning export reference was established,
-      // `h` was simply
-      // dropped — leaking its share of the underlying identity's
+      // a [CapabilityLease] passed as `cap` once its own owning export reference was established,
+      // `capabilityLease` was simply dropped — leaking its share of the underlying identity's
       // refcount forever, so vat A's export never actually cleared even
       // after C released its own reference to the result.
       final probe = EchoServer();
-      final (relayToA, vatAConn) = _makePipe(_CapVendingServer(probe));
+      final (relayToA, vatAConn) = _makePipe(_CapabilityReturningServer(probe));
       final vatABootstrap = relayToA.bootstrap(EchoClientFactory()).cap;
 
-      final vendResult = await vatABootstrap.dispatch(
+      final capabilityResult = await vatABootstrap.dispatch(
         _echoInterfaceId,
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
       );
-      final h = requireCapabilityFromResult(vendResult, 0);
+      final capabilityLease = requireCapabilityFromResult(capabilityResult, 0);
 
       // Relay is the SERVER for connection C: its dispatch handler hands
-      // off `h` as its own result capability without disposing it itself.
-      final (cClient, relayConnForC) = _makePipe(_CapVendingServer(h));
+      // off `capabilityLease` as its own result capability without disposing it
+      // itself.
+      final (cClient, relayConnForC) = _makePipe(
+        _CapabilityReturningServer(capabilityLease),
+      );
       final cBootstrap = cClient.bootstrap(EchoClientFactory()).cap;
       final resultForC = await cBootstrap.dispatch(
         _echoInterfaceId,
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
       );
-      final cHandle = requireCapabilityFromResult(resultForC, 0);
+      final cLease = requireCapabilityFromResult(resultForC, 0);
 
       expect(vatAConn.debugExportCount, equals(2));
 
-      await cHandle.dispose();
+      await cLease.dispose();
       await Future<void>.delayed(const Duration(milliseconds: 30));
 
-      // Vat A's export of `probe` must now be gone — the redundant `h`
-      // reference the runtime silently inherited via DispatchResult.caps
+      // Vat A's export of `probe` must now be gone — the redundant `capabilityLease` reference the runtime silently inherited via DispatchResult.caps
       // no longer keeps it pinned forever.
       expect(vatAConn.debugExportCount, equals(1));
 
@@ -5058,26 +5061,26 @@ void main() {
       // to relay as a params capability of a further call — wire-encoded
       // as receiverHosted, since it's relay's own export as far as B's
       // connection is concerned. Before capabilityFromDescriptor's
-      // receiverHosted case vended a fresh handle instead of returning
+      // receiverHosted case acquired a fresh lease instead of returning
       // the export's raw identity directly, relay's dispatch handler
       // disposing that received params capability tore down the shared
       // underlying identity directly — invalidating vatB's own,
       // still-live, never-released reference to the same capability out
       // from under it.
       final probe = EchoServer();
-      final (relayToA, vatAConn) = _makePipe(_CapVendingServer(probe));
+      final (relayToA, vatAConn) = _makePipe(_CapabilityReturningServer(probe));
       final vatABootstrap = relayToA.bootstrap(EchoClientFactory()).cap;
 
-      final vendResult = await vatABootstrap.dispatch(
+      final capabilityResult = await vatABootstrap.dispatch(
         _echoInterfaceId,
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
       );
-      final h = requireCapabilityFromResult(vendResult, 0);
+      final capabilityLease = requireCapabilityFromResult(capabilityResult, 0);
 
-      // Relay forwards both `h` and a callback capability (playing
+      // Relay forwards both `capabilityLease` and a callback capability (playing
       // relay's own dispatch handler for the "B sends it back" leg) to
-      // vatB in one call, creating relay's own export for `h`'s identity
+      // vatB in one call, creating relay's own export for `capabilityLease`'s identity
       // on relayToB.
       final vatB = CapReceivingServer();
       final (relayToB, vatBConn) = _makePipe(vatB);
@@ -5086,7 +5089,7 @@ void main() {
         _echoInterfaceId,
         _echoMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
-        paramsCapabilities: [h, _DisposingReceiver()],
+        paramsCapabilities: [capabilityLease, _DisposingReceiver()],
       );
       await Future<void>.delayed(const Duration(milliseconds: 20));
 
@@ -5128,12 +5131,12 @@ void main() {
 
   group('ownership: bootstrap capability identity normalization', () {
     test(
-      'a bootstrap capability passed as an already-vended handle normalizes '
+      'a bootstrap capability passed as an already-acquired lease normalizes '
       'to its unwrapped identity, so a later export of the same underlying '
       'capability dedupes against it instead of creating a redundant export',
       () async {
         final rawServer = PipelineServer();
-        final vendedBootstrap = vendCapabilityHandle(rawServer);
+        final vendedBootstrap = acquireCapabilityLease(rawServer);
         final (client, serverConn) = _makePipe(vendedBootstrap);
 
         final bootstrapCap = client.bootstrap(EchoClientFactory());
@@ -5151,7 +5154,7 @@ void main() {
 
         // If bootstrap's identity had not been normalized (unwrapped) at
         // registration time, `_exportIds` would have been keyed by the
-        // vended handle instead of `rawServer`, so this second export
+        // capability lease instead of `rawServer`, so this second export
         // wouldn't dedupe against export 0 and would show up as a second,
         // redundant entry.
         expect(serverConn.debugExportCount, equals(1));
@@ -5162,12 +5165,12 @@ void main() {
     );
   });
 
-  group('vendCapabilityHandle delegates tryTailCall', () {
-    test('a vended handle forwards tryTailCall to its target instead of '
+  group('acquireCapabilityLease delegates tryTailCall', () {
+    test('a capability lease forwards tryTailCall to its target instead of '
         'silently disabling the tail-call optimization', () {
       final target = TailCallServer();
-      final handle = vendCapabilityHandle(target);
-      expect(handle, isA<CapabilityLease>());
+      final lease = acquireCapabilityLease(target);
+      expect(lease, isA<CapabilityLease>());
 
       final direct = target.tryTailCall(
         _echoInterfaceId,
@@ -5175,7 +5178,7 @@ void main() {
         RpcPayload.fromBytes(_buildEchoParams('')),
         paramsCapabilities: [EchoServer()],
       );
-      final viaHandle = handle.tryTailCall(
+      final viaLease = lease.tryTailCall(
         _echoInterfaceId,
         _tailCallMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
@@ -5183,44 +5186,44 @@ void main() {
       );
 
       expect(direct, isNotNull);
-      expect(viaHandle, isNotNull);
-      expect(viaHandle!.interfaceId, equals(direct!.interfaceId));
-      expect(viaHandle.methodId, equals(direct.methodId));
+      expect(viaLease, isNotNull);
+      expect(viaLease!.interfaceId, equals(direct!.interfaceId));
+      expect(viaLease.methodId, equals(direct.methodId));
     });
   });
 
   group(
-    'vendCapabilityHandle: rejects vending after disposal was triggered',
+    'acquireCapabilityLease: rejects leasing after disposal was triggered',
     () {
-      test('vending again after a prior cycle already fully disposed throws — '
+      test('leasing again after a prior cycle already fully disposed throws — '
           'unconditionally, not just in debug/test builds — instead of silently '
           'starting a fresh cycle that can never truly resurrect the '
           'already-torn-down target', () async {
         final target = CountingCapability();
 
-        final h1 = vendCapabilityHandle(target);
+        final h1 = acquireCapabilityLease(target);
         await h1.dispose();
         expect(target.disposeCount, equals(1));
 
-        // The target itself is already torn down for real — vending a
-        // "fresh" handle for it now would be a lie (it would look live but
+        // The target itself is already torn down for real — leasing a
+        // "fresh" lease for it now would be a lie (it would look live but
         // dispatch through it would just hit whatever broken state
         // target.dispose() already left behind).
-        expect(() => vendCapabilityHandle(target), throwsA(isA<StateError>()));
+        expect(() => acquireCapabilityLease(target), throwsA(isA<StateError>()));
       });
 
-      test('vending while the previous cycle\'s dispose() is still in flight '
+      test('leasing while the previous cycle\'s dispose() is still in flight '
           '(not yet actually finished) also throws, rather than racing a fresh '
-          'handle against a disposal that could finish tearing the target down '
+          'lease against a disposal that could finish tearing the target down '
           'at any moment', () async {
         final target = SlowDisposeCapability();
 
-        final h1 = vendCapabilityHandle(target);
+        final h1 = acquireCapabilityLease(target);
         // Don't await yet — dispose() is blocked on the gate, so this cycle
         // is "triggered" (disposeFuture assigned) but not yet finished.
         final h1DisposeFuture = h1.dispose();
 
-        expect(() => vendCapabilityHandle(target), throwsA(isA<StateError>()));
+        expect(() => acquireCapabilityLease(target), throwsA(isA<StateError>()));
 
         target.releaseDispose();
         await h1DisposeFuture;
@@ -5229,9 +5232,9 @@ void main() {
     },
   );
 
-  group('_ReceiverAnswerCapability: resolved handle reuse and disposal', () {
+  group('_ReceiverAnswerCapability: resolved lease reuse and disposal', () {
     test('a receiverAnswer-decoded capability dispatched multiple times reuses '
-        'one resolved handle instead of leaking a fresh one per call, and '
+        'one resolved lease instead of leaking a fresh one per call, and '
         'dispose() releases exactly that one reference', () async {
       final clientToServer = StreamController<Uint8List>();
       final serverToClient = StreamController<Uint8List>();
@@ -5282,7 +5285,7 @@ void main() {
 
       // Dispatch through it twice, *while* answer #1 is still tracked
       // (_answerCaps[1]/_pendingCaps[1]) — before the fix, each call
-      // vended (and never disposed) a fresh handle to `leaf`.
+      // acquired (and never disposed) a fresh lease to `leaf`.
       await receiverAnswerCap.dispatch(
         _echoInterfaceId,
         _echoMethodId,
@@ -5310,7 +5313,7 @@ void main() {
       expect(leaf.disposeCount, equals(0));
 
       await receiverAnswerCap.dispose();
-      // Both dispatch() calls sharing one resolved handle (rather than
+      // Both dispatch() calls sharing one resolved lease (rather than
       // leaking a fresh one each) means this single dispose() call is
       // enough to release the last remaining reference for real.
       expect(leaf.disposeCount, equals(1));
@@ -5331,7 +5334,7 @@ void main() {
         // inside the resolved target (DisposeOrderProbeCapability, gated on
         // dispatchGate) and then disposes the receiverAnswer capability while
         // that call is still pending, to see whether the shared resolved
-        // handle's real target.dispose() actually runs concurrently with it.
+        // lease's real target.dispose() actually runs concurrently with it.
         final clientToServer = StreamController<Uint8List>();
         final serverToClient = StreamController<Uint8List>();
         serverToClient.stream.listen((_) {});
@@ -5382,7 +5385,7 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 20));
 
         // Release the other outstanding reference to `leaf` (answer #1's own
-        // export), same as the test above, so receiverAnswerCap's handle is
+        // export), same as the test above, so receiverAnswerCap's lease is
         // the last one left.
         clientToServer.add(buildFinishMessage(1, releaseResultCaps: true));
         await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -5558,7 +5561,7 @@ void main() {
       );
 
       // Release the other outstanding reference to `leaf` (answer #1's
-      // own export), so receiverAnswerCap's handle is the last one left —
+      // own export), so receiverAnswerCap's lease is the last one left —
       // its dispose() below is what actually tears `leaf` down for real.
       clientToServer.add(buildFinishMessage(1, releaseResultCaps: true));
       await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -5673,10 +5676,10 @@ void main() {
       // dispose loop entirely (it ran only in the per-call-failure
       // branch below it) — any capTable entry that had already resolved
       // successfully before the unimplemented one (e.g. a receiverHosted
-      // descriptor vending a fresh handle to bootstrap/an export) was
+      // descriptor acquiring a fresh lease to bootstrap/an export) was
       // simply abandoned. _tearDown only ever disposes each export's own
       // single `ownedReference` — it has no way to know about this
-      // *additional* vended handle, so the shared refcount for that
+      // *additional* capability lease, so the shared refcount for that
       // identity never actually reached zero, and the real capability's
       // own dispose() never ran even though the connection (and every
       // other reference to it) was long gone.
@@ -5705,8 +5708,8 @@ void main() {
         ),
       );
 
-      // [0] receiverHosted(0) — resolves successfully, vending a fresh
-      // handle to bootstrap (export 0) in addition to the export's own
+      // [0] receiverHosted(0) — resolves successfully, acquiring a fresh
+      // lease to bootstrap (export 0) in addition to the export's own
       // ownedReference. [1] disc=5 (thirdPartyHosted) — unimplemented.
       serverInput.add(_callWithReceiverHostedThenCapDescriptorDisc(5));
       await doneExpectation;
@@ -5715,7 +5718,7 @@ void main() {
         bootstrap.disposeCount,
         equals(1),
         reason:
-            'the extra handle vended for the receiverHosted(0) entry '
+            'the extra lease acquired for the receiverHosted(0) entry '
             'was never disposed, so the shared refcount for bootstrap '
             'never reached zero even after teardown released the '
             "export's own reference",
@@ -6774,7 +6777,7 @@ void main() {
         await serverConn.close();
       });
 
-      test('connection handles subsequent calls after sync throw', () async {
+      test('connection leases subsequent calls after sync throw', () async {
         final server = _FirstCallSyncThrowCapability();
         final (client, serverConn) = _makePipe(server);
         final bootstrapCap = client.bootstrap(EchoClientFactory());

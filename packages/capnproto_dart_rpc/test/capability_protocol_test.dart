@@ -237,10 +237,10 @@ void main() {
 
       final exported = _FakeCapability();
       final exportId = h.exportTable.getOrCreate(exported);
-      final vended = h.protocol.capabilityFromDescriptor(
+      final lease = h.protocol.capabilityFromDescriptor(
         RpcCapDescriptor.receiverHosted(exportId),
       );
-      expect(identical(unwrapVendedCapability(vended), exported), isTrue);
+      expect(identical(unwrapCapabilityLease(lease), exported), isTrue);
     });
 
     test('capabilityFromDescriptor delegates receiverAnswer construction to '

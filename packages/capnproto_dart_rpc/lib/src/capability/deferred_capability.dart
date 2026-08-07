@@ -45,8 +45,8 @@ class DeferredCapability extends Capability {
     final cap = await _future;
     if (_disposed) {
       // See dispose()'s matching comment on why this goes through
-      // vendCapabilityHandle rather than disposing `cap` directly.
-      await vendCapabilityHandle(cap).dispose();
+      // acquireCapabilityLease rather than disposing `cap` directly.
+      await acquireCapabilityLease(cap).dispose();
       throw const RpcException(
         'capability is disposed',
         kind: ErrorKind.disconnected,
@@ -142,7 +142,7 @@ class DeferredCapability extends Capability {
       final cap = await _future.catchError(
         (_) => NullCapability() as Capability,
       );
-      // Through vendCapabilityHandle, not `cap.dispose()` directly: the
+      // Through acquireCapabilityLease, not `cap.dispose()` directly: the
       // resolved capability this DeferredCapability holds the only
       // *application*-visible reference to may still have an independent,
       // uncoordinated reference of its own elsewhere — e.g. the RPC layer
@@ -152,7 +152,7 @@ class DeferredCapability extends Capability {
       // shares no bookkeeping with this object at all. Disposing `cap`
       // directly would tear it down out from under that other reference
       // instead of just releasing this one's own share.
-      await vendCapabilityHandle(cap).dispose();
+      await acquireCapabilityLease(cap).dispose();
     }();
   }
 }

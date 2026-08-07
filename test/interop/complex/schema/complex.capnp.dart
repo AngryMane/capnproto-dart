@@ -3927,7 +3927,7 @@ final class RepositoryOpenCursorResultsReader extends StructReader {
 
   CursorClient? get cursor {
     final cap = getCapabilityObjectField(0);
-    return cap == null ? null : CursorClient(vendCapabilityHandle(cap as Capability));
+    return cap == null ? null : CursorClient(acquireCapabilityLease(cap as Capability));
   }
 
   int get cursorCapIndex => getCapabilityField(0);
@@ -3988,7 +3988,7 @@ final class RepositoryWatchParamsReader extends StructReader {
 
   ObserverClient? get observer {
     final cap = getCapabilityObjectField(0);
-    return cap == null ? null : ObserverClient(vendCapabilityHandle(cap as Capability));
+    return cap == null ? null : ObserverClient(acquireCapabilityLease(cap as Capability));
   }
 
   int get observerCapIndex => getCapabilityField(0);
@@ -4049,7 +4049,7 @@ final class RepositoryWatchResultsReader extends StructReader {
 
   SubscriptionClient? get subscription {
     final cap = getCapabilityObjectField(0);
-    return cap == null ? null : SubscriptionClient(vendCapabilityHandle(cap as Capability));
+    return cap == null ? null : SubscriptionClient(acquireCapabilityLease(cap as Capability));
   }
 
   int get subscriptionCapIndex => getCapabilityField(0);
@@ -4394,7 +4394,7 @@ final class ByteSourcePumpToParamsReader extends StructReader {
 
   ByteSinkClient? get sink {
     final cap = getCapabilityObjectField(0);
-    return cap == null ? null : ByteSinkClient(vendCapabilityHandle(cap as Capability));
+    return cap == null ? null : ByteSinkClient(acquireCapabilityLease(cap as Capability));
   }
 
   int get sinkCapIndex => getCapabilityField(0);
@@ -4598,7 +4598,7 @@ final class CapabilityFactoryNewCellResultsReader extends StructReader {
 
   ReadWriteClient? get cell {
     final cap = getCapabilityObjectField(0);
-    return cap == null ? null : ReadWriteClient(vendCapabilityHandle(cap as Capability));
+    return cap == null ? null : ReadWriteClient(acquireCapabilityLease(cap as Capability));
   }
 
   int get cellCapIndex => getCapabilityField(0);
@@ -4699,7 +4699,7 @@ final class CapabilityFactoryNewEmptyCellResultsReader extends StructReader {
 
   ReadWriteClient? get cell {
     final cap = getCapabilityObjectField(0);
-    return cap == null ? null : ReadWriteClient(vendCapabilityHandle(cap as Capability));
+    return cap == null ? null : ReadWriteClient(acquireCapabilityLease(cap as Capability));
   }
 
   int get cellCapIndex => getCapabilityField(0);
@@ -4800,7 +4800,7 @@ final class CapabilityFactoryNewRepositoryResultsReader extends StructReader {
 
   RepositoryClient? get repository {
     final cap = getCapabilityObjectField(0);
-    return cap == null ? null : RepositoryClient(vendCapabilityHandle(cap as Capability));
+    return cap == null ? null : RepositoryClient(acquireCapabilityLease(cap as Capability));
   }
 
   int get repositoryCapIndex => getCapabilityField(0);
@@ -5606,7 +5606,7 @@ final class PipelineTargetGetChildResultsReader extends StructReader {
 
   PipelineTargetClient? get child {
     final cap = getCapabilityObjectField(0);
-    return cap == null ? null : PipelineTargetClient(vendCapabilityHandle(cap as Capability));
+    return cap == null ? null : PipelineTargetClient(acquireCapabilityLease(cap as Capability));
   }
 
   int get childCapIndex => getCapabilityField(0);
@@ -5705,7 +5705,7 @@ final class PipelineTargetGetRepositoryResultsReader extends StructReader {
 
   RepositoryClient? get repository {
     final cap = getCapabilityObjectField(0);
-    return cap == null ? null : RepositoryClient(vendCapabilityHandle(cap as Capability));
+    return cap == null ? null : RepositoryClient(acquireCapabilityLease(cap as Capability));
   }
 
   int get repositoryCapIndex => getCapabilityField(0);
@@ -5870,18 +5870,18 @@ final class CapabilityBundleReader extends StructReader {
 
   PipelineTargetClient? get primary {
     final cap = getCapabilityObjectField(0);
-    return cap == null ? null : PipelineTargetClient(vendCapabilityHandle(cap as Capability));
+    return cap == null ? null : PipelineTargetClient(acquireCapabilityLease(cap as Capability));
   }
 
   int get primaryCapIndex => getCapabilityField(0);
 
   OptionalObserverPersonReader? get optionalObserver => getStructFieldWith(1, (r) => OptionalObserverPersonReader(r, capabilities: capabilityTable));
 
-  ListReader<PipelineTargetClient?>? get targets => getCapabilityListFieldWith<PipelineTargetClient>(2, (cap) => PipelineTargetClient(vendCapabilityHandle(cap as Capability)));
+  ListReader<PipelineTargetClient?>? get targets => getCapabilityListFieldWith<PipelineTargetClient>(2, (cap) => PipelineTargetClient(acquireCapabilityLease(cap as Capability)));
 
   ListReader<int>? get targetsCapIndices => getCapabilityListField(2);
 
-  ListReader<RepositoryClient?>? get repositories => getCapabilityListFieldWith<RepositoryClient>(3, (cap) => RepositoryClient(vendCapabilityHandle(cap as Capability)));
+  ListReader<RepositoryClient?>? get repositories => getCapabilityListFieldWith<RepositoryClient>(3, (cap) => RepositoryClient(acquireCapabilityLease(cap as Capability)));
 
   ListReader<int>? get repositoriesCapIndices => getCapabilityListField(3);
 }
@@ -6242,7 +6242,7 @@ final class ComplexResponseReader extends StructReader {
 
   PipelineTargetClient? get serverCapability {
     final cap = getCapabilityObjectField(4);
-    return cap == null ? null : PipelineTargetClient(vendCapabilityHandle(cap as Capability));
+    return cap == null ? null : PipelineTargetClient(acquireCapabilityLease(cap as Capability));
   }
 
   int get serverCapabilityCapIndex => getCapabilityField(4);
@@ -7245,7 +7245,7 @@ final class ComplexTestServiceCallObserverParamsReader extends StructReader {
 
   ObserverClient? get observer {
     final cap = getCapabilityObjectField(0);
-    return cap == null ? null : ObserverClient(vendCapabilityHandle(cap as Capability));
+    return cap == null ? null : ObserverClient(acquireCapabilityLease(cap as Capability));
   }
 
   int get observerCapIndex => getCapabilityField(0);
@@ -7424,7 +7424,7 @@ final class ComplexTestServiceMakePipelineResultsReader extends StructReader {
 
   PipelineTargetClient? get target {
     final cap = getCapabilityObjectField(0);
-    return cap == null ? null : PipelineTargetClient(vendCapabilityHandle(cap as Capability));
+    return cap == null ? null : PipelineTargetClient(acquireCapabilityLease(cap as Capability));
   }
 
   int get targetCapIndex => getCapabilityField(0);
@@ -7551,7 +7551,7 @@ final class ComplexTestServiceOpenUploadResultsReader extends StructReader {
 
   ByteSinkClient? get sink {
     final cap = getCapabilityObjectField(0);
-    return cap == null ? null : ByteSinkClient(vendCapabilityHandle(cap as Capability));
+    return cap == null ? null : ByteSinkClient(acquireCapabilityLease(cap as Capability));
   }
 
   int get sinkCapIndex => getCapabilityField(0);
@@ -7667,7 +7667,7 @@ final class ComplexTestServiceOpenDownloadResultsReader extends StructReader {
 
   ByteSourceClient? get source {
     final cap = getCapabilityObjectField(0);
-    return cap == null ? null : ByteSourceClient(vendCapabilityHandle(cap as Capability));
+    return cap == null ? null : ByteSourceClient(acquireCapabilityLease(cap as Capability));
   }
 
   int get sourceCapIndex => getCapabilityField(0);
@@ -7780,7 +7780,7 @@ final class ComplexTestServiceGetRepositoryResultsReader extends StructReader {
 
   RepositoryClient? get repository {
     final cap = getCapabilityObjectField(0);
-    return cap == null ? null : RepositoryClient(vendCapabilityHandle(cap as Capability));
+    return cap == null ? null : RepositoryClient(acquireCapabilityLease(cap as Capability));
   }
 
   int get repositoryCapIndex => getCapabilityField(0);
@@ -7879,7 +7879,7 @@ final class ComplexTestServiceGetFactoryResultsReader extends StructReader {
 
   CapabilityFactoryClient? get factory {
     final cap = getCapabilityObjectField(0);
-    return cap == null ? null : CapabilityFactoryClient(vendCapabilityHandle(cap as Capability));
+    return cap == null ? null : CapabilityFactoryClient(acquireCapabilityLease(cap as Capability));
   }
 
   int get factoryCapIndex => getCapabilityField(0);
@@ -7940,7 +7940,7 @@ final class ComplexTestServiceUseDiamondParamsReader extends StructReader {
 
   DiamondClient? get diamond {
     final cap = getCapabilityObjectField(0);
-    return cap == null ? null : DiamondClient(vendCapabilityHandle(cap as Capability));
+    return cap == null ? null : DiamondClient(acquireCapabilityLease(cap as Capability));
   }
 
   int get diamondCapIndex => getCapabilityField(0);
@@ -8247,7 +8247,7 @@ final class ComplexTestServiceProbePipelineTargetParamsReader extends StructRead
 
   PipelineTargetClient? get target {
     final cap = getCapabilityObjectField(0);
-    return cap == null ? null : PipelineTargetClient(vendCapabilityHandle(cap as Capability));
+    return cap == null ? null : PipelineTargetClient(acquireCapabilityLease(cap as Capability));
   }
 
   int get targetCapIndex => getCapabilityField(0);
@@ -8426,7 +8426,7 @@ final class ComplexTestServiceMakePromisedPipelineResultsReader extends StructRe
 
   PipelineTargetClient? get target {
     final cap = getCapabilityObjectField(0);
-    return cap == null ? null : PipelineTargetClient(vendCapabilityHandle(cap as Capability));
+    return cap == null ? null : PipelineTargetClient(acquireCapabilityLease(cap as Capability));
   }
 
   int get targetCapIndex => getCapabilityField(0);
@@ -8487,7 +8487,7 @@ final class ComplexTestServiceEchoPipelineTargetLaterParamsReader extends Struct
 
   PipelineTargetClient? get target {
     final cap = getCapabilityObjectField(0);
-    return cap == null ? null : PipelineTargetClient(vendCapabilityHandle(cap as Capability));
+    return cap == null ? null : PipelineTargetClient(acquireCapabilityLease(cap as Capability));
   }
 
   int get targetCapIndex => getCapabilityField(0);
@@ -8562,7 +8562,7 @@ final class ComplexTestServiceEchoPipelineTargetLaterResultsReader extends Struc
 
   PipelineTargetClient? get target {
     final cap = getCapabilityObjectField(0);
-    return cap == null ? null : PipelineTargetClient(vendCapabilityHandle(cap as Capability));
+    return cap == null ? null : PipelineTargetClient(acquireCapabilityLease(cap as Capability));
   }
 
   int get targetCapIndex => getCapabilityField(0);
@@ -11975,7 +11975,7 @@ final class OptionalObserverPersonReader extends StructReader {
 
   ObserverClient? get some {
     final cap = getCapabilityObjectField(0);
-    return cap == null ? null : ObserverClient(vendCapabilityHandle(cap as Capability));
+    return cap == null ? null : ObserverClient(acquireCapabilityLease(cap as Capability));
   }
 
   int get someCapIndex => getCapabilityField(0);

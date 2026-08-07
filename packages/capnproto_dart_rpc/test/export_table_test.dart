@@ -63,8 +63,8 @@ void main() {
       expect(table.remoteRefCountFor(id), isNull);
       expect(table.getCapability(id), isNull);
       expect(disposedHandle, isNotNull);
-      // releaseRef disposes ExportTable's own vendCapabilityHandle reference
-      // (not `cap` directly), which — since it was the only handle vended
+      // releaseRef disposes ExportTable's own acquireCapabilityLease reference
+      // (not `cap` directly), which — since it was the only lease acquired
       // for `cap` — cascades into disposing `cap` itself once the shared
       // refcount reaches zero.
       expect(cap.disposed, isTrue);

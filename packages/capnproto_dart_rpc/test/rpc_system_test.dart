@@ -217,7 +217,7 @@ void main() {
       // `bootstrap` instance and (per TwoPartyRpcConnection.server's
       // ownership contract) disposes its own reference on close. With
       // connections coming and going sequentially (not all simultaneously
-      // alive) rather than a fresh handle per connection, the *last*
+      // alive) rather than a fresh lease per connection, the *last*
       // connection open at any moment closing would previously drop the
       // shared refcount to zero and trigger real disposal of `bootstrap`
       // — even with other clients yet to connect and reuse it.
@@ -263,22 +263,22 @@ void main() {
       expect(bootstrap.disposeCount, equals(1));
     });
 
-    test('passing an already-vended handle as bootstrap still keeps the '
+    test('passing an already-acquired lease as bootstrap still keeps the '
         'underlying identity alive across sequential connections, not just a '
         'wrapper around a wrapper', () async {
-      // Regression test: serve() used to vend serverBootstrapRef directly
+      // Regression test: serve() used to lease serverBootstrapRef directly
       // from whatever `bootstrap` argument it was given, without
-      // unwrapping first. vendCapabilityHandle() is itself public API, so
-      // a caller can legitimately pass an already-vended handle (rather
-      // than a bare capability) as bootstrap — vending *that* creates a
-      // second, disconnected refcount cycle keyed on the handle object
+      // unwrapping first. acquireCapabilityLease() is itself public API, so
+      // a caller can legitimately pass an already-acquired lease (rather
+      // than a bare capability) as bootstrap — leasing *that* creates a
+      // second, disconnected refcount cycle keyed on the lease object
       // instead of on the real underlying identity every connection's own
       // export ends up sharing, so serverBootstrapRef ends up protecting
       // nothing real: the underlying identity's shared refcount could
       // still drop to zero between sequential connections exactly like
       // before the original fix.
       final bootstrap = _CountingBootstrap();
-      final wrapped = vendCapabilityHandle(bootstrap);
+      final wrapped = acquireCapabilityLease(bootstrap);
       final server = await RpcSystem.serve(
         Uri.parse('tcp://127.0.0.1:0'),
         wrapped,
@@ -321,10 +321,10 @@ void main() {
         'scheme) does not touch bootstrap at all — matching serve()\'s own '
         'doc comment, the same bootstrap can be reused for a later, '
         'successful call', () async {
-      // Regression test: serve() used to vend its server-lifetime
+      // Regression test: serve() used to lease its server-lifetime
       // bootstrap reference *before* scheme validation / listener
       // binding, unconditionally disposing it (via the caller's own
-      // handle-release step, or the shared refcount it created) on any
+      // lease-release step, or the shared refcount it created) on any
       // failure afterward — including scheme validation, which happens
       // before anything is bound and touches nothing else. That
       // permanently disposed the real bootstrap identity even though
@@ -362,7 +362,7 @@ void main() {
 
     test('a serve() call that fails only after successfully binding the '
         'listener — because bootstrap itself is unusable (e.g. already fully '
-        'disposed through a prior vendCapabilityHandle cycle) — still closes '
+        'disposed through a prior acquireCapabilityLease cycle) — still closes '
         'that listener, instead of leaking an open port', () async {
       // Learn a currently-free port, then release it immediately — used
       // only to give the failing serve() call below a specific port
@@ -376,9 +376,9 @@ void main() {
 
       final spentBootstrap = _CountingBootstrap();
       // Triggers disposal for spentBootstrap's identity — any later
-      // vendCapabilityHandle(spentBootstrap) throws (see that function's
+      // acquireCapabilityLease(spentBootstrap) throws (see that function's
       // own doc comment).
-      await vendCapabilityHandle(spentBootstrap).dispose();
+      await acquireCapabilityLease(spentBootstrap).dispose();
       expect(spentBootstrap.disposeCount, equals(1));
 
       await expectLater(

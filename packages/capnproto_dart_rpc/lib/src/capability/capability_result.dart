@@ -11,7 +11,7 @@ part of 'capability.dart';
 /// [requireCapabilityFromResultPath], since those can name a capability
 /// nested more than one struct deep in the result.
 ///
-/// Returns a vended handle (see [vendCapabilityHandle]), not the raw
+/// Returns a capability lease (see [acquireCapabilityLease]), not the raw
 /// [DispatchResult.caps] entry directly: the same underlying capability is
 /// commonly reachable through more than one independent path from generated
 /// code (e.g. an eagerly-pipelined `XxxPipeline.someCap` and the same field
@@ -42,7 +42,7 @@ Capability requireCapabilityFromResult(DispatchResult result, int ptrIndex) {
         'capability table index $capIdx is out of range for ${result.caps.length} result capabilities',
       );
     }
-    return vendCapabilityHandle(result.caps[capIdx]);
+    return acquireCapabilityLease(result.caps[capIdx]);
   } on RpcException {
     rethrow;
   } catch (e) {
@@ -117,7 +117,7 @@ Capability requireCapabilityFromResultPath(
         'capability table index $capIdx is out of range for ${result.caps.length} result capabilities',
       );
     }
-    return vendCapabilityHandle(result.caps[capIdx]);
+    return acquireCapabilityLease(result.caps[capIdx]);
   } on RpcException {
     rethrow;
   } catch (e) {

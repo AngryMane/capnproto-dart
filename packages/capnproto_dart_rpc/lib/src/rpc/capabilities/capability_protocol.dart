@@ -135,15 +135,15 @@ final class CapabilityProtocol {
       for (final rawCap in paramsCapabilities) {
         ensureActive();
         // Generated client stubs commonly hand out a fresh
-        // vendCapabilityHandle wrapper every time their underlying
+        // acquireCapabilityLease wrapper every time their underlying
         // capability is accessed (e.g. a `.capability` getter), so a
         // reference-extraction check against the wrapper itself never matches
         // even when it's genuinely an import/pipeline from this same
-        // connection — unwrap first. See unwrapVendedCapability's doc
+        // connection — unwrap first. See unwrapCapabilityLease's doc
         // comment for the concrete failure this avoids (a receiverHosted
         // hand-back gets mis-encoded as a brand-new senderHosted export
         // instead).
-        final cap = unwrapVendedCapability(rawCap);
+        final cap = unwrapCapabilityLease(rawCap);
         final reference = tryExtractCapabilityReference(cap);
         if (reference is ImportedCapabilityReference) {
           final id = await reference.importId;
@@ -223,7 +223,7 @@ final class CapabilityProtocol {
     ensureActive();
     if (paramsCapabilities.isEmpty) return const [];
     final needsAsync = paramsCapabilities.any((rawCap) {
-      final cap = unwrapVendedCapability(rawCap);
+      final cap = unwrapCapabilityLease(rawCap);
       final reference = tryExtractCapabilityReference(cap);
       return (reference is ImportedCapabilityReference &&
               reference.importId is! int) ||
@@ -249,8 +249,8 @@ final class CapabilityProtocol {
     try {
       for (final rawCap in paramsCapabilities) {
         // See _resolveCapTableAsync's matching comment on why this unwraps
-        // vendCapabilityHandle wrappers before extracting references.
-        final cap = unwrapVendedCapability(rawCap);
+        // acquireCapabilityLease wrappers before extracting references.
+        final cap = unwrapCapabilityLease(rawCap);
         final reference = tryExtractCapabilityReference(cap);
         if (reference is ImportedCapabilityReference) {
           // needsAsync above already confirmed this is cached — a
@@ -464,24 +464,24 @@ final class CapabilityProtocol {
     );
   }
 
-  /// [cap] may be a [vendCapabilityHandle] handle — e.g. an application's
+  /// [cap] may be a [CapabilityLease] — e.g. an application's
   /// dispatch handler read a capability out of another call's result via
-  /// [requireCapabilityFromResult] and is now returning that same handle as
+  /// [requireCapabilityFromResult] and is now returning that same lease as
   /// part of its own result (or relaying it into a call on a different
-  /// connection's — see [ExportTable]'s `_ExportEntry.ownedReference`) —
+  /// connection — see [ExportTable]'s `_ExportEntry.ownedReference`) —
   /// so it's unwrapped to its real identity before being used as
   /// [ExportTable.getOrCreate]'s dedup key.
   ///
   /// `DispatchResult.caps` transfers ownership of [cap] to this connection
   /// — [ExportTable.getOrCreate] establishes (or reuses) this connection's
   /// own owning reference to [identity], so if [cap] was itself a distinct
-  /// vended handle, it's now redundant with that owning reference and is
+  /// [CapabilityLease], it's now redundant with that owning reference and is
   /// disposed here: otherwise its share of [identity]'s refcount (see
-  /// [vendCapabilityHandle]) would never be released, leaking the
+  /// [acquireCapabilityLease]) would never be released, leaking the
   /// underlying capability even after every other reference to it —
   /// including this connection's own owning one — is properly disposed.
   RpcCapDescriptor returnCapDescriptor(Capability cap) {
-    final identity = unwrapVendedCapability(cap);
+    final identity = unwrapCapabilityLease(cap);
     final RpcCapDescriptor descriptor;
     if (identity is DeferredCapability) {
       final promiseId = exportTable.getOrCreate(identity);
@@ -558,7 +558,7 @@ final class CapabilityProtocol {
       exportTable.isCurrentIdentity(promiseId, promise);
 
   /// See [returnCapDescriptor]'s doc comment — [cap] is unwrapped to its
-  /// real identity first, and a redundant vended [cap] is disposed at the
+  /// real identity first, and a redundant [CapabilityLease] passed as [cap] is disposed at the
   /// end, for the same ownership-transfer reason (this resolves a promise
   /// a [DeferredCapability] returned from `DispatchResult.caps` settled
   /// to, which transfers ownership exactly like an already-settled result
@@ -569,7 +569,7 @@ final class CapabilityProtocol {
   Future<RpcCapDescriptor> _resolveDescriptorForCapability(
     Capability cap,
   ) async {
-    final identity = unwrapVendedCapability(cap);
+    final identity = unwrapCapabilityLease(cap);
     final RpcCapDescriptor descriptor;
     final reference = tryExtractCapabilityReference(identity);
     if (reference is ImportedCapabilityReference) {
@@ -602,18 +602,18 @@ final class CapabilityProtocol {
         final state = importTable.retain(descriptor.id, isPromise: true);
         return importedCapabilityFromState(state);
       case 3: // receiverHosted: we (the receiver) export this cap
-        // A fresh vendCapabilityHandle, not the export's own identity/
+        // A fresh acquireCapabilityLease, not the export's own identity/
         // ownedReference directly: this capability is handed to
         // application code (a call's paramsCapabilities, a Return's result
         // caps, or a resolved promise replacement), which routinely
         // disposes params/result capabilities it's done with — that must
-        // decrement the shared refcount (see vendCapabilityHandle) rather
+        // decrement the shared refcount (see acquireCapabilityLease) rather
         // than tearing down the export's identity directly, which would
         // invalidate the export's own still-live ownedReference (and any
         // other outstanding reference to the same identity) out from under
         // it. Code that needs to recognize the concrete capability this
         // wraps (e.g. an `is`/identity check against a locally-known
-        // object) must unwrap it first — see unwrapVendedCapability's doc
+        // object) must unwrap it first — see unwrapCapabilityLease's doc
         // comment; this is the same discipline every other decode path
         // (requireCapabilityFromResult et al.) already requires.
         final capability = exportTable.getCapability(descriptor.id);
@@ -629,7 +629,7 @@ final class CapabilityProtocol {
             'unknown receiverHosted export id: ${descriptor.id}',
           );
         }
-        return vendCapabilityHandle(capability);
+        return acquireCapabilityLease(capability);
       case 4: // receiverAnswer: capability in one of our outstanding answers
         return receiverAnswerCapability(
           descriptor.questionId,

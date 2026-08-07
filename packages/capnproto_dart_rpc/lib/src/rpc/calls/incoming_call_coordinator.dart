@@ -335,13 +335,13 @@ final class IncomingCallCoordinator {
       }
     } catch (error) {
       // Every entry decoded successfully before whatever failed is a real,
-      // live reference (an import refcount bump, a vended receiverHosted
-      // handle, ...) — dispose them *before* deciding what to do with the
-      // error itself, including the unimplemented/rethrow path below,
+      // live reference (an import refcount bump, a receiverHosted
+      // capability lease, ...) — dispose them *before* deciding what to do
+      // with the error itself, including the unimplemented/rethrow path below,
       // which tears the whole connection down: tearDownConnection only
       // ever disposes each export's own single `ownedReference` (see that
       // field's doc comment) — it has no way to know about an *additional*
-      // handle vended into a local variable like this one, so leaving one
+      // lease acquired into a local variable like this one, so leaving one
       // undisposed here would leak a permanent share of that identity's
       // refcount, potentially high enough that its own real capability
       // never actually gets disposed even once every other reference to it
