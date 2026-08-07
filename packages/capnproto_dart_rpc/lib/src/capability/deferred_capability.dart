@@ -77,7 +77,7 @@ class DeferredCapability extends Capability {
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) async {
     final cap = await _resolveForCall();
     return cap.dispatchWithContext(
@@ -90,14 +90,14 @@ class DeferredCapability extends Capability {
   }
 
   @override
-  Future<DispatchResult> dispatchBuilding(
+  Future<DispatchResult> dispatchWithParamsBuilder(
     int interfaceId,
     int methodId,
     void Function(AnyPointerBuilder) build, {
     List<Capability> paramsCapabilities = const [],
   }) async {
     final cap = await _resolveForCall();
-    return cap.dispatchBuilding(
+    return cap.dispatchWithParamsBuilder(
       interfaceId,
       methodId,
       build,

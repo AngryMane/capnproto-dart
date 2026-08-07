@@ -137,7 +137,7 @@ class CapabilityLease extends Capability {
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) => _target.dispatchWithContext(
     interfaceId,
     methodId,
@@ -173,12 +173,12 @@ class CapabilityLease extends Capability {
   );
 
   @override
-  Future<DispatchResult> dispatchBuilding(
+  Future<DispatchResult> dispatchWithParamsBuilder(
     int interfaceId,
     int methodId,
     void Function(AnyPointerBuilder) build, {
     List<Capability> paramsCapabilities = const [],
-  }) => _target.dispatchBuilding(
+  }) => _target.dispatchWithParamsBuilder(
     interfaceId,
     methodId,
     build,

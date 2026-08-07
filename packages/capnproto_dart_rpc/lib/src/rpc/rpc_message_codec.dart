@@ -773,7 +773,7 @@ Uint8List buildCallMessage({
   List<(int, int)> capTableEntries = const [],
   List<RpcCapDescriptor>? capTableDescriptors,
   bool sendResultsToYourself = false,
-}) => buildCallMessageBuildingSync(
+}) => buildCallMessageWithParamsBuilderSync(
   questionId: questionId,
   targetImportId: targetImportId,
   targetPromisedAnswerQid: targetPromisedAnswerQid,
@@ -803,7 +803,7 @@ Uint8List buildCallMessage({
 /// their encoder runs) and *before* the message is serialized, to resolve
 /// the wire capTable descriptors. It's async because that resolution may
 /// need to wait on an import ID (see callers in `two_party_connection.dart`).
-Future<Uint8List> buildCallMessageBuilding({
+Future<Uint8List> buildCallMessageWithParamsBuilder({
   required int questionId,
   int targetImportId = 0,
   int? targetPromisedAnswerQid,
@@ -828,10 +828,10 @@ Future<Uint8List> buildCallMessageBuilding({
   return _finishCallMessage(mb, params, descriptors);
 }
 
-/// Synchronous counterpart of [buildCallMessageBuilding] for callers that
+/// Synchronous counterpart of [buildCallMessageWithParamsBuilder] for callers that
 /// already have a fully-resolved capTable (no async resolution needed) —
 /// used by [buildCallMessage] itself.
-Uint8List buildCallMessageBuildingSync({
+Uint8List buildCallMessageWithParamsBuilderSync({
   required int questionId,
   int targetImportId = 0,
   int? targetPromisedAnswerQid,
@@ -855,7 +855,7 @@ Uint8List buildCallMessageBuildingSync({
   return _finishCallMessage(mb, params, descriptors);
 }
 
-/// Like [buildCallMessageBuilding], but for callers whose capTable
+/// Like [buildCallMessageWithParamsBuilder], but for callers whose capTable
 /// descriptors might be resolvable with no `await` at all — the common
 /// case for an already-resolved call target with capability params that
 /// are all locally resolvable already. Returns the finished bytes
@@ -863,10 +863,10 @@ Uint8List buildCallMessageBuildingSync({
 /// `Future`/microtask; falls back to actually awaiting [resolveDescriptors]
 /// only when it returns a `Future` (some param genuinely isn't resolvable
 /// yet). [buildParams] always runs synchronously either way, so any
-/// capabilities it appends as a side effect (see [buildCallMessageBuilding]'s
+/// capabilities it appends as a side effect (see [buildCallMessageWithParamsBuilder]'s
 /// doc comment) are visible to [resolveDescriptors] exactly as they would
 /// be with the fully-async version.
-FutureOr<Uint8List> buildCallMessageBuildingMaybeSync({
+FutureOr<Uint8List> buildCallMessageWithParamsBuilderMaybeSync({
   required int questionId,
   int targetImportId = 0,
   int? targetPromisedAnswerQid,

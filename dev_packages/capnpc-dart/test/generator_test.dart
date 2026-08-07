@@ -628,7 +628,7 @@ void main() {
       expect(
         src,
         contains(
-          '_cap.dispatchBuilding(0x000000001234abcd, 0, (anyPtr) => build(anyPtr.initStruct(greetParamsFactory)))',
+          '_cap.dispatchWithParamsBuilder(0x000000001234abcd, 0, (anyPtr) => build(anyPtr.initStruct(greetParamsFactory)))',
         ),
       );
       expect(
@@ -2412,7 +2412,7 @@ void main() {
       expect(
         bothServerSection(),
         contains(
-          'Future<DispatchResult> leftProcessWithContext(LeftProcessParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>',
+          'Future<DispatchResult> leftProcessWithContext(LeftProcessParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>',
         ),
       );
       expect(

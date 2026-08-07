@@ -129,7 +129,7 @@ class _ImportedCapability extends Capability {
   }
 
   @override
-  Future<DispatchResult> dispatchBuilding(
+  Future<DispatchResult> dispatchWithParamsBuilder(
     int interfaceId,
     int methodId,
     void Function(AnyPointerBuilder) build, {
@@ -151,7 +151,7 @@ class _ImportedCapability extends Capability {
     }
     final replacement = state.replacement;
     if (replacement != null) {
-      return replacement.dispatchBuilding(
+      return replacement.dispatchWithParamsBuilder(
         interfaceId,
         methodId,
         build,
@@ -491,7 +491,7 @@ class _PipelinedCapability extends Capability {
   }
 
   @override
-  Future<DispatchResult> dispatchBuilding(
+  Future<DispatchResult> dispatchWithParamsBuilder(
     int interfaceId,
     int methodId,
     void Function(AnyPointerBuilder) build, {
@@ -507,7 +507,7 @@ class _PipelinedCapability extends Capability {
     }
     final r = _resolved;
     if (r != null) {
-      return r.dispatchBuilding(
+      return r.dispatchWithParamsBuilder(
         interfaceId,
         methodId,
         build,
@@ -593,7 +593,7 @@ class _ReceiverAnswerCapability extends Capability {
   // for every call ever made through this capability.
   Future<Capability>? _resolution;
 
-  // Tracks every dispatch()/dispatchBuilding()/dispatchForPipelining() call
+  // Tracks every dispatch()/dispatchWithParamsBuilder()/dispatchForPipelining() call
   // that was admitted (started before _disposed flipped true), mirroring
   // _PipelinedCapability's _pendingPipelinedCalls — but, unlike that
   // class (which only tracks calls made *before* its target resolves, since
@@ -726,7 +726,7 @@ class _ReceiverAnswerCapability extends Capability {
   }
 
   @override
-  Future<DispatchResult> dispatchBuilding(
+  Future<DispatchResult> dispatchWithParamsBuilder(
     int interfaceId,
     int methodId,
     void Function(AnyPointerBuilder) build, {
@@ -735,7 +735,7 @@ class _ReceiverAnswerCapability extends Capability {
     if (_disposed) return Future.error(_disposedError);
     return _trackCall(
       _resolve().then(
-        (cap) => cap.dispatchBuilding(
+        (cap) => cap.dispatchWithParamsBuilder(
           interfaceId,
           methodId,
           build,

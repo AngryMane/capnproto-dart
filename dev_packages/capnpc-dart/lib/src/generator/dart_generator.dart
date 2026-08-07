@@ -671,15 +671,15 @@ void _writeClientMethod(
   if (usesCapTableParam) {
     sb.writeln('    final capTable = CapabilityTableBuilder();');
     sb.writeln(
-      '    final result = await _cap.dispatchBuilding($ifaceId, $ordinal, (anyPtr) => build(anyPtr.initStruct(${_lcfirst(paramsName)}Factory), capTable)$dispatchCaps);',
+      '    final result = await _cap.dispatchWithParamsBuilder($ifaceId, $ordinal, (anyPtr) => build(anyPtr.initStruct(${_lcfirst(paramsName)}Factory), capTable)$dispatchCaps);',
     );
   } else if (effectiveCapParams.isEmpty) {
     sb.writeln(
-      '    final result = await _cap.dispatchBuilding($ifaceId, $ordinal, (anyPtr) => build(anyPtr.initStruct(${_lcfirst(paramsName)}Factory))$dispatchCaps);',
+      '    final result = await _cap.dispatchWithParamsBuilder($ifaceId, $ordinal, (anyPtr) => build(anyPtr.initStruct(${_lcfirst(paramsName)}Factory))$dispatchCaps);',
     );
   } else {
     sb.writeln(
-      '    final result = await _cap.dispatchBuilding($ifaceId, $ordinal, (anyPtr) {',
+      '    final result = await _cap.dispatchWithParamsBuilder($ifaceId, $ordinal, (anyPtr) {',
     );
     sb.writeln('      final b = anyPtr.initStruct(${_lcfirst(paramsName)}Factory);');
     for (final (_, fname, capIdx) in effectiveCapParams) {
@@ -871,7 +871,7 @@ void _writeTypedClientMethod(
   }
   sb.writeln('    final typedCapabilities = <Capability>[];');
   sb.writeln(
-    '    final dispatchResult = await _cap.dispatchBuilding($ifaceId, $ordinal, (anyPtr) {',
+    '    final dispatchResult = await _cap.dispatchWithParamsBuilder($ifaceId, $ordinal, (anyPtr) {',
   );
   sb.writeln('      final b = anyPtr.initStruct(${_lcfirst(paramsName)}Factory);');
   for (final (fieldName, paramIndex) in paramFields) {
@@ -1094,7 +1094,7 @@ void _writeServerStub(
         '  Future<void> $methodName(${paramsName}Reader params, List<Capability> paramsCapabilities);',
       );
       sb.writeln(
-        '  Future<void> ${methodName}WithContext(${paramsName}Reader params, List<Capability> paramsCapabilities, DispatchContext context) =>',
+        '  Future<void> ${methodName}WithContext(${paramsName}Reader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>',
       );
       sb.writeln('      $methodName(params, paramsCapabilities);');
     } else {
@@ -1102,7 +1102,7 @@ void _writeServerStub(
         '  Future<DispatchResult> $methodName(${paramsName}Reader params, List<Capability> paramsCapabilities);',
       );
       sb.writeln(
-        '  Future<DispatchResult> ${methodName}WithContext(${paramsName}Reader params, List<Capability> paramsCapabilities, DispatchContext context) =>',
+        '  Future<DispatchResult> ${methodName}WithContext(${paramsName}Reader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>',
       );
       sb.writeln('      $methodName(params, paramsCapabilities);');
 
@@ -1135,10 +1135,10 @@ void _writeServerStub(
     '  Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, RpcPayload params, {',
   );
   sb.writeln('    List<Capability> paramsCapabilities = const [],');
-  sb.writeln('    DispatchContext? context,');
+  sb.writeln('    DispatchCancellationContext? context,');
   sb.writeln('  }) async {');
   sb.writeln(
-    '    final dispatchContext = context ?? DispatchContext.neverCanceled;',
+    '    final dispatchContext = context ?? DispatchCancellationContext.neverCanceled;',
   );
 
   if (allMethods.isNotEmpty) {

@@ -168,7 +168,7 @@ final class OutgoingCallCoordinator {
         targetPromisedAnswerQid = pqid;
         targetTransformPath = path;
     }
-    return buildCallMessageBuildingMaybeSync(
+    return buildCallMessageWithParamsBuilderMaybeSync(
       questionId: qid,
       targetImportId: targetImportId,
       targetPromisedAnswerQid: targetPromisedAnswerQid,
@@ -190,11 +190,11 @@ final class OutgoingCallCoordinator {
   /// needs (an import id, or the promisedAnswer target's parent being sent),
   /// then resolves the capTable.
   ///
-  /// Uses [buildCallMessageBuilding] (a `resolveCapTable` callback invoked
+  /// Uses [buildCallMessageWithParamsBuilder] (a `resolveCapTable` callback invoked
   /// only *after* [buildParams] has returned), not a pre-resolve-then-sync-
   /// build sequence: [paramsCapabilities] may still be being appended to by
   /// [buildParams] itself for a builder-based Call (see [Capability.
-  /// dispatchBuilding]'s contract) — resolving the capTable before
+  /// dispatchWithParamsBuilder]'s contract) — resolving the capTable before
   /// [buildParams] runs would silently miss those. This is safe and
   /// equivalent for a serialized-params Call too, since the synthetic
   /// `setMessageBytes` [buildParams] built by [_buildOutgoingCallBytes]
@@ -239,7 +239,7 @@ final class OutgoingCallCoordinator {
     // parent being sent) — [ensureActive] is threaded into it precisely so
     // it can re-check after each of those too, not just at its own entry.
     _throwIfTornDown();
-    return buildCallMessageBuilding(
+    return buildCallMessageWithParamsBuilder(
       questionId: qid,
       targetImportId: targetImportId,
       targetPromisedAnswerQid: targetPromisedAnswerQid,

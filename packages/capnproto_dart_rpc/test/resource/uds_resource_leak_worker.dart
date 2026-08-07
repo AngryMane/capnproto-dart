@@ -47,7 +47,7 @@ final class _ComplexServer extends Capability {
         throw StateError('capability parameter was not transferred');
       }
       try {
-        final result = await paramsCapabilities.single.dispatchBuilding(
+        final result = await paramsCapabilities.single.dispatchWithParamsBuilder(
           echoInterfaceId,
           echoMethodId,
           (pointer) => pointer
@@ -192,7 +192,7 @@ RpcPayload _payload(String text) {
 }
 
 Future<String> _echoThrough(Capability capability, String text) async {
-  final result = await capability.dispatchBuilding(
+  final result = await capability.dispatchWithParamsBuilder(
     echoInterfaceId,
     echoMethodId,
     (pointer) => pointer.initStruct(TextParamFactory()).setTextField(0, text),
@@ -202,7 +202,7 @@ Future<String> _echoThrough(Capability capability, String text) async {
 
 Future<void> _passCapability(_UdsFixture fixture) async {
   final callback = EchoServer();
-  await fixture.client.cap.dispatchBuilding(
+  await fixture.client.cap.dispatchWithParamsBuilder(
     echoInterfaceId,
     _acceptCapabilityMethod,
     (pointer) =>
@@ -240,7 +240,7 @@ Future<List<WeakReference<Object>>> _createDisposedWeakReferences() async {
   for (var cycle = 0; cycle < 5; cycle++) {
     final fixture = await _UdsFixture.open();
     final callback = EchoServer();
-    await fixture.client.cap.dispatchBuilding(
+    await fixture.client.cap.dispatchWithParamsBuilder(
       echoInterfaceId,
       _acceptCapabilityMethod,
       (pointer) =>

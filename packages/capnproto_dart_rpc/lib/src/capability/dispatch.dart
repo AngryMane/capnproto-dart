@@ -113,15 +113,15 @@ class TailCallRequest {
 /// Server implementations can check [isCanceled], await [canceled], or call
 /// [throwIfCanceled] at await points to stop work after the caller sends
 /// `Finish` or the connection closes.
-class DispatchContext {
+class DispatchCancellationContext {
   /// A context that never reports cancellation — for dispatch paths that
   /// don't track it.
-  static final DispatchContext neverCanceled = DispatchContext._never();
+  static final DispatchCancellationContext neverCanceled = DispatchCancellationContext._never();
 
   final Completer<void>? _canceledCompleter;
 
-  DispatchContext._() : _canceledCompleter = Completer<void>();
-  DispatchContext._never() : _canceledCompleter = null;
+  DispatchCancellationContext._() : _canceledCompleter = Completer<void>();
+  DispatchCancellationContext._never() : _canceledCompleter = null;
 
   /// Whether the caller has abandoned this dispatch.
   bool get isCanceled => _canceledCompleter?.isCompleted ?? false;
@@ -147,7 +147,7 @@ class DispatchContext {
 
 /// Owns cancellation for a single incoming dispatch.
 class DispatchCancellationController {
-  final DispatchContext context = DispatchContext._();
+  final DispatchCancellationContext context = DispatchCancellationContext._();
 
   void cancel() => context._cancel();
 }

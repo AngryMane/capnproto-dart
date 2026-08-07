@@ -63,7 +63,7 @@ class _CountingBootstrap extends Capability {
 // A bootstrap whose dispatch() blocks until release() is called -- lets a
 // test observe server-side teardown (RpcServer.close(), an abrupt
 // disconnect) while a real dispatch is genuinely still in flight, instead
-// of only ever tearing down an idle connection. Tracks the DispatchContext
+// of only ever tearing down an idle connection. Tracks the DispatchCancellationContext
 // it's given so a test can wait for the server's own peer-loss detection
 // (context.canceled) as an independent signal, distinct from -- and prior
 // to -- any explicit RpcServer.close() the test itself calls afterward.
@@ -71,7 +71,7 @@ class _SlowCountingBootstrap extends Capability {
   final Completer<void> started = Completer<void>();
   final Completer<void> release = Completer<void>();
   int disposeCount = 0;
-  DispatchContext? lastContext;
+  DispatchCancellationContext? lastContext;
 
   @override
   Future<DispatchResult> dispatchWithContext(
@@ -79,9 +79,9 @@ class _SlowCountingBootstrap extends Capability {
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) async {
-    lastContext = context ?? DispatchContext.neverCanceled;
+    lastContext = context ?? DispatchCancellationContext.neverCanceled;
     if (!started.isCompleted) started.complete();
     await release.future;
     return DispatchResult(payload: RpcPayload.fromBytes(_emptyParams));

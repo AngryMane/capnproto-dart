@@ -83,7 +83,7 @@ abstract class Capability {
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) => dispatch(
     interfaceId,
     methodId,
@@ -146,7 +146,7 @@ abstract class Capability {
   /// it builds into its own standalone [MessageBuilder] and reads it back
   /// via a zero-copy builder→reader view (skipping even
   /// [MessageBuilder.serialize]'s framing step) before calling [dispatch].
-  Future<DispatchResult> dispatchBuilding(
+  Future<DispatchResult> dispatchWithParamsBuilder(
     int interfaceId,
     int methodId,
     void Function(AnyPointerBuilder) build, {

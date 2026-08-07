@@ -285,7 +285,7 @@ class _SyncThrowingCapability extends Capability {
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) {
     throw StateError('deliberate synchronous throw');
   }
@@ -312,7 +312,7 @@ class _FirstCallSyncThrowCapability extends Capability {
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) {
     _callCount++;
     if (_callCount == 1) throw StateError('deliberate synchronous throw');
@@ -1180,7 +1180,7 @@ class SlowEchoServer extends Capability {
   final Completer<void> started = Completer<void>();
   final Completer<void> canceled = Completer<void>();
   final Completer<void> complete = Completer<void>();
-  DispatchContext? lastContext;
+  DispatchCancellationContext? lastContext;
 
   @override
   Future<DispatchResult> dispatch(
@@ -1202,9 +1202,9 @@ class SlowEchoServer extends Capability {
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) {
-    final dispatchContext = context ?? DispatchContext.neverCanceled;
+    final dispatchContext = context ?? DispatchCancellationContext.neverCanceled;
     lastContext = dispatchContext;
     dispatchContext.canceled.then((_) {
       if (!canceled.isCompleted) canceled.complete();
@@ -1533,12 +1533,12 @@ void main() {
     );
   });
 
-  group('Capability.dispatchBuilding — Stage 3A zero-copy send path', () {
+  group('Capability.dispatchWithParamsBuilder — Stage 3A zero-copy send path', () {
     test(
-      'local (default) dispatchBuilding round-trips through EchoServer',
+      'local (default) dispatchWithParamsBuilder round-trips through EchoServer',
       () async {
         final server = EchoServer();
-        final result = await server.dispatchBuilding(
+        final result = await server.dispatchWithParamsBuilder(
           _echoInterfaceId,
           _echoMethodId,
           (anyPtr) =>
@@ -1548,26 +1548,26 @@ void main() {
       },
     );
 
-    test('RPC-connected dispatchBuilding (_ImportedCapability) builds params '
+    test('RPC-connected dispatchWithParamsBuilder (_ImportedCapability) builds params '
         'directly into the outgoing Call and round-trips', () async {
       final (client, serverConn) = _makePipe(EchoServer());
       final bootstrapCap = client.bootstrap(EchoClientFactory());
       await bootstrapCap.echo('warmup');
 
-      final result = await bootstrapCap.cap.dispatchBuilding(
+      final result = await bootstrapCap.cap.dispatchWithParamsBuilder(
         _echoInterfaceId,
         _echoMethodId,
         (anyPtr) => anyPtr
             .initStruct(_TextParamFactory())
-            .setTextField(0, 'via dispatchBuilding'),
+            .setTextField(0, 'via dispatchWithParamsBuilder'),
       );
-      expect(_parseEchoResult(result.payload), 'echo: via dispatchBuilding');
+      expect(_parseEchoResult(result.payload), 'echo: via dispatchWithParamsBuilder');
 
       await client.close();
       await serverConn.close();
     });
 
-    test('dispatchBuilding paramsCapabilities populated during build is read '
+    test('dispatchWithParamsBuilder paramsCapabilities populated during build is read '
         'correctly by the callee', () async {
       final child = EchoServer();
       final server = CapReceivingServer();
@@ -1576,7 +1576,7 @@ void main() {
       await bootstrapCap.echo('warmup');
 
       final typedCapabilities = <Capability>[];
-      final result = await bootstrapCap.cap.dispatchBuilding(
+      final result = await bootstrapCap.cap.dispatchWithParamsBuilder(
         _echoInterfaceId,
         _echoMethodId,
         (anyPtr) {
@@ -1976,7 +1976,7 @@ void main() {
 
       // Known bug, tracked as https://github.com/AngryMane/capnproto-dart/issues/99
       // -- characterized here, not fixed: AnswerTable.tearDown only
-      // cancels the forwarded dispatch's DispatchContext -- it has no
+      // cancels the forwarded dispatch's DispatchCancellationContext -- it has no
       // way to reach into the Future _awaitAndProcessReturn already extracted via
       // _resolveLocalAnswer for the original call. SlowEchoServer
       // ignores cancellation and keeps blocking on target.complete, so
@@ -4261,9 +4261,9 @@ void main() {
       expect(paramsReq.getTextField(0), 'hello');
     });
 
-    test('buildCallMessageBuildingSync builds params directly into the '
+    test('buildCallMessageWithParamsBuilderSync builds params directly into the '
         'envelope (matches buildCallMessage semantics)', () {
-      final bytes = buildCallMessageBuildingSync(
+      final bytes = buildCallMessageWithParamsBuilderSync(
         questionId: 7,
         targetImportId: 3,
         interfaceId: 0xDEADBEEF,
@@ -4283,10 +4283,10 @@ void main() {
       expect(paramsReq.getTextField(0), 'hello');
     });
 
-    test('buildCallMessageBuilding resolves the capTable after buildParams '
+    test('buildCallMessageWithParamsBuilder resolves the capTable after buildParams '
         'runs', () async {
       final order = <String>[];
-      final bytes = await buildCallMessageBuilding(
+      final bytes = await buildCallMessageWithParamsBuilder(
         questionId: 9,
         targetImportId: 3,
         interfaceId: 0xDEADBEEF,

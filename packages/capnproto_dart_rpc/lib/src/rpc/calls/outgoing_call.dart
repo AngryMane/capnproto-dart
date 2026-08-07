@@ -50,7 +50,7 @@ final class SerializedParams extends OutgoingParams {
 
 /// Zero-copy params: [build] writes directly into the outgoing Call's
 /// Payload.content instead of the caller pre-building a standalone message.
-/// See `Capability.dispatchBuilding`.
+/// See `Capability.dispatchWithParamsBuilder`.
 final class BuilderParams extends OutgoingParams {
   final void Function(AnyPointerBuilder) build;
   const BuilderParams(this.build);

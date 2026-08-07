@@ -9269,13 +9269,13 @@ class ObserverClient<Event> extends Capability {
   Capability get capability => _cap;
 
   Future<ObserverOnNextResultsReader> onNext(void Function(ObserverOnNextParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xf67686e607b37dbb, 0, (anyPtr) => build(anyPtr.initStruct(observerOnNextParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xf67686e607b37dbb, 0, (anyPtr) => build(anyPtr.initStruct(observerOnNextParamsFactory)));
     return result.payload.getTyped(observerOnNextResultsFactory, capabilities: result.caps);
   }
 
   Future<ObserverOnNextResultsReader> onNextTyped(AnyPointerCodec<Event> eventCodec, Event event) async {
     final typedCapabilities = <Capability>[];
-    final dispatchResult = await _cap.dispatchBuilding(0xf67686e607b37dbb, 0, (anyPtr) {
+    final dispatchResult = await _cap.dispatchWithParamsBuilder(0xf67686e607b37dbb, 0, (anyPtr) {
       final b = anyPtr.initStruct(observerOnNextParamsFactory);
       b.setEventTyped(eventCodec, event, capabilities: typedCapabilities);
     }, paramsCapabilities: typedCapabilities);
@@ -9284,12 +9284,12 @@ class ObserverClient<Event> extends Capability {
   }
 
   Future<ObserverOnErrorResultsReader> onError(void Function(ObserverOnErrorParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xf67686e607b37dbb, 1, (anyPtr) => build(anyPtr.initStruct(observerOnErrorParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xf67686e607b37dbb, 1, (anyPtr) => build(anyPtr.initStruct(observerOnErrorParamsFactory)));
     return result.payload.getTyped(observerOnErrorResultsFactory, capabilities: result.caps);
   }
 
   Future<ObserverOnCompleteResultsReader> onComplete(void Function(ObserverOnCompleteParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xf67686e607b37dbb, 2, (anyPtr) => build(anyPtr.initStruct(observerOnCompleteParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xf67686e607b37dbb, 2, (anyPtr) => build(anyPtr.initStruct(observerOnCompleteParamsFactory)));
     return result.payload.getTyped(observerOnCompleteResultsFactory, capabilities: result.caps);
   }
 
@@ -9331,15 +9331,15 @@ class ObserverClientFactory<Event> extends CapabilityFactory<ObserverClient<Even
 abstract class ObserverServer extends Capability {
 
   Future<void> onNext(ObserverOnNextParamsReader params, List<Capability> paramsCapabilities);
-  Future<void> onNextWithContext(ObserverOnNextParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<void> onNextWithContext(ObserverOnNextParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       onNext(params, paramsCapabilities);
 
   Future<void> onError(ObserverOnErrorParamsReader params, List<Capability> paramsCapabilities);
-  Future<void> onErrorWithContext(ObserverOnErrorParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<void> onErrorWithContext(ObserverOnErrorParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       onError(params, paramsCapabilities);
 
   Future<void> onComplete(ObserverOnCompleteParamsReader params, List<Capability> paramsCapabilities);
-  Future<void> onCompleteWithContext(ObserverOnCompleteParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<void> onCompleteWithContext(ObserverOnCompleteParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       onComplete(params, paramsCapabilities);
 
   @override
@@ -9355,9 +9355,9 @@ abstract class ObserverServer extends Capability {
   @override
   Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) async {
-    final dispatchContext = context ?? DispatchContext.neverCanceled;
+    final dispatchContext = context ?? DispatchCancellationContext.neverCanceled;
     switch (interfaceId) {
       case 0xf67686e607b37dbb:
         switch (methodId) {
@@ -9395,12 +9395,12 @@ class SubscriptionClient extends Capability {
   Capability get capability => _cap;
 
   Future<SubscriptionCancelResultsReader> cancel(void Function(SubscriptionCancelParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xe23251fe94e836ec, 0, (anyPtr) => build(anyPtr.initStruct(subscriptionCancelParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xe23251fe94e836ec, 0, (anyPtr) => build(anyPtr.initStruct(subscriptionCancelParamsFactory)));
     return result.payload.getTyped(subscriptionCancelResultsFactory, capabilities: result.caps);
   }
 
   Future<SubscriptionGetIdResultsReader> getId(void Function(SubscriptionGetIdParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xe23251fe94e836ec, 1, (anyPtr) => build(anyPtr.initStruct(subscriptionGetIdParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xe23251fe94e836ec, 1, (anyPtr) => build(anyPtr.initStruct(subscriptionGetIdParamsFactory)));
     return result.payload.getTyped(subscriptionGetIdResultsFactory, capabilities: result.caps);
   }
 
@@ -9436,14 +9436,14 @@ class SubscriptionClientFactory extends CapabilityFactory<SubscriptionClient> {
 abstract class SubscriptionServer extends Capability {
 
   Future<DispatchResult> cancel(SubscriptionCancelParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> cancelWithContext(SubscriptionCancelParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> cancelWithContext(SubscriptionCancelParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       cancel(params, paramsCapabilities);
 
   DispatchResult buildCancelResults(void Function(SubscriptionCancelResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(subscriptionCancelResultsFactory, build, caps: caps);
 
   Future<DispatchResult> getId(SubscriptionGetIdParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> getIdWithContext(SubscriptionGetIdParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> getIdWithContext(SubscriptionGetIdParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       getId(params, paramsCapabilities);
 
   DispatchResult buildGetIdResults(void Function(SubscriptionGetIdResultsBuilder) build, {List<Capability> caps = const []}) =>
@@ -9462,9 +9462,9 @@ abstract class SubscriptionServer extends Capability {
   @override
   Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) async {
-    final dispatchContext = context ?? DispatchContext.neverCanceled;
+    final dispatchContext = context ?? DispatchCancellationContext.neverCanceled;
     switch (interfaceId) {
       case 0xe23251fe94e836ec:
         switch (methodId) {
@@ -9496,13 +9496,13 @@ class ReadableClient<Value> extends Capability {
   Capability get capability => _cap;
 
   Future<ReadableReadResultsReader> read(void Function(ReadableReadParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xa69434bbd537a649, 0, (anyPtr) => build(anyPtr.initStruct(readableReadParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xa69434bbd537a649, 0, (anyPtr) => build(anyPtr.initStruct(readableReadParamsFactory)));
     return result.payload.getTyped(readableReadResultsFactory, capabilities: result.caps);
   }
 
   Future<Value?> readTyped(AnyPointerCodec<Value> valueCodec) async {
     final typedCapabilities = <Capability>[];
-    final dispatchResult = await _cap.dispatchBuilding(0xa69434bbd537a649, 0, (anyPtr) {
+    final dispatchResult = await _cap.dispatchWithParamsBuilder(0xa69434bbd537a649, 0, (anyPtr) {
       final b = anyPtr.initStruct(readableReadParamsFactory);
     }, paramsCapabilities: typedCapabilities);
     final result = dispatchResult.payload.getTyped(readableReadResultsFactory, capabilities: dispatchResult.caps);
@@ -9535,7 +9535,7 @@ class ReadableClientFactory<Value> extends CapabilityFactory<ReadableClient<Valu
 abstract class ReadableServer extends Capability {
 
   Future<DispatchResult> read(ReadableReadParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> readWithContext(ReadableReadParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> readWithContext(ReadableReadParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       read(params, paramsCapabilities);
 
   DispatchResult buildReadResults(void Function(ReadableReadResultsBuilder) build, {List<Capability> caps = const []}) =>
@@ -9554,9 +9554,9 @@ abstract class ReadableServer extends Capability {
   @override
   Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) async {
-    final dispatchContext = context ?? DispatchContext.neverCanceled;
+    final dispatchContext = context ?? DispatchCancellationContext.neverCanceled;
     switch (interfaceId) {
       case 0xa69434bbd537a649:
         switch (methodId) {
@@ -9585,13 +9585,13 @@ class WritableClient<Value> extends Capability {
   Capability get capability => _cap;
 
   Future<WritableWriteResultsReader> write(void Function(WritableWriteParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xd4bab7c88d024c5e, 0, (anyPtr) => build(anyPtr.initStruct(writableWriteParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xd4bab7c88d024c5e, 0, (anyPtr) => build(anyPtr.initStruct(writableWriteParamsFactory)));
     return result.payload.getTyped(writableWriteResultsFactory, capabilities: result.caps);
   }
 
   Future<WritableWriteResultsReader> writeTyped(AnyPointerCodec<Value> valueCodec, Value value) async {
     final typedCapabilities = <Capability>[];
-    final dispatchResult = await _cap.dispatchBuilding(0xd4bab7c88d024c5e, 0, (anyPtr) {
+    final dispatchResult = await _cap.dispatchWithParamsBuilder(0xd4bab7c88d024c5e, 0, (anyPtr) {
       final b = anyPtr.initStruct(writableWriteParamsFactory);
       b.setValueTyped(valueCodec, value, capabilities: typedCapabilities);
     }, paramsCapabilities: typedCapabilities);
@@ -9625,7 +9625,7 @@ class WritableClientFactory<Value> extends CapabilityFactory<WritableClient<Valu
 abstract class WritableServer extends Capability {
 
   Future<DispatchResult> write(WritableWriteParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> writeWithContext(WritableWriteParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> writeWithContext(WritableWriteParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       write(params, paramsCapabilities);
 
   DispatchResult buildWriteResults(void Function(WritableWriteResultsBuilder) build, {List<Capability> caps = const []}) =>
@@ -9644,9 +9644,9 @@ abstract class WritableServer extends Capability {
   @override
   Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) async {
-    final dispatchContext = context ?? DispatchContext.neverCanceled;
+    final dispatchContext = context ?? DispatchCancellationContext.neverCanceled;
     switch (interfaceId) {
       case 0xd4bab7c88d024c5e:
         switch (methodId) {
@@ -9675,23 +9675,23 @@ class ReadWriteClient<Value> extends Capability {
   Capability get capability => _cap;
 
   Future<ReadableReadResultsReader> read(void Function(ReadableReadParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xa69434bbd537a649, 0, (anyPtr) => build(anyPtr.initStruct(readableReadParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xa69434bbd537a649, 0, (anyPtr) => build(anyPtr.initStruct(readableReadParamsFactory)));
     return result.payload.getTyped(readableReadResultsFactory, capabilities: result.caps);
   }
 
   Future<WritableWriteResultsReader> write(void Function(WritableWriteParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xd4bab7c88d024c5e, 0, (anyPtr) => build(anyPtr.initStruct(writableWriteParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xd4bab7c88d024c5e, 0, (anyPtr) => build(anyPtr.initStruct(writableWriteParamsFactory)));
     return result.payload.getTyped(writableWriteResultsFactory, capabilities: result.caps);
   }
 
   Future<ReadWriteCompareAndSwapResultsReader> compareAndSwap(void Function(ReadWriteCompareAndSwapParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xc2108261d371f6f8, 0, (anyPtr) => build(anyPtr.initStruct(readWriteCompareAndSwapParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xc2108261d371f6f8, 0, (anyPtr) => build(anyPtr.initStruct(readWriteCompareAndSwapParamsFactory)));
     return result.payload.getTyped(readWriteCompareAndSwapResultsFactory, capabilities: result.caps);
   }
 
   Future<Value?> compareAndSwapTyped(AnyPointerCodec<Value> valueCodec, Value expected, Value replacement) async {
     final typedCapabilities = <Capability>[];
-    final dispatchResult = await _cap.dispatchBuilding(0xc2108261d371f6f8, 0, (anyPtr) {
+    final dispatchResult = await _cap.dispatchWithParamsBuilder(0xc2108261d371f6f8, 0, (anyPtr) {
       final b = anyPtr.initStruct(readWriteCompareAndSwapParamsFactory);
       b.setExpectedTyped(valueCodec, expected, capabilities: typedCapabilities);
       b.setReplacementTyped(valueCodec, replacement, capabilities: typedCapabilities);
@@ -9730,21 +9730,21 @@ class ReadWriteClientFactory<Value> extends CapabilityFactory<ReadWriteClient<Va
 abstract class ReadWriteServer extends Capability {
 
   Future<DispatchResult> read(ReadableReadParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> readWithContext(ReadableReadParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> readWithContext(ReadableReadParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       read(params, paramsCapabilities);
 
   DispatchResult buildReadResults(void Function(ReadableReadResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(readableReadResultsFactory, build, caps: caps);
 
   Future<DispatchResult> write(WritableWriteParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> writeWithContext(WritableWriteParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> writeWithContext(WritableWriteParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       write(params, paramsCapabilities);
 
   DispatchResult buildWriteResults(void Function(WritableWriteResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(writableWriteResultsFactory, build, caps: caps);
 
   Future<DispatchResult> compareAndSwap(ReadWriteCompareAndSwapParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> compareAndSwapWithContext(ReadWriteCompareAndSwapParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> compareAndSwapWithContext(ReadWriteCompareAndSwapParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       compareAndSwap(params, paramsCapabilities);
 
   DispatchResult buildCompareAndSwapResults(void Function(ReadWriteCompareAndSwapResultsBuilder) build, {List<Capability> caps = const []}) =>
@@ -9763,9 +9763,9 @@ abstract class ReadWriteServer extends Capability {
   @override
   Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) async {
-    final dispatchContext = context ?? DispatchContext.neverCanceled;
+    final dispatchContext = context ?? DispatchCancellationContext.neverCanceled;
     switch (interfaceId) {
       case 0xa69434bbd537a649:
         switch (methodId) {
@@ -9810,7 +9810,7 @@ class CursorClient<Value> extends Capability {
   Capability get capability => _cap;
 
   Future<CursorNextResultsReader> next(void Function(CursorNextParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0x8384e36911992a84, 0, (anyPtr) => build(anyPtr.initStruct(cursorNextParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0x8384e36911992a84, 0, (anyPtr) => build(anyPtr.initStruct(cursorNextParamsFactory)));
     return result.payload.getTyped(cursorNextResultsFactory, capabilities: result.caps);
   }
 
@@ -9840,7 +9840,7 @@ class CursorClientFactory<Value> extends CapabilityFactory<CursorClient<Value>> 
 abstract class CursorServer extends Capability {
 
   Future<DispatchResult> next(CursorNextParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> nextWithContext(CursorNextParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> nextWithContext(CursorNextParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       next(params, paramsCapabilities);
 
   DispatchResult buildNextResults(void Function(CursorNextResultsBuilder) build, {List<Capability> caps = const []}) =>
@@ -9859,9 +9859,9 @@ abstract class CursorServer extends Capability {
   @override
   Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) async {
-    final dispatchContext = context ?? DispatchContext.neverCanceled;
+    final dispatchContext = context ?? DispatchCancellationContext.neverCanceled;
     switch (interfaceId) {
       case 0x8384e36911992a84:
         switch (methodId) {
@@ -9926,13 +9926,13 @@ class RepositoryClient<Key, Value> extends Capability {
   Capability get capability => _cap;
 
   Future<RepositoryGetResultsReader> get(void Function(RepositoryGetParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xff065518e00ba453, 0, (anyPtr) => build(anyPtr.initStruct(repositoryGetParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xff065518e00ba453, 0, (anyPtr) => build(anyPtr.initStruct(repositoryGetParamsFactory)));
     return result.payload.getTyped(repositoryGetResultsFactory, capabilities: result.caps);
   }
 
   Future<RepositoryGetResultsReader> getTyped(AnyPointerCodec<Key> keyCodec, Key key) async {
     final typedCapabilities = <Capability>[];
-    final dispatchResult = await _cap.dispatchBuilding(0xff065518e00ba453, 0, (anyPtr) {
+    final dispatchResult = await _cap.dispatchWithParamsBuilder(0xff065518e00ba453, 0, (anyPtr) {
       final b = anyPtr.initStruct(repositoryGetParamsFactory);
       b.setKeyTyped(keyCodec, key, capabilities: typedCapabilities);
     }, paramsCapabilities: typedCapabilities);
@@ -9941,13 +9941,13 @@ class RepositoryClient<Key, Value> extends Capability {
   }
 
   Future<RepositoryPutResultsReader> put(void Function(RepositoryPutParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xff065518e00ba453, 1, (anyPtr) => build(anyPtr.initStruct(repositoryPutParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xff065518e00ba453, 1, (anyPtr) => build(anyPtr.initStruct(repositoryPutParamsFactory)));
     return result.payload.getTyped(repositoryPutResultsFactory, capabilities: result.caps);
   }
 
   Future<RepositoryPutResultsReader> putTyped(AnyPointerCodec<Key> keyCodec, AnyPointerCodec<Value> valueCodec, Key key, Value value) async {
     final typedCapabilities = <Capability>[];
-    final dispatchResult = await _cap.dispatchBuilding(0xff065518e00ba453, 1, (anyPtr) {
+    final dispatchResult = await _cap.dispatchWithParamsBuilder(0xff065518e00ba453, 1, (anyPtr) {
       final b = anyPtr.initStruct(repositoryPutParamsFactory);
       b.setKeyTyped(keyCodec, key, capabilities: typedCapabilities);
       b.setValueTyped(valueCodec, value, capabilities: typedCapabilities);
@@ -9957,13 +9957,13 @@ class RepositoryClient<Key, Value> extends Capability {
   }
 
   Future<RepositoryRemoveResultsReader> remove(void Function(RepositoryRemoveParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xff065518e00ba453, 2, (anyPtr) => build(anyPtr.initStruct(repositoryRemoveParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xff065518e00ba453, 2, (anyPtr) => build(anyPtr.initStruct(repositoryRemoveParamsFactory)));
     return result.payload.getTyped(repositoryRemoveResultsFactory, capabilities: result.caps);
   }
 
   Future<RepositoryRemoveResultsReader> removeTyped(AnyPointerCodec<Key> keyCodec, Key key) async {
     final typedCapabilities = <Capability>[];
-    final dispatchResult = await _cap.dispatchBuilding(0xff065518e00ba453, 2, (anyPtr) {
+    final dispatchResult = await _cap.dispatchWithParamsBuilder(0xff065518e00ba453, 2, (anyPtr) {
       final b = anyPtr.initStruct(repositoryRemoveParamsFactory);
       b.setKeyTyped(keyCodec, key, capabilities: typedCapabilities);
     }, paramsCapabilities: typedCapabilities);
@@ -9972,12 +9972,12 @@ class RepositoryClient<Key, Value> extends Capability {
   }
 
   Future<RepositoryListResultsReader> list(void Function(RepositoryListParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xff065518e00ba453, 3, (anyPtr) => build(anyPtr.initStruct(repositoryListParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xff065518e00ba453, 3, (anyPtr) => build(anyPtr.initStruct(repositoryListParamsFactory)));
     return result.payload.getTyped(repositoryListResultsFactory, capabilities: result.caps);
   }
 
   Future<RepositoryOpenCursorResult> openCursor(void Function(RepositoryOpenCursorParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xff065518e00ba453, 4, (anyPtr) => build(anyPtr.initStruct(repositoryOpenCursorParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xff065518e00ba453, 4, (anyPtr) => build(anyPtr.initStruct(repositoryOpenCursorParamsFactory)));
     return RepositoryOpenCursorResult._(result);
   }
 
@@ -9988,7 +9988,7 @@ class RepositoryClient<Key, Value> extends Capability {
   }
 
   Future<RepositoryWatchResult> watch(void Function(RepositoryWatchParamsBuilder) build, {required Capability observer}) async {
-    final result = await _cap.dispatchBuilding(0xff065518e00ba453, 5, (anyPtr) {
+    final result = await _cap.dispatchWithParamsBuilder(0xff065518e00ba453, 5, (anyPtr) {
       final b = anyPtr.initStruct(repositoryWatchParamsFactory);
       b.setObserver(0);
       build(b);
@@ -10060,42 +10060,42 @@ class RepositoryClientFactory<Key, Value> extends CapabilityFactory<RepositoryCl
 abstract class RepositoryServer extends Capability {
 
   Future<DispatchResult> get(RepositoryGetParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> getWithContext(RepositoryGetParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> getWithContext(RepositoryGetParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       get(params, paramsCapabilities);
 
   DispatchResult buildGetResults(void Function(RepositoryGetResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(repositoryGetResultsFactory, build, caps: caps);
 
   Future<DispatchResult> put(RepositoryPutParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> putWithContext(RepositoryPutParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> putWithContext(RepositoryPutParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       put(params, paramsCapabilities);
 
   DispatchResult buildPutResults(void Function(RepositoryPutResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(repositoryPutResultsFactory, build, caps: caps);
 
   Future<DispatchResult> remove(RepositoryRemoveParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> removeWithContext(RepositoryRemoveParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> removeWithContext(RepositoryRemoveParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       remove(params, paramsCapabilities);
 
   DispatchResult buildRemoveResults(void Function(RepositoryRemoveResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(repositoryRemoveResultsFactory, build, caps: caps);
 
   Future<DispatchResult> list(RepositoryListParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> listWithContext(RepositoryListParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> listWithContext(RepositoryListParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       list(params, paramsCapabilities);
 
   DispatchResult buildListResults(void Function(RepositoryListResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(repositoryListResultsFactory, build, caps: caps);
 
   Future<DispatchResult> openCursor(RepositoryOpenCursorParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> openCursorWithContext(RepositoryOpenCursorParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> openCursorWithContext(RepositoryOpenCursorParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       openCursor(params, paramsCapabilities);
 
   DispatchResult buildOpenCursorResults(void Function(RepositoryOpenCursorResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(repositoryOpenCursorResultsFactory, build, caps: caps);
 
   Future<DispatchResult> watch(RepositoryWatchParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> watchWithContext(RepositoryWatchParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> watchWithContext(RepositoryWatchParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       watch(params, paramsCapabilities);
 
   DispatchResult buildWatchResults(void Function(RepositoryWatchResultsBuilder) build, {List<Capability> caps = const []}) =>
@@ -10114,9 +10114,9 @@ abstract class RepositoryServer extends Capability {
   @override
   Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) async {
-    final dispatchContext = context ?? DispatchContext.neverCanceled;
+    final dispatchContext = context ?? DispatchCancellationContext.neverCanceled;
     switch (interfaceId) {
       case 0xff065518e00ba453:
         switch (methodId) {
@@ -10166,12 +10166,12 @@ class ByteSinkClient extends Capability {
   }
 
   Future<ByteSinkFinishResultsReader> finish(void Function(ByteSinkFinishParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xbef98c1dd8be91de, 1, (anyPtr) => build(anyPtr.initStruct(byteSinkFinishParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xbef98c1dd8be91de, 1, (anyPtr) => build(anyPtr.initStruct(byteSinkFinishParamsFactory)));
     return result.payload.getTyped(byteSinkFinishResultsFactory, capabilities: result.caps);
   }
 
   Future<ByteSinkAbortResultsReader> abort(void Function(ByteSinkAbortParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xbef98c1dd8be91de, 2, (anyPtr) => build(anyPtr.initStruct(byteSinkAbortParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xbef98c1dd8be91de, 2, (anyPtr) => build(anyPtr.initStruct(byteSinkAbortParamsFactory)));
     return result.payload.getTyped(byteSinkAbortResultsFactory, capabilities: result.caps);
   }
 
@@ -10213,18 +10213,18 @@ class ByteSinkClientFactory extends CapabilityFactory<ByteSinkClient> {
 abstract class ByteSinkServer extends Capability {
 
   Future<void> write(ByteSinkWriteParamsReader params, List<Capability> paramsCapabilities);
-  Future<void> writeWithContext(ByteSinkWriteParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<void> writeWithContext(ByteSinkWriteParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       write(params, paramsCapabilities);
 
   Future<DispatchResult> finish(ByteSinkFinishParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> finishWithContext(ByteSinkFinishParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> finishWithContext(ByteSinkFinishParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       finish(params, paramsCapabilities);
 
   DispatchResult buildFinishResults(void Function(ByteSinkFinishResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(byteSinkFinishResultsFactory, build, caps: caps);
 
   Future<void> abort(ByteSinkAbortParamsReader params, List<Capability> paramsCapabilities);
-  Future<void> abortWithContext(ByteSinkAbortParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<void> abortWithContext(ByteSinkAbortParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       abort(params, paramsCapabilities);
 
   @override
@@ -10240,9 +10240,9 @@ abstract class ByteSinkServer extends Capability {
   @override
   Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) async {
-    final dispatchContext = context ?? DispatchContext.neverCanceled;
+    final dispatchContext = context ?? DispatchCancellationContext.neverCanceled;
     switch (interfaceId) {
       case 0xbef98c1dd8be91de:
         switch (methodId) {
@@ -10279,7 +10279,7 @@ class ByteSourceClient extends Capability {
   Capability get capability => _cap;
 
   Future<ByteSourcePumpToResultsReader> pumpTo(void Function(ByteSourcePumpToParamsBuilder) build, {required Capability sink}) async {
-    final result = await _cap.dispatchBuilding(0x8a2b2ec8ae50b170, 0, (anyPtr) {
+    final result = await _cap.dispatchWithParamsBuilder(0x8a2b2ec8ae50b170, 0, (anyPtr) {
       final b = anyPtr.initStruct(byteSourcePumpToParamsFactory);
       b.setSink(0);
       build(b);
@@ -10313,7 +10313,7 @@ class ByteSourceClientFactory extends CapabilityFactory<ByteSourceClient> {
 abstract class ByteSourceServer extends Capability {
 
   Future<DispatchResult> pumpTo(ByteSourcePumpToParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> pumpToWithContext(ByteSourcePumpToParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> pumpToWithContext(ByteSourcePumpToParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       pumpTo(params, paramsCapabilities);
 
   DispatchResult buildPumpToResults(void Function(ByteSourcePumpToResultsBuilder) build, {List<Capability> caps = const []}) =>
@@ -10332,9 +10332,9 @@ abstract class ByteSourceServer extends Capability {
   @override
   Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) async {
-    final dispatchContext = context ?? DispatchContext.neverCanceled;
+    final dispatchContext = context ?? DispatchCancellationContext.neverCanceled;
     switch (interfaceId) {
       case 0x8a2b2ec8ae50b170:
         switch (methodId) {
@@ -10417,7 +10417,7 @@ class CapabilityFactoryClient extends Capability {
   Capability get capability => _cap;
 
   Future<CapabilityFactoryNewCellResult> newCell(void Function(CapabilityFactoryNewCellParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xccad478715fb03b0, 0, (anyPtr) => build(anyPtr.initStruct(capabilityFactoryNewCellParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xccad478715fb03b0, 0, (anyPtr) => build(anyPtr.initStruct(capabilityFactoryNewCellParamsFactory)));
     return CapabilityFactoryNewCellResult._(result);
   }
 
@@ -10429,7 +10429,7 @@ class CapabilityFactoryClient extends Capability {
 
   Future<CapabilityFactoryNewCellResult> newCellTyped<Value>(AnyPointerCodec<Value> valueCodec, Value initialValue) async {
     final typedCapabilities = <Capability>[];
-    final dispatchResult = await _cap.dispatchBuilding(0xccad478715fb03b0, 0, (anyPtr) {
+    final dispatchResult = await _cap.dispatchWithParamsBuilder(0xccad478715fb03b0, 0, (anyPtr) {
       final b = anyPtr.initStruct(capabilityFactoryNewCellParamsFactory);
       b.setInitialValueTyped(valueCodec, initialValue, capabilities: typedCapabilities);
     }, paramsCapabilities: typedCapabilities);
@@ -10445,7 +10445,7 @@ class CapabilityFactoryClient extends Capability {
   }
 
   Future<CapabilityFactoryNewEmptyCellResult> newEmptyCell(void Function(CapabilityFactoryNewEmptyCellParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xccad478715fb03b0, 1, (anyPtr) => build(anyPtr.initStruct(capabilityFactoryNewEmptyCellParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xccad478715fb03b0, 1, (anyPtr) => build(anyPtr.initStruct(capabilityFactoryNewEmptyCellParamsFactory)));
     return CapabilityFactoryNewEmptyCellResult._(result);
   }
 
@@ -10457,7 +10457,7 @@ class CapabilityFactoryClient extends Capability {
 
   Future<CapabilityFactoryNewEmptyCellResult> newEmptyCellTyped<Value>() async {
     final typedCapabilities = <Capability>[];
-    final dispatchResult = await _cap.dispatchBuilding(0xccad478715fb03b0, 1, (anyPtr) {
+    final dispatchResult = await _cap.dispatchWithParamsBuilder(0xccad478715fb03b0, 1, (anyPtr) {
       final b = anyPtr.initStruct(capabilityFactoryNewEmptyCellParamsFactory);
     }, paramsCapabilities: typedCapabilities);
     return CapabilityFactoryNewEmptyCellResult._(dispatchResult);
@@ -10471,7 +10471,7 @@ class CapabilityFactoryClient extends Capability {
   }
 
   Future<CapabilityFactoryNewRepositoryResult> newRepository(void Function(CapabilityFactoryNewRepositoryParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xccad478715fb03b0, 2, (anyPtr) => build(anyPtr.initStruct(capabilityFactoryNewRepositoryParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xccad478715fb03b0, 2, (anyPtr) => build(anyPtr.initStruct(capabilityFactoryNewRepositoryParamsFactory)));
     return CapabilityFactoryNewRepositoryResult._(result);
   }
 
@@ -10483,7 +10483,7 @@ class CapabilityFactoryClient extends Capability {
 
   Future<CapabilityFactoryNewRepositoryResult> newRepositoryTyped<Key, Value>() async {
     final typedCapabilities = <Capability>[];
-    final dispatchResult = await _cap.dispatchBuilding(0xccad478715fb03b0, 2, (anyPtr) {
+    final dispatchResult = await _cap.dispatchWithParamsBuilder(0xccad478715fb03b0, 2, (anyPtr) {
       final b = anyPtr.initStruct(capabilityFactoryNewRepositoryParamsFactory);
     }, paramsCapabilities: typedCapabilities);
     return CapabilityFactoryNewRepositoryResult._(dispatchResult);
@@ -10497,13 +10497,13 @@ class CapabilityFactoryClient extends Capability {
   }
 
   Future<CapabilityFactoryEchoCapabilityResultsReader> echoCapability(void Function(CapabilityFactoryEchoCapabilityParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xccad478715fb03b0, 3, (anyPtr) => build(anyPtr.initStruct(capabilityFactoryEchoCapabilityParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xccad478715fb03b0, 3, (anyPtr) => build(anyPtr.initStruct(capabilityFactoryEchoCapabilityParamsFactory)));
     return result.payload.getTyped(capabilityFactoryEchoCapabilityResultsFactory, capabilities: result.caps);
   }
 
   Future<Cap?> echoCapabilityTyped<Cap>(AnyPointerCodec<Cap> capCodec, Cap capability) async {
     final typedCapabilities = <Capability>[];
-    final dispatchResult = await _cap.dispatchBuilding(0xccad478715fb03b0, 3, (anyPtr) {
+    final dispatchResult = await _cap.dispatchWithParamsBuilder(0xccad478715fb03b0, 3, (anyPtr) {
       final b = anyPtr.initStruct(capabilityFactoryEchoCapabilityParamsFactory);
       b.setCapabilityTyped(capCodec, capability, capabilities: typedCapabilities);
     }, paramsCapabilities: typedCapabilities);
@@ -10512,7 +10512,7 @@ class CapabilityFactoryClient extends Capability {
   }
 
   Future<CapabilityFactoryGetUntypedResultsReader> getUntyped(void Function(CapabilityFactoryGetUntypedParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xccad478715fb03b0, 4, (anyPtr) => build(anyPtr.initStruct(capabilityFactoryGetUntypedParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xccad478715fb03b0, 4, (anyPtr) => build(anyPtr.initStruct(capabilityFactoryGetUntypedParamsFactory)));
     return result.payload.getTyped(capabilityFactoryGetUntypedResultsFactory, capabilities: result.caps);
   }
 
@@ -10566,35 +10566,35 @@ class CapabilityFactoryClientFactory extends CapabilityFactory<CapabilityFactory
 abstract class CapabilityFactoryServer extends Capability {
 
   Future<DispatchResult> newCell(CapabilityFactoryNewCellParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> newCellWithContext(CapabilityFactoryNewCellParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> newCellWithContext(CapabilityFactoryNewCellParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       newCell(params, paramsCapabilities);
 
   DispatchResult buildNewCellResults(void Function(CapabilityFactoryNewCellResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(capabilityFactoryNewCellResultsFactory, build, caps: caps);
 
   Future<DispatchResult> newEmptyCell(CapabilityFactoryNewEmptyCellParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> newEmptyCellWithContext(CapabilityFactoryNewEmptyCellParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> newEmptyCellWithContext(CapabilityFactoryNewEmptyCellParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       newEmptyCell(params, paramsCapabilities);
 
   DispatchResult buildNewEmptyCellResults(void Function(CapabilityFactoryNewEmptyCellResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(capabilityFactoryNewEmptyCellResultsFactory, build, caps: caps);
 
   Future<DispatchResult> newRepository(CapabilityFactoryNewRepositoryParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> newRepositoryWithContext(CapabilityFactoryNewRepositoryParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> newRepositoryWithContext(CapabilityFactoryNewRepositoryParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       newRepository(params, paramsCapabilities);
 
   DispatchResult buildNewRepositoryResults(void Function(CapabilityFactoryNewRepositoryResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(capabilityFactoryNewRepositoryResultsFactory, build, caps: caps);
 
   Future<DispatchResult> echoCapability(CapabilityFactoryEchoCapabilityParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> echoCapabilityWithContext(CapabilityFactoryEchoCapabilityParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> echoCapabilityWithContext(CapabilityFactoryEchoCapabilityParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       echoCapability(params, paramsCapabilities);
 
   DispatchResult buildEchoCapabilityResults(void Function(CapabilityFactoryEchoCapabilityResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(capabilityFactoryEchoCapabilityResultsFactory, build, caps: caps);
 
   Future<DispatchResult> getUntyped(CapabilityFactoryGetUntypedParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> getUntypedWithContext(CapabilityFactoryGetUntypedParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> getUntypedWithContext(CapabilityFactoryGetUntypedParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       getUntyped(params, paramsCapabilities);
 
   DispatchResult buildGetUntypedResults(void Function(CapabilityFactoryGetUntypedResultsBuilder) build, {List<Capability> caps = const []}) =>
@@ -10613,9 +10613,9 @@ abstract class CapabilityFactoryServer extends Capability {
   @override
   Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) async {
-    final dispatchContext = context ?? DispatchContext.neverCanceled;
+    final dispatchContext = context ?? DispatchCancellationContext.neverCanceled;
     switch (interfaceId) {
       case 0xccad478715fb03b0:
         switch (methodId) {
@@ -10656,7 +10656,7 @@ class ParentClient extends Capability {
   Capability get capability => _cap;
 
   Future<ParentGetNameResultsReader> getName(void Function(ParentGetNameParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0x882e0e49903e08ff, 0, (anyPtr) => build(anyPtr.initStruct(parentGetNameParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0x882e0e49903e08ff, 0, (anyPtr) => build(anyPtr.initStruct(parentGetNameParamsFactory)));
     return result.payload.getTyped(parentGetNameResultsFactory, capabilities: result.caps);
   }
 
@@ -10686,7 +10686,7 @@ class ParentClientFactory extends CapabilityFactory<ParentClient> {
 abstract class ParentServer extends Capability {
 
   Future<DispatchResult> getName(ParentGetNameParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> getNameWithContext(ParentGetNameParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> getNameWithContext(ParentGetNameParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       getName(params, paramsCapabilities);
 
   DispatchResult buildGetNameResults(void Function(ParentGetNameResultsBuilder) build, {List<Capability> caps = const []}) =>
@@ -10705,9 +10705,9 @@ abstract class ParentServer extends Capability {
   @override
   Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) async {
-    final dispatchContext = context ?? DispatchContext.neverCanceled;
+    final dispatchContext = context ?? DispatchCancellationContext.neverCanceled;
     switch (interfaceId) {
       case 0x882e0e49903e08ff:
         switch (methodId) {
@@ -10736,12 +10736,12 @@ class LeftClient extends Capability {
   Capability get capability => _cap;
 
   Future<ParentGetNameResultsReader> getName(void Function(ParentGetNameParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0x882e0e49903e08ff, 0, (anyPtr) => build(anyPtr.initStruct(parentGetNameParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0x882e0e49903e08ff, 0, (anyPtr) => build(anyPtr.initStruct(parentGetNameParamsFactory)));
     return result.payload.getTyped(parentGetNameResultsFactory, capabilities: result.caps);
   }
 
   Future<LeftLeftResultsReader> left(void Function(LeftLeftParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xdc9405e2c5728627, 0, (anyPtr) => build(anyPtr.initStruct(leftLeftParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xdc9405e2c5728627, 0, (anyPtr) => build(anyPtr.initStruct(leftLeftParamsFactory)));
     return result.payload.getTyped(leftLeftResultsFactory, capabilities: result.caps);
   }
 
@@ -10774,14 +10774,14 @@ class LeftClientFactory extends CapabilityFactory<LeftClient> {
 abstract class LeftServer extends Capability {
 
   Future<DispatchResult> getName(ParentGetNameParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> getNameWithContext(ParentGetNameParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> getNameWithContext(ParentGetNameParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       getName(params, paramsCapabilities);
 
   DispatchResult buildGetNameResults(void Function(ParentGetNameResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(parentGetNameResultsFactory, build, caps: caps);
 
   Future<DispatchResult> left(LeftLeftParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> leftWithContext(LeftLeftParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> leftWithContext(LeftLeftParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       left(params, paramsCapabilities);
 
   DispatchResult buildLeftResults(void Function(LeftLeftResultsBuilder) build, {List<Capability> caps = const []}) =>
@@ -10800,9 +10800,9 @@ abstract class LeftServer extends Capability {
   @override
   Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) async {
-    final dispatchContext = context ?? DispatchContext.neverCanceled;
+    final dispatchContext = context ?? DispatchCancellationContext.neverCanceled;
     switch (interfaceId) {
       case 0x882e0e49903e08ff:
         switch (methodId) {
@@ -10839,12 +10839,12 @@ class RightClient extends Capability {
   Capability get capability => _cap;
 
   Future<ParentGetNameResultsReader> getName(void Function(ParentGetNameParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0x882e0e49903e08ff, 0, (anyPtr) => build(anyPtr.initStruct(parentGetNameParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0x882e0e49903e08ff, 0, (anyPtr) => build(anyPtr.initStruct(parentGetNameParamsFactory)));
     return result.payload.getTyped(parentGetNameResultsFactory, capabilities: result.caps);
   }
 
   Future<RightRightResultsReader> right(void Function(RightRightParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xc43c47560508dc7d, 0, (anyPtr) => build(anyPtr.initStruct(rightRightParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xc43c47560508dc7d, 0, (anyPtr) => build(anyPtr.initStruct(rightRightParamsFactory)));
     return result.payload.getTyped(rightRightResultsFactory, capabilities: result.caps);
   }
 
@@ -10877,14 +10877,14 @@ class RightClientFactory extends CapabilityFactory<RightClient> {
 abstract class RightServer extends Capability {
 
   Future<DispatchResult> getName(ParentGetNameParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> getNameWithContext(ParentGetNameParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> getNameWithContext(ParentGetNameParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       getName(params, paramsCapabilities);
 
   DispatchResult buildGetNameResults(void Function(ParentGetNameResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(parentGetNameResultsFactory, build, caps: caps);
 
   Future<DispatchResult> right(RightRightParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> rightWithContext(RightRightParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> rightWithContext(RightRightParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       right(params, paramsCapabilities);
 
   DispatchResult buildRightResults(void Function(RightRightResultsBuilder) build, {List<Capability> caps = const []}) =>
@@ -10903,9 +10903,9 @@ abstract class RightServer extends Capability {
   @override
   Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) async {
-    final dispatchContext = context ?? DispatchContext.neverCanceled;
+    final dispatchContext = context ?? DispatchCancellationContext.neverCanceled;
     switch (interfaceId) {
       case 0x882e0e49903e08ff:
         switch (methodId) {
@@ -10942,22 +10942,22 @@ class DiamondClient extends Capability {
   Capability get capability => _cap;
 
   Future<ParentGetNameResultsReader> getName(void Function(ParentGetNameParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0x882e0e49903e08ff, 0, (anyPtr) => build(anyPtr.initStruct(parentGetNameParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0x882e0e49903e08ff, 0, (anyPtr) => build(anyPtr.initStruct(parentGetNameParamsFactory)));
     return result.payload.getTyped(parentGetNameResultsFactory, capabilities: result.caps);
   }
 
   Future<LeftLeftResultsReader> left(void Function(LeftLeftParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xdc9405e2c5728627, 0, (anyPtr) => build(anyPtr.initStruct(leftLeftParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xdc9405e2c5728627, 0, (anyPtr) => build(anyPtr.initStruct(leftLeftParamsFactory)));
     return result.payload.getTyped(leftLeftResultsFactory, capabilities: result.caps);
   }
 
   Future<RightRightResultsReader> right(void Function(RightRightParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xc43c47560508dc7d, 0, (anyPtr) => build(anyPtr.initStruct(rightRightParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xc43c47560508dc7d, 0, (anyPtr) => build(anyPtr.initStruct(rightRightParamsFactory)));
     return result.payload.getTyped(rightRightResultsFactory, capabilities: result.caps);
   }
 
   Future<DiamondBothResultsReader> both(void Function(DiamondBothParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xdbf219de6a215361, 0, (anyPtr) => build(anyPtr.initStruct(diamondBothParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xdbf219de6a215361, 0, (anyPtr) => build(anyPtr.initStruct(diamondBothParamsFactory)));
     return result.payload.getTyped(diamondBothResultsFactory, capabilities: result.caps);
   }
 
@@ -10991,28 +10991,28 @@ class DiamondClientFactory extends CapabilityFactory<DiamondClient> {
 abstract class DiamondServer extends Capability {
 
   Future<DispatchResult> getName(ParentGetNameParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> getNameWithContext(ParentGetNameParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> getNameWithContext(ParentGetNameParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       getName(params, paramsCapabilities);
 
   DispatchResult buildGetNameResults(void Function(ParentGetNameResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(parentGetNameResultsFactory, build, caps: caps);
 
   Future<DispatchResult> left(LeftLeftParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> leftWithContext(LeftLeftParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> leftWithContext(LeftLeftParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       left(params, paramsCapabilities);
 
   DispatchResult buildLeftResults(void Function(LeftLeftResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(leftLeftResultsFactory, build, caps: caps);
 
   Future<DispatchResult> right(RightRightParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> rightWithContext(RightRightParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> rightWithContext(RightRightParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       right(params, paramsCapabilities);
 
   DispatchResult buildRightResults(void Function(RightRightResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(rightRightResultsFactory, build, caps: caps);
 
   Future<DispatchResult> both(DiamondBothParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> bothWithContext(DiamondBothParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> bothWithContext(DiamondBothParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       both(params, paramsCapabilities);
 
   DispatchResult buildBothResults(void Function(DiamondBothResultsBuilder) build, {List<Capability> caps = const []}) =>
@@ -11031,9 +11031,9 @@ abstract class DiamondServer extends Capability {
   @override
   Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) async {
-    final dispatchContext = context ?? DispatchContext.neverCanceled;
+    final dispatchContext = context ?? DispatchCancellationContext.neverCanceled;
     switch (interfaceId) {
       case 0x882e0e49903e08ff:
         switch (methodId) {
@@ -11122,7 +11122,7 @@ class PipelineTargetClient extends Capability {
   Capability get capability => _cap;
 
   Future<PipelineTargetGetChildResult> getChild(void Function(PipelineTargetGetChildParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xe211443879f3b6bb, 0, (anyPtr) => build(anyPtr.initStruct(pipelineTargetGetChildParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xe211443879f3b6bb, 0, (anyPtr) => build(anyPtr.initStruct(pipelineTargetGetChildParamsFactory)));
     return PipelineTargetGetChildResult._(result);
   }
 
@@ -11133,7 +11133,7 @@ class PipelineTargetClient extends Capability {
   }
 
   Future<PipelineTargetGetRepositoryResult> getRepository(void Function(PipelineTargetGetRepositoryParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xe211443879f3b6bb, 1, (anyPtr) => build(anyPtr.initStruct(pipelineTargetGetRepositoryParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xe211443879f3b6bb, 1, (anyPtr) => build(anyPtr.initStruct(pipelineTargetGetRepositoryParamsFactory)));
     return PipelineTargetGetRepositoryResult._(result);
   }
 
@@ -11144,7 +11144,7 @@ class PipelineTargetClient extends Capability {
   }
 
   Future<PipelineTargetPingResultsReader> ping(void Function(PipelineTargetPingParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xe211443879f3b6bb, 2, (anyPtr) => build(anyPtr.initStruct(pipelineTargetPingParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xe211443879f3b6bb, 2, (anyPtr) => build(anyPtr.initStruct(pipelineTargetPingParamsFactory)));
     return result.payload.getTyped(pipelineTargetPingResultsFactory, capabilities: result.caps);
   }
 
@@ -11186,21 +11186,21 @@ class PipelineTargetClientFactory extends CapabilityFactory<PipelineTargetClient
 abstract class PipelineTargetServer extends Capability {
 
   Future<DispatchResult> getChild(PipelineTargetGetChildParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> getChildWithContext(PipelineTargetGetChildParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> getChildWithContext(PipelineTargetGetChildParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       getChild(params, paramsCapabilities);
 
   DispatchResult buildGetChildResults(void Function(PipelineTargetGetChildResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(pipelineTargetGetChildResultsFactory, build, caps: caps);
 
   Future<DispatchResult> getRepository(PipelineTargetGetRepositoryParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> getRepositoryWithContext(PipelineTargetGetRepositoryParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> getRepositoryWithContext(PipelineTargetGetRepositoryParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       getRepository(params, paramsCapabilities);
 
   DispatchResult buildGetRepositoryResults(void Function(PipelineTargetGetRepositoryResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(pipelineTargetGetRepositoryResultsFactory, build, caps: caps);
 
   Future<DispatchResult> ping(PipelineTargetPingParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> pingWithContext(PipelineTargetPingParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> pingWithContext(PipelineTargetPingParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       ping(params, paramsCapabilities);
 
   DispatchResult buildPingResults(void Function(PipelineTargetPingResultsBuilder) build, {List<Capability> caps = const []}) =>
@@ -11219,9 +11219,9 @@ abstract class PipelineTargetServer extends Capability {
   @override
   Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) async {
-    final dispatchContext = context ?? DispatchContext.neverCanceled;
+    final dispatchContext = context ?? DispatchCancellationContext.neverCanceled;
     switch (interfaceId) {
       case 0xe211443879f3b6bb:
         switch (methodId) {
@@ -11415,7 +11415,7 @@ class ComplexTestServiceClient extends Capability {
 
   Future<ComplexTestServiceEchoResultsReader> echo(void Function(ComplexTestServiceEchoParamsBuilder, CapabilityTableBuilder capTable) build) async {
     final capTable = CapabilityTableBuilder();
-    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 0, (anyPtr) => build(anyPtr.initStruct(complexTestServiceEchoParamsFactory), capTable), paramsCapabilities: capTable.capabilities);
+    final result = await _cap.dispatchWithParamsBuilder(0xd7fb0472c16375ee, 0, (anyPtr) => build(anyPtr.initStruct(complexTestServiceEchoParamsFactory), capTable), paramsCapabilities: capTable.capabilities);
     return result.payload.getTyped(complexTestServiceEchoResultsFactory, capabilities: result.caps);
   }
 
@@ -11427,28 +11427,28 @@ class ComplexTestServiceClient extends Capability {
   }
 
   Future<ComplexTestServiceEchoScalarsResultsReader> echoScalars(void Function(ComplexTestServiceEchoScalarsParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 1, (anyPtr) => build(anyPtr.initStruct(complexTestServiceEchoScalarsParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xd7fb0472c16375ee, 1, (anyPtr) => build(anyPtr.initStruct(complexTestServiceEchoScalarsParamsFactory)));
     return result.payload.getTyped(complexTestServiceEchoScalarsResultsFactory, capabilities: result.caps);
   }
 
   Future<ComplexTestServiceEchoListsResultsReader> echoLists(void Function(ComplexTestServiceEchoListsParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 2, (anyPtr) => build(anyPtr.initStruct(complexTestServiceEchoListsParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xd7fb0472c16375ee, 2, (anyPtr) => build(anyPtr.initStruct(complexTestServiceEchoListsParamsFactory)));
     return result.payload.getTyped(complexTestServiceEchoListsResultsFactory, capabilities: result.caps);
   }
 
   Future<ComplexTestServiceEchoUnionResultsReader> echoUnion(void Function(ComplexTestServiceEchoUnionParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 3, (anyPtr) => build(anyPtr.initStruct(complexTestServiceEchoUnionParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xd7fb0472c16375ee, 3, (anyPtr) => build(anyPtr.initStruct(complexTestServiceEchoUnionParamsFactory)));
     return result.payload.getTyped(complexTestServiceEchoUnionResultsFactory, capabilities: result.caps);
   }
 
   Future<ComplexTestServiceEchoAnyPointerResultsReader> echoAnyPointer(void Function(ComplexTestServiceEchoAnyPointerParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 4, (anyPtr) => build(anyPtr.initStruct(complexTestServiceEchoAnyPointerParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xd7fb0472c16375ee, 4, (anyPtr) => build(anyPtr.initStruct(complexTestServiceEchoAnyPointerParamsFactory)));
     return result.payload.getTyped(complexTestServiceEchoAnyPointerResultsFactory, capabilities: result.caps);
   }
 
   Future<Value?> echoAnyPointerTyped<Value>(AnyPointerCodec<Value> valueCodec, Value value) async {
     final typedCapabilities = <Capability>[];
-    final dispatchResult = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 4, (anyPtr) {
+    final dispatchResult = await _cap.dispatchWithParamsBuilder(0xd7fb0472c16375ee, 4, (anyPtr) {
       final b = anyPtr.initStruct(complexTestServiceEchoAnyPointerParamsFactory);
       b.setValueTyped(valueCodec, value, capabilities: typedCapabilities);
     }, paramsCapabilities: typedCapabilities);
@@ -11458,7 +11458,7 @@ class ComplexTestServiceClient extends Capability {
 
   Future<ComplexTestServiceExchangeCapabilitiesResultsReader> exchangeCapabilities(void Function(ComplexTestServiceExchangeCapabilitiesParamsBuilder, CapabilityTableBuilder capTable) build) async {
     final capTable = CapabilityTableBuilder();
-    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 5, (anyPtr) => build(anyPtr.initStruct(complexTestServiceExchangeCapabilitiesParamsFactory), capTable), paramsCapabilities: capTable.capabilities);
+    final result = await _cap.dispatchWithParamsBuilder(0xd7fb0472c16375ee, 5, (anyPtr) => build(anyPtr.initStruct(complexTestServiceExchangeCapabilitiesParamsFactory), capTable), paramsCapabilities: capTable.capabilities);
     return result.payload.getTyped(complexTestServiceExchangeCapabilitiesResultsFactory, capabilities: result.caps);
   }
 
@@ -11470,7 +11470,7 @@ class ComplexTestServiceClient extends Capability {
   }
 
   Future<ComplexTestServiceCallObserverResultsReader> callObserver(void Function(ComplexTestServiceCallObserverParamsBuilder) build, {required Capability observer}) async {
-    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 6, (anyPtr) {
+    final result = await _cap.dispatchWithParamsBuilder(0xd7fb0472c16375ee, 6, (anyPtr) {
       final b = anyPtr.initStruct(complexTestServiceCallObserverParamsFactory);
       b.setObserver(0);
       build(b);
@@ -11479,7 +11479,7 @@ class ComplexTestServiceClient extends Capability {
   }
 
   Future<ComplexTestServiceMakePipelineResult> makePipeline(void Function(ComplexTestServiceMakePipelineParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 7, (anyPtr) => build(anyPtr.initStruct(complexTestServiceMakePipelineParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xd7fb0472c16375ee, 7, (anyPtr) => build(anyPtr.initStruct(complexTestServiceMakePipelineParamsFactory)));
     return ComplexTestServiceMakePipelineResult._(result);
   }
 
@@ -11490,7 +11490,7 @@ class ComplexTestServiceClient extends Capability {
   }
 
   Future<ComplexTestServiceOpenUploadResult> openUpload(void Function(ComplexTestServiceOpenUploadParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 8, (anyPtr) => build(anyPtr.initStruct(complexTestServiceOpenUploadParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xd7fb0472c16375ee, 8, (anyPtr) => build(anyPtr.initStruct(complexTestServiceOpenUploadParamsFactory)));
     return ComplexTestServiceOpenUploadResult._(result);
   }
 
@@ -11501,7 +11501,7 @@ class ComplexTestServiceClient extends Capability {
   }
 
   Future<ComplexTestServiceOpenDownloadResult> openDownload(void Function(ComplexTestServiceOpenDownloadParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 9, (anyPtr) => build(anyPtr.initStruct(complexTestServiceOpenDownloadParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xd7fb0472c16375ee, 9, (anyPtr) => build(anyPtr.initStruct(complexTestServiceOpenDownloadParamsFactory)));
     return ComplexTestServiceOpenDownloadResult._(result);
   }
 
@@ -11512,7 +11512,7 @@ class ComplexTestServiceClient extends Capability {
   }
 
   Future<ComplexTestServiceGetRepositoryResult> getRepository(void Function(ComplexTestServiceGetRepositoryParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 10, (anyPtr) => build(anyPtr.initStruct(complexTestServiceGetRepositoryParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xd7fb0472c16375ee, 10, (anyPtr) => build(anyPtr.initStruct(complexTestServiceGetRepositoryParamsFactory)));
     return ComplexTestServiceGetRepositoryResult._(result);
   }
 
@@ -11523,7 +11523,7 @@ class ComplexTestServiceClient extends Capability {
   }
 
   Future<ComplexTestServiceGetFactoryResult> getFactory(void Function(ComplexTestServiceGetFactoryParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 11, (anyPtr) => build(anyPtr.initStruct(complexTestServiceGetFactoryParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xd7fb0472c16375ee, 11, (anyPtr) => build(anyPtr.initStruct(complexTestServiceGetFactoryParamsFactory)));
     return ComplexTestServiceGetFactoryResult._(result);
   }
 
@@ -11534,7 +11534,7 @@ class ComplexTestServiceClient extends Capability {
   }
 
   Future<ComplexTestServiceUseDiamondResultsReader> useDiamond(void Function(ComplexTestServiceUseDiamondParamsBuilder) build, {required Capability diamond}) async {
-    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 12, (anyPtr) {
+    final result = await _cap.dispatchWithParamsBuilder(0xd7fb0472c16375ee, 12, (anyPtr) {
       final b = anyPtr.initStruct(complexTestServiceUseDiamondParamsFactory);
       b.setDiamond(0);
       build(b);
@@ -11543,17 +11543,17 @@ class ComplexTestServiceClient extends Capability {
   }
 
   Future<ComplexTestServiceFailIntentionallyResultsReader> failIntentionally(void Function(ComplexTestServiceFailIntentionallyParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 13, (anyPtr) => build(anyPtr.initStruct(complexTestServiceFailIntentionallyParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xd7fb0472c16375ee, 13, (anyPtr) => build(anyPtr.initStruct(complexTestServiceFailIntentionallyParamsFactory)));
     return result.payload.getTyped(complexTestServiceFailIntentionallyResultsFactory, capabilities: result.caps);
   }
 
   Future<ComplexTestServiceShutdownResultsReader> shutdown(void Function(ComplexTestServiceShutdownParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 14, (anyPtr) => build(anyPtr.initStruct(complexTestServiceShutdownParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xd7fb0472c16375ee, 14, (anyPtr) => build(anyPtr.initStruct(complexTestServiceShutdownParamsFactory)));
     return result.payload.getTyped(complexTestServiceShutdownResultsFactory, capabilities: result.caps);
   }
 
   Future<ComplexTestServiceProbePipelineTargetResultsReader> probePipelineTarget(void Function(ComplexTestServiceProbePipelineTargetParamsBuilder) build, {required Capability target}) async {
-    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 15, (anyPtr) {
+    final result = await _cap.dispatchWithParamsBuilder(0xd7fb0472c16375ee, 15, (anyPtr) {
       final b = anyPtr.initStruct(complexTestServiceProbePipelineTargetParamsFactory);
       b.setTarget(0);
       build(b);
@@ -11562,7 +11562,7 @@ class ComplexTestServiceClient extends Capability {
   }
 
   Future<ComplexTestServiceMakePromisedPipelineResult> makePromisedPipeline(void Function(ComplexTestServiceMakePromisedPipelineParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 16, (anyPtr) => build(anyPtr.initStruct(complexTestServiceMakePromisedPipelineParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xd7fb0472c16375ee, 16, (anyPtr) => build(anyPtr.initStruct(complexTestServiceMakePromisedPipelineParamsFactory)));
     return ComplexTestServiceMakePromisedPipelineResult._(result);
   }
 
@@ -11573,7 +11573,7 @@ class ComplexTestServiceClient extends Capability {
   }
 
   Future<ComplexTestServiceEchoPipelineTargetLaterResult> echoPipelineTargetLater(void Function(ComplexTestServiceEchoPipelineTargetLaterParamsBuilder) build, {required Capability target}) async {
-    final result = await _cap.dispatchBuilding(0xd7fb0472c16375ee, 17, (anyPtr) {
+    final result = await _cap.dispatchWithParamsBuilder(0xd7fb0472c16375ee, 17, (anyPtr) {
       final b = anyPtr.initStruct(complexTestServiceEchoPipelineTargetLaterParamsFactory);
       b.setTarget(0);
       build(b);
@@ -11720,120 +11720,120 @@ class ComplexTestServiceClientFactory extends CapabilityFactory<ComplexTestServi
 abstract class ComplexTestServiceServer extends Capability {
 
   Future<DispatchResult> echo(ComplexTestServiceEchoParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> echoWithContext(ComplexTestServiceEchoParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> echoWithContext(ComplexTestServiceEchoParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       echo(params, paramsCapabilities);
 
   DispatchResult buildEchoResults(void Function(ComplexTestServiceEchoResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(complexTestServiceEchoResultsFactory, build, caps: caps);
 
   Future<DispatchResult> echoScalars(ComplexTestServiceEchoScalarsParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> echoScalarsWithContext(ComplexTestServiceEchoScalarsParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> echoScalarsWithContext(ComplexTestServiceEchoScalarsParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       echoScalars(params, paramsCapabilities);
 
   DispatchResult buildEchoScalarsResults(void Function(ComplexTestServiceEchoScalarsResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(complexTestServiceEchoScalarsResultsFactory, build, caps: caps);
 
   Future<DispatchResult> echoLists(ComplexTestServiceEchoListsParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> echoListsWithContext(ComplexTestServiceEchoListsParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> echoListsWithContext(ComplexTestServiceEchoListsParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       echoLists(params, paramsCapabilities);
 
   DispatchResult buildEchoListsResults(void Function(ComplexTestServiceEchoListsResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(complexTestServiceEchoListsResultsFactory, build, caps: caps);
 
   Future<DispatchResult> echoUnion(ComplexTestServiceEchoUnionParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> echoUnionWithContext(ComplexTestServiceEchoUnionParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> echoUnionWithContext(ComplexTestServiceEchoUnionParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       echoUnion(params, paramsCapabilities);
 
   DispatchResult buildEchoUnionResults(void Function(ComplexTestServiceEchoUnionResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(complexTestServiceEchoUnionResultsFactory, build, caps: caps);
 
   Future<DispatchResult> echoAnyPointer(ComplexTestServiceEchoAnyPointerParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> echoAnyPointerWithContext(ComplexTestServiceEchoAnyPointerParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> echoAnyPointerWithContext(ComplexTestServiceEchoAnyPointerParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       echoAnyPointer(params, paramsCapabilities);
 
   DispatchResult buildEchoAnyPointerResults(void Function(ComplexTestServiceEchoAnyPointerResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(complexTestServiceEchoAnyPointerResultsFactory, build, caps: caps);
 
   Future<DispatchResult> exchangeCapabilities(ComplexTestServiceExchangeCapabilitiesParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> exchangeCapabilitiesWithContext(ComplexTestServiceExchangeCapabilitiesParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> exchangeCapabilitiesWithContext(ComplexTestServiceExchangeCapabilitiesParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       exchangeCapabilities(params, paramsCapabilities);
 
   DispatchResult buildExchangeCapabilitiesResults(void Function(ComplexTestServiceExchangeCapabilitiesResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(complexTestServiceExchangeCapabilitiesResultsFactory, build, caps: caps);
 
   Future<DispatchResult> callObserver(ComplexTestServiceCallObserverParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> callObserverWithContext(ComplexTestServiceCallObserverParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> callObserverWithContext(ComplexTestServiceCallObserverParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       callObserver(params, paramsCapabilities);
 
   DispatchResult buildCallObserverResults(void Function(ComplexTestServiceCallObserverResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(complexTestServiceCallObserverResultsFactory, build, caps: caps);
 
   Future<DispatchResult> makePipeline(ComplexTestServiceMakePipelineParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> makePipelineWithContext(ComplexTestServiceMakePipelineParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> makePipelineWithContext(ComplexTestServiceMakePipelineParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       makePipeline(params, paramsCapabilities);
 
   DispatchResult buildMakePipelineResults(void Function(ComplexTestServiceMakePipelineResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(complexTestServiceMakePipelineResultsFactory, build, caps: caps);
 
   Future<DispatchResult> openUpload(ComplexTestServiceOpenUploadParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> openUploadWithContext(ComplexTestServiceOpenUploadParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> openUploadWithContext(ComplexTestServiceOpenUploadParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       openUpload(params, paramsCapabilities);
 
   DispatchResult buildOpenUploadResults(void Function(ComplexTestServiceOpenUploadResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(complexTestServiceOpenUploadResultsFactory, build, caps: caps);
 
   Future<DispatchResult> openDownload(ComplexTestServiceOpenDownloadParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> openDownloadWithContext(ComplexTestServiceOpenDownloadParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> openDownloadWithContext(ComplexTestServiceOpenDownloadParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       openDownload(params, paramsCapabilities);
 
   DispatchResult buildOpenDownloadResults(void Function(ComplexTestServiceOpenDownloadResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(complexTestServiceOpenDownloadResultsFactory, build, caps: caps);
 
   Future<DispatchResult> getRepository(ComplexTestServiceGetRepositoryParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> getRepositoryWithContext(ComplexTestServiceGetRepositoryParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> getRepositoryWithContext(ComplexTestServiceGetRepositoryParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       getRepository(params, paramsCapabilities);
 
   DispatchResult buildGetRepositoryResults(void Function(ComplexTestServiceGetRepositoryResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(complexTestServiceGetRepositoryResultsFactory, build, caps: caps);
 
   Future<DispatchResult> getFactory(ComplexTestServiceGetFactoryParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> getFactoryWithContext(ComplexTestServiceGetFactoryParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> getFactoryWithContext(ComplexTestServiceGetFactoryParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       getFactory(params, paramsCapabilities);
 
   DispatchResult buildGetFactoryResults(void Function(ComplexTestServiceGetFactoryResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(complexTestServiceGetFactoryResultsFactory, build, caps: caps);
 
   Future<DispatchResult> useDiamond(ComplexTestServiceUseDiamondParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> useDiamondWithContext(ComplexTestServiceUseDiamondParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> useDiamondWithContext(ComplexTestServiceUseDiamondParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       useDiamond(params, paramsCapabilities);
 
   DispatchResult buildUseDiamondResults(void Function(ComplexTestServiceUseDiamondResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(complexTestServiceUseDiamondResultsFactory, build, caps: caps);
 
   Future<void> failIntentionally(ComplexTestServiceFailIntentionallyParamsReader params, List<Capability> paramsCapabilities);
-  Future<void> failIntentionallyWithContext(ComplexTestServiceFailIntentionallyParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<void> failIntentionallyWithContext(ComplexTestServiceFailIntentionallyParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       failIntentionally(params, paramsCapabilities);
 
   Future<void> shutdown(ComplexTestServiceShutdownParamsReader params, List<Capability> paramsCapabilities);
-  Future<void> shutdownWithContext(ComplexTestServiceShutdownParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<void> shutdownWithContext(ComplexTestServiceShutdownParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       shutdown(params, paramsCapabilities);
 
   Future<DispatchResult> probePipelineTarget(ComplexTestServiceProbePipelineTargetParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> probePipelineTargetWithContext(ComplexTestServiceProbePipelineTargetParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> probePipelineTargetWithContext(ComplexTestServiceProbePipelineTargetParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       probePipelineTarget(params, paramsCapabilities);
 
   DispatchResult buildProbePipelineTargetResults(void Function(ComplexTestServiceProbePipelineTargetResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(complexTestServiceProbePipelineTargetResultsFactory, build, caps: caps);
 
   Future<DispatchResult> makePromisedPipeline(ComplexTestServiceMakePromisedPipelineParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> makePromisedPipelineWithContext(ComplexTestServiceMakePromisedPipelineParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> makePromisedPipelineWithContext(ComplexTestServiceMakePromisedPipelineParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       makePromisedPipeline(params, paramsCapabilities);
 
   DispatchResult buildMakePromisedPipelineResults(void Function(ComplexTestServiceMakePromisedPipelineResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(complexTestServiceMakePromisedPipelineResultsFactory, build, caps: caps);
 
   Future<DispatchResult> echoPipelineTargetLater(ComplexTestServiceEchoPipelineTargetLaterParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> echoPipelineTargetLaterWithContext(ComplexTestServiceEchoPipelineTargetLaterParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> echoPipelineTargetLaterWithContext(ComplexTestServiceEchoPipelineTargetLaterParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       echoPipelineTargetLater(params, paramsCapabilities);
 
   DispatchResult buildEchoPipelineTargetLaterResults(void Function(ComplexTestServiceEchoPipelineTargetLaterResultsBuilder) build, {List<Capability> caps = const []}) =>
@@ -11852,9 +11852,9 @@ abstract class ComplexTestServiceServer extends Capability {
   @override
   Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) async {
-    final dispatchContext = context ?? DispatchContext.neverCanceled;
+    final dispatchContext = context ?? DispatchCancellationContext.neverCanceled;
     switch (interfaceId) {
       case 0xd7fb0472c16375ee:
         switch (methodId) {

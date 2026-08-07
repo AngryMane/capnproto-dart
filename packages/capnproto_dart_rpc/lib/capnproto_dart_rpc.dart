@@ -15,7 +15,7 @@ export 'src/capability/capability.dart'
         Capability,
         CapabilityLease,
         DeferredCapability,
-        DispatchContext,
+        DispatchCancellationContext,
         DispatchResult,
         TailCallRequest,
         WeakCapabilityRef,
