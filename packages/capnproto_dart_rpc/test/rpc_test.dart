@@ -23,6 +23,19 @@ int _exportIdOf(WireCapabilityReference reference) => switch (reference) {
     ),
 };
 
+/// [_exportIdOf], applied to every senderHosted/senderPromise entry among
+/// [references] — mirrors the old `RpcMessage.capTableExportIds` convenience
+/// field for assertions, without needing the field itself (a
+/// senderHosted/senderPromise `WireCapabilityReference`'s `exportId` is
+/// already directly derivable, so keeping a separate decoded field around
+/// just for this would be redundant).
+List<int> _exportIdsOf(List<WireCapabilityReference> references) => [
+  for (final r in references)
+    if (r case SenderHostedCapabilityReference(:final exportId) ||
+        SenderPromiseCapabilityReference(:final exportId))
+      exportId,
+];
+
 class _SynchronousThrowingSink implements StreamSink<Uint8List> {
   final Completer<void> _done = Completer<void>();
 
@@ -4414,7 +4427,7 @@ void main() {
         );
         expect(decoded.getDataField(0), orderedEquals(_largeData(10000)));
         expect(decoded.getCapabilityField(1), equals(0));
-        expect(msg.capTableExportIds, equals([123]));
+        expect(_exportIdsOf(msg.capabilityTableReferences), equals([123]));
       },
     );
 
@@ -4447,7 +4460,6 @@ void main() {
       expect(msg.type, RpcMessageType.return_);
       expect(msg.answerId, 1);
       expect(msg.isReturnResults, isTrue);
-      expect(msg.capTableExportIds, [42]);
       expect(
         msg.capabilityTableReferences.single,
         isA<SenderHostedCapabilityReference>().having(
@@ -6430,7 +6442,7 @@ void main() {
 
         // Resolve bootstrap to a senderPromise import.
         serverToClient.add(
-          buildReturnResultsWithCapDescriptorsMessage(
+          buildReturnResultsWithCapabilityReferencesMessage(
             answerId: 0,
             resultsBytes: _buildEchoParams(''),
             references: const [SenderPromiseCapabilityReference(10)],
@@ -6510,7 +6522,7 @@ void main() {
         );
         final stub = client.bootstrap(EchoClientFactory());
         serverToClient.add(
-          buildReturnResultsWithCapDescriptorsMessage(
+          buildReturnResultsWithCapabilityReferencesMessage(
             answerId: 0,
             resultsBytes: _buildEchoParams(''),
             references: const [SenderPromiseCapabilityReference(10)],
@@ -6574,7 +6586,7 @@ void main() {
       );
       final stub = client.bootstrap(EchoClientFactory());
       serverToClient.add(
-        buildReturnResultsWithCapDescriptorsMessage(
+        buildReturnResultsWithCapabilityReferencesMessage(
           answerId: 0,
           resultsBytes: _buildEchoParams(''),
           references: const [SenderPromiseCapabilityReference(10)],

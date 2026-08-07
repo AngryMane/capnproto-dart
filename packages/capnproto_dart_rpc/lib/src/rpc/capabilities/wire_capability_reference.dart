@@ -11,6 +11,16 @@
 /// the two representations; everywhere else in the RPC implementation reads
 /// and constructs [WireCapabilityReference] values instead of inspecting a
 /// raw discriminant.
+///
+/// `sender`/`receiver` and the `exportId`/`importId` fields follow the RPC
+/// message's own sender's point of view, matching `rpc.capnp` — i.e. they
+/// describe who exported/imported the capability from the perspective of
+/// whoever *sent* this particular `CapDescriptor`, not the vat currently
+/// handling it. Concretely: when this vat decodes a peer-sent
+/// [ReceiverHostedCapabilityReference], "receiver" is *this* vat, so
+/// [ReceiverHostedCapabilityReference.importId] is looked up in this vat's
+/// own export table — the peer is handing back a capability this vat
+/// exported to it earlier.
 sealed class WireCapabilityReference {
   const WireCapabilityReference();
 }
@@ -52,8 +62,10 @@ final class ReceiverHostedCapabilityReference
 /// [transformPath] into that answer's result — the wire `CapDescriptor.
 /// receiverAnswer` variant. An empty [transformPath] is only legitimate for
 /// a Bootstrap answer's capability, which has no wrapping struct to
-/// traverse; every other caller normalizes an empty transform itself before
-/// constructing this.
+/// traverse; an empty transform may be produced as-is by decoding, and is
+/// normalized to a single hop at pointer slot 0 when acquiring the runtime
+/// capability (see `CapabilityProtocol.acquireCapabilityFromWireReference`),
+/// not at construction time.
 final class ReceiverAnswerCapabilityReference
     extends WireCapabilityReference {
   final int questionId;

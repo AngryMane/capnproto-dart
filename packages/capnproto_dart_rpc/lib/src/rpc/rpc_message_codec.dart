@@ -625,8 +625,6 @@ final class RpcMessage {
   // (rpc.capnp) with the same 4 values, in the same order, as ErrorKind —
   // see rpc_message_codec.dart's build*ExceptionMessage/buildAbortMessage.
   final ErrorKind exceptionKind;
-  // senderHosted export IDs from the return payload's capTable, in order.
-  final List<int> capTableExportIds;
   // Semantic decode of the return payload's capTable entries — see
   // WireCapabilityReference's own doc comment for why this is the
   // representation code above the codec boundary should use instead of a
@@ -678,7 +676,6 @@ final class RpcMessage {
     this.resultsContent,
     this.exceptionReason,
     this.exceptionKind = ErrorKind.failed,
-    this.capTableExportIds = const [],
     this.capabilityTableReferences = const [],
     this.promiseId = 0,
     this.isResolveCap = false,
@@ -905,7 +902,7 @@ Uint8List buildReturnResultsMessage({
   resultsRoot: MessageReader.deserialize(resultsBytes).getRootRaw(),
 );
 
-/// Like [buildReturnResultsMessage]/[buildReturnResultsWithCapDescriptorsMessage],
+/// Like [buildReturnResultsMessage]/[buildReturnResultsWithCapabilityReferencesMessage],
 /// but instead of deep-copying pre-built [Uint8List] results bytes into the
 /// Return's `Payload.content`, copies the already-resolved struct
 /// [resultsRoot] directly — skipping the serialize-then-reparse round trip a
@@ -950,7 +947,7 @@ Uint8List buildReturnResultsWithCapsMessage({
   bool releaseParamCaps = true,
   bool noFinishNeeded = false,
 }) {
-  return buildReturnResultsWithCapDescriptorsMessage(
+  return buildReturnResultsWithCapabilityReferencesMessage(
     answerId: answerId,
     resultsBytes: resultsBytes,
     references: exportIds
@@ -982,7 +979,7 @@ Uint8List buildRawReturnVariantMessage({
 }
 
 /// Serializes a Return-results message with explicit capTable references.
-Uint8List buildReturnResultsWithCapDescriptorsMessage({
+Uint8List buildReturnResultsWithCapabilityReferencesMessage({
   required int answerId,
   required Uint8List resultsBytes,
   required List<WireCapabilityReference> references,
@@ -1344,12 +1341,6 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
             capabilityTableReferences.add(_readCapabilityReference(capTable[i]));
           }
         }
-        final exportIds = <int>[
-          for (final r in capabilityTableReferences)
-            if (r case SenderHostedCapabilityReference(:final exportId) ||
-                SenderPromiseCapabilityReference(:final exportId))
-              exportId,
-        ];
         return RpcMessage._(
           type: RpcMessageType.return_,
           answerId: ret?.answerId ?? 0,
@@ -1358,7 +1349,6 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
           isReturnResults: true,
           returnDisc: retDisc,
           resultsContent: payload?.content,
-          capTableExportIds: exportIds,
           capabilityTableReferences: capabilityTableReferences,
         );
       } else if (retDisc == _retException) {
