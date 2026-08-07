@@ -389,7 +389,7 @@ class _PipelinedCapability extends Capability {
   final RpcCapabilityDelegate _delegate;
   final int _parentQid;
   // The full getPointerField hop sequence into the parent answer (see
-  // RpcCapabilityDescriptor.path) — today always a single index, since nothing
+  // ReceiverAnswerCapabilityReference.transformPath) — today always a single index, since nothing
   // generates a deeper path yet (see _collectCapResults in
   // dart_generator.dart), but represented as a path throughout the wire
   // codec and resolution layers, so this doesn't have to special-case

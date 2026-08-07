@@ -1,11 +1,12 @@
 /// Semantic representation of Cap'n Proto RPC's `CapDescriptor`.
 ///
-/// Unlike [RpcCapabilityDescriptor] — the schema-facing codec representation,
-/// which holds every variant's fields on one type so it can mirror
-/// `CapDescriptor`'s wire layout directly — each protocol variant here is its
-/// own Dart type and exposes only the fields meaningful for that variant, so
-/// a state like "senderHosted with a questionId" can't be constructed at
-/// all. `rpc_message_codec.dart`'s `_readCapabilityReference`/
+/// Unlike `rpc_message_codec.dart`'s `_CapDescriptorReader`/
+/// `_CapDescriptorBuilder` — the schema-facing codec representation, which
+/// mirrors `CapDescriptor`'s wire layout directly (a discriminant plus
+/// whichever raw fields that variant happens to use) — each protocol variant
+/// here is its own Dart type and exposes only the fields meaningful for that
+/// variant, so a state like "senderHosted with a questionId" can't be
+/// constructed at all. `rpc_message_codec.dart`'s `_readCapabilityReference`/
 /// `_writeCapabilityReference` are the only code that ever converts between
 /// the two representations; everywhere else in the RPC implementation reads
 /// and constructs [WireCapabilityReference] values instead of inspecting a

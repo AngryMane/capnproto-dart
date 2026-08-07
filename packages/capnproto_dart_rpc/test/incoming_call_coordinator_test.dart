@@ -197,7 +197,7 @@ Uint8List _buildCall({
   interfaceId: interfaceId,
   methodId: methodId,
   paramsBytes: _emptyMessageBytes,
-  capabilityTableReferences: capabilityTableReferences,
+  capabilityTableReferences: capabilityTableReferences ?? const [],
   sendResultsToYourself: sendResultsToYourself,
 );
 
@@ -215,7 +215,7 @@ Uint8List _buildPipelinedCall({
   interfaceId: interfaceId,
   methodId: methodId,
   paramsBytes: _emptyMessageBytes,
-  capabilityTableReferences: capabilityTableReferences,
+  capabilityTableReferences: capabilityTableReferences ?? const [],
 );
 
 void main() {

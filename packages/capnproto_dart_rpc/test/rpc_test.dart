@@ -4448,7 +4448,14 @@ void main() {
       expect(msg.answerId, 1);
       expect(msg.isReturnResults, isTrue);
       expect(msg.capTableExportIds, [42]);
-      expect(msg.capTableEntries, const [(1, 42)]);
+      expect(
+        msg.capabilityTableReferences.single,
+        isA<SenderHostedCapabilityReference>().having(
+          (r) => r.exportId,
+          'exportId',
+          equals(42),
+        ),
+      );
     });
 
     test('resolve cap round-trip', () {
@@ -4460,7 +4467,14 @@ void main() {
       expect(msg.type, RpcMessageType.resolve);
       expect(msg.promiseId, 11);
       expect(msg.isResolveCap, isTrue);
-      expect(msg.resolveCap, const (2, 42));
+      expect(
+        msg.resolutionCapabilityReference,
+        isA<SenderPromiseCapabilityReference>().having(
+          (r) => r.exportId,
+          'exportId',
+          equals(42),
+        ),
+      );
     });
 
     test('resolve exception round-trip', () {
@@ -4595,12 +4609,20 @@ void main() {
         interfaceId: 0xABCD,
         methodId: 0,
         paramsBytes: params,
-        capTableEntries: const [(3, 42)], // receiverHosted, importId=42
+        capabilityTableReferences: const [
+          ReceiverHostedCapabilityReference(42),
+        ],
       );
       final msg = parseRpcMessage(bytes);
-      expect(msg.paramsCapTable, hasLength(1));
-      expect(msg.paramsCapTable[0].$1, equals(3)); // disc=3: receiverHosted
-      expect(msg.paramsCapTable[0].$2, equals(42));
+      expect(msg.capabilityTableReferences, hasLength(1));
+      expect(
+        msg.capabilityTableReferences.single,
+        isA<ReceiverHostedCapabilityReference>().having(
+          (r) => r.importId,
+          'importId',
+          equals(42),
+        ),
+      );
     });
 
     test('buildCallMessage with senderHosted entry encodes disc=1', () {
@@ -4614,11 +4636,17 @@ void main() {
         interfaceId: 0xABCD,
         methodId: 0,
         paramsBytes: params,
-        capTableEntries: const [(1, 7)], // senderHosted, exportId=7
+        capabilityTableReferences: const [SenderHostedCapabilityReference(7)],
       );
       final msg = parseRpcMessage(bytes);
-      expect(msg.paramsCapTable[0].$1, equals(1));
-      expect(msg.paramsCapTable[0].$2, equals(7));
+      expect(
+        msg.capabilityTableReferences.single,
+        isA<SenderHostedCapabilityReference>().having(
+          (r) => r.exportId,
+          'exportId',
+          equals(7),
+        ),
+      );
     });
 
     test('buildCallMessage with receiverAnswer entry encodes disc=4', () {
@@ -4753,13 +4781,16 @@ void main() {
                   .where(
                     (m) =>
                         m.type == RpcMessageType.call &&
-                        m.paramsCapTable.isNotEmpty,
+                        m.capabilityTableReferences.isNotEmpty,
                   )
                   .toList();
 
           expect(callWithCap, hasLength(1));
-          // disc=3 means receiverHosted — the peer's own export, no proxy.
-          expect(callWithCap.first.paramsCapTable.first.$1, equals(3));
+          // receiverHosted — the peer's own export, no proxy.
+          expect(
+            callWithCap.first.capabilityTableReferences.first,
+            isA<ReceiverHostedCapabilityReference>(),
+          );
 
           await client.close();
           await interceptSink.close();
@@ -6419,8 +6450,11 @@ void main() {
 
         final call = await _waitForMessageType(captured, RpcMessageType.call);
         expect(call.targetImportId, 10);
-        expect(call.paramsCapTable, hasLength(1));
-        expect(call.paramsCapTable.single.$1, 1); // local cap exported
+        expect(call.capabilityTableReferences, hasLength(1));
+        expect(
+          call.capabilityTableReferences.single,
+          isA<SenderHostedCapabilityReference>(),
+        ); // local cap exported
 
         captured.clear();
         serverToClient.add(
