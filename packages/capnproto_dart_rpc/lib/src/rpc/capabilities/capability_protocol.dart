@@ -11,6 +11,7 @@ import 'embargo_table.dart';
 import 'export_table.dart';
 import 'import_table.dart';
 import 'rpc_capability_reference.dart';
+import 'wire_capability_reference.dart';
 
 /// Capability wire protocol: descriptor encode/decode, import/export
 /// bookkeeping glue, senderPromise resolution, Release, Resolve, and
@@ -98,18 +99,18 @@ final class CapabilityProtocol {
   });
 
   /// Canonical async capTable resolution — the fallback
-  /// [resolveParameterCapabilityDescriptors] delegates to when it can't resolve everything synchronously. When [qid]
+  /// [resolveParameterCapabilityReferences] delegates to when it can't resolve everything synchronously. When [qid]
   /// is given, records every senderHosted/senderPromise export ID produced
   /// (this call's own params capabilities) against it — see
   /// [_recordParamExportIds].
   ///
   /// [ensureActive] (see
-  /// `OutgoingCallCoordinator.resolveParameterCapabilityDescriptors`'s doc
+  /// `OutgoingCallCoordinator.resolveParameterCapabilityReferences`'s doc
   /// comment for the invariant this establishes) is called before the
   /// loop, at the top of every iteration, and immediately after each
   /// `await` inside it — i.e. at every point execution resumes after a
   /// suspension that `tearDown` could have run during, and before the very
-  /// next side effect (`exportTable.retainOrCreateExportId`, adding to [capEntries])
+  /// next side effect (`exportTable.retainOrCreateExportId`, adding to [capabilityReferences])
   /// that resuming would otherwise lead to. Once torn down,
   /// [ExportTable.tearDown]/[QuestionTable.tearDown] have already disposed
   /// and cleared everything this loop could have created *before* that
@@ -118,13 +119,13 @@ final class CapabilityProtocol {
   /// otherwise be recorded for rollback) is already gone by then too. This
   /// loop must never reach a new [ExportTable.retainOrCreateExportId] call past that
   /// point, since nothing would ever release it.
-  Future<List<RpcCapabilityDescriptor>> _resolveCapTableAsync(
+  Future<List<WireCapabilityReference>> _resolveCapTableAsync(
     List<Capability> paramsCapabilities, {
     int? qid,
     required void Function() ensureActive,
   }) async {
     ensureActive();
-    final capEntries = <RpcCapabilityDescriptor>[];
+    final capabilityReferences = <WireCapabilityReference>[];
     // try/finally, not a plain trailing call: a broken import or a rejected
     // importIdFuture partway through this loop (importTable.throwIfBroken/
     // await above) must still record whatever senderHosted/senderPromise exports
@@ -150,7 +151,7 @@ final class CapabilityProtocol {
           final id = await reference.importId;
           ensureActive();
           importTable.throwIfBroken(id);
-          capEntries.add(RpcCapabilityDescriptor.receiverHosted(id));
+          capabilityReferences.add(ReceiverHostedCapabilityReference(id));
         } else if (reference is PipelinedCapabilityReference) {
           // The parent Call (reference.parentQuestionId) must reach the wire
           // before this receiverAnswer descriptor referencing it does —
@@ -165,36 +166,43 @@ final class CapabilityProtocol {
           );
           if (parentSent != null) await parentSent.future;
           ensureActive();
-          capEntries.add(
-            RpcCapabilityDescriptor.receiverAnswer(
+          capabilityReferences.add(
+            ReceiverAnswerCapabilityReference(
               reference.parentQuestionId,
               reference.transformPath,
             ),
           );
         } else {
           ensureActive();
-          capEntries.add(
-            RpcCapabilityDescriptor.senderHosted(exportTable.retainOrCreateExportId(cap)),
+          capabilityReferences.add(
+            SenderHostedCapabilityReference(
+              exportTable.retainOrCreateExportId(cap),
+            ),
           );
         }
       }
     } finally {
-      if (qid != null) _recordParamExportIds(qid, capEntries);
+      if (qid != null) _recordParamExportIds(qid, capabilityReferences);
     }
-    return capEntries;
+    return capabilityReferences;
   }
 
-  /// Records the senderHosted/senderPromise export IDs among [capEntries]
+  /// Records the senderHosted/senderPromise export IDs among [capabilityReferences]
   /// (an outgoing Call's own capTable — this vat's params capabilities)
   /// against [qid], so `OutgoingCallCoordinator`'s internal `_awaitAndProcessReturn`
   /// can apply `Return.releaseParamCaps` locally once the matching Return
   /// arrives. A call with no such entries (no capability params, or every
   /// one an import/promisedAnswer pass-through) records nothing — nothing
   /// to release either way.
-  void _recordParamExportIds(int qid, List<RpcCapabilityDescriptor> capEntries) {
+  void _recordParamExportIds(
+    int qid,
+    List<WireCapabilityReference> capabilityReferences,
+  ) {
     final ids = <int>[
-      for (final d in capEntries)
-        if (d.disc == 1 || d.disc == 2) d.id,
+      for (final reference in capabilityReferences)
+        if (reference case SenderHostedCapabilityReference(:final exportId) ||
+            SenderPromiseCapabilityReference(:final exportId))
+          exportId,
     ];
     questions.recordParamExportIds(qid, ids);
   }
@@ -216,7 +224,7 @@ final class CapabilityProtocol {
   /// [_resolveCapTableAsync]; the one entry call below is there purely so
   /// every route into capTable resolution checks up front, not because this
   /// branch specifically needs a re-check partway through.
-  FutureOr<List<RpcCapabilityDescriptor>> resolveParameterCapabilityDescriptors(
+  FutureOr<List<WireCapabilityReference>> resolveParameterCapabilityReferences(
     List<Capability> paramsCapabilities, {
     int? qid,
     required void Function() ensureActive,
@@ -243,7 +251,7 @@ final class CapabilityProtocol {
       );
     }
 
-    final capEntries = <RpcCapabilityDescriptor>[];
+    final capabilityReferences = <WireCapabilityReference>[];
     // See _resolveCapTableAsync's matching comment: try/finally so a broken
     // import discovered partway through still records whatever exports
     // earlier entries in this loop already created.
@@ -258,27 +266,29 @@ final class CapabilityProtocol {
           // still-uncached one would have routed through the async branch.
           final id = reference.importId as int;
           importTable.throwIfBroken(id);
-          capEntries.add(RpcCapabilityDescriptor.receiverHosted(id));
+          capabilityReferences.add(ReceiverHostedCapabilityReference(id));
         } else if (reference is PipelinedCapabilityReference) {
           // Safe to encode without waiting here: needsAsync above already
           // routed any case where the parent Call hasn't been sent yet
           // through the async (awaiting) version instead.
-          capEntries.add(
-            RpcCapabilityDescriptor.receiverAnswer(
+          capabilityReferences.add(
+            ReceiverAnswerCapabilityReference(
               reference.parentQuestionId,
               reference.transformPath,
             ),
           );
         } else {
-          capEntries.add(
-            RpcCapabilityDescriptor.senderHosted(exportTable.retainOrCreateExportId(cap)),
+          capabilityReferences.add(
+            SenderHostedCapabilityReference(
+              exportTable.retainOrCreateExportId(cap),
+            ),
           );
         }
       }
     } finally {
-      if (qid != null) _recordParamExportIds(qid, capEntries);
+      if (qid != null) _recordParamExportIds(qid, capabilityReferences);
     }
-    return capEntries;
+    return capabilityReferences;
   }
 
   /// The returned Future always completes successfully (never with an
@@ -409,17 +419,22 @@ final class CapabilityProtocol {
       return;
     }
 
-    final descriptor = msg.resolveCapDescriptor;
-    if (descriptor == null) return;
+    final reference = msg.resolutionCapabilityReference;
+    if (reference == null) return;
     if (!importTable.isTracked(msg.promiseId)) {
-      if (descriptor.disc == 1 || descriptor.disc == 2) {
-        sendBytes(buildReleaseMessage(descriptor.id, 1));
+      final exportId = switch (reference) {
+        SenderHostedCapabilityReference(:final exportId) => exportId,
+        SenderPromiseCapabilityReference(:final exportId) => exportId,
+        _ => null,
+      };
+      if (exportId != null) {
+        sendBytes(buildReleaseMessage(exportId, 1));
       }
       return;
     }
 
     final state = importTable.getOrCreateState(msg.promiseId);
-    final replacement = acquireCapabilityFromDescriptor(descriptor);
+    final replacement = acquireCapabilityFromWireReference(reference);
     if (state.receivedCall && _isLocalCapability(replacement)) {
       final completer = Completer<void>();
       final embargoId = embargoTable.register(
@@ -481,22 +496,24 @@ final class CapabilityProtocol {
   /// [acquireCapabilityLease]) would never be released, leaking the
   /// underlying capability even after every other reference to it —
   /// including this connection's own owning one — is properly disposed.
-  RpcCapabilityDescriptor exportResultCapabilityAsDescriptor(Capability cap) {
+  WireCapabilityReference exportResultCapabilityAsWireReference(
+    Capability cap,
+  ) {
     final identity = unwrapCapabilityLease(cap);
-    final RpcCapabilityDescriptor descriptor;
+    final WireCapabilityReference reference;
     if (identity is DeferredCapability) {
       final promiseId = exportTable.retainOrCreateExportId(identity);
       _scheduleSenderPromiseResolve(promiseId, identity);
-      descriptor = RpcCapabilityDescriptor.senderPromise(promiseId);
+      reference = SenderPromiseCapabilityReference(promiseId);
     } else {
-      descriptor = RpcCapabilityDescriptor.senderHosted(
+      reference = SenderHostedCapabilityReference(
         exportTable.retainOrCreateExportId(identity),
       );
     }
     if (!identical(cap, identity)) {
       disposeIgnoringErrors(cap);
     }
-    return descriptor;
+    return reference;
   }
 
   void _scheduleSenderPromiseResolve(
@@ -511,9 +528,11 @@ final class CapabilityProtocol {
             exportTable.clearPromiseResolutionScheduled(promiseId);
             if (!_isStillExportedPromise(promiseId, promise)) return;
 
-            final RpcCapabilityDescriptor descriptor;
+            final WireCapabilityReference reference;
             try {
-              descriptor = await _resolveDescriptorForCapability(resolved);
+              reference = await _createWireReferenceForResolvedCapability(
+                resolved,
+              );
             } catch (error) {
               if (!_isStillExportedPromise(promiseId, promise)) return;
               sendBytes(
@@ -526,18 +545,19 @@ final class CapabilityProtocol {
               return;
             }
             if (!_isStillExportedPromise(promiseId, promise)) {
-              if (descriptor.disc == 1 || descriptor.disc == 2) {
-                exportTable.releaseReference(descriptor.id, disposeIgnoringErrors);
+              final exportId = switch (reference) {
+                SenderHostedCapabilityReference(:final exportId) => exportId,
+                SenderPromiseCapabilityReference(:final exportId) => exportId,
+                _ => null,
+              };
+              if (exportId != null) {
+                exportTable.releaseReference(exportId, disposeIgnoringErrors);
               }
               return;
             }
 
             sendBytes(
-              buildResolveCapMessage(
-                promiseId: promiseId,
-                capDisc: descriptor.disc,
-                capId: descriptor.id,
-              ),
+              buildResolveCapMessage(promiseId: promiseId, reference: reference),
             );
           },
           onError: (Object error) {
@@ -558,7 +578,7 @@ final class CapabilityProtocol {
   bool _isStillExportedPromise(int promiseId, DeferredCapability promise) =>
       exportTable.isCurrentIdentity(promiseId, promise);
 
-  /// See [exportResultCapabilityAsDescriptor]'s doc comment. [cap] is
+  /// See [exportResultCapabilityAsWireReference]'s doc comment. [cap] is
   /// unwrapped to its real identity first, and a redundant [CapabilityLease]
   /// passed as [cap] is disposed at the end for the same ownership-transfer
   /// reason (this resolves a promise
@@ -568,49 +588,49 @@ final class CapabilityProtocol {
   /// reference of its own locally (it's just handing the peer back its own
   /// capability) — [cap] disposal is what releases its share of
   /// [identity]'s refcount there, since nothing else will.
-  Future<RpcCapabilityDescriptor> _resolveDescriptorForCapability(
+  Future<WireCapabilityReference> _createWireReferenceForResolvedCapability(
     Capability cap,
   ) async {
     final identity = unwrapCapabilityLease(cap);
-    final RpcCapabilityDescriptor descriptor;
-    final reference = tryExtractCapabilityReference(identity);
-    if (reference is ImportedCapabilityReference) {
-      final id = await reference.importId;
+    final WireCapabilityReference reference;
+    final rpcReference = tryExtractCapabilityReference(identity);
+    if (rpcReference is ImportedCapabilityReference) {
+      final id = await rpcReference.importId;
       importTable.throwIfBroken(id);
-      descriptor = RpcCapabilityDescriptor.receiverHosted(id);
+      reference = ReceiverHostedCapabilityReference(id);
     } else if (identity is DeferredCapability) {
       final nestedPromiseId = exportTable.retainOrCreateExportId(identity);
       _scheduleSenderPromiseResolve(nestedPromiseId, identity);
-      descriptor = RpcCapabilityDescriptor.senderPromise(nestedPromiseId);
+      reference = SenderPromiseCapabilityReference(nestedPromiseId);
     } else {
-      descriptor = RpcCapabilityDescriptor.senderHosted(
+      reference = SenderHostedCapabilityReference(
         exportTable.retainOrCreateExportId(identity),
       );
     }
     if (!identical(cap, identity)) {
       disposeIgnoringErrors(cap);
     }
-    return descriptor;
+    return reference;
   }
 
-  /// Acquires the runtime [Capability] represented by [descriptor].
+  /// Acquires the runtime [Capability] represented by [reference].
   ///
-  /// Sender-hosted descriptors retain an import; receiver-hosted descriptors
+  /// Sender-hosted references retain an import; receiver-hosted references
   /// acquire a [CapabilityLease]. Other variants construct the corresponding
   /// local capability wrapper.
-  Capability acquireCapabilityFromDescriptor(
-    RpcCapabilityDescriptor descriptor,
+  Capability acquireCapabilityFromWireReference(
+    WireCapabilityReference reference,
   ) {
-    switch (descriptor.disc) {
-      case 0: // none
+    switch (reference) {
+      case NoCapabilityReference():
         return NullCapability();
-      case 1: // senderHosted
-        final state = importTable.retain(descriptor.id);
+      case SenderHostedCapabilityReference(:final exportId):
+        final state = importTable.retain(exportId);
         return importedCapabilityFromState(state);
-      case 2: // senderPromise
-        final state = importTable.retain(descriptor.id, isPromise: true);
+      case SenderPromiseCapabilityReference(:final exportId):
+        final state = importTable.retain(exportId, isPromise: true);
         return importedCapabilityFromState(state);
-      case 3: // receiverHosted: we (the receiver) export this cap
+      case ReceiverHostedCapabilityReference(:final importId):
         // A fresh acquireCapabilityLease, not the export's own identity/
         // ownedReference directly: this capability is handed to
         // application code (a call's paramsCapabilities, a Return's result
@@ -625,46 +645,51 @@ final class CapabilityProtocol {
         // object) must unwrap it first — see unwrapCapabilityLease's doc
         // comment; this is the same discipline every other decode path
         // (requireCapabilityFromResult et al.) already requires.
-        final capability = exportTable.getCapability(descriptor.id);
+        final capability = exportTable.getCapability(importId);
         if (capability == null) {
           // A well-behaved peer, honoring the protocol's causal ordering
           // guarantees, never references an export id we haven't actually
           // exported to it — this is a genuine protocol violation (a buggy
           // or malicious peer), not a legitimate race. Silently mapping it
           // to NullCapability would conflate it with a schema-level `none`
-          // descriptor (disc 0), losing that distinction and changing the
-          // meaning of an otherwise valid call.
-          throw RpcException(
-            'unknown receiverHosted export id: ${descriptor.id}',
-          );
+          // reference, losing that distinction and changing the meaning of
+          // an otherwise valid call.
+          throw RpcException('unknown receiverHosted export id: $importId');
         }
         return acquireCapabilityLease(capability);
-      case 4: // receiverAnswer: capability in one of our outstanding answers
+      case ReceiverAnswerCapabilityReference(
+        :final questionId,
+        :final transformPath,
+      ):
         return receiverAnswerCapability(
-          descriptor.questionId,
+          questionId,
           // An empty/noop-only transform is normalized to a single hop at
           // pointer slot 0 (legitimate only for a Bootstrap answer's
           // capability, which has no wrapping struct to traverse).
-          descriptor.path.isEmpty ? const [0] : descriptor.path,
+          transformPath.isEmpty ? const [0] : transformPath,
         );
-      default:
+      case UnsupportedCapabilityReference(:final discriminant):
         throw RpcException(
-          'unsupported capability descriptor (disc=${descriptor.disc})',
+          'unsupported capability reference (disc=$discriminant)',
           kind: ErrorKind.unimplemented,
         );
     }
   }
 
-  /// Retains and returns the import ID represented by [descriptor].
+  /// Retains and returns the import ID represented by [reference].
   ///
-  /// Returns `null` without side effects when [descriptor] is not a
-  /// sender-hosted or sender-promise descriptor.
-  int? tryRetainImportIdFromCapabilityDescriptor(
-    RpcCapabilityDescriptor descriptor,
-  ) {
-    if (descriptor.disc != 1 && descriptor.disc != 2) return null;
-    importTable.retain(descriptor.id, isPromise: descriptor.disc == 2);
-    return descriptor.id;
+  /// Returns `null` without side effects when [reference] is not a
+  /// sender-hosted or sender-promise reference.
+  int? tryRetainImportIdFromWireReference(WireCapabilityReference reference) {
+    final (int, bool)? exportIdAndIsPromise = switch (reference) {
+      SenderHostedCapabilityReference(:final exportId) => (exportId, false),
+      SenderPromiseCapabilityReference(:final exportId) => (exportId, true),
+      _ => null,
+    };
+    if (exportIdAndIsPromise == null) return null;
+    final (exportId, isPromise) = exportIdAndIsPromise;
+    importTable.retain(exportId, isPromise: isPromise);
+    return exportId;
   }
 
   bool _isLocalCapability(Capability cap) =>

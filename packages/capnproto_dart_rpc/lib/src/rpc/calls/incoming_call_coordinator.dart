@@ -8,6 +8,7 @@ import '../../capability/capability.dart';
 import '../../capability/rpc_payload.dart';
 import '../capabilities/export_table.dart';
 import '../capabilities/rpc_capability_reference.dart';
+import '../capabilities/wire_capability_reference.dart';
 import '../rpc_exception.dart';
 import '../rpc_message_codec.dart';
 import 'answer_table.dart';
@@ -75,8 +76,8 @@ final _emptyResultBytes = Uint8List.fromList([
 ///
 /// [startParameterCapabilityDisposalTracking] and
 /// [finishParameterCapabilityDisposalTracking] bridge a different
-/// boundary from [tryExtractCapabilityReference]/[acquireCapabilityFromDescriptor]/
-/// [exportResultCapabilityAsDescriptor]. Those callbacks only extract a public
+/// boundary from [tryExtractCapabilityReference]/[acquireCapabilityFromWireReference]/
+/// [exportResultCapabilityAsWireReference]. Those callbacks only extract a public
 /// [RpcCapabilityReference] or construct a [Capability]. Params-capability
 /// release tracking instead mutates private
 /// `_ImportedCapability._deferredReleaseSink` state and reads accumulated
@@ -114,10 +115,10 @@ final class IncomingCallCoordinator {
   final RpcCapabilityReference? Function(Capability cap)
   tryExtractCapabilityReference;
 
-  final Capability Function(RpcCapabilityDescriptor descriptor)
-  acquireCapabilityFromDescriptor;
-  final RpcCapabilityDescriptor Function(Capability cap)
-  exportResultCapabilityAsDescriptor;
+  final Capability Function(WireCapabilityReference reference)
+  acquireCapabilityFromWireReference;
+  final WireCapabilityReference Function(Capability cap)
+  exportResultCapabilityAsWireReference;
 
   /// `OutgoingCallCoordinator.startCallWithAllocatedQuestion` — see this class's own doc
   /// comment for why this closure, not a direct reference to that
@@ -173,8 +174,8 @@ final class IncomingCallCoordinator {
     required this.isClosed,
     required this.tearDownConnection,
     required this.tryExtractCapabilityReference,
-    required this.acquireCapabilityFromDescriptor,
-    required this.exportResultCapabilityAsDescriptor,
+    required this.acquireCapabilityFromWireReference,
+    required this.exportResultCapabilityAsWireReference,
     required this.startCallWithAllocatedQuestion,
     required this.startParameterCapabilityDisposalTracking,
     required this.finishParameterCapabilityDisposalTracking,
@@ -335,8 +336,8 @@ final class IncomingCallCoordinator {
     // meaning of an otherwise valid call.
     final paramsCapabilities = <Capability>[];
     try {
-      for (final descriptor in msg.capTableDescriptors) {
-        paramsCapabilities.add(acquireCapabilityFromDescriptor(descriptor));
+      for (final reference in msg.capabilityTableReferences) {
+        paramsCapabilities.add(acquireCapabilityFromWireReference(reference));
       }
     } catch (error) {
       // Every entry decoded successfully before whatever failed is a real,
@@ -359,11 +360,11 @@ final class IncomingCallCoordinator {
 
       // A disc this vat doesn't implement at all (e.g. thirdPartyHosted) is
       // a bigger deal than a single bad call — see the `default` case in
-      // CapabilityProtocol.acquireCapabilityFromDescriptor and the "tears down the
+      // CapabilityProtocol.acquireCapabilityFromWireReference and the "tears down the
       // connection as unimplemented" test for this exact behavior — so let
       // that kind keep propagating to this listener's own outer try/catch,
       // which tears the whole connection down. Same for anything that
-      // isn't even an RpcException: acquireCapabilityFromDescriptor itself never
+      // isn't even an RpcException: acquireCapabilityFromWireReference itself never
       // throws anything else today, but this being a peer-triggered decode
       // loop, silently downgrading an unexpected failure type to an
       // ordinary per-call Return.exception would be the wrong default.
@@ -548,7 +549,8 @@ final class IncomingCallCoordinator {
     // resolution categorizes as receiverHosted (no export created) — but a
     // receiverHosted-descriptor param on the *original* incoming call
     // resolves to this vat's own capability object (see
-    // CapabilityProtocol.acquireCapabilityFromDescriptor's disc-3 case), which
+    // CapabilityProtocol.acquireCapabilityFromWireReference's
+    // ReceiverHostedCapabilityReference case), which
     // *does* get a fresh senderHosted export when forwarded here.
     startCallWithAllocatedQuestion(
       question: question,
@@ -593,7 +595,7 @@ final class IncomingCallCoordinator {
     final cancellation = DispatchCancellationController();
 
     // Params capabilities freshly imported for this call (see
-    // _dispatchToCapability/CapabilityProtocol.acquireCapabilityFromDescriptor —
+    // _dispatchToCapability/CapabilityProtocol.acquireCapabilityFromWireReference —
     // every senderHosted/senderPromise entry in the incoming Call's
     // capTable creates a brand new _ImportedCapability wrapper) get a
     // deferred release sink for the lifetime of this dispatch, so
@@ -679,24 +681,26 @@ final class IncomingCallCoordinator {
             return;
           }
 
-          final resultDescriptors = <RpcCapabilityDescriptor>[];
+          final resultReferences = <WireCapabilityReference>[];
           for (final c in result.caps) {
-            resultDescriptors.add(exportResultCapabilityAsDescriptor(c));
+            resultReferences.add(exportResultCapabilityAsWireReference(c));
           }
           // No capabilities anywhere in the results means no wire-level
           // pipelined call against this answer could ever resolve to
           // anything but "not a capability" — so it's safe to tell the peer
           // no Finish is needed and immediately drop the answer's
           // pipelining bookkeeping ourselves, instead of waiting for it.
-          final noFinishNeeded = resultDescriptors.isEmpty;
+          final noFinishNeeded = resultReferences.isEmpty;
           // Record the answer before sending — see the comment on the
           // sendResultsToYourself branch above for why the ordering matters.
           final completed = answerTable.tryRecordAnswer(
             qid,
             resolved: ResolvedAnswer(result.payload.bytes, result.caps),
             resultExportIds: [
-              for (final d in resultDescriptors)
-                if (d.disc == 1 || d.disc == 2) d.id,
+              for (final d in resultReferences)
+                if (d case SenderHostedCapabilityReference(:final exportId) ||
+                    SenderPromiseCapabilityReference(:final exportId))
+                  exportId,
             ],
           );
           if (!completed) {
@@ -718,7 +722,7 @@ final class IncomingCallCoordinator {
             buildReturnResultsMessageFromReader(
               answerId: qid,
               resultsRoot: result.payload.getRootRaw(),
-              descriptors: resultDescriptors,
+              references: resultReferences,
               releaseParamCaps: releaseParamCaps,
               noFinishNeeded: noFinishNeeded,
             ),

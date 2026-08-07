@@ -6,6 +6,7 @@ import 'package:capnproto_dart/capnproto_dart.dart';
 import '../../capability/capability.dart';
 import '../../capability/rpc_payload.dart';
 import '../capabilities/import_table.dart';
+import '../capabilities/wire_capability_reference.dart';
 import '../rpc_exception.dart';
 import '../rpc_message_codec.dart';
 import 'answer_table.dart';
@@ -59,9 +60,9 @@ final class OutgoingCallCoordinator {
 
   final void Function(Uint8List bytes) sendBytes;
 
-  /// Resolves a Call's params capabilities into wire descriptors,
+  /// Resolves a Call's params capabilities into wire references,
   /// synchronously when possible — see the matching doc comment this method
-  /// carries as `CapabilityProtocol.resolveParameterCapabilityDescriptors`.
+  /// carries as `CapabilityProtocol.resolveParameterCapabilityReferences`.
   ///
   /// [ensureActive] must be called before any side effect with lasting
   /// state (an export creation, a refcount bump, recording bookkeeping
@@ -78,16 +79,16 @@ final class OutgoingCallCoordinator {
   /// `QuestionTable`, which `tearDown` has, by then, already dropped
   /// entirely — so a side effect started *after* that point would never be
   /// rolled back by anything.
-  final FutureOr<List<RpcCapabilityDescriptor>> Function(
+  final FutureOr<List<WireCapabilityReference>> Function(
     List<Capability> paramsCapabilities, {
     int? qid,
     required void Function() ensureActive,
   })
-  resolveParameterCapabilityDescriptors;
+  resolveParameterCapabilityReferences;
 
   final void Function(List<int> exportIds) releaseParameterCapabilityExports;
-  final Capability Function(RpcCapabilityDescriptor descriptor)
-  acquireCapabilityFromDescriptor;
+  final Capability Function(WireCapabilityReference reference)
+  acquireCapabilityFromWireReference;
   final Future<ResolvedAnswer> Function(int qid) resolveLocalAnswer;
 
   /// Invoked from [handleReturn], right after confirming a live completer
@@ -102,16 +103,16 @@ final class OutgoingCallCoordinator {
     required this.questions,
     required this.imports,
     required this.sendBytes,
-    required this.resolveParameterCapabilityDescriptors,
+    required this.resolveParameterCapabilityReferences,
     required this.releaseParameterCapabilityExports,
-    required this.acquireCapabilityFromDescriptor,
+    required this.acquireCapabilityFromWireReference,
     required this.resolveLocalAnswer,
     this.onReturn,
   });
 
   /// True when starting a Call against [target] needs to `await` something
   /// before any side effect (an export refcount bump, [sendBytes]) can run —
-  /// see [resolveParameterCapabilityDescriptors]'s matching doc comment for why
+  /// see [resolveParameterCapabilityReferences]'s matching doc comment for why
   /// this must be checked before touching anything with a side effect.
   bool _targetRequiresAsyncResolution(OutgoingCallTarget target) =>
       switch (target) {
@@ -176,8 +177,8 @@ final class OutgoingCallCoordinator {
       interfaceId: interfaceId,
       methodId: methodId,
       buildParams: buildParams,
-      resolveDescriptors:
-          () => resolveParameterCapabilityDescriptors(
+      resolveReferences:
+          () => resolveParameterCapabilityReferences(
             paramsCapabilities,
             qid: qid,
             ensureActive: _throwIfTornDown,
@@ -229,11 +230,11 @@ final class OutgoingCallCoordinator {
     }
     // Whatever we just awaited (the target import id, or the promisedAnswer
     // target's parent being sent) may have taken long enough for tearDown()
-    // to run in the meantime. resolveParameterCapabilityDescriptors has real side effects
+    // to run in the meantime. resolveParameterCapabilityReferences has real side effects
     // (export creation, refcount bumps) that nothing will ever clean up on a
     // torn-down connection — bail out before it even starts, same as
     // [startCallWithAllocatedQuestion]'s own entry guard does for the fully-synchronous path.
-    // This alone isn't enough once resolveParameterCapabilityDescriptors itself starts
+    // This alone isn't enough once resolveParameterCapabilityReferences itself starts
     // running, though: it may need its own further `await`s (an unresolved
     // *params* capability's import id, a *different* pipelined param's
     // parent being sent) — [ensureActive] is threaded into it precisely so
@@ -248,7 +249,7 @@ final class OutgoingCallCoordinator {
       methodId: methodId,
       buildParams: buildParams,
       resolveCapTable:
-          () async => await resolveParameterCapabilityDescriptors(
+          () async => await resolveParameterCapabilityReferences(
             paramsCapabilities,
             qid: qid,
             ensureActive: _throwIfTornDown,
@@ -293,15 +294,15 @@ final class OutgoingCallCoordinator {
   /// (this coordinator is already closed) and again once an async build
   /// finishes (`tearDown` ran while it was still in flight): [sendBytes]
   /// must never run for either case, and any params export refs
-  /// `resolveParameterCapabilityDescriptors` already recorded against [qid] *before*
+  /// `resolveParameterCapabilityReferences` already recorded against [qid] *before*
   /// tearDown ran are rolled back here the same way a build failure's would
   /// be. That rollback only reaches bookkeeping recorded before tearDown,
   /// though — `QuestionTable.tearDown` drops [question]'s tracking entirely,
-  /// so nothing here can roll back a side effect `resolveParameterCapabilityDescriptors`
+  /// so nothing here can roll back a side effect `resolveParameterCapabilityReferences`
   /// starts *after* that point (e.g. resuming from an `await` mid-resolution
   /// with tearDown having landed during the wait). Preventing that is
-  /// `resolveParameterCapabilityDescriptors`'s own job, via the `ensureActive` callback
-  /// this class passes it — see [resolveParameterCapabilityDescriptors]'s doc comment.
+  /// `resolveParameterCapabilityReferences`'s own job, via the `ensureActive` callback
+  /// this class passes it — see [resolveParameterCapabilityReferences]'s doc comment.
   void startCallWithAllocatedQuestion({
     required OutgoingQuestion question,
     required OutgoingCallTarget target,
@@ -456,8 +457,8 @@ final class OutgoingCallCoordinator {
 
     // Convert capTable entries into ImportedCapabilities.
     final caps = <Capability>[];
-    for (final descriptor in ret.capTableDescriptors) {
-      caps.add(acquireCapabilityFromDescriptor(descriptor));
+    for (final reference in ret.capabilityTableReferences) {
+      caps.add(acquireCapabilityFromWireReference(reference));
     }
 
     final resultsContent = ret.resultsContent;

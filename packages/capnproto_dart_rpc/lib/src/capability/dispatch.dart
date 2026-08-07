@@ -22,7 +22,8 @@ final Future<void> _neverCanceledFuture = Completer<void>().future;
 /// result via [requireCapabilityFromResult] and forwarded here) — the
 /// runtime unwraps it to decide what to export, and disposes the lease you
 /// handed it once that export is established (see `CapabilityProtocol`'s
-/// `exportResultCapabilityAsDescriptor`/internal `_resolveDescriptorForCapability`).
+/// `exportResultCapabilityAsWireReference`/internal
+/// `_createWireReferenceForResolvedCapability`).
 /// Reusing that same lease — or the bare capability it wrapped — for anything *after* returning it here is a
 /// use-after-ownership-transfer bug: if every reference to the underlying
 /// capability happens to have been released by then, [acquireCapabilityLease]

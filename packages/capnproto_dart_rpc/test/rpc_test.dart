@@ -4,9 +4,37 @@ import 'dart:typed_data';
 import 'package:capnproto_dart_rpc/capnproto_dart_rpc.dart';
 import 'package:capnproto_dart_rpc/src/capability/capability.dart';
 import 'package:capnproto_dart_rpc/src/rpc/capabilities/rpc_capability.dart';
+import 'package:capnproto_dart_rpc/src/rpc/capabilities/wire_capability_reference.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_message_codec.dart';
 import 'package:capnproto_dart_rpc/src/rpc/two_party_connection.dart';
 import 'package:test/test.dart';
+
+/// Extracts the export id from a senderHosted/senderPromise
+/// [WireCapabilityReference] — a test-only helper for assertions against a
+/// decoded message's `capabilityTableReferences`, wherever the test already
+/// knows (from how it built the corresponding outgoing message) that the
+/// entry in question is one of those two variants.
+int _exportIdOf(WireCapabilityReference reference) => switch (reference) {
+  SenderHostedCapabilityReference(:final exportId) => exportId,
+  SenderPromiseCapabilityReference(:final exportId) => exportId,
+  _ =>
+    throw StateError(
+      'expected a senderHosted/senderPromise reference, got $reference',
+    ),
+};
+
+/// [_exportIdOf], applied to every senderHosted/senderPromise entry among
+/// [references] — mirrors the old `RpcMessage.capTableExportIds` convenience
+/// field for assertions, without needing the field itself (a
+/// senderHosted/senderPromise `WireCapabilityReference`'s `exportId` is
+/// already directly derivable, so keeping a separate decoded field around
+/// just for this would be redundant).
+List<int> _exportIdsOf(List<WireCapabilityReference> references) => [
+  for (final r in references)
+    if (r case SenderHostedCapabilityReference(:final exportId) ||
+        SenderPromiseCapabilityReference(:final exportId))
+      exportId,
+];
 
 class _SynchronousThrowingSink implements StreamSink<Uint8List> {
   final Completer<void> _done = Completer<void>();
@@ -159,7 +187,7 @@ Uint8List _callWithCapDescriptorDisc(int disc) {
     interfaceId: _echoInterfaceId,
     methodId: _echoMethodId,
     paramsBytes: params,
-    capTableDescriptors: const [RpcCapabilityDescriptor.none()],
+    capabilityTableReferences: const [NoCapabilityReference()],
   );
   final withSenderHosted = buildCallMessage(
     questionId: 1,
@@ -167,7 +195,7 @@ Uint8List _callWithCapDescriptorDisc(int disc) {
     interfaceId: _echoInterfaceId,
     methodId: _echoMethodId,
     paramsBytes: params,
-    capTableDescriptors: const [RpcCapabilityDescriptor.senderHosted(0)],
+    capabilityTableReferences: const [SenderHostedCapabilityReference(0)],
   );
   final differences = <int>[
     for (var i = 0; i < withNone.length; i++)
@@ -194,9 +222,9 @@ Uint8List _callWithReceiverHostedThenCapDescriptorDisc(int disc) {
     interfaceId: _echoInterfaceId,
     methodId: _echoMethodId,
     paramsBytes: params,
-    capTableDescriptors: const [
-      RpcCapabilityDescriptor.receiverHosted(0),
-      RpcCapabilityDescriptor.none(),
+    capabilityTableReferences: const [
+      ReceiverHostedCapabilityReference(0),
+      NoCapabilityReference(),
     ],
   );
   final withSenderHostedSecond = buildCallMessage(
@@ -205,9 +233,9 @@ Uint8List _callWithReceiverHostedThenCapDescriptorDisc(int disc) {
     interfaceId: _echoInterfaceId,
     methodId: _echoMethodId,
     paramsBytes: params,
-    capTableDescriptors: const [
-      RpcCapabilityDescriptor.receiverHosted(0),
-      RpcCapabilityDescriptor.senderHosted(0),
+    capabilityTableReferences: const [
+      ReceiverHostedCapabilityReference(0),
+      SenderHostedCapabilityReference(0),
     ],
   );
   final differences = <int>[
@@ -1456,12 +1484,19 @@ void main() {
           interfaceId: 0xABCD,
           methodId: 0,
           paramsBytes: params,
-          capTableDescriptors: const [
-            RpcCapabilityDescriptor.receiverAnswer(9, [0, 2, 1]),
+          capabilityTableReferences: const [
+            ReceiverAnswerCapabilityReference(9, [0, 2, 1]),
           ],
         );
         final msg = parseRpcMessage(bytes);
-        expect(msg.capTableDescriptors.single.path, [0, 2, 1]);
+        expect(
+          msg.capabilityTableReferences.single,
+          isA<ReceiverAnswerCapabilityReference>().having(
+            (r) => r.transformPath,
+            'transformPath',
+            equals([0, 2, 1]),
+          ),
+        );
       },
     );
   });
@@ -2187,7 +2222,9 @@ void main() {
             final parentCalls =
                 calls.where((m) => m.methodId == _pipelineMethodId).toList();
             final capCalls =
-                calls.where((m) => m.capTableDescriptors.isNotEmpty).toList();
+                calls
+                    .where((m) => m.capabilityTableReferences.isNotEmpty)
+                    .toList();
             if (parentCalls.isNotEmpty && capCalls.isNotEmpty) {
               return (parentCalls.single, capCalls.single);
             }
@@ -2196,12 +2233,11 @@ void main() {
           throw TestFailure('no Call with capTable captured');
         }();
 
-        expect(callWithCap.capTableDescriptors.single.disc, 4);
-        expect(
-          callWithCap.capTableDescriptors.single.questionId,
-          parentCall.questionId,
-        );
-        expect(callWithCap.capTableDescriptors.single.path, [0]);
+        final capReference = callWithCap.capabilityTableReferences.single;
+        expect(capReference, isA<ReceiverAnswerCapabilityReference>());
+        capReference as ReceiverAnswerCapabilityReference;
+        expect(capReference.questionId, parentCall.questionId);
+        expect(capReference.transformPath, [0]);
 
         completeParent.complete();
         await parent.result;
@@ -2890,10 +2926,10 @@ void main() {
                       .where(
                         (m) =>
                             m.type == RpcMessageType.call &&
-                            m.capTableDescriptors.isNotEmpty,
+                            m.capabilityTableReferences.isNotEmpty,
                       )
                       .single;
-              final exportId = callWithCap.capTableDescriptors.single.id;
+              final exportId = _exportIdOf(callWithCap.capabilityTableReferences.single);
 
               serverToClient.add(buildReleaseMessage(exportId, 1));
               await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -2959,10 +2995,10 @@ void main() {
                     .where(
                       (m) =>
                           m.type == RpcMessageType.call &&
-                          m.capTableDescriptors.isNotEmpty,
+                          m.capabilityTableReferences.isNotEmpty,
                     )
                     .single;
-            final exportId = callWithCap.capTableDescriptors.single.id;
+            final exportId = _exportIdOf(callWithCap.capabilityTableReferences.single);
 
             serverToClient.add(buildReleaseMessage(exportId, 1));
             await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -3145,10 +3181,10 @@ void main() {
               .where(
                 (m) =>
                     m.type == RpcMessageType.call &&
-                    m.capTableDescriptors.isNotEmpty,
+                    m.capabilityTableReferences.isNotEmpty,
               )
               .single;
-      final exportId = callWithCap.capTableDescriptors.single.id;
+      final exportId = _exportIdOf(callWithCap.capabilityTableReferences.single);
 
       // Peer claims to release 2 references when only 1 was ever granted.
       serverToClient.add(buildReleaseMessage(exportId, 2));
@@ -3209,10 +3245,10 @@ void main() {
               .where(
                 (m) =>
                     m.type == RpcMessageType.call &&
-                    m.capTableDescriptors.isNotEmpty,
+                    m.capabilityTableReferences.isNotEmpty,
               )
               .single;
-      final exportId = callWithCap.capTableDescriptors.single.id;
+      final exportId = _exportIdOf(callWithCap.capabilityTableReferences.single);
 
       // Releasing zero references is meaningless — a legitimate peer
       // never sends one — and must not be silently accepted as a no-op.
@@ -3692,7 +3728,7 @@ void main() {
       // Regression coverage for a gap the earlier startCallWithAllocatedQuestion()/
       // _throwIfTornDown() guards (see OutgoingCallCoordinator) don't
       // close on their own: they stop a *build* from resuming after
-      // tearDown, but resolveParameterCapabilityDescriptors's own loop can itself be
+      // tearDown, but resolveParameterCapabilityReferences's own loop can itself be
       // suspended mid-params-list -- on an unresolved import id here,
       // just as easily on a pipelined param's parent being sent -- with
       // some entries already resolved (and exported) and others not yet
@@ -3700,7 +3736,7 @@ void main() {
       // so nothing rolls back a *new* export the loop creates after
       // resuming from that suspension -- ensureActive() (threaded into
       // _resolveCapTableAsync as this call's OutgoingCallCoordinator
-      // resolveParameterCapabilityDescriptors's ensureActive parameter) exists
+      // resolveParameterCapabilityReferences's ensureActive parameter) exists
       // specifically to stop the loop from ever reaching that new export
       // in the first place.
       final localCapA = CountingCapability();
@@ -3782,8 +3818,8 @@ void main() {
           outgoingCaptured
               .where((m) => m.type == RpcMessageType.return_ && m.answerId == 1)
               .single;
-      expect(return1.capTableDescriptors, hasLength(1));
-      final exportId = return1.capTableDescriptors.single.id;
+      expect(return1.capabilityTableReferences, hasLength(1));
+      final exportId = _exportIdOf(return1.capabilityTableReferences.single);
       // Export 0 is the bootstrap (FixedCapServer); export [exportId] is target.
       expect(serverConn.debugExportCount, equals(2));
       expect(target.disposeCount, equals(0));
@@ -3809,7 +3845,10 @@ void main() {
               .where((m) => m.type == RpcMessageType.return_ && m.answerId == 2)
               .single;
       // Same capability -> the existing export id is reused, not a new one.
-      expect(return2.capTableDescriptors.single.id, equals(exportId));
+      expect(
+        _exportIdOf(return2.capabilityTableReferences.single),
+        equals(exportId),
+      );
       expect(serverConn.debugExportCount, equals(2));
 
       incoming.add(buildFinishMessage(2, releaseResultCaps: false));
@@ -4271,7 +4310,7 @@ void main() {
         buildParams:
             (anyPtr) =>
                 anyPtr.initStruct(_TextParamFactory()).setTextField(0, 'hello'),
-        descriptors: const [],
+        references: const [],
       );
       final msg = parseRpcMessage(bytes);
       expect(msg.type, RpcMessageType.call);
@@ -4388,7 +4427,7 @@ void main() {
         );
         expect(decoded.getDataField(0), orderedEquals(_largeData(10000)));
         expect(decoded.getCapabilityField(1), equals(0));
-        expect(msg.capTableExportIds, equals([123]));
+        expect(_exportIdsOf(msg.capabilityTableReferences), equals([123]));
       },
     );
 
@@ -4421,21 +4460,33 @@ void main() {
       expect(msg.type, RpcMessageType.return_);
       expect(msg.answerId, 1);
       expect(msg.isReturnResults, isTrue);
-      expect(msg.capTableExportIds, [42]);
-      expect(msg.capTableEntries, const [(1, 42)]);
+      expect(
+        msg.capabilityTableReferences.single,
+        isA<SenderHostedCapabilityReference>().having(
+          (r) => r.exportId,
+          'exportId',
+          equals(42),
+        ),
+      );
     });
 
     test('resolve cap round-trip', () {
       final bytes = buildResolveCapMessage(
         promiseId: 11,
-        capDisc: 2,
-        capId: 42,
+        reference: const SenderPromiseCapabilityReference(42),
       );
       final msg = parseRpcMessage(bytes);
       expect(msg.type, RpcMessageType.resolve);
       expect(msg.promiseId, 11);
       expect(msg.isResolveCap, isTrue);
-      expect(msg.resolveCap, const (2, 42));
+      expect(
+        msg.resolutionCapabilityReference,
+        isA<SenderPromiseCapabilityReference>().having(
+          (r) => r.exportId,
+          'exportId',
+          equals(42),
+        ),
+      );
     });
 
     test('resolve exception round-trip', () {
@@ -4545,11 +4596,18 @@ void main() {
 
   group('rpc_message_codec — RPC-003 receiverHosted encoding', () {
     test('preserves an unsupported thirdPartyHosted descriptor', () {
-      final descriptor =
+      final reference =
           parseRpcMessage(
             _callWithCapDescriptorDisc(5),
-          ).capTableDescriptors.single;
-      expect(descriptor.disc, 5);
+          ).capabilityTableReferences.single;
+      expect(
+        reference,
+        isA<UnsupportedCapabilityReference>().having(
+          (r) => r.discriminant,
+          'discriminant',
+          5,
+        ),
+      );
     });
 
     test('buildCallMessage with receiverHosted entry encodes disc=3', () {
@@ -4563,12 +4621,20 @@ void main() {
         interfaceId: 0xABCD,
         methodId: 0,
         paramsBytes: params,
-        capTableEntries: const [(3, 42)], // receiverHosted, importId=42
+        capabilityTableReferences: const [
+          ReceiverHostedCapabilityReference(42),
+        ],
       );
       final msg = parseRpcMessage(bytes);
-      expect(msg.paramsCapTable, hasLength(1));
-      expect(msg.paramsCapTable[0].$1, equals(3)); // disc=3: receiverHosted
-      expect(msg.paramsCapTable[0].$2, equals(42));
+      expect(msg.capabilityTableReferences, hasLength(1));
+      expect(
+        msg.capabilityTableReferences.single,
+        isA<ReceiverHostedCapabilityReference>().having(
+          (r) => r.importId,
+          'importId',
+          equals(42),
+        ),
+      );
     });
 
     test('buildCallMessage with senderHosted entry encodes disc=1', () {
@@ -4582,11 +4648,17 @@ void main() {
         interfaceId: 0xABCD,
         methodId: 0,
         paramsBytes: params,
-        capTableEntries: const [(1, 7)], // senderHosted, exportId=7
+        capabilityTableReferences: const [SenderHostedCapabilityReference(7)],
       );
       final msg = parseRpcMessage(bytes);
-      expect(msg.paramsCapTable[0].$1, equals(1));
-      expect(msg.paramsCapTable[0].$2, equals(7));
+      expect(
+        msg.capabilityTableReferences.single,
+        isA<SenderHostedCapabilityReference>().having(
+          (r) => r.exportId,
+          'exportId',
+          equals(7),
+        ),
+      );
     });
 
     test('buildCallMessage with receiverAnswer entry encodes disc=4', () {
@@ -4600,15 +4672,18 @@ void main() {
         interfaceId: 0xABCD,
         methodId: 0,
         paramsBytes: params,
-        capTableDescriptors: const [
-          RpcCapabilityDescriptor.receiverAnswer(9, [2]),
+        capabilityTableReferences: const [
+          ReceiverAnswerCapabilityReference(9, [2]),
         ],
       );
       final msg = parseRpcMessage(bytes);
-      expect(msg.capTableDescriptors, hasLength(1));
-      expect(msg.capTableDescriptors[0].disc, equals(4));
-      expect(msg.capTableDescriptors[0].questionId, equals(9));
-      expect(msg.capTableDescriptors[0].path, equals([2]));
+      expect(msg.capabilityTableReferences, hasLength(1));
+      expect(
+        msg.capabilityTableReferences[0],
+        isA<ReceiverAnswerCapabilityReference>()
+            .having((r) => r.questionId, 'questionId', equals(9))
+            .having((r) => r.transformPath, 'transformPath', equals([2])),
+      );
     });
   });
 
@@ -4718,13 +4793,16 @@ void main() {
                   .where(
                     (m) =>
                         m.type == RpcMessageType.call &&
-                        m.paramsCapTable.isNotEmpty,
+                        m.capabilityTableReferences.isNotEmpty,
                   )
                   .toList();
 
           expect(callWithCap, hasLength(1));
-          // disc=3 means receiverHosted — the peer's own export, no proxy.
-          expect(callWithCap.first.paramsCapTable.first.$1, equals(3));
+          // receiverHosted — the peer's own export, no proxy.
+          expect(
+            callWithCap.first.capabilityTableReferences.first,
+            isA<ReceiverHostedCapabilityReference>(),
+          );
 
           await client.close();
           await interceptSink.close();
@@ -4733,11 +4811,11 @@ void main() {
     },
   );
 
-  group('acquireCapabilityFromDescriptor: receiverHosted validation', () {
+  group('acquireCapabilityFromWireReference: receiverHosted validation', () {
     test('a receiverHosted descriptor naming an export id we never exported '
         'fails only that one call with Return.exception, and does not tear '
         'down the connection', () async {
-      // Regression test: CapabilityProtocol.acquireCapabilityFromDescriptor's
+      // Regression test: CapabilityProtocol.acquireCapabilityFromWireReference's
       // receiverHosted case
       // (disc=3) used to silently map an unknown export id to
       // NullCapability instead of treating it as the protocol violation
@@ -4768,7 +4846,7 @@ void main() {
           interfaceId: _echoInterfaceId,
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
-          capTableDescriptors: const [RpcCapabilityDescriptor.receiverHosted(99999)],
+          capabilityTableReferences: const [ReceiverHostedCapabilityReference(99999)],
         ),
       );
       await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -4808,7 +4886,7 @@ void main() {
       'a descriptor that fails partway through a multi-entry capTable does '
       'not leak the capabilities that resolved successfully before it',
       () async {
-        // Regression test: when acquireCapabilityFromDescriptor throws partway
+        // Regression test: when acquireCapabilityFromWireReference throws partway
         // through decoding a Call's capTable, everything already decoded
         // before the failing entry (an import refcount bump, in this
         // case) used to just sit in the local `paramsCapabilities` list
@@ -4835,9 +4913,9 @@ void main() {
             interfaceId: _echoInterfaceId,
             methodId: _echoMethodId,
             paramsBytes: _buildEchoParams(''),
-            capTableDescriptors: const [
-              RpcCapabilityDescriptor.senderHosted(10),
-              RpcCapabilityDescriptor.receiverHosted(99999),
+            capabilityTableReferences: const [
+              SenderHostedCapabilityReference(10),
+              ReceiverHostedCapabilityReference(99999),
             ],
           ),
         );
@@ -4913,7 +4991,7 @@ void main() {
             interfaceId: _echoInterfaceId,
             methodId: _echoMethodId,
             paramsBytes: _buildEchoParams(''),
-            capTableDescriptors: const [RpcCapabilityDescriptor.receiverHosted(99999)],
+            capabilityTableReferences: const [ReceiverHostedCapabilityReference(99999)],
           ),
         );
         await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -5010,7 +5088,7 @@ void main() {
       // handler does *not* separately dispose `capabilityLease` itself; the
       // runtime is
       // solely responsible for it from that point on. Before
-      // CapabilityProtocol.exportResultCapabilityAsDescriptor disposed a redundant
+      // CapabilityProtocol.exportResultCapabilityAsWireReference disposed a redundant
       // a [CapabilityLease] passed as `cap` once its own owning export reference was established,
       // `capabilityLease` was simply dropped — leaking its share of the underlying identity's
       // refcount forever, so vat A's export never actually cleared even
@@ -5061,7 +5139,7 @@ void main() {
       // peer A → relay → peer B, then B hands the *same* capability back
       // to relay as a params capability of a further call — wire-encoded
       // as receiverHosted, since it's relay's own export as far as B's
-      // connection is concerned. Before acquireCapabilityFromDescriptor's
+      // connection is concerned. Before acquireCapabilityFromWireReference's
       // receiverHosted case acquired a fresh lease instead of returning
       // the export's raw identity directly, relay's dispatch handler
       // disposing that received params capability tore down the shared
@@ -5274,8 +5352,8 @@ void main() {
           interfaceId: _echoInterfaceId,
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
-          capTableDescriptors: [
-            RpcCapabilityDescriptor.receiverAnswer(1, [0]),
+          capabilityTableReferences: [
+            ReceiverAnswerCapabilityReference(1, [0]),
           ],
         ),
       );
@@ -5366,8 +5444,8 @@ void main() {
             interfaceId: _echoInterfaceId,
             methodId: _echoMethodId,
             paramsBytes: _buildEchoParams(''),
-            capTableDescriptors: [
-              RpcCapabilityDescriptor.receiverAnswer(1, [0]),
+            capabilityTableReferences: [
+              ReceiverAnswerCapabilityReference(1, [0]),
             ],
           ),
         );
@@ -5453,8 +5531,8 @@ void main() {
             interfaceId: _echoInterfaceId,
             methodId: _echoMethodId,
             paramsBytes: _buildEchoParams(''),
-            capTableDescriptors: [
-              RpcCapabilityDescriptor.receiverAnswer(1, [0]),
+            capabilityTableReferences: [
+              ReceiverAnswerCapabilityReference(1, [0]),
             ],
           ),
         );
@@ -5540,8 +5618,8 @@ void main() {
           interfaceId: _echoInterfaceId,
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
-          capTableDescriptors: [
-            RpcCapabilityDescriptor.receiverAnswer(1, [0]),
+          capabilityTableReferences: [
+            ReceiverAnswerCapabilityReference(1, [0]),
           ],
         ),
       );
@@ -5658,7 +5736,7 @@ void main() {
                   .having(
                     (cause) => cause.message,
                     'message',
-                    contains('descriptor (disc=5)'),
+                    contains('reference (disc=5)'),
                   ),
             ),
           ),
@@ -5814,9 +5892,12 @@ void main() {
           RpcMessageType.return_,
         );
         expect(ret.isReturnResults, isTrue);
-        expect(ret.capTableDescriptors, hasLength(1));
-        expect(ret.capTableDescriptors.single.disc, 2);
-        final promiseId = ret.capTableDescriptors.single.id;
+        expect(ret.capabilityTableReferences, hasLength(1));
+        expect(
+          ret.capabilityTableReferences.single,
+          isA<SenderPromiseCapabilityReference>(),
+        );
+        final promiseId = _exportIdOf(ret.capabilityTableReferences.single);
 
         var pipelinedCompleted = false;
         pipelinedCall.then((_) => pipelinedCompleted = true).ignore();
@@ -5838,7 +5919,10 @@ void main() {
         );
         expect(resolve.promiseId, promiseId);
         expect(resolve.isResolveCap, isTrue);
-        expect(resolve.resolveCapDescriptor?.disc, 1);
+        expect(
+          resolve.resolutionCapabilityReference,
+          isA<SenderHostedCapabilityReference>(),
+        );
 
         await parent.result;
         await client.close();
@@ -5948,7 +6032,7 @@ void main() {
         serverCaptured,
         RpcMessageType.return_,
       );
-      final promiseId = ret.capTableDescriptors.single.id;
+      final promiseId = _exportIdOf(ret.capabilityTableReferences.single);
 
       server.completer.completeError(const RpcException('promise failed'));
       final resolve = await _waitForMessageType(
@@ -5992,7 +6076,7 @@ void main() {
           bootstrap: EchoServer(),
         );
 
-        input.add(buildResolveCapMessage(promiseId: 9, capDisc: 1, capId: 42));
+        input.add(buildResolveCapMessage(promiseId: 9, reference: const SenderHostedCapabilityReference(42)));
         await Future<void>.delayed(Duration.zero);
 
         expect(
@@ -6063,7 +6147,7 @@ void main() {
           interfaceId: _echoInterfaceId,
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
-          capTableDescriptors: const [RpcCapabilityDescriptor.senderPromise(10)],
+          capabilityTableReferences: const [SenderPromiseCapabilityReference(10)],
         ),
       );
       await Future<void>.delayed(Duration.zero);
@@ -6118,9 +6202,9 @@ void main() {
           interfaceId: _echoInterfaceId,
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
-          capTableDescriptors: const [
-            RpcCapabilityDescriptor.senderHosted(20),
-            RpcCapabilityDescriptor.senderPromise(10),
+          capabilityTableReferences: const [
+            SenderHostedCapabilityReference(20),
+            SenderPromiseCapabilityReference(10),
           ],
         ),
       );
@@ -6142,7 +6226,7 @@ void main() {
       // dispatch()'s params list is processed in order: freshCap (not an
       // import) creates a fresh export first, *then* brokenParam's
       // throwIfBroken throws — exercising
-      // CapabilityProtocol.resolveParameterCapabilityDescriptors's partial-list-then-throw
+      // CapabilityProtocol.resolveParameterCapabilityReferences's partial-list-then-throw
       // path.
       final freshCap = _TrackedCapability();
       await expectLater(
@@ -6243,10 +6327,10 @@ void main() {
           interfaceId: _echoInterfaceId,
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
-          capTableDescriptors: const [
-            RpcCapabilityDescriptor.senderHosted(20),
-            RpcCapabilityDescriptor.senderHosted(21),
-            RpcCapabilityDescriptor.senderHosted(22),
+          capabilityTableReferences: const [
+            SenderHostedCapabilityReference(20),
+            SenderHostedCapabilityReference(21),
+            SenderHostedCapabilityReference(22),
           ],
         ),
       );
@@ -6358,10 +6442,10 @@ void main() {
 
         // Resolve bootstrap to a senderPromise import.
         serverToClient.add(
-          buildReturnResultsWithCapDescriptorsMessage(
+          buildReturnResultsWithCapabilityReferencesMessage(
             answerId: 0,
             resultsBytes: _buildEchoParams(''),
-            descriptors: const [RpcCapabilityDescriptor.senderPromise(10)],
+            references: const [SenderPromiseCapabilityReference(10)],
           ),
         );
         await Future<void>.delayed(Duration.zero);
@@ -6378,12 +6462,15 @@ void main() {
 
         final call = await _waitForMessageType(captured, RpcMessageType.call);
         expect(call.targetImportId, 10);
-        expect(call.paramsCapTable, hasLength(1));
-        expect(call.paramsCapTable.single.$1, 1); // local cap exported
+        expect(call.capabilityTableReferences, hasLength(1));
+        expect(
+          call.capabilityTableReferences.single,
+          isA<SenderHostedCapabilityReference>(),
+        ); // local cap exported
 
         captured.clear();
         serverToClient.add(
-          buildResolveCapMessage(promiseId: 10, capDisc: 3, capId: 1),
+          buildResolveCapMessage(promiseId: 10, reference: const ReceiverHostedCapabilityReference(1)),
         );
         final disembargo = await _waitForMessageType(
           captured,
@@ -6435,10 +6522,10 @@ void main() {
         );
         final stub = client.bootstrap(EchoClientFactory());
         serverToClient.add(
-          buildReturnResultsWithCapDescriptorsMessage(
+          buildReturnResultsWithCapabilityReferencesMessage(
             answerId: 0,
             resultsBytes: _buildEchoParams(''),
-            descriptors: const [RpcCapabilityDescriptor.senderPromise(10)],
+            references: const [SenderPromiseCapabilityReference(10)],
           ),
         );
         await Future<void>.delayed(Duration.zero);
@@ -6455,7 +6542,7 @@ void main() {
 
         captured.clear();
         serverToClient.add(
-          buildResolveCapMessage(promiseId: 10, capDisc: 3, capId: 1),
+          buildResolveCapMessage(promiseId: 10, reference: const ReceiverHostedCapabilityReference(1)),
         );
         await _waitForMessageType(captured, RpcMessageType.disembargo);
         expect(client.debugEmbargoCount, equals(1));
@@ -6499,10 +6586,10 @@ void main() {
       );
       final stub = client.bootstrap(EchoClientFactory());
       serverToClient.add(
-        buildReturnResultsWithCapDescriptorsMessage(
+        buildReturnResultsWithCapabilityReferencesMessage(
           answerId: 0,
           resultsBytes: _buildEchoParams(''),
-          descriptors: const [RpcCapabilityDescriptor.senderPromise(10)],
+          references: const [SenderPromiseCapabilityReference(10)],
         ),
       );
       await Future<void>.delayed(Duration.zero);
@@ -6519,7 +6606,7 @@ void main() {
 
       captured.clear();
       serverToClient.add(
-        buildResolveCapMessage(promiseId: 10, capDisc: 3, capId: 1),
+        buildResolveCapMessage(promiseId: 10, reference: const ReceiverHostedCapabilityReference(1)),
       );
       await _waitForMessageType(captured, RpcMessageType.disembargo);
       expect(client.debugEmbargoCount, equals(1));
