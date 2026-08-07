@@ -135,7 +135,7 @@ void main() {
       table.retainOrCreateExportId(capA);
       table.retainOrCreateExportId(capB);
 
-      table.tearDown((c) => c.dispose());
+      table.tearDown((c) => c.disposeForConnectionTeardown());
       expect(table.count, equals(0));
       expect(capA.disposed, isTrue);
       expect(capB.disposed, isTrue);
@@ -148,11 +148,32 @@ void main() {
       final resolved = _FakeCapability();
       table.retainOrCreateExportId(deferred);
 
-      table.tearDown((cap) => cap.dispose());
+      table.tearDown((cap) => cap.disposeForConnectionTeardown());
       await deferred.dispose().timeout(const Duration(seconds: 1));
 
       resolution.complete(resolved);
       await Future<void>.delayed(Duration.zero);
+      expect(resolved.disposed, isTrue);
+    });
+
+    test('tearDown leaves an unresolved deferred identity alive while another lease exists', () async {
+      final table = ExportTable();
+      final resolution = Completer<Capability>();
+      final deferred = DeferredCapability(resolution.future);
+      final independentLease = acquireCapabilityLease(deferred);
+      final resolved = _FakeCapability();
+      table.retainOrCreateExportId(deferred);
+
+      table.tearDown((cap) => cap.disposeForConnectionTeardown());
+
+      var independentDisposeCompleted = false;
+      final independentDispose = independentLease.dispose()
+        ..then((_) => independentDisposeCompleted = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(independentDisposeCompleted, isFalse);
+
+      resolution.complete(resolved);
+      await independentDispose.timeout(const Duration(seconds: 1));
       expect(resolved.disposed, isTrue);
     });
 

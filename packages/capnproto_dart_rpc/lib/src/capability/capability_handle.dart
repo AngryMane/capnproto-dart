@@ -185,11 +185,24 @@ class CapabilityLease extends Capability {
   );
 
   @override
-  Future<void> dispose() async {
+  Future<void> dispose() => _dispose(abandonDeferredIfLastLease: false);
+
+  /// Releases this connection-owned lease during connection teardown.
+  ///
+  /// An unresolved [DeferredCapability] is abandoned only when this is its
+  /// final lease. If another independent lease is still alive, the target is
+  /// left untouched so that lease can continue to use it.
+  Future<void> disposeForConnectionTeardown() =>
+      _dispose(abandonDeferredIfLastLease: true);
+
+  Future<void> _dispose({required bool abandonDeferredIfLastLease}) async {
     if (_leaseDisposed) return;
     _leaseDisposed = true;
     _refCount.count--;
     if (_refCount.count <= 0) {
+      if (abandonDeferredIfLastLease && _target is DeferredCapability) {
+        _target.abandon();
+      }
       // Assigning disposeFuture here — synchronously, before this await
       // suspends — is itself what permanently marks this identity as
       // "disposal triggered" for acquireCapabilityLease's check, regardless
