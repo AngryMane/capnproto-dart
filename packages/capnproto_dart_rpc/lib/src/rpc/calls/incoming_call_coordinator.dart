@@ -244,67 +244,89 @@ final class IncomingCallCoordinator {
     final path =
         msg.targetTransformPath.isEmpty ? const [0] : msg.targetTransformPath;
 
-    // Already resolved: dispatch immediately.
-    final resolved = answerTable.resolvedFor(parentQid);
-    if (resolved != null) {
-      final cap = _tryGetCapabilityFromAnswerPath(resolved, path);
-      if (cap == null) {
+    // tryBeginPipelinedDependency is the one atomic check for both "is this
+    // even a legal target right now" (unknown/failed/already-Finished-by-
+    // the-peer all reject) and, for a still-pending parent, registering
+    // this call as a dependent so AnswerTable defers cancellation/export
+    // cleanup until it's done with the eventual result — see that method's
+    // own doc comment and AnswerTable's `_PipelineDependencyTracker`.
+    final dependency = answerTable.tryBeginPipelinedDependency(parentQid);
+    switch (dependency) {
+      case null:
         sendBytes(
           buildReturnExceptionMessage(
             answerId: msg.questionId,
-            reason: 'pointer path $path in result struct is not a capability',
+            reason: 'unknown promisedAnswer questionId: $parentQid',
           ),
         );
         return;
-      }
-      _dispatchToCapability(msg, cap);
-      return;
+      case ResolvedPipelineDependency(:final resolved):
+        _dispatchPipelinedResolved(msg, resolved, path);
+        return;
+      case PendingPipelineDependency(:final pending, :final ticket):
+        pending
+            .then((resolved) => _dispatchPipelinedResolved(msg, resolved, path))
+            .catchError((Object err) {
+              // The connection may have torn down while this call sat
+              // queued behind the parent dispatch — tearDownConnection
+              // already cleared the tables that would otherwise be
+              // touched, and sendBytes() below would silently no-op
+              // anyway, so there's nothing left to do for a peer that's no
+              // longer there.
+              if (isClosed()) return;
+              sendBytes(
+                buildReturnExceptionMessage(
+                  answerId: msg.questionId,
+                  reason: 'parent call failed: $err',
+                ),
+              );
+            })
+            // Ends this dependency exactly once, regardless of whether the
+            // parent resolved or failed — after the value/error branch
+            // above has already run, so a same-tick export release (see
+            // _finalizePipelineDependency) can never race this dependent's
+            // own (already-started, by this point) dispatch.
+            .whenComplete(() => _finalizePipelineDependency(ticket))
+            .ignore();
+        return;
     }
+  }
 
-    // Still pending: queue behind the parent dispatch.
-    final pending = answerTable.pendingFor(parentQid);
-    if (pending == null) {
+  /// Resolves a pipelined call's target capability from its parent's
+  /// [resolved] answer and [path], and dispatches to it — shared by both
+  /// the already-resolved and the was-still-pending branches of
+  /// [_handlePipelinedCall].
+  void _dispatchPipelinedResolved(
+    RpcMessage msg,
+    ResolvedAnswer resolved,
+    List<int> path,
+  ) {
+    if (isClosed()) return;
+    final cap = _tryGetCapabilityFromAnswerPath(resolved, path);
+    if (cap == null) {
       sendBytes(
         buildReturnExceptionMessage(
           answerId: msg.questionId,
-          reason: 'unknown promisedAnswer questionId: $parentQid',
+          reason: 'pointer path $path in result struct is not a capability',
         ),
       );
       return;
     }
-    pending
-        .then((resolved) {
-          // The connection may have torn down while this call sat queued
-          // behind the parent dispatch — tearDownConnection already cleared
-          // the tables _dispatchToCapability would otherwise touch (decode
-          // capTable descriptors, bump import refcounts, dispatch to the
-          // application capability), and sendBytes() below would silently
-          // no-op anyway, so there's nothing left to do for a peer that's
-          // no longer there.
-          if (isClosed()) return;
-          final cap = _tryGetCapabilityFromAnswerPath(resolved, path);
-          if (cap == null) {
-            sendBytes(
-              buildReturnExceptionMessage(
-                answerId: msg.questionId,
-                reason:
-                    'pointer path $path in result struct is not a capability',
-              ),
-            );
-            return;
-          }
-          _dispatchToCapability(msg, cap);
-        })
-        .catchError((Object err) {
-          if (isClosed()) return;
-          sendBytes(
-            buildReturnExceptionMessage(
-              answerId: msg.questionId,
-              reason: 'parent call failed: $err',
-            ),
-          );
-        })
-        .ignore();
+    _dispatchToCapability(msg, cap);
+  }
+
+  /// Ends a pipelined call's dependency on its parent's answer (see
+  /// [AnswerTable.endPipelinedDependency]) and releases whatever result
+  /// export ids that call reports are now safe to release — either because
+  /// this was the last outstanding dependent and the parent's own
+  /// settle-time bookkeeping had already run, or because it's the one that
+  /// finally lets an earlier-drained tracker's rendezvous complete.
+  void _finalizePipelineDependency(Object ticket) {
+    final exportIds = answerTable.endPipelinedDependency(ticket);
+    if (exportIds == null || isClosed()) return;
+    for (final eid in exportIds) {
+      exportTable.releaseReference(eid, disposeIgnoringErrors);
+    }
   }
 
   Capability? _tryGetCapabilityFromAnswerPath(
@@ -660,14 +682,15 @@ final class IncomingCallCoordinator {
             // through a synchronously-reentrant sink (e.g. an in-memory or
             // `sync: true` transport) could observe — see that method's doc
             // comment.
-            final completed = answerTable.tryRecordAnswer(
+            final recorded = answerTable.tryRecordAnswer(
               qid,
               resolved: ResolvedAnswer(result.payload.bytes, result.caps),
             );
-            if (!completed) {
-              _disposeResultCapabilities(result);
-              _finishParameterCapabilityDisposalTrackingAndSendReleases(
+            if (!recorded.completed) {
+              _sendCanceledReturn(
+                qid,
                 parameterCapabilityDisposalTicket,
+                result: result,
               );
               return;
             }
@@ -678,6 +701,7 @@ final class IncomingCallCoordinator {
             _finishParameterCapabilityDisposalTrackingAndSendReleases(
               parameterCapabilityDisposalTicket,
             );
+            _releaseResultExportsIfAny(recorded.releaseResultExportsAfterSend);
             return;
           }
 
@@ -690,10 +714,15 @@ final class IncomingCallCoordinator {
           // anything but "not a capability" — so it's safe to tell the peer
           // no Finish is needed and immediately drop the answer's
           // pipelining bookkeeping ourselves, instead of waiting for it.
+          // This stays keyed purely on the result's own shape — never on
+          // whether the peer already sent an early Finish (see
+          // AnswerTable.applyPeerFinish's own doc comment for why those two
+          // are kept separate) — so a real peer reading it is never misled
+          // about a Return that does carry live capability references.
           final noFinishNeeded = resultReferences.isEmpty;
           // Record the answer before sending — see the comment on the
           // sendResultsToYourself branch above for why the ordering matters.
-          final completed = answerTable.tryRecordAnswer(
+          final recorded = answerTable.tryRecordAnswer(
             qid,
             resolved: ResolvedAnswer(result.payload.bytes, result.caps),
             resultExportIds: [
@@ -703,10 +732,11 @@ final class IncomingCallCoordinator {
                   exportId,
             ],
           );
-          if (!completed) {
-            _disposeResultCapabilities(result);
-            _finishParameterCapabilityDisposalTrackingAndSendReleases(
+          if (!recorded.completed) {
+            _sendCanceledReturn(
+              qid,
               parameterCapabilityDisposalTicket,
+              result: result,
             );
             return;
           }
@@ -735,6 +765,11 @@ final class IncomingCallCoordinator {
             // may consume the state first and this cleanup becomes a no-op.
             answerTable.clearAnswerForNoFinishNeeded(qid);
           }
+          // Only non-null when the peer had already sent an early Finish
+          // while pipelined dependents were still outstanding — releasing
+          // (if requested) only after the Return above is actually sent,
+          // never before, exactly like a real peer Finish would.
+          _releaseResultExportsIfAny(recorded.releaseResultExportsAfterSend);
         })
         .catchError((Object err) {
           if (isClosed()) {
@@ -751,17 +786,16 @@ final class IncomingCallCoordinator {
           if (sendResultsToYourself) {
             // See the matching comment in the success branch above for why
             // this runs before sendBytes().
-            final completed = answerTable.tryRecordFailedAnswer(qid, rpcError);
-            if (!completed) {
-              _finishParameterCapabilityDisposalTrackingAndSendReleases(
-                parameterCapabilityDisposalTicket,
-              );
+            final recorded = answerTable.tryRecordFailedAnswer(qid, rpcError);
+            if (!recorded.completed) {
+              _sendCanceledReturn(qid, parameterCapabilityDisposalTicket);
               return;
             }
             sendBytes(buildReturnResultsSentElsewhereMessage(answerId: qid));
             _finishParameterCapabilityDisposalTrackingAndSendReleases(
               parameterCapabilityDisposalTicket,
             );
+            _releaseResultExportsIfAny(recorded.releaseResultExportsAfterSend);
             return;
           }
           // An exception Return never carries a results payload/capTable,
@@ -770,9 +804,7 @@ final class IncomingCallCoordinator {
           // needs to be recorded for this qid at all. clearPendingAnswer() still
           // needs to run, though, to detect a Finish that arrived early.
           if (answerTable.clearPendingAnswer(qid)) {
-            _finishParameterCapabilityDisposalTrackingAndSendReleases(
-              parameterCapabilityDisposalTicket,
-            );
+            _sendCanceledReturn(qid, parameterCapabilityDisposalTicket);
             return;
           }
           final releaseParamCaps =
@@ -791,12 +823,56 @@ final class IncomingCallCoordinator {
         });
   }
 
-  void handleFinish(RpcMessage msg) {
-    final resultExportIds = answerTable.applyPeerFinish(msg.questionId);
-    if (resultExportIds == null || !msg.releaseResultCaps) return;
-    for (final eid in resultExportIds) {
+  /// Answers [qid] with `Return(canceled)` in place of a normal Return,
+  /// because its dispatch was accepted as canceled by an early Finish with
+  /// no pipelined dependents ever registered for it (see
+  /// `AnswerTable.applyPeerFinish`/`tryRecordAnswer`/`tryRecordFailedAnswer`/
+  /// `clearPendingAnswer`'s "was finished early" outcomes). Disposes
+  /// [result]'s capabilities, if any — they were never exported, so this is
+  /// the only remaining chance to release them. Deliberately not sent until
+  /// here (dispatch-settle time), not the moment Finish arrived: sending it
+  /// earlier would let the peer legally reuse [qid] before this vat's own
+  /// pending dispatch actually finished with it, and `releaseParamCaps`
+  /// isn't knowable until [parameterCapabilityDisposalTicket]'s window
+  /// resolves, which only happens once the dispatch settles.
+  void _sendCanceledReturn(
+    int qid,
+    Object? parameterCapabilityDisposalTicket, {
+    DispatchResult? result,
+  }) {
+    if (result != null) _disposeResultCapabilities(result);
+    final releaseParamCaps =
+        _finishParameterCapabilityDisposalTrackingAndSendReleases(
+          parameterCapabilityDisposalTicket,
+        );
+    if (isClosed()) return;
+    sendBytes(
+      buildReturnCanceledMessage(
+        answerId: qid,
+        releaseParamCaps: releaseParamCaps,
+      ),
+    );
+  }
+
+  /// Releases each export id in [exportIds] (a no-op for `null`, or once
+  /// the connection has torn down) — shared by every call site that reports
+  /// result-export ids to release, whether from a real peer Finish
+  /// ([handleFinish]) or from AnswerTable's own dependency-tracker
+  /// rendezvous settling late ([_finalizePipelineDependency], or the
+  /// `releaseResultExportsAfterSend` case in [_executeIncomingDispatch]).
+  void _releaseResultExportsIfAny(List<int>? exportIds) {
+    if (exportIds == null || isClosed()) return;
+    for (final eid in exportIds) {
       exportTable.releaseReference(eid, disposeIgnoringErrors);
     }
+  }
+
+  void handleFinish(RpcMessage msg) {
+    final resultExportIds = answerTable.applyPeerFinish(
+      msg.questionId,
+      releaseResultCaps: msg.releaseResultCaps,
+    );
+    _releaseResultExportsIfAny(resultExportIds);
   }
 
   /// Resolves [qid] against this vat's own incoming-answer bookkeeping, for

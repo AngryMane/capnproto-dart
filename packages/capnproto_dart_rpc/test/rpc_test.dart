@@ -3342,10 +3342,16 @@ void main() {
         server.complete.complete();
         await Future<void>.delayed(const Duration(milliseconds: 20));
 
-        expect(
-          captured.where((m) => m.type == RpcMessageType.return_),
-          isEmpty,
-        );
+        // The dispatch's own (real) result is suppressed — never sent as a
+        // normal Return — but this vat still answers the question with
+        // Return(canceled) once the dispatch actually settles (see
+        // AnswerTable.applyPeerFinish/IncomingCallCoordinator
+        // ._sendCanceledReturn), instead of leaving it hanging forever.
+        final returns =
+            captured.where((m) => m.type == RpcMessageType.return_).toList();
+        expect(returns, hasLength(1));
+        expect(returns.single.answerId, equals(1));
+        expect(returns.single.returnDisc, equals(2)); // canceled
         // Finish-triggered suppression must leave no answer/cancellation
         // state behind, same as teardown-triggered suppression.
         expect(serverConn.debugAnswerCount, equals(0));
@@ -3463,11 +3469,17 @@ void main() {
 
       // The dispatch ignores cancellation and succeeds anyway; its result
       // capability was never going to be sent (Finish already suppressed
-      // this answer), so it must be disposed instead of dropped.
+      // this answer), so it must be disposed instead of dropped — this
+      // vat still answers with Return(canceled) once the dispatch settles,
+      // rather than leaving the question hanging forever.
       server.complete.complete();
       await Future<void>.delayed(const Duration(milliseconds: 20));
 
-      expect(captured.where((m) => m.type == RpcMessageType.return_), isEmpty);
+      final returns =
+          captured.where((m) => m.type == RpcMessageType.return_).toList();
+      expect(returns, hasLength(1));
+      expect(returns.single.answerId, equals(1));
+      expect(returns.single.returnDisc, equals(2)); // canceled
       expect(resultCap.disposeCount, equals(1));
 
       await clientToServer.close();
