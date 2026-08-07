@@ -420,6 +420,34 @@ void main() {
       expect(h.answerTable.isTracked(60), isFalse);
     });
 
+    test('noFinishNeeded cleanup tolerates a synchronously-reentrant peer '
+        'Finish that consumes the answer state during send', () async {
+      final h = _Harness();
+      final cap =
+          _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
+      final exportId = h.exportTable.getOrCreate(cap);
+      var sentReentrantFinish = false;
+      h.sendBytes = (bytes) {
+        h.sentBytes.add(bytes);
+        final msg = parseRpcMessage(bytes);
+        if (msg.isReturnResults && msg.returnNoFinishNeeded) {
+          sentReentrantFinish = true;
+          h.coordinator.handleFinish(
+            parseRpcMessage(buildFinishMessage(msg.answerId)),
+          );
+        }
+      };
+
+      h.coordinator.handleCall(
+        parseRpcMessage(_buildCall(questionId: 62, targetExportId: exportId)),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(sentReentrantFinish, isTrue);
+      expect(h.answerTable.isTracked(62), isFalse);
+      expect(h.sentBytes, hasLength(1));
+    });
+
     test('a failed dispatch sends Return.exception with the thrown reason/ '
         'kind and noFinishNeeded=true', () async {
       final h = _Harness();

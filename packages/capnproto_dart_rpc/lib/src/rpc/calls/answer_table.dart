@@ -75,7 +75,8 @@ final class FinishedBeforeCompletion extends AnswerState {
 /// table's API.
 ///
 /// Deliberately doesn't know how to actually send a Return/Finish, or how to
-/// release an export — [finish] only ever hands back the result export ids
+/// release an export — [recordPeerFinish] only ever hands back the result
+/// export ids
 /// that need releasing; the caller (today, `IncomingCallCoordinator`) owns
 /// translating that into an actual `ExportTable.release` call and any wire
 /// traffic.
@@ -218,6 +219,30 @@ class AnswerTable {
     );
   }
 
+  /// Clears the completed answer bookkeeping for a Return sent with
+  /// `noFinishNeeded: true`.
+  ///
+  /// Only an [AnsweredState] with no result capabilities is valid here. A
+  /// missing entry is also a no-op because synchronously sending the Return
+  /// can reenter [recordPeerFinish], which may consume the state first.
+  /// This never cancels a dispatch or releases an export.
+  void clearAnswerForNoFinishNeeded(int qid) {
+    final state = _answers[qid];
+    if (state == null) return;
+    if (state case AnsweredState(:final resolved, :final resultExportIds)) {
+      if (resultExportIds.isNotEmpty || (resolved?.caps.isNotEmpty ?? false)) {
+        throw StateError(
+          'answer $qid has result capabilities and needs peer Finish',
+        );
+      }
+      _answers.remove(qid);
+      return;
+    }
+    throw StateError(
+      'answer $qid is ${state.runtimeType}, not a completed answer',
+    );
+  }
+
   /// Applies an incoming Finish for [qid]: drops its answer state and
   /// returns the result export ids a `releaseResultCaps: true` Finish
   /// should release (the caller is responsible for actually releasing them
@@ -229,7 +254,10 @@ class AnswerTable {
   /// answering) and cancels its dispatch. Also returns `null` (as a no-op)
   /// if [qid] is unknown, or already marked finished by an earlier call —
   /// a Finish must never resurrect or double-cancel anything.
-  List<int>? finish(int qid) {
+  ///
+  /// TODO(#109): Do not cancel while an already-received pipelined call
+  /// still depends on this answer.
+  List<int>? recordPeerFinish(int qid) {
     final state = _answers[qid];
     switch (state) {
       case null:

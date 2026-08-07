@@ -11,7 +11,7 @@ ResolvedAnswer _answer([List<Capability> caps = const []]) =>
 
 void main() {
   group('AnswerTable', () {
-    test('Finish arriving while dispatch is still pending: finish() '
+    test('Finish arriving while dispatch is still pending: recordPeerFinish() '
         'returns null, marks the answer finished, and cancels the live '
         'dispatch — the eventual dispatch result must then be dropped '
         'instead of resurrecting answer state', () async {
@@ -21,7 +21,7 @@ void main() {
       pending.future.ignore();
       table.recordPendingAnswer(1, pending.future, cancellation);
 
-      final resultExportIds = table.finish(1);
+      final resultExportIds = table.recordPeerFinish(1);
       expect(resultExportIds, isNull);
       expect(cancellation.context.isCanceled, isTrue);
       expect(
@@ -51,15 +51,64 @@ void main() {
       pending.future.ignore();
       table.recordPendingAnswer(1, pending.future, cancellation);
 
-      expect(table.finish(1), isNull);
-      expect(table.finish(1), isNull);
+      expect(table.recordPeerFinish(1), isNull);
+      expect(table.recordPeerFinish(1), isNull);
       expect(table.isTracked(1), isTrue);
       expect(table.clearPendingAnswer(1), isTrue);
     });
 
     test('Finish for an unknown qid is a no-op returning null', () {
       final table = AnswerTable();
-      expect(table.finish(42), isNull);
+      expect(table.recordPeerFinish(42), isNull);
+    });
+
+    test('clearAnswerForNoFinishNeeded removes only completed local '
+        'bookkeeping and does not cancel its settled dispatch', () {
+      final table = AnswerTable();
+      final pending = Completer<ResolvedAnswer>();
+      final cancellation = DispatchCancellationController();
+      pending.future.ignore();
+      table.recordPendingAnswer(1, pending.future, cancellation);
+      expect(table.tryRecordAnswer(1, resolved: _answer()), isTrue);
+
+      table.clearAnswerForNoFinishNeeded(1);
+
+      expect(table.isTracked(1), isFalse);
+      expect(cancellation.context.isCanceled, isFalse);
+    });
+
+    test('clearAnswerForNoFinishNeeded is a no-op when a reentrant peer '
+        'Finish already consumed the completed answer', () {
+      final table = AnswerTable();
+      table.recordAnswer(2, resolved: _answer());
+      expect(table.recordPeerFinish(2), equals(const []));
+
+      expect(() => table.clearAnswerForNoFinishNeeded(2), returnsNormally);
+      expect(table.isTracked(2), isFalse);
+    });
+
+    test('clearAnswerForNoFinishNeeded rejects a pending answer without '
+        'canceling or removing it', () {
+      final table = AnswerTable();
+      final pending = Completer<ResolvedAnswer>();
+      final cancellation = DispatchCancellationController();
+      pending.future.ignore();
+      table.recordPendingAnswer(3, pending.future, cancellation);
+
+      expect(() => table.clearAnswerForNoFinishNeeded(3), throwsStateError);
+      expect(table.isTracked(3), isTrue);
+      expect(cancellation.context.isCanceled, isFalse);
+      table.clearPendingAnswer(3);
+    });
+
+    test('clearAnswerForNoFinishNeeded rejects a completed answer with '
+        'result exports and leaves it for peer Finish', () {
+      final table = AnswerTable();
+      table.recordAnswer(4, resolved: _answer(), resultExportIds: [7]);
+
+      expect(() => table.clearAnswerForNoFinishNeeded(4), throwsStateError);
+      expect(table.isTracked(4), isTrue);
+      expect(table.recordPeerFinish(4), equals([7]));
     });
 
     test(
@@ -86,7 +135,7 @@ void main() {
         expect(table.isTracked(1), isTrue);
         expect(table.resolvedFor(1), same(resolved));
         expect(table.pendingFor(1), isNull, reason: 'no longer pending');
-        expect(table.finish(1), equals([7]));
+        expect(table.recordPeerFinish(1), equals([7]));
       },
     );
 
@@ -102,7 +151,7 @@ void main() {
         DispatchCancellationController(),
       );
       expect(
-        table.finish(1),
+        table.recordPeerFinish(1),
         isNull,
       ); // Finish arrives before dispatch settles.
 
@@ -127,7 +176,7 @@ void main() {
       final completed = table.tryRecordFailedAnswer(2, error);
       expect(completed, isTrue);
       expect(table.errorFor(2), same(error));
-      expect(table.finish(2), equals(const []));
+      expect(table.recordPeerFinish(2), equals(const []));
     });
 
     test('tryRecordFailedAnswer for a qid finished early: returns '
@@ -140,7 +189,7 @@ void main() {
         pending.future,
         DispatchCancellationController(),
       );
-      expect(table.finish(2), isNull);
+      expect(table.recordPeerFinish(2), isNull);
 
       final completed = table.tryRecordFailedAnswer(
         2,
@@ -157,7 +206,7 @@ void main() {
       final table = AnswerTable();
       table.recordAnswer(2, resolved: _answer(), resultExportIds: [10, 11]);
 
-      final resultExportIds = table.finish(2);
+      final resultExportIds = table.recordPeerFinish(2);
       expect(resultExportIds, equals([10, 11]));
       expect(table.resolvedFor(2), isNull);
       expect(table.isTracked(2), isFalse);
@@ -169,7 +218,7 @@ void main() {
       table.tryRecordFailedAnswer(2, const CapnpException('boom'));
       expect(table.errorFor(2), isNotNull);
 
-      final resultExportIds = table.finish(2);
+      final resultExportIds = table.recordPeerFinish(2);
       expect(resultExportIds, equals(const []));
       expect(table.errorFor(2), isNull);
       expect(table.isTracked(2), isFalse);
@@ -194,7 +243,7 @@ void main() {
 
       table.recordAnswer(3, resolved: _answer());
       expect(table.isTracked(3), isTrue, reason: 'resolved, awaiting Finish');
-      table.finish(3);
+      table.recordPeerFinish(3);
       expect(table.isTracked(3), isFalse);
 
       table.tryRecordFailedAnswer(3, const CapnpException('boom'));
@@ -207,7 +256,7 @@ void main() {
       table.recordAnswer(4);
       expect(table.isTracked(4), isTrue);
       expect(table.resolvedFor(4), isNull);
-      expect(table.finish(4), equals(const []));
+      expect(table.recordPeerFinish(4), equals(const []));
     });
 
     test('resolvedFor/pendingFor/errorFor each only report data for their '

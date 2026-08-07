@@ -705,12 +705,12 @@ final class IncomingCallCoordinator {
             ),
           );
           if (noFinishNeeded) {
-            // No Finish is coming for this qid (see above) — drop the
-            // answer bookkeeping just recorded, exactly as if Finish had
-            // already arrived for it. Recording it before send (above) and
-            // only dropping it now, after, still keeps it visible for the
-            // whole synchronous span the Return is actually sent in.
-            answerTable.finish(qid);
+            // No Finish is needed for this qid (see above), so clear only
+            // the local answer bookkeeping. Recording it before send and
+            // clearing it after keeps it visible while the Return is sent;
+            // if a synchronously-reentrant peer sends Finish anyway, that
+            // may consume the state first and this cleanup becomes a no-op.
+            answerTable.clearAnswerForNoFinishNeeded(qid);
           }
         })
         .catchError((Object err) {
@@ -758,7 +758,7 @@ final class IncomingCallCoordinator {
   }
 
   void handleFinish(RpcMessage msg) {
-    final resultExportIds = answerTable.finish(msg.questionId);
+    final resultExportIds = answerTable.recordPeerFinish(msg.questionId);
     if (resultExportIds == null || !msg.releaseResultCaps) return;
     for (final eid in resultExportIds) {
       exportTable.release(eid, disposeIgnoringErrors);
