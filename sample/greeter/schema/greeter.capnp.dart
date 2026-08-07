@@ -402,7 +402,7 @@ final class GreeterNewSessionResult {
 }
 
 final class GreeterNewSessionPipeline {
-  GreeterNewSessionPipeline._(CapCall call)
+  GreeterNewSessionPipeline._(DispatchHandle call)
       :     session = GreetSessionClient(call.pipelineResultPath([...const <int>[], 0])),
     result = call.result.then((r) => r.payload.getTyped(greeterNewSessionResultsFactory, capabilities: r.caps));
 
@@ -430,7 +430,7 @@ class GreeterClient extends Capability {
   GreeterNewSessionPipeline newSessionPipeline(void Function(GreeterNewSessionParamsBuilder) build) {
     final mb = MessageBuilder();
     build(mb.initRoot(greeterNewSessionParamsFactory));
-    return GreeterNewSessionPipeline._(_cap.beginDispatch(0xd41d8cd98f00b204, 1, RpcPayload.fromBytes(mb.serialize())));
+    return GreeterNewSessionPipeline._(_cap.dispatchForPipelining(0xd41d8cd98f00b204, 1, RpcPayload.fromBytes(mb.serialize())));
   }
 
   @override

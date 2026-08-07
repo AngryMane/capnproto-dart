@@ -1,9 +1,9 @@
 part of 'capability.dart';
 
-class _DeferredCapCall implements CapCall {
+class _DeferredDispatchHandle implements DispatchHandle {
   @override
   final Future<DispatchResult> result;
-  _DeferredCapCall(this.result);
+  _DeferredDispatchHandle(this.result);
 
   @override
   Capability pipelineResult(int ptrIndex) => DeferredCapability(
@@ -18,7 +18,7 @@ class _DeferredCapCall implements CapCall {
 
 /// A capability backed by a [Future] that resolves to the real capability.
 ///
-/// Used as the fallback for [CapCall.pipelineResult] when the underlying
+/// Used as the fallback for [DispatchHandle.pipelineResult] when the underlying
 /// [Capability] is not an RPC-connected imported cap and therefore cannot
 /// send wire-level promisedAnswer messages.
 class DeferredCapability extends Capability {
@@ -106,14 +106,14 @@ class DeferredCapability extends Capability {
   }
 
   @override
-  CapCall beginDispatch(
+  DispatchHandle dispatchForPipelining(
     int interfaceId,
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
   }) {
     if (_disposed) {
-      return _DeferredCapCall(
+      return _DeferredDispatchHandle(
         Future<DispatchResult>.error(
           const RpcException(
             'capability is disposed',
@@ -122,7 +122,7 @@ class DeferredCapability extends Capability {
         ),
       );
     }
-    return _DeferredCapCall(
+    return _DeferredDispatchHandle(
       _resolveForCall().then(
         (cap) => cap.dispatch(
           interfaceId,

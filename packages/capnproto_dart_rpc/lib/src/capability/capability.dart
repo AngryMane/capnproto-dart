@@ -7,7 +7,7 @@ import '../rpc/rpc_exception.dart';
 import 'rpc_payload.dart';
 
 part 'dispatch.dart';
-part 'cap_call.dart';
+part 'dispatch_handle.dart';
 part 'capability_handle.dart';
 part 'capability_result.dart';
 part 'deferred_capability.dart';
@@ -105,19 +105,19 @@ abstract class Capability {
     List<Capability> paramsCapabilities = const [],
   }) => null;
 
-  /// Starts a dispatch call and returns a [CapCall] that allows creating
-  /// pipelined sub-capabilities before the round-trip completes.
+  /// Dispatches a call and returns a [DispatchHandle] that allows creating
+  /// pipelined result capabilities before the call completes.
   ///
   /// The default implementation delegates to [dispatch] and uses
   /// [DeferredCapability] for pipelining (local deferral, not wire-level).
   /// RPC-connected capabilities override this to return a wire-level pipelined
   /// capability via the `promisedAnswer` target.
-  CapCall beginDispatch(
+  DispatchHandle dispatchForPipelining(
     int interfaceId,
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-  }) => _DeferredCapCall(
+  }) => _DeferredDispatchHandle(
     dispatchWithContext(
       interfaceId,
       methodId,
@@ -186,4 +186,3 @@ final class WeakCapabilityRef<T extends Capability> {
   /// The referenced capability, or null if it has been garbage collected.
   T? get target => _ref.target;
 }
-

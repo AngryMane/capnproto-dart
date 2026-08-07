@@ -214,7 +214,7 @@ Future<void> _passCapability(_UdsFixture fixture) async {
 Future<(Capability, List<Capability>)> _pipelineCapability(
   _UdsFixture fixture,
 ) async {
-  final parent = fixture.client.cap.beginDispatch(
+  final parent = fixture.client.cap.dispatchForPipelining(
     echoInterfaceId,
     _returnCapabilityMethod,
     _payload('pipeline-parent'),

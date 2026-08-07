@@ -11,7 +11,7 @@ export 'package:capnproto_dart/capnproto_dart.dart';
 
 export 'src/capability/capability.dart'
     show
-        CapCall,
+        DispatchHandle,
         Capability,
         CapabilityLease,
         DeferredCapability,

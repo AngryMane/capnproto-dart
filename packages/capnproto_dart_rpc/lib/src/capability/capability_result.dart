@@ -4,10 +4,10 @@ part of 'capability.dart';
 /// [RpcException] that preserves why the pipeline target could not resolve.
 ///
 /// Used for *local*, single-hop pipelining where [ptrIndex] is a
-/// schema-known constant baked into generated code — `_DeferredCapCall`,
-/// `_FutureCapCall`, `_ErrorCapCall`, and `_UnresolvedImportCapCall`'s
-/// already-settled fallback in the RPC layer. Wire-level `receiverAnswer`/
-/// `promisedAnswer` targets instead go through
+/// schema-known constant baked into generated code — `_DeferredDispatchHandle`,
+/// `_FutureDispatchHandle`, `_ErrorDispatchHandle`, and
+/// `_UnresolvedImportDispatchHandle`'s already-settled fallback in the RPC
+/// layer. Wire-level `receiverAnswer`/`promisedAnswer` targets instead go through
 /// [requireCapabilityFromResultPath], since those can name a capability
 /// nested more than one struct deep in the result.
 ///

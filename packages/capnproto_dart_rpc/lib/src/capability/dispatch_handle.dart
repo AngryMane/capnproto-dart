@@ -1,11 +1,11 @@
 part of 'capability.dart';
 
-/// Represents an in-progress dispatch call.
+/// Provides access to an in-progress dispatch and its pipelined results.
 ///
-/// Returned by [Capability.beginDispatch]. Carries the result future and a
-/// factory for creating a capability that pipelines onto the result's caps
-/// without waiting for the round-trip to complete.
-abstract interface class CapCall {
+/// Returned by [Capability.dispatchForPipelining]. Carries the result future
+/// and creates capabilities that pipeline onto the result's caps without
+/// waiting for the dispatch to complete.
+abstract interface class DispatchHandle {
   /// The eventual result of the dispatched call.
   Future<DispatchResult> get result;
 
@@ -28,8 +28,8 @@ abstract interface class CapCall {
   ///   throw UnsupportedError('multi-hop pipelining not supported');
   /// }
   /// ```
-  /// (this is exactly what every `implements CapCall` class in this library
-  /// does unless it can actually resolve deeper paths before [result]
+  /// (this is exactly what every `implements DispatchHandle` class in this
+  /// library does unless it can actually resolve deeper paths before [result]
   /// completes — see `_PipelinedCapability` in the RPC layer for the
   /// one that can). Note that — unlike an `abstract class` — `interface
   /// class` member bodies aren't inherited by `implements`, so every

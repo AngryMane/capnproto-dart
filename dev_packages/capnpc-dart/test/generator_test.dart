@@ -1443,7 +1443,7 @@ void main() {
 
     test('also generates a pipeline method', () {
       expect(src, contains('GreeterNewSessionPipeline newSessionPipeline('));
-      expect(src, contains('beginDispatch('));
+      expect(src, contains('dispatchForPipelining('));
     });
 
     test('pipeline class uses correct ptr slot (not hardcoded 0)', () {
@@ -1564,7 +1564,7 @@ void main() {
 
         // Shared per-struct-type nested Pipeline class.
         expect(s, contains('final class InnerPipeline'));
-        expect(s, contains('InnerPipeline(CapCall call, List<int> basePath)'));
+        expect(s, contains('InnerPipeline(DispatchHandle call, List<int> basePath)'));
         expect(
           s,
           contains(
@@ -2206,7 +2206,7 @@ void main() {
     test(
       'a capability-returning method with a nested capability param also '
       'generates a xxxPipeline() using the capTable accumulator with '
-      'beginDispatch',
+      'dispatchForPipelining',
       () {
         const bundleId = 9016;
         final bundleNode = structNode(bundleId, 'Bundle', 0, 1, [
@@ -2247,7 +2247,7 @@ void main() {
         expect(
           s,
           contains(
-            'beginDispatch(',
+            'dispatchForPipelining(',
           ),
         );
         expect(s, contains('paramsCapabilities: capTable.capabilities'));

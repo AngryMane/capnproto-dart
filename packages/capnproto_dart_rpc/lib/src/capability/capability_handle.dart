@@ -160,12 +160,12 @@ class CapabilityLease extends Capability {
   );
 
   @override
-  CapCall beginDispatch(
+  DispatchHandle dispatchForPipelining(
     int interfaceId,
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-  }) => _target.beginDispatch(
+  }) => _target.dispatchForPipelining(
     interfaceId,
     methodId,
     params,

@@ -1875,7 +1875,7 @@ void main() {
       final bootstrapCap = client.bootstrap(EchoClientFactory());
       await bootstrapCap.echo('warmup');
 
-      final call = bootstrapCap.cap.beginDispatch(
+      final call = bootstrapCap.cap.dispatchForPipelining(
         _echoInterfaceId,
         _tailCallMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
@@ -2063,7 +2063,7 @@ void main() {
       // pipelined result — both should be sent without waiting for getPipeline
       // to complete.
       captured.clear();
-      final call = bootstrapCap.cap.beginDispatch(
+      final call = bootstrapCap.cap.dispatchForPipelining(
         _echoInterfaceId,
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
@@ -2115,7 +2115,7 @@ void main() {
         final bootstrapCap = client.bootstrap(EchoClientFactory());
         await bootstrapCap.echo('warmup');
 
-        final call = bootstrapCap.cap.beginDispatch(
+        final call = bootstrapCap.cap.dispatchForPipelining(
           _echoInterfaceId,
           _mixedMethodId,
           RpcPayload.fromBytes(_buildEchoParams('')),
@@ -2164,7 +2164,7 @@ void main() {
         await bootstrapCap.echo('warmup');
 
         captured.clear();
-        final parent = bootstrapCap.cap.beginDispatch(
+        final parent = bootstrapCap.cap.dispatchForPipelining(
           _echoInterfaceId,
           _pipelineMethodId,
           RpcPayload.fromBytes(_buildEchoParams('')),
@@ -2212,10 +2212,10 @@ void main() {
     );
 
     test(
-      'Capability.beginDispatch on non-RPC cap falls back to DeferredCapability',
+      'Capability.dispatchForPipelining on non-RPC cap falls back to DeferredCapability',
       () async {
         final server = EchoServer();
-        final call = server.beginDispatch(
+        final call = server.dispatchForPipelining(
           _echoInterfaceId,
           _echoMethodId,
           RpcPayload.fromBytes(_buildEchoParams('test')),
@@ -2259,7 +2259,7 @@ void main() {
       );
       expect(local.dispatchCount, equals(0));
 
-      final call = deferred.beginDispatch(
+      final call = deferred.dispatchForPipelining(
         _echoInterfaceId,
         _echoMethodId,
         RpcPayload.fromBytes(_buildEchoParams('after-dispose')),
@@ -2296,7 +2296,7 @@ void main() {
         await bootstrapCap.echo('warmup');
 
         captured.clear();
-        final call = bootstrapCap.cap.beginDispatch(
+        final call = bootstrapCap.cap.dispatchForPipelining(
           _echoInterfaceId,
           _pipelineMethodId,
           RpcPayload.fromBytes(_buildEchoParams('')),
@@ -2347,7 +2347,7 @@ void main() {
         final bootstrapCap = client.bootstrap(EchoClientFactory());
         await bootstrapCap.echo('warmup');
 
-        final call = bootstrapCap.cap.beginDispatch(
+        final call = bootstrapCap.cap.dispatchForPipelining(
           _echoInterfaceId,
           _pipelineMethodId,
           RpcPayload.fromBytes(_buildEchoParams('')),
@@ -2417,7 +2417,7 @@ void main() {
         await bootstrapCap.echo('warmup');
 
         captured.clear();
-        final call = bootstrapCap.cap.beginDispatch(
+        final call = bootstrapCap.cap.dispatchForPipelining(
           _echoInterfaceId,
           _pipelineMethodId,
           RpcPayload.fromBytes(_buildEchoParams('')),
@@ -2483,7 +2483,7 @@ void main() {
               await bootstrapCap.echo('warmup');
 
               captured.clear();
-              final parent = bootstrapCap.cap.beginDispatch(
+              final parent = bootstrapCap.cap.dispatchForPipelining(
                 _echoInterfaceId,
                 _pipelineMethodId,
                 RpcPayload.fromBytes(_buildEchoParams('')),
@@ -2534,7 +2534,7 @@ void main() {
         final bootstrapCap = client.bootstrap(EchoClientFactory());
         await bootstrapCap.echo('warmup');
 
-        final call = bootstrapCap.cap.beginDispatch(
+        final call = bootstrapCap.cap.dispatchForPipelining(
           _echoInterfaceId,
           999,
           RpcPayload.fromBytes(_buildEchoParams('')),
@@ -2593,7 +2593,7 @@ void main() {
       await bootstrapCap.echo('warmup');
 
       captured.clear();
-      final call = bootstrapCap.cap.beginDispatch(
+      final call = bootstrapCap.cap.dispatchForPipelining(
         _echoInterfaceId,
         _duplicateCapsMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
@@ -2702,7 +2702,7 @@ void main() {
       final bootstrapCap = client.bootstrap(EchoClientFactory());
       await bootstrapCap.echo('warmup');
 
-      final call = bootstrapCap.cap.beginDispatch(
+      final call = bootstrapCap.cap.dispatchForPipelining(
         _echoInterfaceId,
         _mixedMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
@@ -2748,7 +2748,7 @@ void main() {
       final bootstrapCap = client.bootstrap(EchoClientFactory());
       await bootstrapCap.echo('warmup');
 
-      final call = bootstrapCap.cap.beginDispatch(
+      final call = bootstrapCap.cap.dispatchForPipelining(
         _echoInterfaceId,
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
@@ -3523,7 +3523,7 @@ void main() {
       expect(serverConn.debugExportCount, equals(1));
       expect(client.debugImportCount, equals(1));
 
-      final call = bootstrapCap.cap.beginDispatch(
+      final call = bootstrapCap.cap.dispatchForPipelining(
         _echoInterfaceId,
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
@@ -3595,7 +3595,7 @@ void main() {
       final bootstrapCap = client.bootstrap(EchoClientFactory());
       await bootstrapCap.echo('warmup');
 
-      final parent = bootstrapCap.cap.beginDispatch(
+      final parent = bootstrapCap.cap.dispatchForPipelining(
         _echoInterfaceId,
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
@@ -3658,7 +3658,7 @@ void main() {
         // the client, and the vended serverSideCap (deliberately never
         // disposed here) stays a live export on the server / live import on
         // the client -- beyond just the single bootstrap pair.
-        final call = bootstrapCap.cap.beginDispatch(
+        final call = bootstrapCap.cap.dispatchForPipelining(
           _echoInterfaceId,
           _pipelineMethodId,
           RpcPayload.fromBytes(_buildEchoParams('')),
@@ -5793,7 +5793,7 @@ void main() {
         await bootstrapCap.echo('warmup');
 
         serverCaptured.clear();
-        final parent = bootstrapCap.cap.beginDispatch(
+        final parent = bootstrapCap.cap.dispatchForPipelining(
           _echoInterfaceId,
           _pipelineMethodId,
           RpcPayload.fromBytes(_buildEchoParams('')),
@@ -5864,7 +5864,7 @@ void main() {
       final bootstrapCap = client.bootstrap(EchoClientFactory());
       await bootstrapCap.echo('warmup');
 
-      final parent = bootstrapCap.cap.beginDispatch(
+      final parent = bootstrapCap.cap.dispatchForPipelining(
         _echoInterfaceId,
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
@@ -5932,7 +5932,7 @@ void main() {
       await bootstrapCap.echo('warmup');
 
       serverCaptured.clear();
-      final parent = bootstrapCap.cap.beginDispatch(
+      final parent = bootstrapCap.cap.dispatchForPipelining(
         _echoInterfaceId,
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),

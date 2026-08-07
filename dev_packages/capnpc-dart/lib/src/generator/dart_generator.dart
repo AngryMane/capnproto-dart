@@ -721,7 +721,7 @@ void _writeClientMethod(
       sb.writeln('    build(b);');
     }
     sb.writeln(
-      '    return $pipelineName._(_cap.beginDispatch($ifaceId, $ordinal, RpcPayload.fromBytes(mb.serialize())$dispatchCaps));',
+      '    return $pipelineName._(_cap.dispatchForPipelining($ifaceId, $ordinal, RpcPayload.fromBytes(mb.serialize())$dispatchCaps));',
     );
     sb.writeln('  }');
   }
@@ -925,7 +925,7 @@ void _writeTypedClientMethod(
       );
     }
     sb.writeln(
-      '    return $pipelineName._(_cap.beginDispatch($ifaceId, $ordinal, RpcPayload.fromBytes(mb.serialize()), paramsCapabilities: typedCapabilities));',
+      '    return $pipelineName._(_cap.dispatchForPipelining($ifaceId, $ordinal, RpcPayload.fromBytes(mb.serialize()), paramsCapabilities: typedCapabilities));',
     );
     sb.writeln('  }');
   }
@@ -1462,7 +1462,7 @@ void _writeNestedPipelineClass(
   final className = pipelineClassNames[typeId]!;
   sb.writeln();
   sb.writeln('final class $className {');
-  sb.writeln('  $className(CapCall call, List<int> basePath)');
+  sb.writeln('  $className(DispatchHandle call, List<int> basePath)');
   sb.writeln('    : ${fields.fieldInits.join(',\n      ')};');
   sb.writeln();
   for (final decl in fields.fieldDecls) {
@@ -1579,7 +1579,7 @@ void _writeResultsPipeline(
   );
   sb.writeln();
   sb.writeln('final class $pipelineName {');
-  sb.writeln('  $pipelineName._(CapCall call)');
+  sb.writeln('  $pipelineName._(DispatchHandle call)');
   final pipelineInits = [
     ...pipelineFields.fieldInits,
     '    result = call.result.then((r) => r.payload.getTyped(${_lcfirst(resultsName)}Factory, capabilities: r.caps))',
