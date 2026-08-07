@@ -21,8 +21,9 @@ import 'import_table.dart';
 ///
 /// See https://github.com/AngryMane/capnproto-dart/issues/64.
 abstract interface class RpcCapabilityDelegate {
-  /// Current resolution state of import [importId] — see [ImportState].
-  ImportState importStateFor(int importId);
+  /// Returns the current [ImportState] for [importId], creating an unretained
+  /// state if none exists.
+  ImportState getOrCreateImportState(int importId);
 
   /// Releases this vat's reference to import [importId], batching the
   /// outgoing wire Release with any other releases in the same microtask.

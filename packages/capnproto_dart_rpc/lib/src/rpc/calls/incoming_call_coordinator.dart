@@ -64,9 +64,9 @@ final _emptyResultBytes = Uint8List.fromList([
 /// narrow closures rather than holding either object directly: both are
 /// declared `final class`, so a test file in a different library can't
 /// fake either by implementing it — narrow closures keep this class's own
-/// test harness as lightweight as its two siblings'. [startUsing] closes
+/// test harness as lightweight as its two siblings'. [startCallWithAllocatedQuestion] closes
 /// the one genuine circular dependency in this refactor:
-/// `_sendForwardedTailCall` needs `OutgoingCallCoordinator.startUsing`, while
+/// `_sendForwardedTailCall` needs `OutgoingCallCoordinator.startCallWithAllocatedQuestion`, while
 /// `OutgoingCallCoordinator`'s own `resolveLocalAnswer` field needs
 /// [resolveLocalAnswer] — see the wiring site
 /// (`two_party_connection.dart`) for how both directions are kept
@@ -118,7 +118,7 @@ final class IncomingCallCoordinator {
   capabilityFromDescriptor;
   final RpcCapDescriptor Function(Capability cap) returnCapDescriptor;
 
-  /// `OutgoingCallCoordinator.startUsing` — see this class's own doc
+  /// `OutgoingCallCoordinator.startCallWithAllocatedQuestion` — see this class's own doc
   /// comment for why this closure, not a direct reference to that
   /// coordinator, is what closes the circular dependency between them.
   final void Function({
@@ -130,12 +130,14 @@ final class IncomingCallCoordinator {
     required List<Capability> paramsCapabilities,
     bool sendResultsToYourself,
   })
-  startUsing;
+  startCallWithAllocatedQuestion;
 
   /// Starts a deferred-release tracking window for whichever of a call's
   /// params capabilities are same-connection imports freshly created for
   /// it, returning an opaque ticket (`null` if there's nothing to track)
-  /// to pass back to [finishParameterCapabilityDisposalTracking] once the call settles — see [_executeIncomingDispatch]'s own doc comment for why this tracking exists.
+  /// to pass back to [finishParameterCapabilityDisposalTracking] once the call
+  /// settles — see [_executeIncomingDispatch]'s own doc comment for why this
+  /// tracking exists.
   /// Opaque because setting it up means writing a deferred-release sink
   /// onto each `_ImportedCapability` wrapper, private to
   /// `rpc_capability.dart`'s library.
@@ -172,7 +174,7 @@ final class IncomingCallCoordinator {
     required this.tryExtractCapabilityReference,
     required this.capabilityFromDescriptor,
     required this.returnCapDescriptor,
-    required this.startUsing,
+    required this.startCallWithAllocatedQuestion,
     required this.startParameterCapabilityDisposalTracking,
     required this.finishParameterCapabilityDisposalTracking,
   });
@@ -528,7 +530,7 @@ final class IncomingCallCoordinator {
   /// delivered to whichever of this vat's own outgoing calls the peer
   /// correlates via `takeFromOtherQuestion` (see [resolveLocalAnswer]), not
   /// to us. This just needs to send Finish once any Return arrives, so it
-  /// talks to the wire directly via [startUsing] rather than going through
+  /// talks to the wire directly via [startCallWithAllocatedQuestion] rather than going through
   /// `OutgoingCallCoordinator.start`/its internal `_awaitAndProcessReturn` (which
   /// expects a real result).
   (int, Future<void>) _sendForwardedTailCall(
@@ -547,7 +549,7 @@ final class IncomingCallCoordinator {
     // resolves to this vat's own capability object (see
     // CapabilityProtocol.capabilityFromDescriptor's disc-3 case), which
     // *does* get a fresh senderHosted export when forwarded here.
-    startUsing(
+    startCallWithAllocatedQuestion(
       question: question,
       target: ImportedCapabilityTarget(targetImportId),
       params: SerializedParams(request.params.bytes),

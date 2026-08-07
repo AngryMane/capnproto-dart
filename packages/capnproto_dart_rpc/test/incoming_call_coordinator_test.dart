@@ -130,7 +130,7 @@ class _Harness {
       (cap) => const RpcCapDescriptor.none();
 
   /// Settable per test — defaults to completing [OutgoingQuestion.sentCompleter]
-  /// immediately (mirrors `OutgoingCallCoordinator.startUsing`'s synchronous
+  /// immediately (mirrors `OutgoingCallCoordinator.startCallWithAllocatedQuestion`'s synchronous
   /// send fast path), recording the call in [startUsingCalls].
   void Function(OutgoingQuestion question, _StartUsingCall call) onStartUsing =
       (question, call) => question.sentCompleter?.complete();
@@ -157,7 +157,7 @@ class _Harness {
     capabilityFromDescriptor:
         (descriptor) => capabilityFromDescriptor(descriptor),
     returnCapDescriptor: (cap) => returnCapDescriptor(cap),
-    startUsing: ({
+    startCallWithAllocatedQuestion: ({
       required OutgoingQuestion question,
       required OutgoingCallTarget target,
       required OutgoingParams params,

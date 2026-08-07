@@ -50,7 +50,7 @@ class FakeRpcCapabilityDelegate implements RpcCapabilityDelegate {
   }
 
   @override
-  ImportState importStateFor(int importId) {
+  ImportState getOrCreateImportState(int importId) {
     final state = _importStates[importId];
     if (state == null) {
       throw RpcException('unknown import id $importId');

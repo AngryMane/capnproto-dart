@@ -156,7 +156,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   // bare `_incomingCalls.resolveLocalAnswer` tear-off — see
   // [_incomingCalls]'s own doc comment for why: `late final` fields
   // evaluate lazily on first access, and _incomingCalls's own construction
-  // eagerly reads `_outgoingCalls.startUsing`, so whichever field a caller
+  // eagerly reads `_outgoingCalls.startCallWithAllocatedQuestion`, so whichever field a caller
   // touches first (`_incomingCalls`, the common case — incoming Bootstrap/
   // Call messages are usually the first thing a server-role connection
   // handles) would otherwise force this field's initializer to read
@@ -182,7 +182,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   // than another private extension. `late` for the same reason as
   // [_rpcCapabilityDelegate]: the bound method tear-offs below capture `this`.
   //
-  // startUsing is a bare tear-off (safe in either construction order,
+  // startCallWithAllocatedQuestion is a bare tear-off (safe in either construction order,
   // unlike _outgoingCalls's resolveLocalAnswer above — see its comment):
   // OutgoingCallCoordinator's own construction never eagerly reads
   // anything back from this field, only building a deferred closure for
@@ -201,7 +201,7 @@ class TwoPartyRpcConnection implements RpcConnection {
         _capabilityProtocol.tryExtractCapabilityReference,
     capabilityFromDescriptor: _capabilityProtocol.capabilityFromDescriptor,
     returnCapDescriptor: _capabilityProtocol.returnCapDescriptor,
-    startUsing: _outgoingCalls.startUsing,
+    startCallWithAllocatedQuestion: _outgoingCalls.startCallWithAllocatedQuestion,
     startParameterCapabilityDisposalTracking:
         (paramsCapabilities) => startParameterCapabilityDisposalTracking(
           _rpcCapabilityDelegate,
@@ -706,8 +706,8 @@ class _TwoPartyRpcCapabilityDelegate implements RpcCapabilityDelegate {
   _TwoPartyRpcCapabilityDelegate(this._conn);
 
   @override
-  ImportState importStateFor(int importId) =>
-      _conn._importTable.stateFor(importId);
+  ImportState getOrCreateImportState(int importId) =>
+      _conn._importTable.getOrCreateState(importId);
 
   @override
   Future<void> releaseImport(int importId) =>

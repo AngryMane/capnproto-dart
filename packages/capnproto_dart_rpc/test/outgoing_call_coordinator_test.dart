@@ -156,14 +156,14 @@ void main() {
       await expectLater(started.result, completes);
     });
 
-    test('startUsing rolls back via releaseParameterCapabilityExports and never calls '
+    test('startCallWithAllocatedQuestion rolls back via releaseParameterCapabilityExports and never calls '
         'sendBytes when capTable resolution fails synchronously', () {
       final h = _Harness();
       h.failWith = const RpcException('boom');
       final question = h.questions.allocate();
       h.questions.recordParamExportIds(question.id, [42]);
 
-      h.coordinator.startUsing(
+      h.coordinator.startCallWithAllocatedQuestion(
         question: question,
         target: const ImportedCapabilityTarget(5),
         params: SerializedParams(_emptyMessageBytes),
@@ -192,7 +192,7 @@ void main() {
       // handleReturn takes it, so this must be captured *before* that.
       final question = h.questions.allocate();
       final returnCompleter = question.returnCompleter!;
-      h.coordinator.startUsing(
+      h.coordinator.startCallWithAllocatedQuestion(
         question: question,
         target: const ImportedCapabilityTarget(5),
         params: SerializedParams(_emptyMessageBytes),
@@ -256,16 +256,16 @@ void main() {
       },
     );
 
-    test('startUsing after tearDown fails the supplied question without '
+    test('startCallWithAllocatedQuestion after tearDown fails the supplied question without '
         'sending', () {
       final h = _Harness();
       h.coordinator.tearDown(const RpcException('connection torn down'));
 
       // Mirrors _sendForwardedTailCall: allocates its own question, then
-      // calls startUsing directly — never through start(), so startUsing's
+      // calls startCallWithAllocatedQuestion directly — never through start(), so startCallWithAllocatedQuestion's
       // own entry guard is the only thing that can catch this.
       final question = h.questions.allocate();
-      h.coordinator.startUsing(
+      h.coordinator.startCallWithAllocatedQuestion(
         question: question,
         target: const ImportedCapabilityTarget(5),
         params: SerializedParams(_emptyMessageBytes),
@@ -316,13 +316,13 @@ void main() {
       // target-await guard the previous test already covers.
       final question = h.questions.allocate();
       // Mirrors start()'s own defensive ignore() for the sent completer —
-      // startUsing() is called directly here (like _sendForwardedTailCall
+      // startCallWithAllocatedQuestion() is called directly here (like _sendForwardedTailCall
       // does), so nothing else ever attaches to it, and tearDown() below
       // completes it with an error unconditionally (unlike the return
       // completer, QuestionTable.tearDown doesn't ignore() this one itself,
       // since every real caller already has by this point).
       question.sentCompleter!.future.ignore();
-      h.coordinator.startUsing(
+      h.coordinator.startCallWithAllocatedQuestion(
         question: question,
         target: const ImportedCapabilityTarget(5),
         params: SerializedParams(_emptyMessageBytes),
@@ -359,7 +359,7 @@ void main() {
 
       final question = h.questions.allocate();
       question.sentCompleter!.future.ignore();
-      h.coordinator.startUsing(
+      h.coordinator.startCallWithAllocatedQuestion(
         question: question,
         target: const ImportedCapabilityTarget(5),
         params: SerializedParams(_emptyMessageBytes),

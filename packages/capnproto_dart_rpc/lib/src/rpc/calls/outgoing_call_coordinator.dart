@@ -45,8 +45,8 @@ final _emptyResultBytes = Uint8List.fromList([
 /// [QuestionTable]/[ImportTable]) so it can be constructed and tested
 /// directly, without a real connection or sockets.
 ///
-/// [start] is the normal entry point; see [startUsing] for the lower-level
-/// one `IncomingCallCoordinator`'s tail-call forwarding needs.
+/// [start] is the normal entry point;
+/// [startCallWithAllocatedQuestion] is the lower-level one `IncomingCallCoordinator`'s tail-call forwarding needs.
 final class OutgoingCallCoordinator {
   /// Shared with the owning connection — also read directly by
   /// `IncomingCallCoordinator` (tail-call forwarding) and
@@ -232,7 +232,7 @@ final class OutgoingCallCoordinator {
     // to run in the meantime. resolveCapTableMaybeSync has real side effects
     // (export creation, refcount bumps) that nothing will ever clean up on a
     // torn-down connection — bail out before it even starts, same as
-    // [startUsing]'s own entry guard does for the fully-synchronous path.
+    // [startCallWithAllocatedQuestion]'s own entry guard does for the fully-synchronous path.
     // This alone isn't enough once resolveCapTableMaybeSync itself starts
     // running, though: it may need its own further `await`s (an unresolved
     // *params* capability's import id, a *different* pipelined param's
@@ -263,9 +263,11 @@ final class OutgoingCallCoordinator {
   }
 
   /// Fails [question] with [_tornDownError] and rolls back any params
-  /// export refs it already recorded — reuses [startUsing]'s own `onError`
+  /// export refs it already recorded — reuses
+  /// [startCallWithAllocatedQuestion]'s own `onError`
   /// rollback path (see its doc comment) so a call that's already torn down
-  /// when [startUsing] is entered, or that tears down while its async build
+  /// when [startCallWithAllocatedQuestion] is entered, or that tears down
+  /// while its async build
   /// is still in flight, never reaches [sendBytes]. Returns whether
   /// [question] was failed this way.
   bool _failIfTornDown(OutgoingQuestion question) {
@@ -300,7 +302,7 @@ final class OutgoingCallCoordinator {
   /// with tearDown having landed during the wait). Preventing that is
   /// `resolveCapTableMaybeSync`'s own job, via the `ensureActive` callback
   /// this class passes it — see [resolveCapTableMaybeSync]'s doc comment.
-  void startUsing({
+  void startCallWithAllocatedQuestion({
     required OutgoingQuestion question,
     required OutgoingCallTarget target,
     required OutgoingParams params,
@@ -348,9 +350,8 @@ final class OutgoingCallCoordinator {
   /// Starts an outgoing Call against [target] with [params]. Allocates a
   /// question ID immediately (available synchronously for pipelining, via
   /// [StartedOutgoingCall.questionId]), then builds and sends the Call message —
-  /// synchronously when possible, asynchronously otherwise — via
-  /// [startUsing]. [StartedOutgoingCall.result] resolves once the matching Return
-  /// arrives.
+  /// synchronously when possible, asynchronously otherwise — via [startCallWithAllocatedQuestion].
+  /// [StartedOutgoingCall.result] resolves once the matching Return arrives.
   StartedOutgoingCall start({
     required OutgoingCallTarget target,
     required OutgoingParams params,
@@ -375,7 +376,7 @@ final class OutgoingCallCoordinator {
     final question = questions.allocate();
     question.sentCompleter!.future.ignore();
 
-    startUsing(
+    startCallWithAllocatedQuestion(
       question: question,
       target: target,
       params: params,

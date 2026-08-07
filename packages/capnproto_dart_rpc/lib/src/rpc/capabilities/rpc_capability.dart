@@ -66,7 +66,7 @@ class _ImportedCapability extends Capability {
       _cachedState = state;
       return state;
     }
-    final state = _delegate.importStateFor(await _importIdFuture);
+    final state = _delegate.getOrCreateImportState(await _importIdFuture);
     _cachedState = state;
     return state;
   }

@@ -378,7 +378,7 @@ final class CapabilityProtocol {
   ///    broken-import check throws, after cap table resolution already ran.
   ///    The peer never received anything in that case, so there is no
   ///    reference for it to `Release`. Callers (the `onError` handler in
-  ///    `OutgoingCallCoordinator.startUsing`, shared by every outgoing Call
+  ///    `OutgoingCallCoordinator.startCallWithAllocatedQuestion`, shared by every outgoing Call
   ///    attempt) only ever run for a build/send that failed before
   ///    committing anything to the wire — see that method's own doc comment
   ///    for why that invariant holds — so this is safe to call
@@ -394,11 +394,11 @@ final class CapabilityProtocol {
     if (msg.isResolveException) {
       // Mirror the success branch below: if we've already fully released
       // this import, a Resolve that arrives late must not resurrect
-      // tracking state for it — ImportTable.stateFor would otherwise create
+      // tracking state for it — ImportTable.getOrCreateState would otherwise create
       // a brand new ImportState/broken-import entry that nothing will ever
       // clean up.
       if (!importTable.isTracked(msg.promiseId)) return;
-      final state = importTable.stateFor(msg.promiseId);
+      final state = importTable.getOrCreateState(msg.promiseId);
       final error = RpcException(
         msg.exceptionReason ?? 'promise resolved to exception',
         kind: msg.exceptionKind,
@@ -417,7 +417,7 @@ final class CapabilityProtocol {
       return;
     }
 
-    final state = importTable.stateFor(msg.promiseId);
+    final state = importTable.getOrCreateState(msg.promiseId);
     final replacement = capabilityFromDescriptor(descriptor);
     if (state.receivedCall && _isLocalCapability(replacement)) {
       final completer = Completer<void>();

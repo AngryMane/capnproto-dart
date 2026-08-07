@@ -226,7 +226,7 @@ void main() {
       );
       expect(h.importTable.isTracked(5), isTrue);
 
-      final promiseState = h.importTable.stateFor(
+      final promiseState = h.importTable.getOrCreateState(
         6,
       ); // capture before retain, to check isPromise
       h.protocol.capabilityFromDescriptor(

@@ -3689,7 +3689,7 @@ void main() {
         'import id mid-list when tearDown runs, does not resurrect '
         'ExportTable state for a capability later in the same list once that '
         'import id resolves', () async {
-      // Regression coverage for a gap the earlier startUsing()/
+      // Regression coverage for a gap the earlier startCallWithAllocatedQuestion()/
       // _throwIfTornDown() guards (see OutgoingCallCoordinator) don't
       // close on their own: they stop a *build* from resuming after
       // tearDown, but resolveCapTableMaybeSync's own loop can itself be
