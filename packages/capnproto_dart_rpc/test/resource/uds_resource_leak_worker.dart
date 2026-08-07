@@ -20,7 +20,12 @@ const _returnCapabilityMethod = 1;
 const _acceptCapabilityMethod = 2;
 
 final class _ComplexServer extends Capability {
-  final EchoServer child = EchoServer();
+  final EchoServer child;
+  late final CapabilityLease _childOwner;
+
+  _ComplexServer() : child = EchoServer() {
+    _childOwner = acquireCapabilityLease(child);
+  }
 
   @override
   Future<DispatchResult> dispatch(
@@ -38,7 +43,7 @@ final class _ComplexServer extends Capability {
       root.setCapabilityField(0, 0);
       return DispatchResult(
         payload: RpcPayload.fromBuilder(root),
-        caps: [child],
+        caps: [acquireCapabilityLease(child)],
       );
     }
     if (methodId == _acceptCapabilityMethod) {
@@ -66,7 +71,7 @@ final class _ComplexServer extends Capability {
   }
 
   @override
-  Future<void> dispose() => child.dispose();
+  Future<void> dispose() => _childOwner.dispose();
 }
 
 final class _SocketSink implements StreamSink<Uint8List> {

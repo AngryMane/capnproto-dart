@@ -195,6 +195,9 @@ class TwoPartyRpcConnection implements RpcConnection {
     questions: _questionTable,
     sendBytes: _sendRaw,
     disposeIgnoringErrors: _disposeIgnoringErrors,
+    disposePipelinedTargetIgnoringErrors: _disposeIgnoringErrors,
+    disposeLeaseForConnectionTeardown:
+        _disposeExportLeaseForConnectionTeardown,
     isClosed: () => _closedError != null,
     tearDownConnection: (error) => _tearDown(error),
     tryExtractCapabilityReference:

@@ -5981,6 +5981,7 @@ void main() {
       expect(client.debugImportCount, equals(0));
       expect(client.debugBrokenImportCount, equals(0));
 
+      await server.promised.dispose().timeout(const Duration(seconds: 1));
     });
 
     test('server sends Resolve(exception) when senderPromise fails', () async {

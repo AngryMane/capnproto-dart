@@ -98,6 +98,8 @@ final class IncomingCallCoordinator {
 
   final void Function(Uint8List bytes) sendBytes;
   final void Function(Capability) disposeIgnoringErrors;
+  final void Function(CapabilityLease) disposePipelinedTargetIgnoringErrors;
+  final void Function(CapabilityLease) disposeLeaseForConnectionTeardown;
 
   /// Whether the owning connection has already torn down — checked in
   /// [_dispatchTailCall]/[_executeIncomingDispatch]'s async continuations, which may
@@ -171,6 +173,8 @@ final class IncomingCallCoordinator {
     required this.questions,
     required this.sendBytes,
     required this.disposeIgnoringErrors,
+    required this.disposePipelinedTargetIgnoringErrors,
+    required this.disposeLeaseForConnectionTeardown,
     required this.isClosed,
     required this.tearDownConnection,
     required this.tryExtractCapabilityReference,
@@ -312,7 +316,7 @@ final class IncomingCallCoordinator {
       );
       return;
     }
-    _dispatchToCapability(msg, cap);
+    _dispatchToCapability(msg, cap, disposeTargetAfterDispatch: true);
   }
 
   /// Ends a pipelined call's dependency on its parent's answer (see
@@ -340,9 +344,22 @@ final class IncomingCallCoordinator {
     path,
   );
 
-  void _dispatchToCapability(RpcMessage msg, Capability cap) {
+  void _dispatchToCapability(
+    RpcMessage msg,
+    Capability cap, {
+    bool disposeTargetAfterDispatch = false,
+  }) {
+    void disposeOwnedTarget() {
+      if (disposeTargetAfterDispatch) {
+        disposePipelinedTargetIgnoringErrors(cap as CapabilityLease);
+      }
+    }
+
     final qid = msg.questionId;
-    if (_rejectDuplicateQuestionId(qid)) return;
+    if (_rejectDuplicateQuestionId(qid)) {
+      disposeOwnedTarget();
+      return;
+    }
     final paramsContent = msg.paramsContent;
     final params =
         paramsContent != null
@@ -379,6 +396,7 @@ final class IncomingCallCoordinator {
       for (final capability in paramsCapabilities) {
         disposeIgnoringErrors(capability);
       }
+      disposeOwnedTarget();
 
       // A disc this vat doesn't implement at all (e.g. thirdPartyHosted) is
       // a bigger deal than a single bad call — see the `default` case in
@@ -444,6 +462,7 @@ final class IncomingCallCoordinator {
           paramsCapabilities: paramsCapabilities,
         );
       } catch (error) {
+        disposeOwnedTarget();
         answerTable.recordAnswer(qid);
         sendBytes(
           buildReturnExceptionMessage(
@@ -455,6 +474,7 @@ final class IncomingCallCoordinator {
         return;
       }
       if (tailCallRequest != null) {
+        disposeOwnedTarget();
         _dispatchTailCall(qid, tailCallRequest);
         return;
       }
@@ -468,6 +488,7 @@ final class IncomingCallCoordinator {
       params,
       paramsCapabilities,
       sendResultsToYourself: sendResultsToYourself,
+      disposeTargetAfterDispatch: disposeTargetAfterDispatch,
     );
   }
 
@@ -613,6 +634,7 @@ final class IncomingCallCoordinator {
     RpcPayload params,
     List<Capability> paramsCapabilities, {
     bool sendResultsToYourself = false,
+    bool disposeTargetAfterDispatch = false,
   }) {
     final cancellation = DispatchCancellationController();
 
@@ -636,6 +658,26 @@ final class IncomingCallCoordinator {
         context: cancellation.context,
       ),
     );
+
+    if (disposeTargetAfterDispatch) {
+      // Pipelined-answer lookup acquired cap as an independent lease.
+      // Release it when dispatch settles or teardown abandons the dispatch.
+      // CapabilityLease.dispose() is idempotent, so these paths may race.
+      cancellation.context.canceled
+          .then(
+            (_) => disposeLeaseForConnectionTeardown(cap as CapabilityLease),
+          )
+          .ignore();
+      dispatchFuture
+          .then(
+            (_) => disposePipelinedTargetIgnoringErrors(cap as CapabilityLease),
+            onError:
+                (_) => disposePipelinedTargetIgnoringErrors(
+                  cap as CapabilityLease,
+                ),
+          )
+          .ignore();
+    }
 
     // Track the resolved-answer future so pipelined calls can queue behind it.
     // Attach .ignore() to prevent unhandled-rejection if dispatch throws —

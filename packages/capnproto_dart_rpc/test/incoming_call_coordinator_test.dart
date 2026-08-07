@@ -160,6 +160,9 @@ class _Harness {
     questions: questions,
     sendBytes: (bytes) => sendBytes(bytes),
     disposeIgnoringErrors: disposedFromTable.add,
+    disposePipelinedTargetIgnoringErrors: (lease) => lease.dispose(),
+    disposeLeaseForConnectionTeardown:
+        (lease) => lease.disposeForConnectionTeardown(),
     isClosed: () => isClosed(),
     tearDownConnection: tearDownCalls.add,
     tryExtractCapabilityReference: (cap) => tryExtractCapabilityReference(cap),
