@@ -608,7 +608,7 @@ void _writeClientMethod(
 
   if (method.resultStructTypeId == streamResultTypeId) {
     // `-> stream` method: dispatchStreaming() applies flow-control windowing
-    // on RPC-connected capabilities (see FlowController) instead of a plain
+    // on RPC-connected capabilities (see StreamingCallFlowController) instead of a plain
     // awaited dispatch. The result is always the empty StreamResult struct,
     // so there's nothing to return. No pipeline method is generated —
     // StreamResult never has fields to pipeline on — but a Typed convenience
