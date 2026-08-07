@@ -339,16 +339,17 @@ class AnswerTable {
   /// Atomically records [qid] as answered after its capability invocation
   /// succeeds. If Finish already arrived while the answer was pending and
   /// no pipelined dependents were ever registered for it, drops every trace
-  /// of it and returns `(completed: false, releaseResultExportsAfterSend:
-  /// null)` — the caller must then discard the dispatch's result instead of
-  /// answering it, exactly like [clearPendingAnswer] reporting `true`.
+  /// of it and returns `(completed: false, answerStateRetained: false,
+  /// releaseResultExportsAfterSend: null)` — the caller must then discard
+  /// the dispatch's result instead of answering it, exactly like
+  /// [clearPendingAnswer] reporting `true`.
   ///
   /// If Finish already arrived while dependents *were* still outstanding,
   /// this still returns `completed: true` — an ordinary Return should still
   /// be sent, since those dependents need the result — but frees [qid]
   /// immediately instead of waiting for a second Finish that will never
-  /// arrive (the peer only ever sends one), and
-  /// [releaseResultExportsAfterSend] carries [resultExportIds] if every
+  /// arrive (the peer only ever sends one; `answerStateRetained: false`),
+  /// and [releaseResultExportsAfterSend] carries [resultExportIds] if every
   /// dependent has *already* drained by this point (or `null` if some are
   /// still outstanding — see [endPipelinedDependency], which the caller
   /// must apply that same list from once it eventually returns non-null
@@ -358,8 +359,22 @@ class AnswerTable {
   ///
   /// Otherwise records [resolved]/[resultExportIds] as the answer awaiting
   /// Finish (see [recordAnswer], which this shares its recorded state
-  /// with) and returns `(completed: true, releaseResultExportsAfterSend:
-  /// null)`.
+  /// with) and returns `(completed: true, answerStateRetained: true,
+  /// releaseResultExportsAfterSend: null)`.
+  ///
+  /// [answerStateRetained] exists so a caller that goes on to send a
+  /// `noFinishNeeded: true` Return knows whether it's still safe to follow
+  /// up with [clearAnswerForNoFinishNeeded]`(qid)` afterward. Once that
+  /// Return is on the wire, [qid]'s protocol lifecycle is over from the
+  /// peer's perspective — `answerStateRetained: false` means this table
+  /// already freed it *before* the send, so the peer may have legally (and,
+  /// over a synchronously-reentrant transport, synchronously) reused it for
+  /// an unrelated new Call by the time the caller's own send returns; a
+  /// post-send [clearAnswerForNoFinishNeeded] call must be skipped in that
+  /// case; a qid re-lookup at that point could otherwise touch the new
+  /// call's own state instead — precisely the id-reuse hazard [endPipelinedDependency]'s ticket
+  /// design exists to avoid, reintroduced if a caller re-derives its
+  /// cleanup from the qid after the fact instead of this returned flag.
   ///
   /// Call this *before* actually sending the Return. Unlike calling
   /// [clearPendingAnswer] first and a separate call to record the answer
@@ -369,7 +384,12 @@ class AnswerTable {
   /// Call for the same [qid] (e.g. over an in-memory or `sync: true`
   /// transport, where sending can reenter this table before the second
   /// call ever runs) observing state this table never actually held.
-  ({bool completed, List<int>? releaseResultExportsAfterSend}) tryRecordAnswer(
+  ({
+    bool completed,
+    bool answerStateRetained,
+    List<int>? releaseResultExportsAfterSend,
+  })
+  tryRecordAnswer(
     int qid, {
     ResolvedAnswer? resolved,
     List<int> resultExportIds = const [],
@@ -378,18 +398,30 @@ class AnswerTable {
     switch (state) {
       case FinishedBeforeCompletionState():
         _answers.remove(qid);
-        return (completed: false, releaseResultExportsAfterSend: null);
+        return (
+          completed: false,
+          answerStateRetained: false,
+          releaseResultExportsAfterSend: null,
+        );
       case PendingAnswerState(:final _dependents) when _dependents.peerFinished:
         _dependents.resultExportIds = resultExportIds;
         final release = _dependents.tryTakeResultExports();
         _answers.remove(qid);
-        return (completed: true, releaseResultExportsAfterSend: release);
+        return (
+          completed: true,
+          answerStateRetained: false,
+          releaseResultExportsAfterSend: release,
+        );
       default:
         _answers[qid] = AnsweredState(
           resolved: resolved,
           resultExportIds: resultExportIds,
         );
-        return (completed: true, releaseResultExportsAfterSend: null);
+        return (
+          completed: true,
+          answerStateRetained: true,
+          releaseResultExportsAfterSend: null,
+        );
     }
   }
 

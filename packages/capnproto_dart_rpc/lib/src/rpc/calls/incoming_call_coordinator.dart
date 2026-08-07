@@ -757,12 +757,23 @@ final class IncomingCallCoordinator {
               noFinishNeeded: noFinishNeeded,
             ),
           );
-          if (noFinishNeeded) {
+          if (noFinishNeeded && recorded.answerStateRetained) {
             // No Finish is needed for this qid (see above), so clear only
             // the local answer bookkeeping. Recording it before send and
             // clearing it after keeps it visible while the Return is sent;
             // if a synchronously-reentrant peer sends Finish anyway, that
             // may consume the state first and this cleanup becomes a no-op.
+            //
+            // Skipped entirely when !recorded.answerStateRetained (the
+            // peer already sent an early Finish while dependents were
+            // outstanding — see tryRecordAnswer's own doc comment): this
+            // table already freed qid *before* the send above, so the peer
+            // may have legally — and, over a synchronously-reentrant
+            // transport, synchronously during that very send — reused it
+            // for an unrelated new Call by now. Looking qid back up here
+            // would risk touching that new call's own answer state instead
+            // of a no-op, exactly the id-reuse hazard the dependency
+            // ticket design (see endPipelinedDependency) exists to avoid.
             answerTable.clearAnswerForNoFinishNeeded(qid);
           }
           // Only non-null when the peer had already sent an early Finish

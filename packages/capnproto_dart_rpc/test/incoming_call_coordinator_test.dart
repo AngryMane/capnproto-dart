@@ -1143,6 +1143,82 @@ void main() {
         final resolved = await h.coordinator.resolveLocalAnswer(60);
         expect(resolved.caps, equals([resultCap]));
       });
+
+      test('a reentrant peer that synchronously reuses a qid during its '
+          'own noFinishNeeded Return (early Finish + an existing pipelined '
+          'dependent, no result capabilities of its own) does not have '
+          'that new answer state corrupted by the old '
+          'clearAnswerForNoFinishNeeded cleanup — regression test for the '
+          'id-reuse-during-send hazard the dependency ticket design exists '
+          'to avoid', () async {
+        final h = _Harness();
+        final dispatchGate = Completer<void>();
+        final parentCap =
+            _FakeCapability()
+              ..dispatchGate = dispatchGate.future
+              ..onDispatch = (_, _, _) => DispatchResult.empty;
+        final parentExportId = h.exportTable.retainOrCreateExportId(
+          parentCap,
+        );
+
+        final newCallGate = Completer<void>();
+        final newCap =
+            _FakeCapability()
+              ..dispatchGate = newCallGate.future
+              ..onDispatch = (_, _, _) => DispatchResult.empty;
+        final newExportId = h.exportTable.retainOrCreateExportId(newCap);
+
+        var reentered = false;
+        h.sendBytes = (bytes) {
+          h.sentBytes.add(bytes);
+          final msg = parseRpcMessage(bytes);
+          if (!reentered &&
+              msg.answerId == 1 &&
+              msg.isReturnResults &&
+              msg.returnNoFinishNeeded) {
+            reentered = true;
+            // Simulates a peer reacting to this vat's own Return through a
+            // synchronously-reentrant sink (an in-memory or `sync: true`
+            // transport): question id 1's protocol lifecycle is over from
+            // the peer's perspective the instant it sees this Return, so
+            // it legally reuses that same id for a brand-new, unrelated
+            // Call before this send even returns.
+            h.coordinator.handleCall(
+              parseRpcMessage(
+                _buildCall(questionId: 1, targetExportId: newExportId),
+              ),
+            );
+          }
+        };
+
+        h.coordinator.handleCall(
+          parseRpcMessage(
+            _buildCall(questionId: 1, targetExportId: parentExportId),
+          ),
+        );
+        h.coordinator.handleCall(
+          parseRpcMessage(_buildPipelinedCall(questionId: 2, parentQid: 1)),
+        );
+        h.coordinator.handleFinish(parseRpcMessage(buildFinishMessage(1)));
+
+        dispatchGate.complete();
+        await Future<void>.delayed(Duration.zero);
+
+        expect(reentered, isTrue);
+        // The new call reusing qid 1 must be completely untouched by the
+        // old call's post-send cleanup — still a live, pending answer, not
+        // thrown away or corrupted by a StateError leaking into the old
+        // dispatch's own completion handling.
+        expect(h.answerTable.pendingFor(1), isNotNull);
+        expect(newCap.dispatches, hasLength(1));
+
+        newCallGate.complete();
+        await Future<void>.delayed(Duration.zero);
+        final newReturn = h.sentBytes
+            .map(parseRpcMessage)
+            .lastWhere((m) => m.answerId == 1);
+        expect(newReturn.isReturnResults, isTrue);
+      });
     });
   });
 }
