@@ -23,7 +23,7 @@ class _ImportedCapability extends Capability {
   bool _disposed = false;
 
   // Set only for a call's freshly-imported params capabilities (see
-  // _runDispatch/_ParamCapsReleaseTracker), for the window between dispatch
+  // _executeIncomingDispatch/_ParameterCapabilityDisposalTracker), for the window between dispatch
   // starting and its Return being sent. While set, dispose() defers the
   // wire Release entirely to the tracker instead of sending one itself, so
   // the connection can fold it into `Return.releaseParamCaps` when every
@@ -40,8 +40,8 @@ class _ImportedCapability extends Capability {
   // Lazily created on the first `-> stream` call through this capability
   // reference, then reused for every subsequent streaming call so the
   // window is shared/accumulated across the whole call sequence — matching
-  // capnp-rust, which scopes one FlowController per call target.
-  FlowController? _flowController;
+  // capnp-rust, which scopes one StreamingCallFlowController per call target.
+  StreamingCallFlowController? _flowController;
 
   _ImportedCapability(this._delegate, this._importIdFuture)
     : _stateFuture = null {
@@ -66,7 +66,7 @@ class _ImportedCapability extends Capability {
       _cachedState = state;
       return state;
     }
-    final state = _delegate.importStateFor(await _importIdFuture);
+    final state = _delegate.getOrCreateImportState(await _importIdFuture);
     _cachedState = state;
     return state;
   }
@@ -129,7 +129,7 @@ class _ImportedCapability extends Capability {
   }
 
   @override
-  Future<DispatchResult> dispatchBuilding(
+  Future<DispatchResult> dispatchWithParamsBuilder(
     int interfaceId,
     int methodId,
     void Function(AnyPointerBuilder) build, {
@@ -151,7 +151,7 @@ class _ImportedCapability extends Capability {
     }
     final replacement = state.replacement;
     if (replacement != null) {
-      return replacement.dispatchBuilding(
+      return replacement.dispatchWithParamsBuilder(
         interfaceId,
         methodId,
         build,
@@ -222,21 +222,21 @@ class _ImportedCapability extends Capability {
       paramsCapabilities: paramsCapabilities,
     );
     final controller =
-        _flowController ??= FlowController(
+        _flowController ??= StreamingCallFlowController(
           windowSize: _delegate.streamWindowSize,
         );
-    return controller.send(paramsBytes.lengthInBytes, started.result);
+    return controller.trackCall(paramsBytes.lengthInBytes, started.result);
   }
 
   @override
-  CapCall beginDispatch(
+  DispatchHandle dispatchForPipelining(
     int interfaceId,
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
   }) {
     if (_disposed) {
-      return _ErrorCapCall(
+      return _ErrorDispatchHandle(
         const RpcException(
           'capability is disposed',
           kind: ErrorKind.disconnected,
@@ -247,7 +247,7 @@ class _ImportedCapability extends Capability {
     if (cached != null) {
       final replacement = cached.replacement;
       if (replacement != null) {
-        return replacement.beginDispatch(
+        return replacement.dispatchForPipelining(
           interfaceId,
           methodId,
           params,
@@ -256,7 +256,7 @@ class _ImportedCapability extends Capability {
       }
       final error = cached.error;
       if (error != null) {
-        return _ErrorCapCall(error, cached.stackTrace);
+        return _ErrorDispatchHandle(error, cached.stackTrace);
       }
       cached.receivedCall = true;
       final started = _delegate.startOutgoingCall(
@@ -266,7 +266,7 @@ class _ImportedCapability extends Capability {
         methodId: methodId,
         paramsCapabilities: paramsCapabilities,
       );
-      return _OutgoingQuestionCapCall(
+      return _OutgoingQuestionDispatchHandle(
         started.result,
         _delegate,
         started.questionId,
@@ -315,7 +315,11 @@ class _ImportedCapability extends Capability {
         })
         .then((r) => r);
     result.ignore();
-    return _UnresolvedImportCapCall(result, _delegate, qidCompleter.future);
+    return _UnresolvedImportDispatchHandle(
+      result,
+      _delegate,
+      qidCompleter.future,
+    );
   }
 
   @override
@@ -334,39 +338,39 @@ class _ImportedCapability extends Capability {
 }
 
 // ---------------------------------------------------------------------------
-// _OutgoingQuestionCapCall: CapCall backed by a pending question on the wire
+// _OutgoingQuestionDispatchHandle: a handle backed by a pending wire question
 // ---------------------------------------------------------------------------
 
-class _OutgoingQuestionCapCall implements CapCall {
+class _OutgoingQuestionDispatchHandle implements DispatchHandle {
   @override
   final Future<DispatchResult> result;
   final RpcCapabilityDelegate _delegate;
   final int _qid;
 
-  _OutgoingQuestionCapCall(this.result, this._delegate, this._qid);
+  _OutgoingQuestionDispatchHandle(this.result, this._delegate, this._qid);
 
   @override
-  Capability pipelineResult(int ptrIndex) =>
+  Capability pipelinedCapability(int ptrIndex) =>
       _PipelinedCapability(_delegate, _qid, [ptrIndex], result);
 
   @override
-  Capability pipelineResultPath(List<int> path) =>
+  Capability pipelinedCapabilityFromResultPath(List<int> path) =>
       _PipelinedCapability(_delegate, _qid, path, result);
 }
 
-class _UnresolvedImportCapCall implements CapCall {
+class _UnresolvedImportDispatchHandle implements DispatchHandle {
   @override
   final Future<DispatchResult> result;
   final RpcCapabilityDelegate _delegate;
   final Future<int> _qidFuture;
 
-  _UnresolvedImportCapCall(this.result, this._delegate, this._qidFuture);
+  _UnresolvedImportDispatchHandle(this.result, this._delegate, this._qidFuture);
 
   @override
-  Capability pipelineResult(int ptrIndex) => pipelineResultPath([ptrIndex]);
+  Capability pipelinedCapability(int ptrIndex) => pipelinedCapabilityFromResultPath([ptrIndex]);
 
   @override
-  Capability pipelineResultPath(List<int> path) => DeferredCapability(() async {
+  Capability pipelinedCapabilityFromResultPath(List<int> path) => DeferredCapability(() async {
     final qid = await _qidFuture;
     if (qid >= 0) {
       return _PipelinedCapability(_delegate, qid, path, result);
@@ -385,7 +389,7 @@ class _PipelinedCapability extends Capability {
   final RpcCapabilityDelegate _delegate;
   final int _parentQid;
   // The full getPointerField hop sequence into the parent answer (see
-  // RpcCapDescriptor.path) — today always a single index, since nothing
+  // RpcCapabilityDescriptor.path) — today always a single index, since nothing
   // generates a deeper path yet (see _collectCapResults in
   // dart_generator.dart), but represented as a path throughout the wire
   // codec and resolution layers, so this doesn't have to special-case
@@ -487,7 +491,7 @@ class _PipelinedCapability extends Capability {
   }
 
   @override
-  Future<DispatchResult> dispatchBuilding(
+  Future<DispatchResult> dispatchWithParamsBuilder(
     int interfaceId,
     int methodId,
     void Function(AnyPointerBuilder) build, {
@@ -503,7 +507,7 @@ class _PipelinedCapability extends Capability {
     }
     final r = _resolved;
     if (r != null) {
-      return r.dispatchBuilding(
+      return r.dispatchWithParamsBuilder(
         interfaceId,
         methodId,
         build,
@@ -525,14 +529,14 @@ class _PipelinedCapability extends Capability {
   }
 
   @override
-  CapCall beginDispatch(
+  DispatchHandle dispatchForPipelining(
     int interfaceId,
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
   }) {
     if (_disposed) {
-      return _ErrorCapCall(
+      return _ErrorDispatchHandle(
         const RpcException(
           'capability is disposed',
           kind: ErrorKind.disconnected,
@@ -541,7 +545,7 @@ class _PipelinedCapability extends Capability {
     }
     final r = _resolved;
     if (r != null) {
-      return r.beginDispatch(
+      return r.dispatchForPipelining(
         interfaceId,
         methodId,
         params,
@@ -550,7 +554,7 @@ class _PipelinedCapability extends Capability {
     }
     final resolutionError = _resolutionError;
     if (resolutionError != null) {
-      return _ErrorCapCall(resolutionError, _resolutionStackTrace);
+      return _ErrorDispatchHandle(resolutionError, _resolutionStackTrace);
     }
     final started = _delegate.startOutgoingCall(
       target: PromisedAnswerTarget(_parentQid, transformPath: _transformPath),
@@ -559,7 +563,7 @@ class _PipelinedCapability extends Capability {
       methodId: methodId,
       paramsCapabilities: paramsCapabilities,
     );
-    return _OutgoingQuestionCapCall(
+    return _OutgoingQuestionDispatchHandle(
       _trackPipelinedCall(started.result),
       _delegate,
       started.questionId,
@@ -579,25 +583,25 @@ class _ReceiverAnswerCapability extends Capability {
   final List<int> _path;
   bool _disposed = false;
 
-  // Resolved (and vended — see requireCapabilityFromResultPath) at most
+  // Resolved to a CapabilityLease (see requireCapabilityFromResultPath) at most
   // once and cached, mirroring _PipelinedCapability: this capability
   // can be dispatched through multiple times before it's disposed (e.g.
   // several pipelined calls against the same receiverAnswer target), and
-  // each of those calls must reuse the same resolved handle rather than
-  // vending — and then never disposing — a fresh one every time, which
+  // each of those calls must reuse the same resolved lease rather than
+  // leasing — and then never disposing — a fresh one every time, which
   // would permanently pin the underlying identity's shared refcount by one
   // for every call ever made through this capability.
   Future<Capability>? _resolution;
 
-  // Tracks every dispatch()/dispatchBuilding()/beginDispatch() call that was
-  // admitted (started before _disposed flipped true), mirroring
+  // Tracks every dispatch()/dispatchWithParamsBuilder()/dispatchForPipelining() call
+  // that was admitted (started before _disposed flipped true), mirroring
   // _PipelinedCapability's _pendingPipelinedCalls — but, unlike that
   // class (which only tracks calls made *before* its target resolves, since
   // afterwards it dispatches directly against the already-resolved
   // capability with no tracking at all), every call through this class goes
   // through _resolve() and is tracked, since there's no untracked
   // "already resolved, dispatch directly" fast path here. Without this,
-  // dispose() could release the shared resolved handle — tearing down its
+  // dispose() could release the shared resolved lease — tearing down its
   // real target — while one of these calls was still using it.
   int _pendingCalls = 0;
   Future<void>? _resolvedDisposeFuture;
@@ -654,7 +658,7 @@ class _ReceiverAnswerCapability extends Capability {
     final existing = _resolvedDisposeFuture;
     if (existing != null) return existing;
     // A resolution that failed (e.g. an invalid questionId — see
-    // _resolveOnce) never produced a handle in the first place, so there's
+    // _resolveOnce) never produced a lease in the first place, so there's
     // nothing to dispose — swallow that here the same way the previous
     // (untracked) implementation's try/catch did. Note this `onError` only
     // ever fires for `resolution`'s own failure, per Future.then's
@@ -722,7 +726,7 @@ class _ReceiverAnswerCapability extends Capability {
   }
 
   @override
-  Future<DispatchResult> dispatchBuilding(
+  Future<DispatchResult> dispatchWithParamsBuilder(
     int interfaceId,
     int methodId,
     void Function(AnyPointerBuilder) build, {
@@ -731,7 +735,7 @@ class _ReceiverAnswerCapability extends Capability {
     if (_disposed) return Future.error(_disposedError);
     return _trackCall(
       _resolve().then(
-        (cap) => cap.dispatchBuilding(
+        (cap) => cap.dispatchWithParamsBuilder(
           interfaceId,
           methodId,
           build,
@@ -742,13 +746,13 @@ class _ReceiverAnswerCapability extends Capability {
   }
 
   @override
-  CapCall beginDispatch(
+  DispatchHandle dispatchForPipelining(
     int interfaceId,
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
   }) {
-    if (_disposed) return _ErrorCapCall(_disposedError);
+    if (_disposed) return _ErrorDispatchHandle(_disposedError);
     final result = _trackCall(
       _resolve().then(
         (cap) => cap.dispatch(
@@ -760,7 +764,7 @@ class _ReceiverAnswerCapability extends Capability {
       ),
     );
     result.ignore();
-    return _FutureCapCall(result);
+    return _FutureDispatchHandle(result);
   }
 
   @override
@@ -779,39 +783,39 @@ class _ReceiverAnswerCapability extends Capability {
   }
 }
 
-class _FutureCapCall implements CapCall {
+class _FutureDispatchHandle implements DispatchHandle {
   @override
   final Future<DispatchResult> result;
 
-  _FutureCapCall(this.result);
+  _FutureDispatchHandle(this.result);
 
   @override
-  Capability pipelineResult(int ptrIndex) => DeferredCapability(
+  Capability pipelinedCapability(int ptrIndex) => DeferredCapability(
     result.then((r) => requireCapabilityFromResult(r, ptrIndex)),
   );
 
   @override
-  Capability pipelineResultPath(List<int> path) => DeferredCapability(
+  Capability pipelinedCapabilityFromResultPath(List<int> path) => DeferredCapability(
     result.then((r) => requireCapabilityFromResultPath(r, path)),
   );
 }
 
-class _ErrorCapCall implements CapCall {
+class _ErrorDispatchHandle implements DispatchHandle {
   @override
   final Future<DispatchResult> result;
 
-  _ErrorCapCall(Object error, [StackTrace? stackTrace])
+  _ErrorDispatchHandle(Object error, [StackTrace? stackTrace])
     : result = Future.error(error, stackTrace) {
     result.ignore();
   }
 
   @override
-  Capability pipelineResult(int ptrIndex) => DeferredCapability(
+  Capability pipelinedCapability(int ptrIndex) => DeferredCapability(
     result.then((r) => requireCapabilityFromResult(r, ptrIndex)),
   );
 
   @override
-  Capability pipelineResultPath(List<int> path) => DeferredCapability(
+  Capability pipelinedCapabilityFromResultPath(List<int> path) => DeferredCapability(
     result.then((r) => requireCapabilityFromResultPath(r, path)),
   );
 }

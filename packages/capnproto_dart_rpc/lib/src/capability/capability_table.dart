@@ -35,12 +35,12 @@ final class CapabilityTableBuilder {
   ///
   /// A live, read-only *view* over the still-growing underlying list —
   /// deliberately not [List.unmodifiable] (a snapshot/copy): this getter is
-  /// evaluated as part of a generated client method's `dispatchBuilding(...,
+  /// evaluated as part of a generated client method's `dispatchWithParamsBuilder(...,
   /// paramsCapabilities: capTable.capabilities)` call, i.e. *before* the
   /// `build` callback that populates the table has run (Dart evaluates
   /// named-argument expressions left to right before the call itself, and
-  /// `build` only runs inside `dispatchBuilding`'s body). A snapshot taken
-  /// at that point would always be empty; `dispatchBuilding`'s contract is
+  /// `build` only runs inside `dispatchWithParamsBuilder`'s body). A snapshot taken
+  /// at that point would always be empty; `dispatchWithParamsBuilder`'s contract is
   /// specifically that it only reads `paramsCapabilities` after `build`
   /// returns, so it needs the live reference.
   List<Capability> get capabilities => UnmodifiableListView(_capabilities);

@@ -1,4 +1,33 @@
-## 0.1.1
+## 0.2.0
+
+### Breaking changes
+
+The RPC capability API now uses names that describe dispatch, pipelining, and
+reference ownership more explicitly:
+
+- `CapCall` was renamed to `DispatchHandle`.
+- `DispatchContext` was renamed to `DispatchCancellationContext`.
+- `TailCall` was renamed to `TailCallRequest`.
+- `vendCapabilityHandle()` was renamed to `acquireCapabilityLease()`.
+- `Capability.beginDispatch()` was renamed to
+  `Capability.dispatchForPipelining()`.
+- `Capability.dispatchBuilding()` was renamed to
+  `Capability.dispatchWithParamsBuilder()`.
+- `CapCall.pipelineResult()` was renamed to
+  `DispatchHandle.pipelinedCapability()`.
+- `CapCall.pipelineResultPath()` was renamed to
+  `DispatchHandle.pipelinedCapabilityFromResultPath()`.
+
+For example:
+
+```dart
+final DispatchHandle handle = capability.dispatchForPipelining(
+  interfaceId,
+  methodId,
+  params,
+);
+final Capability resultCapability = handle.pipelinedCapability(0);
+```
 
 - Added `WeakCapabilityRef`, a non-owning reference to a `Capability` for holding onto a peer-supplied capability (e.g. as a long-lived callback/observer) without keeping it reachable or needing to `dispose()` it yourself.
 - `Release` messages for imports are now batched: several `dispose()` calls issued without an intervening `await` (e.g. disposing a whole observer list in one synchronous pass, or `Future.wait([...].map((c) => c.dispose()))`) coalesce into a single `Release` per import ID with `referenceCount > 1`, instead of one wire message each.
@@ -6,4 +35,4 @@
 - Implemented `Return.noFinishNeeded`: a Return whose results carry no capabilities (or which is an exception) now tells the peer no `Finish` is required, and the client skips sending one.
 - Fixed a resource leak: when a Call's params-capTable resolution created a new/reused export for a params capability and then failed before the Call itself reached the wire (e.g. a broken import discovered later in the same params list, or the target import breaking before send), the export's refcount bump was never rolled back.
 - Fixed a protocol violation: a params capability referencing another in-flight call's still-unresolved result (wire-level promise pipelining) could be sent as a `receiverAnswer` capability descriptor before that parent Call itself reached the wire, causing a compliant peer (e.g. capnp-rust) to reject it as referencing an unknown question id.
-- Fixed a bug where a capability received from a peer (import or wire-pipelined promise) and then passed back to that same peer as a call parameter — via any of the `vendCapabilityHandle`-wrapped accessors generated code normally uses — was encoded as a brand-new export instead of the cheap `receiverHosted` reference, causing the peer's normal params-release behavior to prematurely dispose the shared underlying capability out from under other live references to it.
+- Fixed a bug where a capability received from a peer (import or wire-pipelined promise) and then passed back to that same peer as a call parameter — via any of the `acquireCapabilityLease`-wrapped accessors generated code normally uses — was encoded as a brand-new export instead of the cheap `receiverHosted` reference, causing the peer's normal params-release behavior to prematurely dispose the shared underlying capability out from under other live references to it.

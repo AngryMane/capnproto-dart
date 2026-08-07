@@ -45,8 +45,8 @@ final _emptyResultBytes = Uint8List.fromList([
 /// [QuestionTable]/[ImportTable]) so it can be constructed and tested
 /// directly, without a real connection or sockets.
 ///
-/// [start] is the normal entry point; see [startUsing] for the lower-level
-/// one `IncomingCallCoordinator`'s tail-call forwarding needs.
+/// [start] is the normal entry point;
+/// [startCallWithAllocatedQuestion] is the lower-level one `IncomingCallCoordinator`'s tail-call forwarding needs.
 final class OutgoingCallCoordinator {
   /// Shared with the owning connection — also read directly by
   /// `IncomingCallCoordinator` (tail-call forwarding) and
@@ -61,7 +61,7 @@ final class OutgoingCallCoordinator {
 
   /// Resolves a Call's params capabilities into wire descriptors,
   /// synchronously when possible — see the matching doc comment this method
-  /// carries as `CapabilityProtocol.resolveCapTableMaybeSync`.
+  /// carries as `CapabilityProtocol.resolveParameterCapabilityDescriptors`.
   ///
   /// [ensureActive] must be called before any side effect with lasting
   /// state (an export creation, a refcount bump, recording bookkeeping
@@ -78,16 +78,16 @@ final class OutgoingCallCoordinator {
   /// `QuestionTable`, which `tearDown` has, by then, already dropped
   /// entirely — so a side effect started *after* that point would never be
   /// rolled back by anything.
-  final FutureOr<List<RpcCapDescriptor>> Function(
+  final FutureOr<List<RpcCapabilityDescriptor>> Function(
     List<Capability> paramsCapabilities, {
     int? qid,
     required void Function() ensureActive,
   })
-  resolveCapTableMaybeSync;
+  resolveParameterCapabilityDescriptors;
 
-  final void Function(List<int> exportIds) applyReleaseParamCaps;
-  final Capability Function(RpcCapDescriptor descriptor)
-  capabilityFromDescriptor;
+  final void Function(List<int> exportIds) releaseParameterCapabilityExports;
+  final Capability Function(RpcCapabilityDescriptor descriptor)
+  acquireCapabilityFromDescriptor;
   final Future<ResolvedAnswer> Function(int qid) resolveLocalAnswer;
 
   /// Invoked from [handleReturn], right after confirming a live completer
@@ -102,22 +102,23 @@ final class OutgoingCallCoordinator {
     required this.questions,
     required this.imports,
     required this.sendBytes,
-    required this.resolveCapTableMaybeSync,
-    required this.applyReleaseParamCaps,
-    required this.capabilityFromDescriptor,
+    required this.resolveParameterCapabilityDescriptors,
+    required this.releaseParameterCapabilityExports,
+    required this.acquireCapabilityFromDescriptor,
     required this.resolveLocalAnswer,
     this.onReturn,
   });
 
   /// True when starting a Call against [target] needs to `await` something
   /// before any side effect (an export refcount bump, [sendBytes]) can run —
-  /// see [resolveCapTableMaybeSync]'s matching doc comment for why this must
-  /// be checked before touching anything with a side effect.
-  bool _targetNeedsAsync(OutgoingCallTarget target) => switch (target) {
-    ImportedCapabilityTarget(importId: final id) => id is! int,
-    PromisedAnswerTarget(questionId: final qid) =>
-      questions.sentCompleterFor(qid) != null,
-  };
+  /// see [resolveParameterCapabilityDescriptors]'s matching doc comment for why
+  /// this must be checked before touching anything with a side effect.
+  bool _targetRequiresAsyncResolution(OutgoingCallTarget target) =>
+      switch (target) {
+        ImportedCapabilityTarget(importId: final id) => id is! int,
+        PromisedAnswerTarget(questionId: final qid) =>
+          questions.sentCompleterFor(qid) != null,
+      };
 
   /// Builds an outgoing Call's wire bytes against [target]/[params],
   /// synchronously when possible (mirrors the old `_startResolvedImportCall`
@@ -140,7 +141,7 @@ final class OutgoingCallCoordinator {
       BuilderParams(build: final b) => b,
     };
 
-    if (_targetNeedsAsync(target)) {
+    if (_targetRequiresAsyncResolution(target)) {
       return _buildOutgoingCallBytesAsync(
         qid: qid,
         target: target,
@@ -157,7 +158,8 @@ final class OutgoingCallCoordinator {
     var targetTransformPath = const <int>[];
     switch (target) {
       case ImportedCapabilityTarget(importId: final id):
-        targetImportId = id as int; // _targetNeedsAsync confirmed this above
+        targetImportId =
+            id as int; // _targetRequiresAsyncResolution confirmed this above
         imports.throwIfBroken(targetImportId);
       case PromisedAnswerTarget(
         questionId: final pqid,
@@ -166,7 +168,7 @@ final class OutgoingCallCoordinator {
         targetPromisedAnswerQid = pqid;
         targetTransformPath = path;
     }
-    return buildCallMessageBuildingMaybeSync(
+    return buildCallMessageWithParamsBuilderMaybeSync(
       questionId: qid,
       targetImportId: targetImportId,
       targetPromisedAnswerQid: targetPromisedAnswerQid,
@@ -175,7 +177,7 @@ final class OutgoingCallCoordinator {
       methodId: methodId,
       buildParams: buildParams,
       resolveDescriptors:
-          () => resolveCapTableMaybeSync(
+          () => resolveParameterCapabilityDescriptors(
             paramsCapabilities,
             qid: qid,
             ensureActive: _throwIfTornDown,
@@ -188,11 +190,11 @@ final class OutgoingCallCoordinator {
   /// needs (an import id, or the promisedAnswer target's parent being sent),
   /// then resolves the capTable.
   ///
-  /// Uses [buildCallMessageBuilding] (a `resolveCapTable` callback invoked
+  /// Uses [buildCallMessageWithParamsBuilder] (a `resolveCapTable` callback invoked
   /// only *after* [buildParams] has returned), not a pre-resolve-then-sync-
   /// build sequence: [paramsCapabilities] may still be being appended to by
   /// [buildParams] itself for a builder-based Call (see [Capability.
-  /// dispatchBuilding]'s contract) — resolving the capTable before
+  /// dispatchWithParamsBuilder]'s contract) — resolving the capTable before
   /// [buildParams] runs would silently miss those. This is safe and
   /// equivalent for a serialized-params Call too, since the synthetic
   /// `setMessageBytes` [buildParams] built by [_buildOutgoingCallBytes]
@@ -227,17 +229,17 @@ final class OutgoingCallCoordinator {
     }
     // Whatever we just awaited (the target import id, or the promisedAnswer
     // target's parent being sent) may have taken long enough for tearDown()
-    // to run in the meantime. resolveCapTableMaybeSync has real side effects
+    // to run in the meantime. resolveParameterCapabilityDescriptors has real side effects
     // (export creation, refcount bumps) that nothing will ever clean up on a
     // torn-down connection — bail out before it even starts, same as
-    // [startUsing]'s own entry guard does for the fully-synchronous path.
-    // This alone isn't enough once resolveCapTableMaybeSync itself starts
+    // [startCallWithAllocatedQuestion]'s own entry guard does for the fully-synchronous path.
+    // This alone isn't enough once resolveParameterCapabilityDescriptors itself starts
     // running, though: it may need its own further `await`s (an unresolved
     // *params* capability's import id, a *different* pipelined param's
     // parent being sent) — [ensureActive] is threaded into it precisely so
     // it can re-check after each of those too, not just at its own entry.
     _throwIfTornDown();
-    return buildCallMessageBuilding(
+    return buildCallMessageWithParamsBuilder(
       questionId: qid,
       targetImportId: targetImportId,
       targetPromisedAnswerQid: targetPromisedAnswerQid,
@@ -246,7 +248,7 @@ final class OutgoingCallCoordinator {
       methodId: methodId,
       buildParams: buildParams,
       resolveCapTable:
-          () async => await resolveCapTableMaybeSync(
+          () async => await resolveParameterCapabilityDescriptors(
             paramsCapabilities,
             qid: qid,
             ensureActive: _throwIfTornDown,
@@ -261,23 +263,26 @@ final class OutgoingCallCoordinator {
   }
 
   /// Fails [question] with [_tornDownError] and rolls back any params
-  /// export refs it already recorded — reuses [startUsing]'s own `onError`
+  /// export refs it already recorded — reuses
+  /// [startCallWithAllocatedQuestion]'s own `onError`
   /// rollback path (see its doc comment) so a call that's already torn down
-  /// when [startUsing] is entered, or that tears down while its async build
+  /// when [startCallWithAllocatedQuestion] is entered, or that tears down
+  /// while its async build
   /// is still in flight, never reaches [sendBytes]. Returns whether
   /// [question] was failed this way.
   bool _failIfTornDown(OutgoingQuestion question) {
     final error = _tornDownError;
     if (error == null) return false;
     final ids = questions.failBeforeSend(question, error, StackTrace.current);
-    if (ids != null) applyReleaseParamCaps(ids);
+    if (ids != null) releaseParameterCapabilityExports(ids);
     return true;
   }
 
   /// The single site wiring [QuestionTable.markSent] (on success) and
-  /// [QuestionTable.failBeforeSend] + [applyReleaseParamCaps] (on failure)
+  /// [QuestionTable.failBeforeSend] plus
+  /// [releaseParameterCapabilityExports] (on failure)
   /// together for an outgoing Call — shared by [start] and
-  /// `_sendTailForwardCall` (via this method directly), so this pairing is
+  /// `_sendForwardedTailCall` (via this method directly), so this pairing is
   /// never wired up ad hoc at a third call site. Every path that reaches
   /// [onError] does so before [sendBytes] ever runs (nothing after that
   /// point in [_buildOutgoingCallBytes]/[_buildOutgoingCallBytesAsync] can
@@ -288,16 +293,16 @@ final class OutgoingCallCoordinator {
   /// (this coordinator is already closed) and again once an async build
   /// finishes (`tearDown` ran while it was still in flight): [sendBytes]
   /// must never run for either case, and any params export refs
-  /// `resolveCapTableMaybeSync` already recorded against [qid] *before*
+  /// `resolveParameterCapabilityDescriptors` already recorded against [qid] *before*
   /// tearDown ran are rolled back here the same way a build failure's would
   /// be. That rollback only reaches bookkeeping recorded before tearDown,
   /// though — `QuestionTable.tearDown` drops [question]'s tracking entirely,
-  /// so nothing here can roll back a side effect `resolveCapTableMaybeSync`
+  /// so nothing here can roll back a side effect `resolveParameterCapabilityDescriptors`
   /// starts *after* that point (e.g. resuming from an `await` mid-resolution
   /// with tearDown having landed during the wait). Preventing that is
-  /// `resolveCapTableMaybeSync`'s own job, via the `ensureActive` callback
-  /// this class passes it — see [resolveCapTableMaybeSync]'s doc comment.
-  void startUsing({
+  /// `resolveParameterCapabilityDescriptors`'s own job, via the `ensureActive` callback
+  /// this class passes it — see [resolveParameterCapabilityDescriptors]'s doc comment.
+  void startCallWithAllocatedQuestion({
     required OutgoingQuestion question,
     required OutgoingCallTarget target,
     required OutgoingParams params,
@@ -311,7 +316,7 @@ final class OutgoingCallCoordinator {
     final qid = question.id;
     void onError(Object e, StackTrace st) {
       final ids = questions.failBeforeSend(question, e, st);
-      if (ids != null) applyReleaseParamCaps(ids);
+      if (ids != null) releaseParameterCapabilityExports(ids);
     }
 
     try {
@@ -344,11 +349,10 @@ final class OutgoingCallCoordinator {
 
   /// Starts an outgoing Call against [target] with [params]. Allocates a
   /// question ID immediately (available synchronously for pipelining, via
-  /// [StartedCall.questionId]), then builds and sends the Call message —
-  /// synchronously when possible, asynchronously otherwise — via
-  /// [startUsing]. [StartedCall.result] resolves once the matching Return
-  /// arrives.
-  StartedCall start({
+  /// [StartedOutgoingCall.questionId]), then builds and sends the Call message —
+  /// synchronously when possible, asynchronously otherwise — via [startCallWithAllocatedQuestion].
+  /// [StartedOutgoingCall.result] resolves once the matching Return arrives.
+  StartedOutgoingCall start({
     required OutgoingCallTarget target,
     required OutgoingParams params,
     required int interfaceId,
@@ -372,7 +376,7 @@ final class OutgoingCallCoordinator {
     final question = questions.allocate();
     question.sentCompleter!.future.ignore();
 
-    startUsing(
+    startCallWithAllocatedQuestion(
       question: question,
       target: target,
       params: params,
@@ -381,13 +385,13 @@ final class OutgoingCallCoordinator {
       paramsCapabilities: paramsCapabilities,
     );
 
-    return StartedCall(
+    return StartedOutgoingCall(
       question.id,
-      _awaitReturn(question.id, question.returnCompleter!),
+      _awaitAndProcessReturn(question.id, question.returnCompleter!),
     );
   }
 
-  Future<DispatchResult> _awaitReturn(
+  Future<DispatchResult> _awaitAndProcessReturn(
     int qid,
     Completer<RpcMessage> completer,
   ) async {
@@ -412,7 +416,7 @@ final class OutgoingCallCoordinator {
     // results, mirrors buildReturnExceptionMessage's own support for it.
     final answersCall = ret.isReturnResults || ret.isReturnException;
     if (answersCall && ret.returnReleaseParamCaps && paramExportIds != null) {
-      applyReleaseParamCaps(paramExportIds);
+      releaseParameterCapabilityExports(paramExportIds);
     }
     if (!(answersCall && ret.returnNoFinishNeeded)) {
       sendBytes(buildFinishMessage(qid, releaseResultCaps: false));
@@ -441,19 +445,19 @@ final class OutgoingCallCoordinator {
       // these are implemented by this vat. Surfacing them as an explicit
       // error is important specifically for resultsSentElsewhere: it's only
       // ever valid as the Return to a call *we* sent with
-      // sendResultsTo=yourself (see `_sendTailForwardCall`, which never
-      // routes through [_awaitReturn]), so seeing it here means a peer sent
+      // sendResultsTo=yourself (see `_sendForwardedTailCall`, which never
+      // routes through [_awaitAndProcessReturn]), so seeing it here means a peer sent
       // it unprompted — treating it as an empty success would silently hand
       // the caller a bogus empty-struct result instead of the real one.
       throw RpcException(
-        'unsupported Return variant: ${describeReturnDisc(ret.returnDisc)}',
+        'unsupported Return variant: ${describeReturnVariant(ret.returnDisc)}',
       );
     }
 
     // Convert capTable entries into ImportedCapabilities.
     final caps = <Capability>[];
     for (final descriptor in ret.capTableDescriptors) {
-      caps.add(capabilityFromDescriptor(descriptor));
+      caps.add(acquireCapabilityFromDescriptor(descriptor));
     }
 
     final resultsContent = ret.resultsContent;

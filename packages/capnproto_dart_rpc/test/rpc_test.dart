@@ -159,7 +159,7 @@ Uint8List _callWithCapDescriptorDisc(int disc) {
     interfaceId: _echoInterfaceId,
     methodId: _echoMethodId,
     paramsBytes: params,
-    capTableDescriptors: const [RpcCapDescriptor.none()],
+    capTableDescriptors: const [RpcCapabilityDescriptor.none()],
   );
   final withSenderHosted = buildCallMessage(
     questionId: 1,
@@ -167,7 +167,7 @@ Uint8List _callWithCapDescriptorDisc(int disc) {
     interfaceId: _echoInterfaceId,
     methodId: _echoMethodId,
     paramsBytes: params,
-    capTableDescriptors: const [RpcCapDescriptor.senderHosted(0)],
+    capTableDescriptors: const [RpcCapabilityDescriptor.senderHosted(0)],
   );
   final differences = <int>[
     for (var i = 0; i < withNone.length; i++)
@@ -195,8 +195,8 @@ Uint8List _callWithReceiverHostedThenCapDescriptorDisc(int disc) {
     methodId: _echoMethodId,
     paramsBytes: params,
     capTableDescriptors: const [
-      RpcCapDescriptor.receiverHosted(0),
-      RpcCapDescriptor.none(),
+      RpcCapabilityDescriptor.receiverHosted(0),
+      RpcCapabilityDescriptor.none(),
     ],
   );
   final withSenderHostedSecond = buildCallMessage(
@@ -206,8 +206,8 @@ Uint8List _callWithReceiverHostedThenCapDescriptorDisc(int disc) {
     methodId: _echoMethodId,
     paramsBytes: params,
     capTableDescriptors: const [
-      RpcCapDescriptor.receiverHosted(0),
-      RpcCapDescriptor.senderHosted(0),
+      RpcCapabilityDescriptor.receiverHosted(0),
+      RpcCapabilityDescriptor.senderHosted(0),
     ],
   );
   final differences = <int>[
@@ -285,7 +285,7 @@ class _SyncThrowingCapability extends Capability {
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) {
     throw StateError('deliberate synchronous throw');
   }
@@ -312,7 +312,7 @@ class _FirstCallSyncThrowCapability extends Capability {
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) {
     _callCount++;
     if (_callCount == 1) throw StateError('deliberate synchronous throw');
@@ -377,8 +377,8 @@ class SyncThrowingDisposeCapability extends Capability {
 }
 
 // Lets a test control exactly when a real (asynchronous, multi-event-loop-
-// -turn) dispose() call completes — e.g. to probe vendCapabilityHandle's
-// behavior for a handle vended *while* an earlier cycle's disposal of the
+// -turn) dispose() call completes — e.g. to probe acquireCapabilityLease's
+// behavior for a lease acquired *while* an earlier cycle's disposal of the
 // same target is still in flight, not yet actually finished.
 class SlowDisposeCapability extends Capability {
   int disposeCount = 0;
@@ -831,11 +831,11 @@ class _TrackedCapability extends Capability {
   }
 }
 
-// Returns [vended] as caps[0] on `_pipelineMethodId`, matching
+// Returns [returnedCapability] as caps[0] on `_pipelineMethodId`, matching
 // PipelineServer's result-encoding convention above.
-class _CapVendingServer extends Capability {
-  final Capability vended;
-  _CapVendingServer(this.vended);
+class _CapabilityReturningServer extends Capability {
+  final Capability returnedCapability;
+  _CapabilityReturningServer(this.returnedCapability);
 
   @override
   Future<DispatchResult> dispatch(
@@ -850,7 +850,7 @@ class _CapVendingServer extends Capability {
       root.setCapabilityField(0, 0);
       return DispatchResult(
         payload: RpcPayload.fromBuilder(root),
-        caps: [vended],
+        caps: [returnedCapability],
       );
     }
     throw RpcException('unknown method: $methodId');
@@ -903,7 +903,7 @@ class CapReceivingServer extends Capability {
 }
 
 // Combines CapReceivingServer's params-recording (_echoMethodId) with
-// PipelineServer's result-capability-vending (_pipelineMethodId, returning
+// PipelineServer's result-capability-returning (_pipelineMethodId, returning
 // `caps: [leaf]`) and dispose-count tracking on itself — used to probe
 // _ReceiverAnswerCapability's handling of a capability that's actually this
 // same vat's own prior answer, handed back via a raw receiverAnswer
@@ -990,14 +990,14 @@ const int _tailCallMethodId = 8;
 
 class TailCallServer extends Capability {
   @override
-  TailCall? tryTailCall(
+  TailCallRequest? tryTailCall(
     int interfaceId,
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
   }) {
     if (methodId != _tailCallMethodId) return null;
-    return TailCall(
+    return TailCallRequest(
       paramsCapabilities[0],
       _echoInterfaceId,
       _echoMethodId,
@@ -1039,14 +1039,14 @@ class TailCallLocalServer extends Capability {
   TailCallLocalServer(this.local);
 
   @override
-  TailCall? tryTailCall(
+  TailCallRequest? tryTailCall(
     int interfaceId,
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
   }) {
     if (methodId != _tailCallLocalMethodId) return null;
-    return TailCall(
+    return TailCallRequest(
       local,
       _echoInterfaceId,
       _echoMethodId,
@@ -1070,7 +1070,7 @@ class TailCallLocalServer extends Capability {
 
 class ThrowingTryTailCallServer extends Capability {
   @override
-  TailCall? tryTailCall(
+  TailCallRequest? tryTailCall(
     int interfaceId,
     int methodId,
     RpcPayload params, {
@@ -1180,7 +1180,7 @@ class SlowEchoServer extends Capability {
   final Completer<void> started = Completer<void>();
   final Completer<void> canceled = Completer<void>();
   final Completer<void> complete = Completer<void>();
-  DispatchContext? lastContext;
+  DispatchCancellationContext? lastContext;
 
   @override
   Future<DispatchResult> dispatch(
@@ -1202,9 +1202,9 @@ class SlowEchoServer extends Capability {
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) {
-    final dispatchContext = context ?? DispatchContext.neverCanceled;
+    final dispatchContext = context ?? DispatchCancellationContext.neverCanceled;
     lastContext = dispatchContext;
     dispatchContext.canceled.then((_) {
       if (!canceled.isCompleted) canceled.complete();
@@ -1260,7 +1260,7 @@ class SlowCapResultServer extends Capability {
 
 // A server whose calls each stay pending until individually released via
 // completeNext(), in call order — used to control exactly when each
-// streaming call's "ack" (Return) lands, to test FlowController windowing
+// streaming call's "ack" (Return) lands, to test StreamingCallFlowController windowing
 // deterministically.
 class QueuedSlowServer extends Capability {
   final List<Completer<DispatchResult>> _pending = [];
@@ -1457,7 +1457,7 @@ void main() {
           methodId: 0,
           paramsBytes: params,
           capTableDescriptors: const [
-            RpcCapDescriptor.receiverAnswer(9, [0, 2, 1]),
+            RpcCapabilityDescriptor.receiverAnswer(9, [0, 2, 1]),
           ],
         );
         final msg = parseRpcMessage(bytes);
@@ -1520,7 +1520,7 @@ void main() {
     });
 
     test(
-      'capabilityFromResultPath returns null (not throw) for an empty path',
+      'tryGetCapabilityFromResultPath returns null (not throw) for an empty path',
       () {
         final mb = MessageBuilder();
         final root = mb.initRoot(_TwoPtrFactory());
@@ -1528,17 +1528,17 @@ void main() {
           payload: RpcPayload.fromBuilder(root),
           caps: const [],
         );
-        expect(capabilityFromResultPath(result, const []), isNull);
+        expect(tryGetCapabilityFromResultPath(result, const []), isNull);
       },
     );
   });
 
-  group('Capability.dispatchBuilding — Stage 3A zero-copy send path', () {
+  group('Capability.dispatchWithParamsBuilder — Stage 3A zero-copy send path', () {
     test(
-      'local (default) dispatchBuilding round-trips through EchoServer',
+      'local (default) dispatchWithParamsBuilder round-trips through EchoServer',
       () async {
         final server = EchoServer();
-        final result = await server.dispatchBuilding(
+        final result = await server.dispatchWithParamsBuilder(
           _echoInterfaceId,
           _echoMethodId,
           (anyPtr) =>
@@ -1548,26 +1548,26 @@ void main() {
       },
     );
 
-    test('RPC-connected dispatchBuilding (_ImportedCapability) builds params '
+    test('RPC-connected dispatchWithParamsBuilder (_ImportedCapability) builds params '
         'directly into the outgoing Call and round-trips', () async {
       final (client, serverConn) = _makePipe(EchoServer());
       final bootstrapCap = client.bootstrap(EchoClientFactory());
       await bootstrapCap.echo('warmup');
 
-      final result = await bootstrapCap.cap.dispatchBuilding(
+      final result = await bootstrapCap.cap.dispatchWithParamsBuilder(
         _echoInterfaceId,
         _echoMethodId,
         (anyPtr) => anyPtr
             .initStruct(_TextParamFactory())
-            .setTextField(0, 'via dispatchBuilding'),
+            .setTextField(0, 'via dispatchWithParamsBuilder'),
       );
-      expect(_parseEchoResult(result.payload), 'echo: via dispatchBuilding');
+      expect(_parseEchoResult(result.payload), 'echo: via dispatchWithParamsBuilder');
 
       await client.close();
       await serverConn.close();
     });
 
-    test('dispatchBuilding paramsCapabilities populated during build is read '
+    test('dispatchWithParamsBuilder paramsCapabilities populated during build is read '
         'correctly by the callee', () async {
       final child = EchoServer();
       final server = CapReceivingServer();
@@ -1576,7 +1576,7 @@ void main() {
       await bootstrapCap.echo('warmup');
 
       final typedCapabilities = <Capability>[];
-      final result = await bootstrapCap.cap.dispatchBuilding(
+      final result = await bootstrapCap.cap.dispatchWithParamsBuilder(
         _echoInterfaceId,
         _echoMethodId,
         (anyPtr) {
@@ -1657,7 +1657,7 @@ void main() {
       expect(msg.isReturnResults, isFalse);
       expect(msg.isReturnException, isFalse);
       expect(msg.isReturnTakeFromOtherQuestion, isFalse);
-      expect(describeReturnDisc(msg.returnDisc), 'resultsSentElsewhere');
+      expect(describeReturnVariant(msg.returnDisc), 'resultsSentElsewhere');
     });
   });
 
@@ -1771,7 +1771,7 @@ void main() {
               .toList();
       expect(clientReturns.length, 1);
       expect(
-        describeReturnDisc(clientReturns.single.returnDisc),
+        describeReturnVariant(clientReturns.single.returnDisc),
         'resultsSentElsewhere',
       );
 
@@ -1828,7 +1828,7 @@ void main() {
           captured.where((m) => m.type == RpcMessageType.return_).toList();
       expect(returns.length, 1);
       expect(
-        describeReturnDisc(returns.single.returnDisc),
+        describeReturnVariant(returns.single.returnDisc),
         'resultsSentElsewhere',
       );
       expect(returns.single.resultsContent, isNull);
@@ -1875,13 +1875,13 @@ void main() {
       final bootstrapCap = client.bootstrap(EchoClientFactory());
       await bootstrapCap.echo('warmup');
 
-      final call = bootstrapCap.cap.beginDispatch(
+      final call = bootstrapCap.cap.dispatchForPipelining(
         _echoInterfaceId,
         _tailCallMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
         paramsCapabilities: [target],
       );
-      final pipelinedCap = call.pipelineResult(0);
+      final pipelinedCap = call.pipelinedCapability(0);
 
       await expectLater(
         pipelinedCap.dispatch(
@@ -1961,13 +1961,13 @@ void main() {
       // async deframing/dispatch pipeline still needs a beat). Closing
       // too early would cancel the incoming subscription while those
       // already-in-flight bytes are still queued, discarding them
-      // before _awaitReturn ever gets to call _resolveLocalAnswer —
+      // before _awaitAndProcessReturn ever gets to call _resolveLocalAnswer —
       // which would make this test exercise "outgoing question dropped
       // before its Return arrived" (already covered elsewhere) instead
       // of the tail-call-specific race this test is about. Waiting for
       // debugPendingQuestionCount to drop is deterministic here:
       // _handleReturn's very first line (QuestionTable.takeReturn)
-      // clears this synchronously, before _awaitReturn's own
+      // clears this synchronously, before _awaitAndProcessReturn's own
       // _resolveLocalAnswer continuation even starts running.
       await _waitUntil(() => client.debugPendingQuestionCount == 0);
 
@@ -1976,8 +1976,8 @@ void main() {
 
       // Known bug, tracked as https://github.com/AngryMane/capnproto-dart/issues/99
       // -- characterized here, not fixed: AnswerTable.tearDown only
-      // cancels the forwarded dispatch's DispatchContext -- it has no
-      // way to reach into the Future _awaitReturn already extracted via
+      // cancels the forwarded dispatch's DispatchCancellationContext -- it has no
+      // way to reach into the Future _awaitAndProcessReturn already extracted via
       // _resolveLocalAnswer for the original call. SlowEchoServer
       // ignores cancellation and keeps blocking on target.complete, so
       // the original call stays genuinely pending, not failed, even
@@ -2063,12 +2063,12 @@ void main() {
       // pipelined result — both should be sent without waiting for getPipeline
       // to complete.
       captured.clear();
-      final call = bootstrapCap.cap.beginDispatch(
+      final call = bootstrapCap.cap.dispatchForPipelining(
         _echoInterfaceId,
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
       );
-      final pipelinedCap = call.pipelineResult(0);
+      final pipelinedCap = call.pipelinedCapability(0);
 
       // Dispatch a second call on the pipelined cap before the first returns.
       final secondCall = pipelinedCap.dispatch(
@@ -2115,13 +2115,13 @@ void main() {
         final bootstrapCap = client.bootstrap(EchoClientFactory());
         await bootstrapCap.echo('warmup');
 
-        final call = bootstrapCap.cap.beginDispatch(
+        final call = bootstrapCap.cap.dispatchForPipelining(
           _echoInterfaceId,
           _mixedMethodId,
           RpcPayload.fromBytes(_buildEchoParams('')),
         );
         // Pipeline onto ptr slot 1 (not slot 0), where the capability lives.
-        final pipelinedCap = call.pipelineResult(1);
+        final pipelinedCap = call.pipelinedCapability(1);
 
         final secondResult = await pipelinedCap.dispatch(
           _echoInterfaceId,
@@ -2164,12 +2164,12 @@ void main() {
         await bootstrapCap.echo('warmup');
 
         captured.clear();
-        final parent = bootstrapCap.cap.beginDispatch(
+        final parent = bootstrapCap.cap.dispatchForPipelining(
           _echoInterfaceId,
           _pipelineMethodId,
           RpcPayload.fromBytes(_buildEchoParams('')),
         );
-        final pipelinedCap = parent.pipelineResult(0);
+        final pipelinedCap = parent.pipelinedCapability(0);
         final paramCall = bootstrapCap.cap.dispatch(
           _echoInterfaceId,
           _echoMethodId,
@@ -2212,16 +2212,16 @@ void main() {
     );
 
     test(
-      'Capability.beginDispatch on non-RPC cap falls back to DeferredCapability',
+      'Capability.dispatchForPipelining on non-RPC cap falls back to DeferredCapability',
       () async {
         final server = EchoServer();
-        final call = server.beginDispatch(
+        final call = server.dispatchForPipelining(
           _echoInterfaceId,
           _echoMethodId,
           RpcPayload.fromBytes(_buildEchoParams('test')),
         );
-        // pipelineResult on a non-RPC cap returns a DeferredCapability.
-        final piped = call.pipelineResult(0);
+        // pipelinedCapability on a non-RPC cap returns a DeferredCapability.
+        final piped = call.pipelinedCapability(0);
         expect(piped, isA<DeferredCapability>());
         // The result future still completes correctly.
         final result = await call.result;
@@ -2259,7 +2259,7 @@ void main() {
       );
       expect(local.dispatchCount, equals(0));
 
-      final call = deferred.beginDispatch(
+      final call = deferred.dispatchForPipelining(
         _echoInterfaceId,
         _echoMethodId,
         RpcPayload.fromBytes(_buildEchoParams('after-dispose')),
@@ -2296,12 +2296,12 @@ void main() {
         await bootstrapCap.echo('warmup');
 
         captured.clear();
-        final call = bootstrapCap.cap.beginDispatch(
+        final call = bootstrapCap.cap.dispatchForPipelining(
           _echoInterfaceId,
           _pipelineMethodId,
           RpcPayload.fromBytes(_buildEchoParams('')),
         );
-        final pipelinedCap = call.pipelineResult(0);
+        final pipelinedCap = call.pipelinedCapability(0);
         await call.result;
 
         await pipelinedCap.dispose();
@@ -2347,12 +2347,12 @@ void main() {
         final bootstrapCap = client.bootstrap(EchoClientFactory());
         await bootstrapCap.echo('warmup');
 
-        final call = bootstrapCap.cap.beginDispatch(
+        final call = bootstrapCap.cap.dispatchForPipelining(
           _echoInterfaceId,
           _pipelineMethodId,
           RpcPayload.fromBytes(_buildEchoParams('')),
         );
-        final pipelinedCap = call.pipelineResult(0);
+        final pipelinedCap = call.pipelinedCapability(0);
         await call.result;
 
         captured.clear();
@@ -2417,12 +2417,12 @@ void main() {
         await bootstrapCap.echo('warmup');
 
         captured.clear();
-        final call = bootstrapCap.cap.beginDispatch(
+        final call = bootstrapCap.cap.dispatchForPipelining(
           _echoInterfaceId,
           _pipelineMethodId,
           RpcPayload.fromBytes(_buildEchoParams('')),
         );
-        final pipelinedCap = call.pipelineResult(0);
+        final pipelinedCap = call.pipelinedCapability(0);
 
         await pipelinedCap.dispose();
         expect(
@@ -2483,12 +2483,12 @@ void main() {
               await bootstrapCap.echo('warmup');
 
               captured.clear();
-              final parent = bootstrapCap.cap.beginDispatch(
+              final parent = bootstrapCap.cap.dispatchForPipelining(
                 _echoInterfaceId,
                 _pipelineMethodId,
                 RpcPayload.fromBytes(_buildEchoParams('')),
               );
-              final pipelinedCap = parent.pipelineResult(0);
+              final pipelinedCap = parent.pipelinedCapability(0);
               final pipelinedCall = pipelinedCap.dispatch(
                 _echoInterfaceId,
                 _echoMethodId,
@@ -2534,12 +2534,12 @@ void main() {
         final bootstrapCap = client.bootstrap(EchoClientFactory());
         await bootstrapCap.echo('warmup');
 
-        final call = bootstrapCap.cap.beginDispatch(
+        final call = bootstrapCap.cap.dispatchForPipelining(
           _echoInterfaceId,
           999,
           RpcPayload.fromBytes(_buildEchoParams('')),
         );
-        final pipelinedCap = call.pipelineResult(0);
+        final pipelinedCap = call.pipelinedCapability(0);
 
         await expectLater(call.result, throwsA(isA<RpcException>()));
         await Future<void>.delayed(Duration.zero);
@@ -2593,7 +2593,7 @@ void main() {
       await bootstrapCap.echo('warmup');
 
       captured.clear();
-      final call = bootstrapCap.cap.beginDispatch(
+      final call = bootstrapCap.cap.dispatchForPipelining(
         _echoInterfaceId,
         _duplicateCapsMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
@@ -2702,12 +2702,12 @@ void main() {
       final bootstrapCap = client.bootstrap(EchoClientFactory());
       await bootstrapCap.echo('warmup');
 
-      final call = bootstrapCap.cap.beginDispatch(
+      final call = bootstrapCap.cap.dispatchForPipelining(
         _echoInterfaceId,
         _mixedMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
       );
-      final pipelinedCap = call.pipelineResult(0);
+      final pipelinedCap = call.pipelinedCapability(0);
       await call.result;
       await Future<void>.delayed(Duration.zero);
 
@@ -2736,7 +2736,7 @@ void main() {
     test('disposing a pipelined capability does not invalidate the same '
         'capability independently read from the awaited result', () async {
       // Regression test: the eagerly-pipelined capability
-      // (call.pipelineResult(0)) and the capability independently resolved
+      // (call.pipelinedCapability(0)) and the capability independently resolved
       // from the awaited result (requireCapabilityFromResult(result, 0))
       // both resolve to the identical underlying capability object (the
       // same DispatchResult.caps entry). Disposing one must not silently
@@ -2748,12 +2748,12 @@ void main() {
       final bootstrapCap = client.bootstrap(EchoClientFactory());
       await bootstrapCap.echo('warmup');
 
-      final call = bootstrapCap.cap.beginDispatch(
+      final call = bootstrapCap.cap.dispatchForPipelining(
         _echoInterfaceId,
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
       );
-      final pipelinedCap = call.pipelineResult(0);
+      final pipelinedCap = call.pipelinedCapability(0);
 
       final result = await call.result;
       final resolvedCap = requireCapabilityFromResult(result, 0);
@@ -3523,12 +3523,12 @@ void main() {
       expect(serverConn.debugExportCount, equals(1));
       expect(client.debugImportCount, equals(1));
 
-      final call = bootstrapCap.cap.beginDispatch(
+      final call = bootstrapCap.cap.dispatchForPipelining(
         _echoInterfaceId,
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
       );
-      final pipelinedCap = call.pipelineResult(0);
+      final pipelinedCap = call.pipelinedCapability(0);
       await call.result;
       await Future<void>.delayed(Duration.zero);
 
@@ -3595,12 +3595,12 @@ void main() {
       final bootstrapCap = client.bootstrap(EchoClientFactory());
       await bootstrapCap.echo('warmup');
 
-      final parent = bootstrapCap.cap.beginDispatch(
+      final parent = bootstrapCap.cap.dispatchForPipelining(
         _echoInterfaceId,
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
       );
-      final pipelinedCap = parent.pipelineResult(0);
+      final pipelinedCap = parent.pipelinedCapability(0);
       final pipelinedCall = pipelinedCap.dispatch(
         _echoInterfaceId,
         _echoMethodId,
@@ -3629,7 +3629,7 @@ void main() {
       // any answer-table state that teardown already cleared. Waiting on
       // child.disposeCount (rather than a fixed delay) proves the late-
       // completion path actually ran: once the parent dispatch resolves
-      // after the connection is already closed, _runDispatch's
+      // after the connection is already closed, _executeIncomingDispatch's
       // _closedError branch disposes its result capabilities (since they
       // were never going to be sent as a Return) instead of leaking them
       // -- child's disposal is a direct signal that path executed, not
@@ -3647,30 +3647,30 @@ void main() {
         final serverSideCap = CountingCapability();
         final clientSideCap = CountingCapability();
         final (client, serverConn) = _makePipe(
-          _CapVendingServer(serverSideCap),
+          _CapabilityReturningServer(serverSideCap),
         );
 
         final bootstrapCap = client.bootstrap(EchoClientFactory());
 
-        // _CapVendingServer's _pipelineMethodId never disposes
+        // _CapabilityReturningServer's _pipelineMethodId never disposes
         // paramsCapabilities and never returns them either, so
         // clientSideCap stays a live import on the server / live export on
-        // the client, and the vended serverSideCap (deliberately never
+        // the client, and the capability lease for serverSideCap (deliberately never
         // disposed here) stays a live export on the server / live import on
         // the client -- beyond just the single bootstrap pair.
-        final call = bootstrapCap.cap.beginDispatch(
+        final call = bootstrapCap.cap.dispatchForPipelining(
           _echoInterfaceId,
           _pipelineMethodId,
           RpcPayload.fromBytes(_buildEchoParams('')),
           paramsCapabilities: [clientSideCap],
         );
-        call.pipelineResult(0); // vended cap, deliberately left undisposed
+        call.pipelinedCapability(0); // capability lease, deliberately left undisposed
         await call.result;
         await Future<void>.delayed(Duration.zero);
 
         expect(client.debugExportCount, equals(1)); // clientSideCap
-        expect(client.debugImportCount, equals(2)); // bootstrap + vended cap
-        expect(serverConn.debugExportCount, equals(2)); // bootstrap + vended
+        expect(client.debugImportCount, equals(2)); // bootstrap + capability lease
+        expect(serverConn.debugExportCount, equals(2)); // bootstrap + capability lease
         expect(serverConn.debugImportCount, equals(1)); // clientSideCap
 
         await client.close();
@@ -3689,10 +3689,10 @@ void main() {
         'import id mid-list when tearDown runs, does not resurrect '
         'ExportTable state for a capability later in the same list once that '
         'import id resolves', () async {
-      // Regression coverage for a gap the earlier startUsing()/
+      // Regression coverage for a gap the earlier startCallWithAllocatedQuestion()/
       // _throwIfTornDown() guards (see OutgoingCallCoordinator) don't
       // close on their own: they stop a *build* from resuming after
-      // tearDown, but resolveCapTableMaybeSync's own loop can itself be
+      // tearDown, but resolveParameterCapabilityDescriptors's own loop can itself be
       // suspended mid-params-list -- on an unresolved import id here,
       // just as easily on a pipelined param's parent being sent -- with
       // some entries already resolved (and exported) and others not yet
@@ -3700,7 +3700,7 @@ void main() {
       // so nothing rolls back a *new* export the loop creates after
       // resuming from that suspension -- ensureActive() (threaded into
       // _resolveCapTableAsync as this call's OutgoingCallCoordinator
-      // resolveCapTableMaybeSync's ensureActive parameter) exists
+      // resolveParameterCapabilityDescriptors's ensureActive parameter) exists
       // specifically to stop the loop from ever reaching that new export
       // in the first place.
       final localCapA = CountingCapability();
@@ -4261,9 +4261,9 @@ void main() {
       expect(paramsReq.getTextField(0), 'hello');
     });
 
-    test('buildCallMessageBuildingSync builds params directly into the '
+    test('buildCallMessageWithParamsBuilderSync builds params directly into the '
         'envelope (matches buildCallMessage semantics)', () {
-      final bytes = buildCallMessageBuildingSync(
+      final bytes = buildCallMessageWithParamsBuilderSync(
         questionId: 7,
         targetImportId: 3,
         interfaceId: 0xDEADBEEF,
@@ -4283,10 +4283,10 @@ void main() {
       expect(paramsReq.getTextField(0), 'hello');
     });
 
-    test('buildCallMessageBuilding resolves the capTable after buildParams '
+    test('buildCallMessageWithParamsBuilder resolves the capTable after buildParams '
         'runs', () async {
       final order = <String>[];
-      final bytes = await buildCallMessageBuilding(
+      final bytes = await buildCallMessageWithParamsBuilder(
         questionId: 9,
         targetImportId: 3,
         interfaceId: 0xDEADBEEF,
@@ -4601,7 +4601,7 @@ void main() {
         methodId: 0,
         paramsBytes: params,
         capTableDescriptors: const [
-          RpcCapDescriptor.receiverAnswer(9, [2]),
+          RpcCapabilityDescriptor.receiverAnswer(9, [2]),
         ],
       );
       final msg = parseRpcMessage(bytes);
@@ -4660,15 +4660,15 @@ void main() {
           );
 
           // The server should have received its own capability (identity
-          // check) — through a fresh vendCapabilityHandle, per the
+          // check) — through a fresh acquireCapabilityLease, per the
           // cross-connection/receiverHosted ownership fix (disposing a
           // received params capability must not be able to tear down the
           // export's own still-live reference to the same identity), so
           // the check unwraps first, exactly as any code that needs to
-          // recognize a possibly-vended capability's concrete identity
-          // must (see unwrapVendedCapability's doc comment).
+          // recognize a capability wrapped in a CapabilityLease's concrete identity
+          // must (see unwrapCapabilityLease's doc comment).
           expect(server.lastParams, hasLength(1));
-          expect(unwrapVendedCapability(server.lastParams[0]), same(server));
+          expect(unwrapCapabilityLease(server.lastParams[0]), same(server));
 
           await client.close();
           await serverConn.close();
@@ -4733,11 +4733,11 @@ void main() {
     },
   );
 
-  group('capabilityFromDescriptor: receiverHosted validation', () {
+  group('acquireCapabilityFromDescriptor: receiverHosted validation', () {
     test('a receiverHosted descriptor naming an export id we never exported '
         'fails only that one call with Return.exception, and does not tear '
         'down the connection', () async {
-      // Regression test: CapabilityProtocol.capabilityFromDescriptor's
+      // Regression test: CapabilityProtocol.acquireCapabilityFromDescriptor's
       // receiverHosted case
       // (disc=3) used to silently map an unknown export id to
       // NullCapability instead of treating it as the protocol violation
@@ -4768,7 +4768,7 @@ void main() {
           interfaceId: _echoInterfaceId,
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
-          capTableDescriptors: const [RpcCapDescriptor.receiverHosted(99999)],
+          capTableDescriptors: const [RpcCapabilityDescriptor.receiverHosted(99999)],
         ),
       );
       await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -4808,7 +4808,7 @@ void main() {
       'a descriptor that fails partway through a multi-entry capTable does '
       'not leak the capabilities that resolved successfully before it',
       () async {
-        // Regression test: when capabilityFromDescriptor throws partway
+        // Regression test: when acquireCapabilityFromDescriptor throws partway
         // through decoding a Call's capTable, everything already decoded
         // before the failing entry (an import refcount bump, in this
         // case) used to just sit in the local `paramsCapabilities` list
@@ -4836,8 +4836,8 @@ void main() {
             methodId: _echoMethodId,
             paramsBytes: _buildEchoParams(''),
             capTableDescriptors: const [
-              RpcCapDescriptor.senderHosted(10),
-              RpcCapDescriptor.receiverHosted(99999),
+              RpcCapabilityDescriptor.senderHosted(10),
+              RpcCapabilityDescriptor.receiverHosted(99999),
             ],
           ),
         );
@@ -4913,7 +4913,7 @@ void main() {
             interfaceId: _echoInterfaceId,
             methodId: _echoMethodId,
             paramsBytes: _buildEchoParams(''),
-            capTableDescriptors: const [RpcCapDescriptor.receiverHosted(99999)],
+            capTableDescriptors: const [RpcCapabilityDescriptor.receiverHosted(99999)],
           ),
         );
         await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -4938,27 +4938,27 @@ void main() {
 
   group('ownership: capability relayed across two different connections', () {
     test('a peer B releasing a relayed capability does not invalidate the '
-        'relay\'s own still-held handle to it, and vat A only sees a Release '
-        'once the relay disposes that handle too', () async {
-      // peer A → relay → peer B, per three-vat relay diagrams: vat A vends
-      // `probe`; the relay reads it (vendCapabilityHandle'd handle `h`),
+        'relay\'s own still-held lease to it, and vat A only sees a Release '
+        'once the relay disposes that lease too', () async {
+      // peer A → relay → peer B: vat A returns `probe`, and the relay reads it
+      // as `capabilityLease` through a generated accessor,
       // forwards it to vat B as a params capability of a call on a
       // completely different TwoPartyRpcConnection, and vat B immediately
       // releases its own reference to it. Before the _ExportEntry
       // identity/ownedReference split, the relay's connection-B export
       // table disposed the *raw* underlying capability directly on that
-      // Release — invalidating `h` out from under the relay even though
-      // the relay never disposed it itself.
+      // Release — invalidating `capabilityLease` out from under the relay even
+      // though the relay never disposed it itself.
       final probe = EchoServer();
-      final (relayToA, vatAConn) = _makePipe(_CapVendingServer(probe));
+      final (relayToA, vatAConn) = _makePipe(_CapabilityReturningServer(probe));
       final vatABootstrap = relayToA.bootstrap(EchoClientFactory()).cap;
 
-      final vendResult = await vatABootstrap.dispatch(
+      final capabilityResult = await vatABootstrap.dispatch(
         _echoInterfaceId,
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
       );
-      final h = requireCapabilityFromResult(vendResult, 0);
+      final capabilityLease = requireCapabilityFromResult(capabilityResult, 0);
 
       final (relayToB, vatBConn) = _makePipe(_DisposingReceiver());
       final vatBBootstrap = relayToB.bootstrap(EchoClientFactory()).cap;
@@ -4966,30 +4966,30 @@ void main() {
         _echoInterfaceId,
         _echoMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
-        paramsCapabilities: [h],
+        paramsCapabilities: [capabilityLease],
       );
       // Let vat B's Release of its params capability reach the relay's
       // connection-B export table.
       await Future<void>.delayed(const Duration(milliseconds: 20));
 
-      // The relay's own handle `h` must still be live: neither disposed
-      // nor failing subsequent calls.
-      final echoViaH = await h.dispatch(
+      // The relay's own lease `capabilityLease` must still be live: it must neither be disposed
+      // nor fail subsequent calls.
+      final echoViaLease = await capabilityLease.dispatch(
         _echoInterfaceId,
         _echoMethodId,
         RpcPayload.fromBytes(_buildEchoParams('still alive')),
       );
-      expect(_parseEchoResult(echoViaH.payload), equals('echo: still alive'));
+      expect(_parseEchoResult(echoViaLease.payload), equals('echo: still alive'));
 
       // Vat A must not have seen a Release yet for `probe`'s export — the
-      // relay hasn't disposed its own handle. (2, not 1: the bootstrap
+      // relay hasn't disposed its own lease. (2, not 1: the bootstrap
       // capability itself is also export 0 on this connection.)
       expect(vatAConn.debugExportCount, equals(2));
 
-      // Now the relay disposes its own handle: only *now* should vat A's
+      // Now the relay disposes its own lease: only *now* should vat A's
       // export of `probe` be released and the underlying capability torn
       // down — leaving only the still-live bootstrap export behind.
-      await h.dispose();
+      await capabilityLease.dispose();
       await Future<void>.delayed(const Duration(milliseconds: 20));
 
       expect(vatAConn.debugExportCount, equals(1));
@@ -5000,49 +5000,53 @@ void main() {
       await vatBConn.close();
     });
 
-    test('a vended handle returned in DispatchResult.caps does not leak vat '
+    test('a capability lease returned in DispatchResult.caps does not leak vat '
         'A\'s export once the recipient releases it', () async {
       // Same peer A → relay → peer C shape as the params-forwarding test
-      // above, but this time relay forwards `h` as its own *result*
+      // above, but this time relay forwards `capabilityLease` as its own
+      // *result*
       // capability (DispatchResult.caps) instead of a call parameter —
       // the ownership-transfer contract there means relay's dispatch
-      // handler does *not* separately dispose `h` itself; the runtime is
+      // handler does *not* separately dispose `capabilityLease` itself; the
+      // runtime is
       // solely responsible for it from that point on. Before
-      // CapabilityProtocol.returnCapDescriptor disposed a redundant
-      // vended `cap` once its own owning export reference was established,
-      // `h` was simply
-      // dropped — leaking its share of the underlying identity's
+      // CapabilityProtocol.exportResultCapabilityAsDescriptor disposed a redundant
+      // a [CapabilityLease] passed as `cap` once its own owning export reference was established,
+      // `capabilityLease` was simply dropped — leaking its share of the underlying identity's
       // refcount forever, so vat A's export never actually cleared even
       // after C released its own reference to the result.
       final probe = EchoServer();
-      final (relayToA, vatAConn) = _makePipe(_CapVendingServer(probe));
+      final (relayToA, vatAConn) = _makePipe(_CapabilityReturningServer(probe));
       final vatABootstrap = relayToA.bootstrap(EchoClientFactory()).cap;
 
-      final vendResult = await vatABootstrap.dispatch(
+      final capabilityResult = await vatABootstrap.dispatch(
         _echoInterfaceId,
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
       );
-      final h = requireCapabilityFromResult(vendResult, 0);
+      final capabilityLease = requireCapabilityFromResult(capabilityResult, 0);
 
       // Relay is the SERVER for connection C: its dispatch handler hands
-      // off `h` as its own result capability without disposing it itself.
-      final (cClient, relayConnForC) = _makePipe(_CapVendingServer(h));
+      // off `capabilityLease` as its own result capability without disposing it
+      // itself.
+      final (cClient, relayConnForC) = _makePipe(
+        _CapabilityReturningServer(capabilityLease),
+      );
       final cBootstrap = cClient.bootstrap(EchoClientFactory()).cap;
       final resultForC = await cBootstrap.dispatch(
         _echoInterfaceId,
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
       );
-      final cHandle = requireCapabilityFromResult(resultForC, 0);
+      final cLease = requireCapabilityFromResult(resultForC, 0);
 
       expect(vatAConn.debugExportCount, equals(2));
 
-      await cHandle.dispose();
+      await cLease.dispose();
       await Future<void>.delayed(const Duration(milliseconds: 30));
 
-      // Vat A's export of `probe` must now be gone — the redundant `h`
-      // reference the runtime silently inherited via DispatchResult.caps
+      // Vat A's export of `probe` must now be gone — the redundant
+      // `capabilityLease` reference inherited via DispatchResult.caps
       // no longer keeps it pinned forever.
       expect(vatAConn.debugExportCount, equals(1));
 
@@ -5057,27 +5061,27 @@ void main() {
       // peer A → relay → peer B, then B hands the *same* capability back
       // to relay as a params capability of a further call — wire-encoded
       // as receiverHosted, since it's relay's own export as far as B's
-      // connection is concerned. Before capabilityFromDescriptor's
-      // receiverHosted case vended a fresh handle instead of returning
+      // connection is concerned. Before acquireCapabilityFromDescriptor's
+      // receiverHosted case acquired a fresh lease instead of returning
       // the export's raw identity directly, relay's dispatch handler
       // disposing that received params capability tore down the shared
       // underlying identity directly — invalidating vatB's own,
       // still-live, never-released reference to the same capability out
       // from under it.
       final probe = EchoServer();
-      final (relayToA, vatAConn) = _makePipe(_CapVendingServer(probe));
+      final (relayToA, vatAConn) = _makePipe(_CapabilityReturningServer(probe));
       final vatABootstrap = relayToA.bootstrap(EchoClientFactory()).cap;
 
-      final vendResult = await vatABootstrap.dispatch(
+      final capabilityResult = await vatABootstrap.dispatch(
         _echoInterfaceId,
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
       );
-      final h = requireCapabilityFromResult(vendResult, 0);
+      final capabilityLease = requireCapabilityFromResult(capabilityResult, 0);
 
-      // Relay forwards both `h` and a callback capability (playing
+      // Relay forwards both `capabilityLease` and a callback capability (playing
       // relay's own dispatch handler for the "B sends it back" leg) to
-      // vatB in one call, creating relay's own export for `h`'s identity
+      // vatB in one call, creating relay's own export for `capabilityLease`'s identity
       // on relayToB.
       final vatB = CapReceivingServer();
       final (relayToB, vatBConn) = _makePipe(vatB);
@@ -5086,7 +5090,7 @@ void main() {
         _echoInterfaceId,
         _echoMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
-        paramsCapabilities: [h, _DisposingReceiver()],
+        paramsCapabilities: [capabilityLease, _DisposingReceiver()],
       );
       await Future<void>.delayed(const Duration(milliseconds: 20));
 
@@ -5128,12 +5132,12 @@ void main() {
 
   group('ownership: bootstrap capability identity normalization', () {
     test(
-      'a bootstrap capability passed as an already-vended handle normalizes '
+      'a bootstrap capability passed as an already-acquired lease normalizes '
       'to its unwrapped identity, so a later export of the same underlying '
       'capability dedupes against it instead of creating a redundant export',
       () async {
         final rawServer = PipelineServer();
-        final vendedBootstrap = vendCapabilityHandle(rawServer);
+        final vendedBootstrap = acquireCapabilityLease(rawServer);
         final (client, serverConn) = _makePipe(vendedBootstrap);
 
         final bootstrapCap = client.bootstrap(EchoClientFactory());
@@ -5151,7 +5155,7 @@ void main() {
 
         // If bootstrap's identity had not been normalized (unwrapped) at
         // registration time, `_exportIds` would have been keyed by the
-        // vended handle instead of `rawServer`, so this second export
+        // capability lease instead of `rawServer`, so this second export
         // wouldn't dedupe against export 0 and would show up as a second,
         // redundant entry.
         expect(serverConn.debugExportCount, equals(1));
@@ -5162,12 +5166,12 @@ void main() {
     );
   });
 
-  group('vendCapabilityHandle delegates tryTailCall', () {
-    test('a vended handle forwards tryTailCall to its target instead of '
+  group('acquireCapabilityLease delegates tryTailCall', () {
+    test('a capability lease forwards tryTailCall to its target instead of '
         'silently disabling the tail-call optimization', () {
       final target = TailCallServer();
-      final handle = vendCapabilityHandle(target);
-      expect(handle, isA<CapabilityLease>());
+      final lease = acquireCapabilityLease(target);
+      expect(lease, isA<CapabilityLease>());
 
       final direct = target.tryTailCall(
         _echoInterfaceId,
@@ -5175,7 +5179,7 @@ void main() {
         RpcPayload.fromBytes(_buildEchoParams('')),
         paramsCapabilities: [EchoServer()],
       );
-      final viaHandle = handle.tryTailCall(
+      final viaLease = lease.tryTailCall(
         _echoInterfaceId,
         _tailCallMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
@@ -5183,44 +5187,44 @@ void main() {
       );
 
       expect(direct, isNotNull);
-      expect(viaHandle, isNotNull);
-      expect(viaHandle!.interfaceId, equals(direct!.interfaceId));
-      expect(viaHandle.methodId, equals(direct.methodId));
+      expect(viaLease, isNotNull);
+      expect(viaLease!.interfaceId, equals(direct!.interfaceId));
+      expect(viaLease.methodId, equals(direct.methodId));
     });
   });
 
   group(
-    'vendCapabilityHandle: rejects vending after disposal was triggered',
+    'acquireCapabilityLease: rejects leasing after disposal was triggered',
     () {
-      test('vending again after a prior cycle already fully disposed throws — '
+      test('leasing again after a prior cycle already fully disposed throws — '
           'unconditionally, not just in debug/test builds — instead of silently '
           'starting a fresh cycle that can never truly resurrect the '
           'already-torn-down target', () async {
         final target = CountingCapability();
 
-        final h1 = vendCapabilityHandle(target);
+        final h1 = acquireCapabilityLease(target);
         await h1.dispose();
         expect(target.disposeCount, equals(1));
 
-        // The target itself is already torn down for real — vending a
-        // "fresh" handle for it now would be a lie (it would look live but
+        // The target itself is already torn down for real — leasing a
+        // "fresh" lease for it now would be a lie (it would look live but
         // dispatch through it would just hit whatever broken state
         // target.dispose() already left behind).
-        expect(() => vendCapabilityHandle(target), throwsA(isA<StateError>()));
+        expect(() => acquireCapabilityLease(target), throwsA(isA<StateError>()));
       });
 
-      test('vending while the previous cycle\'s dispose() is still in flight '
+      test('leasing while the previous cycle\'s dispose() is still in flight '
           '(not yet actually finished) also throws, rather than racing a fresh '
-          'handle against a disposal that could finish tearing the target down '
+          'lease against a disposal that could finish tearing the target down '
           'at any moment', () async {
         final target = SlowDisposeCapability();
 
-        final h1 = vendCapabilityHandle(target);
+        final h1 = acquireCapabilityLease(target);
         // Don't await yet — dispose() is blocked on the gate, so this cycle
         // is "triggered" (disposeFuture assigned) but not yet finished.
         final h1DisposeFuture = h1.dispose();
 
-        expect(() => vendCapabilityHandle(target), throwsA(isA<StateError>()));
+        expect(() => acquireCapabilityLease(target), throwsA(isA<StateError>()));
 
         target.releaseDispose();
         await h1DisposeFuture;
@@ -5229,9 +5233,9 @@ void main() {
     },
   );
 
-  group('_ReceiverAnswerCapability: resolved handle reuse and disposal', () {
+  group('_ReceiverAnswerCapability: resolved lease reuse and disposal', () {
     test('a receiverAnswer-decoded capability dispatched multiple times reuses '
-        'one resolved handle instead of leaking a fresh one per call, and '
+        'one resolved lease instead of leaking a fresh one per call, and '
         'dispose() releases exactly that one reference', () async {
       final clientToServer = StreamController<Uint8List>();
       final serverToClient = StreamController<Uint8List>();
@@ -5271,7 +5275,7 @@ void main() {
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
           capTableDescriptors: [
-            RpcCapDescriptor.receiverAnswer(1, [0]),
+            RpcCapabilityDescriptor.receiverAnswer(1, [0]),
           ],
         ),
       );
@@ -5282,7 +5286,7 @@ void main() {
 
       // Dispatch through it twice, *while* answer #1 is still tracked
       // (_answerCaps[1]/_pendingCaps[1]) — before the fix, each call
-      // vended (and never disposed) a fresh handle to `leaf`.
+      // acquired (and never disposed) a fresh lease to `leaf`.
       await receiverAnswerCap.dispatch(
         _echoInterfaceId,
         _echoMethodId,
@@ -5310,7 +5314,7 @@ void main() {
       expect(leaf.disposeCount, equals(0));
 
       await receiverAnswerCap.dispose();
-      // Both dispatch() calls sharing one resolved handle (rather than
+      // Both dispatch() calls sharing one resolved lease (rather than
       // leaking a fresh one each) means this single dispose() call is
       // enough to release the last remaining reference for real.
       expect(leaf.disposeCount, equals(1));
@@ -5331,7 +5335,7 @@ void main() {
         // inside the resolved target (DisposeOrderProbeCapability, gated on
         // dispatchGate) and then disposes the receiverAnswer capability while
         // that call is still pending, to see whether the shared resolved
-        // handle's real target.dispose() actually runs concurrently with it.
+        // lease's real target.dispose() actually runs concurrently with it.
         final clientToServer = StreamController<Uint8List>();
         final serverToClient = StreamController<Uint8List>();
         serverToClient.stream.listen((_) {});
@@ -5363,7 +5367,7 @@ void main() {
             methodId: _echoMethodId,
             paramsBytes: _buildEchoParams(''),
             capTableDescriptors: [
-              RpcCapDescriptor.receiverAnswer(1, [0]),
+              RpcCapabilityDescriptor.receiverAnswer(1, [0]),
             ],
           ),
         );
@@ -5382,7 +5386,7 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 20));
 
         // Release the other outstanding reference to `leaf` (answer #1's own
-        // export), same as the test above, so receiverAnswerCap's handle is
+        // export), same as the test above, so receiverAnswerCap's lease is
         // the last one left.
         clientToServer.add(buildFinishMessage(1, releaseResultCaps: true));
         await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -5450,7 +5454,7 @@ void main() {
             methodId: _echoMethodId,
             paramsBytes: _buildEchoParams(''),
             capTableDescriptors: [
-              RpcCapDescriptor.receiverAnswer(1, [0]),
+              RpcCapabilityDescriptor.receiverAnswer(1, [0]),
             ],
           ),
         );
@@ -5537,7 +5541,7 @@ void main() {
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
           capTableDescriptors: [
-            RpcCapDescriptor.receiverAnswer(1, [0]),
+            RpcCapabilityDescriptor.receiverAnswer(1, [0]),
           ],
         ),
       );
@@ -5558,7 +5562,7 @@ void main() {
       );
 
       // Release the other outstanding reference to `leaf` (answer #1's
-      // own export), so receiverAnswerCap's handle is the last one left —
+      // own export), so receiverAnswerCap's lease is the last one left —
       // its dispose() below is what actually tears `leaf` down for real.
       clientToServer.add(buildFinishMessage(1, releaseResultCaps: true));
       await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -5673,10 +5677,10 @@ void main() {
       // dispose loop entirely (it ran only in the per-call-failure
       // branch below it) — any capTable entry that had already resolved
       // successfully before the unimplemented one (e.g. a receiverHosted
-      // descriptor vending a fresh handle to bootstrap/an export) was
+      // descriptor acquiring a fresh lease to bootstrap/an export) was
       // simply abandoned. _tearDown only ever disposes each export's own
       // single `ownedReference` — it has no way to know about this
-      // *additional* vended handle, so the shared refcount for that
+      // *additional* capability lease, so the shared refcount for that
       // identity never actually reached zero, and the real capability's
       // own dispose() never ran even though the connection (and every
       // other reference to it) was long gone.
@@ -5705,8 +5709,8 @@ void main() {
         ),
       );
 
-      // [0] receiverHosted(0) — resolves successfully, vending a fresh
-      // handle to bootstrap (export 0) in addition to the export's own
+      // [0] receiverHosted(0) — resolves successfully, acquiring a fresh
+      // lease to bootstrap (export 0) in addition to the export's own
       // ownedReference. [1] disc=5 (thirdPartyHosted) — unimplemented.
       serverInput.add(_callWithReceiverHostedThenCapDescriptorDisc(5));
       await doneExpectation;
@@ -5715,7 +5719,7 @@ void main() {
         bootstrap.disposeCount,
         equals(1),
         reason:
-            'the extra handle vended for the receiverHosted(0) entry '
+            'the extra lease acquired for the receiverHosted(0) entry '
             'was never disposed, so the shared refcount for bootstrap '
             'never reached zero even after teardown released the '
             "export's own reference",
@@ -5793,12 +5797,12 @@ void main() {
         await bootstrapCap.echo('warmup');
 
         serverCaptured.clear();
-        final parent = bootstrapCap.cap.beginDispatch(
+        final parent = bootstrapCap.cap.dispatchForPipelining(
           _echoInterfaceId,
           _pipelineMethodId,
           RpcPayload.fromBytes(_buildEchoParams('')),
         );
-        final pipelinedCap = parent.pipelineResult(0);
+        final pipelinedCap = parent.pipelinedCapability(0);
         final pipelinedCall = pipelinedCap.dispatch(
           _echoInterfaceId,
           _echoMethodId,
@@ -5864,12 +5868,12 @@ void main() {
       final bootstrapCap = client.bootstrap(EchoClientFactory());
       await bootstrapCap.echo('warmup');
 
-      final parent = bootstrapCap.cap.beginDispatch(
+      final parent = bootstrapCap.cap.dispatchForPipelining(
         _echoInterfaceId,
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
       );
-      final pipelinedCap = parent.pipelineResult(0);
+      final pipelinedCap = parent.pipelinedCapability(0);
       final pipelinedCall = pipelinedCap.dispatch(
         _echoInterfaceId,
         _echoMethodId,
@@ -5932,12 +5936,12 @@ void main() {
       await bootstrapCap.echo('warmup');
 
       serverCaptured.clear();
-      final parent = bootstrapCap.cap.beginDispatch(
+      final parent = bootstrapCap.cap.dispatchForPipelining(
         _echoInterfaceId,
         _pipelineMethodId,
         RpcPayload.fromBytes(_buildEchoParams('')),
       );
-      final pipelinedCap = parent.pipelineResult(0);
+      final pipelinedCap = parent.pipelinedCapability(0);
       await parent.result;
 
       final ret = await _waitForMessageType(
@@ -6059,7 +6063,7 @@ void main() {
           interfaceId: _echoInterfaceId,
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
-          capTableDescriptors: const [RpcCapDescriptor.senderPromise(10)],
+          capTableDescriptors: const [RpcCapabilityDescriptor.senderPromise(10)],
         ),
       );
       await Future<void>.delayed(Duration.zero);
@@ -6115,8 +6119,8 @@ void main() {
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
           capTableDescriptors: const [
-            RpcCapDescriptor.senderHosted(20),
-            RpcCapDescriptor.senderPromise(10),
+            RpcCapabilityDescriptor.senderHosted(20),
+            RpcCapabilityDescriptor.senderPromise(10),
           ],
         ),
       );
@@ -6138,7 +6142,7 @@ void main() {
       // dispatch()'s params list is processed in order: freshCap (not an
       // import) creates a fresh export first, *then* brokenParam's
       // throwIfBroken throws — exercising
-      // CapabilityProtocol.resolveCapTableMaybeSync's partial-list-then-throw
+      // CapabilityProtocol.resolveParameterCapabilityDescriptors's partial-list-then-throw
       // path.
       final freshCap = _TrackedCapability();
       await expectLater(
@@ -6240,9 +6244,9 @@ void main() {
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
           capTableDescriptors: const [
-            RpcCapDescriptor.senderHosted(20),
-            RpcCapDescriptor.senderHosted(21),
-            RpcCapDescriptor.senderHosted(22),
+            RpcCapabilityDescriptor.senderHosted(20),
+            RpcCapabilityDescriptor.senderHosted(21),
+            RpcCapabilityDescriptor.senderHosted(22),
           ],
         ),
       );
@@ -6357,7 +6361,7 @@ void main() {
           buildReturnResultsWithCapDescriptorsMessage(
             answerId: 0,
             resultsBytes: _buildEchoParams(''),
-            descriptors: const [RpcCapDescriptor.senderPromise(10)],
+            descriptors: const [RpcCapabilityDescriptor.senderPromise(10)],
           ),
         );
         await Future<void>.delayed(Duration.zero);
@@ -6434,7 +6438,7 @@ void main() {
           buildReturnResultsWithCapDescriptorsMessage(
             answerId: 0,
             resultsBytes: _buildEchoParams(''),
-            descriptors: const [RpcCapDescriptor.senderPromise(10)],
+            descriptors: const [RpcCapabilityDescriptor.senderPromise(10)],
           ),
         );
         await Future<void>.delayed(Duration.zero);
@@ -6498,7 +6502,7 @@ void main() {
         buildReturnResultsWithCapDescriptorsMessage(
           answerId: 0,
           resultsBytes: _buildEchoParams(''),
-          descriptors: const [RpcCapDescriptor.senderPromise(10)],
+          descriptors: const [RpcCapabilityDescriptor.senderPromise(10)],
         ),
       );
       await Future<void>.delayed(Duration.zero);
@@ -6774,7 +6778,7 @@ void main() {
         await serverConn.close();
       });
 
-      test('connection handles subsequent calls after sync throw', () async {
+      test('connection leases subsequent calls after sync throw', () async {
         final server = _FirstCallSyncThrowCapability();
         final (client, serverConn) = _makePipe(server);
         final bootstrapCap = client.bootstrap(EchoClientFactory());
@@ -7079,7 +7083,7 @@ void main() {
         );
 
         serverToClient.add(
-          buildReturnOtherMessage(answerId: callMsg.questionId, disc: disc),
+          buildRawReturnVariantMessage(answerId: callMsg.questionId, disc: disc),
         );
 
         await expectLater(

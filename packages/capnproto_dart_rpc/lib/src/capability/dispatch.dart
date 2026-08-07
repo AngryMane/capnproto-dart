@@ -17,17 +17,16 @@ final Future<void> _neverCanceledFuture = Completer<void>().future;
 /// the answer is discarded before a Return can be sent (the connection
 /// closed, or a Finish canceled it first) — disposes them itself.
 ///
-/// This applies equally whether an entry is a bare capability or itself a
-/// [vendCapabilityHandle] handle (e.g. one read out of another call's own
+/// This applies equally whether an entry is a bare capability or a
+/// [CapabilityLease] (e.g. one read out of another call's own
 /// result via [requireCapabilityFromResult] and forwarded here) — the
-/// runtime unwraps it to decide what to export, and disposes the handle you
+/// runtime unwraps it to decide what to export, and disposes the lease you
 /// handed it once that export is established (see `CapabilityProtocol`'s
-/// `returnCapDescriptor`/internal `_resolveDescriptorForCapability`).
-/// Reusing that same handle — or the bare
-/// capability it wrapped — for anything *after* returning it here is a
+/// `exportResultCapabilityAsDescriptor`/internal `_resolveDescriptorForCapability`).
+/// Reusing that same lease — or the bare capability it wrapped — for anything *after* returning it here is a
 /// use-after-ownership-transfer bug: if every reference to the underlying
-/// capability happens to have been released by then, [vendCapabilityHandle]
-/// catches the reuse itself rather than silently handing back a handle to
+/// capability happens to have been released by then, [acquireCapabilityLease]
+/// catches the reuse itself rather than silently returning a lease for
 /// an already-torn-down object.
 class DispatchResult {
   /// The method results — see [RpcPayload].
@@ -67,9 +66,12 @@ buildDispatchResult<R extends StructReader, B extends StructBuilder>(
   return DispatchResult(payload: RpcPayload.fromBuilder(results), caps: caps);
 }
 
-/// Describes a tail call: the entire result of the current dispatch should
-/// be exactly the result of calling [target]'s [interfaceId]/[methodId]
+/// Describes a request to perform a tail call: the entire result of the
+/// current dispatch should be exactly the result of calling [target]'s [interfaceId]/[methodId]
 /// method with [params]/[paramsCapabilities].
+///
+/// This is a declarative request consumed by the RPC runtime, not a protocol
+/// wire message or an in-progress call.
 ///
 /// Returned by [Capability.tryTailCall]. When [target] is a capability
 /// imported from the same peer connection that is asking for the current
@@ -78,7 +80,7 @@ buildDispatchResult<R extends StructReader, B extends StructBuilder>(
 /// `Return.takeFromOtherQuestion`), avoiding an extra network round trip.
 /// Otherwise this is a transparent pass-through with no special wire
 /// behavior — semantically identical, just without the optimization.
-class TailCall {
+class TailCallRequest {
   /// The capability the current dispatch's result should be taken from.
   final Capability target;
 
@@ -94,9 +96,9 @@ class TailCall {
   /// Capabilities referenced by [params], in capTable order.
   final List<Capability> paramsCapabilities;
 
-  /// Creates a tail call describing a dispatch to [target]'s
+  /// Creates a tail-call request describing a dispatch to [target]'s
   /// [interfaceId]/[methodId] method with [params]/[paramsCapabilities].
-  const TailCall(
+  const TailCallRequest(
     this.target,
     this.interfaceId,
     this.methodId,
@@ -110,15 +112,15 @@ class TailCall {
 /// Server implementations can check [isCanceled], await [canceled], or call
 /// [throwIfCanceled] at await points to stop work after the caller sends
 /// `Finish` or the connection closes.
-class DispatchContext {
+class DispatchCancellationContext {
   /// A context that never reports cancellation — for dispatch paths that
   /// don't track it.
-  static final DispatchContext neverCanceled = DispatchContext._never();
+  static final DispatchCancellationContext neverCanceled = DispatchCancellationContext._never();
 
   final Completer<void>? _canceledCompleter;
 
-  DispatchContext._() : _canceledCompleter = Completer<void>();
-  DispatchContext._never() : _canceledCompleter = null;
+  DispatchCancellationContext._() : _canceledCompleter = Completer<void>();
+  DispatchCancellationContext._never() : _canceledCompleter = null;
 
   /// Whether the caller has abandoned this dispatch.
   bool get isCanceled => _canceledCompleter?.isCompleted ?? false;
@@ -144,7 +146,7 @@ class DispatchContext {
 
 /// Owns cancellation for a single incoming dispatch.
 class DispatchCancellationController {
-  final DispatchContext context = DispatchContext._();
+  final DispatchCancellationContext context = DispatchCancellationContext._();
 
   void cancel() => context._cancel();
 }

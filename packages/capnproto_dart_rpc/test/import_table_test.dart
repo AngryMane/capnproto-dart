@@ -80,12 +80,12 @@ void main() {
       expect(third.isPromise, isTrue);
     });
 
-    test('stateFor creates tracking state without bumping the refcount', () {
+    test('getOrCreateState creates tracking state without bumping the refcount', () {
       final table = ImportTable();
-      final state = table.stateFor(2);
-      expect(identical(table.stateFor(2), state), isTrue);
+      final state = table.getOrCreateState(2);
+      expect(identical(table.getOrCreateState(2), state), isTrue);
       // Not retained, so isTracked (which reflects the refcount map) stays
-      // false — stateFor alone never holds a reference.
+      // false — getOrCreateState alone never holds a reference.
       expect(table.isTracked(2), isFalse);
     });
 

@@ -1,24 +1,24 @@
 part of 'capability.dart';
 
-class _DeferredCapCall implements CapCall {
+class _DeferredDispatchHandle implements DispatchHandle {
   @override
   final Future<DispatchResult> result;
-  _DeferredCapCall(this.result);
+  _DeferredDispatchHandle(this.result);
 
   @override
-  Capability pipelineResult(int ptrIndex) => DeferredCapability(
+  Capability pipelinedCapability(int ptrIndex) => DeferredCapability(
     result.then((r) => requireCapabilityFromResult(r, ptrIndex)),
   );
 
   @override
-  Capability pipelineResultPath(List<int> path) => DeferredCapability(
+  Capability pipelinedCapabilityFromResultPath(List<int> path) => DeferredCapability(
     result.then((r) => requireCapabilityFromResultPath(r, path)),
   );
 }
 
 /// A capability backed by a [Future] that resolves to the real capability.
 ///
-/// Used as the fallback for [CapCall.pipelineResult] when the underlying
+/// Used as the fallback for [DispatchHandle.pipelinedCapability] when the underlying
 /// [Capability] is not an RPC-connected imported cap and therefore cannot
 /// send wire-level promisedAnswer messages.
 class DeferredCapability extends Capability {
@@ -45,8 +45,8 @@ class DeferredCapability extends Capability {
     final cap = await _future;
     if (_disposed) {
       // See dispose()'s matching comment on why this goes through
-      // vendCapabilityHandle rather than disposing `cap` directly.
-      await vendCapabilityHandle(cap).dispose();
+      // acquireCapabilityLease rather than disposing `cap` directly.
+      await acquireCapabilityLease(cap).dispose();
       throw const RpcException(
         'capability is disposed',
         kind: ErrorKind.disconnected,
@@ -77,7 +77,7 @@ class DeferredCapability extends Capability {
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) async {
     final cap = await _resolveForCall();
     return cap.dispatchWithContext(
@@ -90,14 +90,14 @@ class DeferredCapability extends Capability {
   }
 
   @override
-  Future<DispatchResult> dispatchBuilding(
+  Future<DispatchResult> dispatchWithParamsBuilder(
     int interfaceId,
     int methodId,
     void Function(AnyPointerBuilder) build, {
     List<Capability> paramsCapabilities = const [],
   }) async {
     final cap = await _resolveForCall();
-    return cap.dispatchBuilding(
+    return cap.dispatchWithParamsBuilder(
       interfaceId,
       methodId,
       build,
@@ -106,14 +106,14 @@ class DeferredCapability extends Capability {
   }
 
   @override
-  CapCall beginDispatch(
+  DispatchHandle dispatchForPipelining(
     int interfaceId,
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
   }) {
     if (_disposed) {
-      return _DeferredCapCall(
+      return _DeferredDispatchHandle(
         Future<DispatchResult>.error(
           const RpcException(
             'capability is disposed',
@@ -122,7 +122,7 @@ class DeferredCapability extends Capability {
         ),
       );
     }
-    return _DeferredCapCall(
+    return _DeferredDispatchHandle(
       _resolveForCall().then(
         (cap) => cap.dispatch(
           interfaceId,
@@ -142,7 +142,7 @@ class DeferredCapability extends Capability {
       final cap = await _future.catchError(
         (_) => NullCapability() as Capability,
       );
-      // Through vendCapabilityHandle, not `cap.dispose()` directly: the
+      // Through acquireCapabilityLease, not `cap.dispose()` directly: the
       // resolved capability this DeferredCapability holds the only
       // *application*-visible reference to may still have an independent,
       // uncoordinated reference of its own elsewhere — e.g. the RPC layer
@@ -152,7 +152,7 @@ class DeferredCapability extends Capability {
       // shares no bookkeeping with this object at all. Disposing `cap`
       // directly would tear it down out from under that other reference
       // instead of just releasing this one's own share.
-      await vendCapabilityHandle(cap).dispose();
+      await acquireCapabilityLease(cap).dispose();
     }();
   }
 }

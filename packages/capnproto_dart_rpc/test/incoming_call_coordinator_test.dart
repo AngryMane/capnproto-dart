@@ -18,7 +18,7 @@ import 'package:test/test.dart';
 /// same shape as `IncomingCallCoordinator`'s own `_emptyResultBytes`. Used
 /// both as [buildCallMessage]'s `paramsBytes` and, for a "resolved answer"
 /// fixture, as a result whose root has zero pointer words — so a transform
-/// path into it never resolves to a capability (`_capFromPath` returns
+/// path into it never resolves to a capability (`_tryGetCapabilityFromAnswerPath` returns
 /// null).
 final _emptyMessageBytes = Uint8List.fromList([
   0, 0, 0, 0, 1, 0, 0, 0, //
@@ -56,7 +56,7 @@ class _FakeCapability extends Capability {
 
   /// Settable per test — defaults to never tail-calling, matching
   /// [Capability]'s own default.
-  TailCall? Function(int interfaceId, int methodId, RpcPayload params)?
+  TailCallRequest? Function(int interfaceId, int methodId, RpcPayload params)?
   onTryTailCall;
 
   @override
@@ -74,7 +74,7 @@ class _FakeCapability extends Capability {
   }
 
   @override
-  TailCall? tryTailCall(
+  TailCallRequest? tryTailCall(
     int interfaceId,
     int methodId,
     RpcPayload params, {
@@ -121,28 +121,28 @@ class _Harness {
 
   /// Settable per test — defaults to a fresh [_FakeCapability] per
   /// descriptor.
-  Capability Function(RpcCapDescriptor descriptor) capabilityFromDescriptor =
+  Capability Function(RpcCapabilityDescriptor descriptor) acquireCapabilityFromDescriptor =
       (descriptor) => _FakeCapability();
 
   /// Settable per test — defaults to a `none` descriptor for every result
   /// capability.
-  RpcCapDescriptor Function(Capability cap) returnCapDescriptor =
-      (cap) => const RpcCapDescriptor.none();
+  RpcCapabilityDescriptor Function(Capability cap) exportResultCapabilityAsDescriptor =
+      (cap) => const RpcCapabilityDescriptor.none();
 
   /// Settable per test — defaults to completing [OutgoingQuestion.sentCompleter]
-  /// immediately (mirrors `OutgoingCallCoordinator.startUsing`'s synchronous
+  /// immediately (mirrors `OutgoingCallCoordinator.startCallWithAllocatedQuestion`'s synchronous
   /// send fast path), recording the call in [startUsingCalls].
   void Function(OutgoingQuestion question, _StartUsingCall call) onStartUsing =
       (question, call) => question.sentCompleter?.complete();
 
   /// Settable per test — defaults to "nothing to track".
-  Object? Function(List<Capability> paramsCapabilities) beginParamCapsRelease =
+  Object? Function(List<Capability> paramsCapabilities) startParameterCapabilityDisposalTracking =
       (paramsCapabilities) => null;
 
   /// Settable per test — defaults to "always safe to fold into
   /// releaseParamCaps=true", matching a null/empty ticket.
   ({bool allDisposed, List<int> explicitReleaseIds}) Function(Object? ticket)
-  finalizeParamCapsRelease =
+  finishParameterCapabilityDisposalTracking =
       (ticket) => (allDisposed: true, explicitReleaseIds: const []);
 
   late final coordinator = IncomingCallCoordinator(
@@ -154,10 +154,10 @@ class _Harness {
     isClosed: () => isClosed(),
     tearDownConnection: tearDownCalls.add,
     tryExtractCapabilityReference: (cap) => tryExtractCapabilityReference(cap),
-    capabilityFromDescriptor:
-        (descriptor) => capabilityFromDescriptor(descriptor),
-    returnCapDescriptor: (cap) => returnCapDescriptor(cap),
-    startUsing: ({
+    acquireCapabilityFromDescriptor:
+        (descriptor) => acquireCapabilityFromDescriptor(descriptor),
+    exportResultCapabilityAsDescriptor: (cap) => exportResultCapabilityAsDescriptor(cap),
+    startCallWithAllocatedQuestion: ({
       required OutgoingQuestion question,
       required OutgoingCallTarget target,
       required OutgoingParams params,
@@ -174,9 +174,9 @@ class _Harness {
       startUsingCalls.add(call);
       onStartUsing(question, call);
     },
-    beginParamCapsRelease:
-        (paramsCapabilities) => beginParamCapsRelease(paramsCapabilities),
-    finalizeParamCapsRelease: (ticket) => finalizeParamCapsRelease(ticket),
+    startParameterCapabilityDisposalTracking:
+        (paramsCapabilities) => startParameterCapabilityDisposalTracking(paramsCapabilities),
+    finishParameterCapabilityDisposalTracking: (ticket) => finishParameterCapabilityDisposalTracking(ticket),
   );
 }
 
@@ -188,7 +188,7 @@ Uint8List _buildCall({
   int interfaceId = 1,
   int methodId = 2,
   bool sendResultsToYourself = false,
-  List<RpcCapDescriptor>? capTableDescriptors,
+  List<RpcCapabilityDescriptor>? capTableDescriptors,
 }) => buildCallMessage(
   questionId: questionId,
   targetImportId: targetExportId,
@@ -205,7 +205,7 @@ Uint8List _buildPipelinedCall({
   List<int> transformPath = const [0],
   int interfaceId = 1,
   int methodId = 2,
-  List<RpcCapDescriptor>? capTableDescriptors,
+  List<RpcCapabilityDescriptor>? capTableDescriptors,
 }) => buildCallMessage(
   questionId: questionId,
   targetPromisedAnswerQid: parentQid,
@@ -255,7 +255,7 @@ void main() {
       final h = _Harness();
       final targetCap =
           _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
-      h.answerTable.completeSuccessfully(
+      h.answerTable.recordAnswer(
         1,
         resolved: ResolvedAnswer(_singleCapResultBytes, [targetCap]),
       );
@@ -267,7 +267,7 @@ void main() {
 
       // A second, already-resolved parent whose result has no pointer
       // fields at all: path [0] can never be a capability there.
-      h.answerTable.completeSuccessfully(
+      h.answerTable.recordAnswer(
         2,
         resolved: ResolvedAnswer(_emptyMessageBytes, const []),
       );
@@ -287,7 +287,7 @@ void main() {
       final targetCap =
           _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
       final pending = Completer<ResolvedAnswer>();
-      h.answerTable.beginDispatch(
+      h.answerTable.recordPendingAnswer(
         1,
         pending.future,
         DispatchCancellationController(),
@@ -303,7 +303,7 @@ void main() {
       expect(targetCap.dispatches, hasLength(1));
 
       final failingParent = Completer<ResolvedAnswer>();
-      h.answerTable.beginDispatch(
+      h.answerTable.recordPendingAnswer(
         2,
         failingParent.future,
         DispatchCancellationController(),
@@ -328,8 +328,12 @@ void main() {
       final originalCap =
           _FakeCapability()
             ..onTryTailCall =
-                (interfaceId, methodId, params) =>
-                    TailCall(forwardTarget, interfaceId, methodId, params);
+                (interfaceId, methodId, params) => TailCallRequest(
+                  forwardTarget,
+                  interfaceId,
+                  methodId,
+                  params,
+                );
       // Cached plain int, matching the realistic path (an _ImportedCapability
       // constructed via .fromState sets _cachedState synchronously).
       h.tryExtractCapabilityReference =
@@ -337,7 +341,7 @@ void main() {
               identical(cap, forwardTarget)
                   ? const ImportedCapabilityReference(9)
                   : null;
-      final exportId = h.exportTable.getOrCreate(originalCap);
+      final exportId = h.exportTable.retainOrCreateExportId(originalCap);
 
       // Holds the forward "on the wire" open until the test explicitly lets
       // it through — proves the redirect actually waits for it, rather than
@@ -383,10 +387,14 @@ void main() {
       final originalCap =
           _FakeCapability()
             ..onTryTailCall =
-                (interfaceId, methodId, params) =>
-                    TailCall(forwardTarget, interfaceId, methodId, params);
+                (interfaceId, methodId, params) => TailCallRequest(
+                  forwardTarget,
+                  interfaceId,
+                  methodId,
+                  params,
+                );
       // tryExtractCapabilityReference defaults to `null`.
-      final exportId = h.exportTable.getOrCreate(originalCap);
+      final exportId = h.exportTable.retainOrCreateExportId(originalCap);
 
       h.coordinator.handleCall(
         parseRpcMessage(_buildCall(questionId: 51, targetExportId: exportId)),
@@ -407,7 +415,7 @@ void main() {
       final h = _Harness();
       final cap =
           _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
-      final exportId = h.exportTable.getOrCreate(cap);
+      final exportId = h.exportTable.retainOrCreateExportId(cap);
 
       h.coordinator.handleCall(
         parseRpcMessage(_buildCall(questionId: 60, targetExportId: exportId)),
@@ -420,6 +428,34 @@ void main() {
       expect(h.answerTable.isTracked(60), isFalse);
     });
 
+    test('noFinishNeeded cleanup tolerates a synchronously-reentrant peer '
+        'Finish that consumes the answer state during send', () async {
+      final h = _Harness();
+      final cap =
+          _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
+      final exportId = h.exportTable.retainOrCreateExportId(cap);
+      var sentReentrantFinish = false;
+      h.sendBytes = (bytes) {
+        h.sentBytes.add(bytes);
+        final msg = parseRpcMessage(bytes);
+        if (msg.isReturnResults && msg.returnNoFinishNeeded) {
+          sentReentrantFinish = true;
+          h.coordinator.handleFinish(
+            parseRpcMessage(buildFinishMessage(msg.answerId)),
+          );
+        }
+      };
+
+      h.coordinator.handleCall(
+        parseRpcMessage(_buildCall(questionId: 62, targetExportId: exportId)),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(sentReentrantFinish, isTrue);
+      expect(h.answerTable.isTracked(62), isFalse);
+      expect(h.sentBytes, hasLength(1));
+    });
+
     test('a failed dispatch sends Return.exception with the thrown reason/ '
         'kind and noFinishNeeded=true', () async {
       final h = _Harness();
@@ -429,7 +465,7 @@ void main() {
               'boom',
               kind: ErrorKind.overloaded,
             );
-      final exportId = h.exportTable.getOrCreate(cap);
+      final exportId = h.exportTable.retainOrCreateExportId(cap);
 
       h.coordinator.handleCall(
         parseRpcMessage(_buildCall(questionId: 61, targetExportId: exportId)),
@@ -451,7 +487,7 @@ void main() {
       succeedingCap.onDispatch = (_, _, _) => DispatchResult.empty;
       succeedingCap.onTryTailCall =
           (_, _, _) => throw StateError('must not be called');
-      final exportId1 = h.exportTable.getOrCreate(succeedingCap);
+      final exportId1 = h.exportTable.retainOrCreateExportId(succeedingCap);
       h.coordinator.handleCall(
         parseRpcMessage(
           _buildCall(
@@ -468,7 +504,7 @@ void main() {
 
       final failingCap =
           _FakeCapability()..throwOnDispatch = const RpcException('boom');
-      final exportId2 = h.exportTable.getOrCreate(failingCap);
+      final exportId2 = h.exportTable.retainOrCreateExportId(failingCap);
       h.coordinator.handleCall(
         parseRpcMessage(
           _buildCall(
@@ -489,13 +525,13 @@ void main() {
         'explicit Releases and releaseParamCaps=false; a duplicate question '
         'id tears the connection down as a protocol violation', () async {
       final h = _Harness();
-      h.beginParamCapsRelease = (paramsCapabilities) => 'ticket';
+      h.startParameterCapabilityDisposalTracking = (paramsCapabilities) => 'ticket';
 
-      h.finalizeParamCapsRelease =
+      h.finishParameterCapabilityDisposalTracking =
           (ticket) => (allDisposed: true, explicitReleaseIds: const []);
       final cap1 =
           _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
-      final exportId1 = h.exportTable.getOrCreate(cap1);
+      final exportId1 = h.exportTable.retainOrCreateExportId(cap1);
       h.coordinator.handleCall(
         parseRpcMessage(_buildCall(questionId: 80, targetExportId: exportId1)),
       );
@@ -503,11 +539,11 @@ void main() {
       var sent = parseRpcMessage(h.sentBytes.single);
       expect(sent.returnReleaseParamCaps, isTrue);
 
-      h.finalizeParamCapsRelease =
+      h.finishParameterCapabilityDisposalTracking =
           (ticket) => (allDisposed: false, explicitReleaseIds: const [7, 8]);
       final cap2 =
           _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
-      final exportId2 = h.exportTable.getOrCreate(cap2);
+      final exportId2 = h.exportTable.retainOrCreateExportId(cap2);
       h.coordinator.handleCall(
         parseRpcMessage(_buildCall(questionId: 81, targetExportId: exportId2)),
       );
@@ -526,11 +562,11 @@ void main() {
       // empty explicitReleaseIds list — only the latter is safe to fold
       // into releaseParamCaps=true.
       h.sentBytes.clear();
-      h.finalizeParamCapsRelease =
+      h.finishParameterCapabilityDisposalTracking =
           (ticket) => (allDisposed: false, explicitReleaseIds: const []);
       final cap3 =
           _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
-      final exportId3 = h.exportTable.getOrCreate(cap3);
+      final exportId3 = h.exportTable.retainOrCreateExportId(cap3);
       h.coordinator.handleCall(
         parseRpcMessage(_buildCall(questionId: 82, targetExportId: exportId3)),
       );
@@ -548,7 +584,7 @@ void main() {
       // questionId, the second reusing still-tracked answer state.
       final dupCap =
           _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
-      final dupExportId = h.exportTable.getOrCreate(dupCap);
+      final dupExportId = h.exportTable.retainOrCreateExportId(dupCap);
       h.coordinator.handleCall(
         parseRpcMessage(
           _buildCall(questionId: 999, targetExportId: dupExportId),
@@ -568,14 +604,14 @@ void main() {
       final target =
           _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
       final pending = Completer<ResolvedAnswer>();
-      h.answerTable.beginDispatch(
+      h.answerTable.recordPendingAnswer(
         1,
         pending.future,
         DispatchCancellationController(),
       );
 
       var descriptorDecodeCount = 0;
-      h.capabilityFromDescriptor = (descriptor) {
+      h.acquireCapabilityFromDescriptor = (descriptor) {
         descriptorDecodeCount++;
         return _FakeCapability();
       };
@@ -585,7 +621,7 @@ void main() {
           _buildPipelinedCall(
             questionId: 2,
             parentQid: 1,
-            capTableDescriptors: const [RpcCapDescriptor.senderHosted(7)],
+            capTableDescriptors: const [RpcCapabilityDescriptor.senderHosted(7)],
           ),
         ),
       );
@@ -604,7 +640,7 @@ void main() {
       // Companion case: the parent dispatch fails instead of succeeding —
       // the catchError continuation must equally refuse to send once closed.
       final failingPending = Completer<ResolvedAnswer>();
-      h.answerTable.beginDispatch(
+      h.answerTable.recordPendingAnswer(
         3,
         failingPending.future,
         DispatchCancellationController(),
@@ -655,14 +691,18 @@ void main() {
       final originalCap =
           _FakeCapability()
             ..onTryTailCall =
-                (interfaceId, methodId, params) =>
-                    TailCall(forwardTarget, interfaceId, methodId, params);
+                (interfaceId, methodId, params) => TailCallRequest(
+                  forwardTarget,
+                  interfaceId,
+                  methodId,
+                  params,
+                );
       h.tryExtractCapabilityReference =
           (cap) =>
               identical(cap, forwardTarget)
                   ? const ImportedCapabilityReference(9)
                   : null;
-      final exportId = h.exportTable.getOrCreate(originalCap);
+      final exportId = h.exportTable.retainOrCreateExportId(originalCap);
 
       h.sendBytes = (bytes) {
         h.sentBytes.add(bytes);

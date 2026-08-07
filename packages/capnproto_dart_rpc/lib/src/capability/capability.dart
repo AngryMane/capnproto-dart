@@ -7,7 +7,7 @@ import '../rpc/rpc_exception.dart';
 import 'rpc_payload.dart';
 
 part 'dispatch.dart';
-part 'cap_call.dart';
+part 'dispatch_handle.dart';
 part 'capability_handle.dart';
 part 'capability_result.dart';
 part 'deferred_capability.dart';
@@ -83,7 +83,7 @@ abstract class Capability {
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) => dispatch(
     interfaceId,
     methodId,
@@ -91,33 +91,33 @@ abstract class Capability {
     paramsCapabilities: paramsCapabilities,
   );
 
-  /// Optional hook for the tail-call wire optimization (see [TailCall]).
+  /// Optional hook for the tail-call wire optimization (see [TailCallRequest]).
   ///
   /// Called before [dispatchWithContext] with the same arguments a normal
   /// dispatch would receive. Returning non-null means "don't run this
-  /// dispatch at all — forward to [TailCall.target] instead". The default
+  /// dispatch at all — forward to [TailCallRequest.target] instead". The default
   /// implementation returns null (never tail-calls), so existing
   /// implementations are unaffected.
-  TailCall? tryTailCall(
+  TailCallRequest? tryTailCall(
     int interfaceId,
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
   }) => null;
 
-  /// Starts a dispatch call and returns a [CapCall] that allows creating
-  /// pipelined sub-capabilities before the round-trip completes.
+  /// Dispatches a call and returns a [DispatchHandle] that allows creating
+  /// pipelined result capabilities before the call completes.
   ///
   /// The default implementation delegates to [dispatch] and uses
   /// [DeferredCapability] for pipelining (local deferral, not wire-level).
   /// RPC-connected capabilities override this to return a wire-level pipelined
   /// capability via the `promisedAnswer` target.
-  CapCall beginDispatch(
+  DispatchHandle dispatchForPipelining(
     int interfaceId,
     int methodId,
     RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-  }) => _DeferredCapCall(
+  }) => _DeferredDispatchHandle(
     dispatchWithContext(
       interfaceId,
       methodId,
@@ -146,7 +146,7 @@ abstract class Capability {
   /// it builds into its own standalone [MessageBuilder] and reads it back
   /// via a zero-copy builder→reader view (skipping even
   /// [MessageBuilder.serialize]'s framing step) before calling [dispatch].
-  Future<DispatchResult> dispatchBuilding(
+  Future<DispatchResult> dispatchWithParamsBuilder(
     int interfaceId,
     int methodId,
     void Function(AnyPointerBuilder) build, {
@@ -186,4 +186,3 @@ final class WeakCapabilityRef<T extends Capability> {
   /// The referenced capability, or null if it has been garbage collected.
   T? get target => _ref.target;
 }
-

@@ -5,7 +5,7 @@ import 'package:capnproto_dart/capnproto_dart.dart';
 import 'package:meta/meta.dart';
 
 import '../capability/capability.dart'
-    show Capability, DispatchCancellationController, unwrapVendedCapability;
+    show Capability, DispatchCancellationController, unwrapCapabilityLease;
 import '../capability/capability_factory.dart';
 import 'calls/answer_table.dart';
 import 'calls/incoming_call_coordinator.dart';
@@ -97,7 +97,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   // can distinguish the bootstrap return from regular call returns).
   int? _bootstrapQuestionId;
 
-  // Every RPC capability proxy this connection vends
+  // Every RPC capability proxy this connection leases
   // (`_ImportedCapability`/`_PipelinedCapability`/`_ReceiverAnswerCapability`
   // in `rpc_capability.dart`) is bound to this [RpcCapabilityDelegate]. One
   // instance lives for the whole connection lifetime, so
@@ -156,7 +156,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   // bare `_incomingCalls.resolveLocalAnswer` tear-off — see
   // [_incomingCalls]'s own doc comment for why: `late final` fields
   // evaluate lazily on first access, and _incomingCalls's own construction
-  // eagerly reads `_outgoingCalls.startUsing`, so whichever field a caller
+  // eagerly reads `_outgoingCalls.startCallWithAllocatedQuestion`, so whichever field a caller
   // touches first (`_incomingCalls`, the common case — incoming Bootstrap/
   // Call messages are usually the first thing a server-role connection
   // handles) would otherwise force this field's initializer to read
@@ -167,9 +167,10 @@ class TwoPartyRpcConnection implements RpcConnection {
     questions: _questionTable,
     imports: _importTable,
     sendBytes: _sendRaw,
-    resolveCapTableMaybeSync: _capabilityProtocol.resolveCapTableMaybeSync,
-    applyReleaseParamCaps: _capabilityProtocol.applyReleaseParamCaps,
-    capabilityFromDescriptor: _capabilityProtocol.capabilityFromDescriptor,
+    resolveParameterCapabilityDescriptors: _capabilityProtocol.resolveParameterCapabilityDescriptors,
+    releaseParameterCapabilityExports:
+        _capabilityProtocol.releaseParameterCapabilityExports,
+    acquireCapabilityFromDescriptor: _capabilityProtocol.acquireCapabilityFromDescriptor,
     resolveLocalAnswer: (qid) => _incomingCalls.resolveLocalAnswer(qid),
     onReturn: _handleBootstrapReturn,
   );
@@ -181,7 +182,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   // than another private extension. `late` for the same reason as
   // [_rpcCapabilityDelegate]: the bound method tear-offs below capture `this`.
   //
-  // startUsing is a bare tear-off (safe in either construction order,
+  // startCallWithAllocatedQuestion is a bare tear-off (safe in either construction order,
   // unlike _outgoingCalls's resolveLocalAnswer above — see its comment):
   // OutgoingCallCoordinator's own construction never eagerly reads
   // anything back from this field, only building a deferred closure for
@@ -198,16 +199,17 @@ class TwoPartyRpcConnection implements RpcConnection {
     tearDownConnection: (error) => _tearDown(error),
     tryExtractCapabilityReference:
         _capabilityProtocol.tryExtractCapabilityReference,
-    capabilityFromDescriptor: _capabilityProtocol.capabilityFromDescriptor,
-    returnCapDescriptor: _capabilityProtocol.returnCapDescriptor,
-    startUsing: _outgoingCalls.startUsing,
-    beginParamCapsRelease:
-        (paramsCapabilities) => beginParamCapsRelease(
+    acquireCapabilityFromDescriptor: _capabilityProtocol.acquireCapabilityFromDescriptor,
+    exportResultCapabilityAsDescriptor: _capabilityProtocol.exportResultCapabilityAsDescriptor,
+    startCallWithAllocatedQuestion: _outgoingCalls.startCallWithAllocatedQuestion,
+    startParameterCapabilityDisposalTracking:
+        (paramsCapabilities) => startParameterCapabilityDisposalTracking(
           _rpcCapabilityDelegate,
           paramsCapabilities,
           _decrementImportReference,
         ),
-    finalizeParamCapsRelease: finalizeParamCapsRelease,
+    finishParameterCapabilityDisposalTracking:
+        finishParameterCapabilityDisposalTracking,
   );
 
   // Handles the bootstrap-specific half of a Return: distinguishing the
@@ -223,9 +225,10 @@ class TwoPartyRpcConnection implements RpcConnection {
     final bootstrapQid = _bootstrapQuestionId!;
     _bootstrapQuestionId = null;
     if (msg.isReturnResults && msg.capTableEntries.isNotEmpty) {
-      final importId = _capabilityProtocol.importIdFromDescriptor(
-        msg.capTableDescriptors.first,
-      );
+      final importId =
+          _capabilityProtocol.tryRetainImportIdFromCapabilityDescriptor(
+            msg.capTableDescriptors.first,
+          );
       if (_bootstrapCompleter != null && !_bootstrapCompleter!.isCompleted) {
         if (importId == null) {
           _bootstrapCompleter!.completeError(
@@ -298,7 +301,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   ///
   /// [streamWindowSize] sets the flow-control window (in bytes) used by
   /// `-> stream` method calls made through capabilities on this connection —
-  /// see [FlowController].
+  /// see [StreamingCallFlowController].
   ///
   /// [disembargoTimeout] bounds how long this vat waits for the peer's
   /// receiverLoopback reply to a Disembargo it sent (see
@@ -318,7 +321,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     required Stream<Uint8List> incoming,
     required StreamSink<Uint8List> outgoing,
     void Function(Object error, StackTrace stackTrace)? onDisposeError,
-    int streamWindowSize = FlowController.defaultWindowSize,
+    int streamWindowSize = StreamingCallFlowController.defaultWindowSize,
     Duration? disembargoTimeout = defaultDisembargoTimeout,
     bool preFramed = false,
   }) {
@@ -349,7 +352,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     required StreamSink<Uint8List> outgoing,
     required Capability bootstrap,
     void Function(Object error, StackTrace stackTrace)? onDisposeError,
-    int streamWindowSize = FlowController.defaultWindowSize,
+    int streamWindowSize = StreamingCallFlowController.defaultWindowSize,
     Duration? disembargoTimeout = defaultDisembargoTimeout,
     bool preFramed = false,
   }) {
@@ -363,21 +366,21 @@ class TwoPartyRpcConnection implements RpcConnection {
       disembargoTimeout,
       preFramed,
     );
-    // Unwrap first, like every ExportTable.getOrCreate caller — bootstrap
+    // Unwrap first, like every ExportTable.retainOrCreateExportId caller — bootstrap
     // is registered as export 0 through the same ExportTable machinery, so
     // its identity must satisfy the same "always unwrapped" invariant those
     // rely on for deduplication (e.g. this same underlying capability being
-    // handed back to ExportTable.getOrCreate again later, via a normal
+    // handed back to ExportTable.retainOrCreateExportId again later, via a normal
     // export, must dedupe against this entry instead of creating a
     // redundant second export for it).
-    final bootstrapIdentity = unwrapVendedCapability(bootstrap);
+    final bootstrapIdentity = unwrapCapabilityLease(bootstrap);
     // See ExportTable.registerBootstrap's doc comment for why its remote
     // refcount starts at 0, not 1.
     conn._exportTable.registerBootstrap(bootstrapIdentity);
     // bootstrap's ownership transfers to this connection (see doc comment
     // above) — the entry just created its own ownedReference for
-    // bootstrapIdentity, so if the caller passed an already-vended handle
-    // rather than a bare capability, that handle is now redundant with it
+    // bootstrapIdentity, so if the caller passed an already-acquired lease
+    // rather than a bare capability, that lease is now redundant with it
     // and must be released, or its outstanding share of bootstrapIdentity's
     // refcount would never be balanced.
     if (!identical(bootstrap, bootstrapIdentity)) {
@@ -704,15 +707,15 @@ class _TwoPartyRpcCapabilityDelegate implements RpcCapabilityDelegate {
   _TwoPartyRpcCapabilityDelegate(this._conn);
 
   @override
-  ImportState importStateFor(int importId) =>
-      _conn._importTable.stateFor(importId);
+  ImportState getOrCreateImportState(int importId) =>
+      _conn._importTable.getOrCreateState(importId);
 
   @override
   Future<void> releaseImport(int importId) =>
       _conn._capabilityProtocol.releaseImport(importId);
 
   @override
-  StartedCall startOutgoingCall({
+  StartedOutgoingCall startOutgoingCall({
     required OutgoingCallTarget target,
     required OutgoingParams params,
     required int interfaceId,

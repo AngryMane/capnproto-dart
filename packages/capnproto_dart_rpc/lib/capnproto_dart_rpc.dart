@@ -11,17 +11,17 @@ export 'package:capnproto_dart/capnproto_dart.dart';
 
 export 'src/capability/capability.dart'
     show
-        CapCall,
+        DispatchHandle,
         Capability,
         CapabilityLease,
         DeferredCapability,
-        DispatchContext,
+        DispatchCancellationContext,
         DispatchResult,
-        TailCall,
+        TailCallRequest,
         WeakCapabilityRef,
         buildDispatchResult,
         requireCapabilityFromResult,
-        vendCapabilityHandle;
+        acquireCapabilityLease;
 export 'src/capability/capability_table.dart' show CapabilityTableBuilder;
 export 'src/capability/capability_any_pointer_codec.dart';
 export 'src/capability/capability_factory.dart';

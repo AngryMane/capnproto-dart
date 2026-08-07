@@ -4,14 +4,14 @@ part of 'capability.dart';
 /// [RpcException] that preserves why the pipeline target could not resolve.
 ///
 /// Used for *local*, single-hop pipelining where [ptrIndex] is a
-/// schema-known constant baked into generated code — `_DeferredCapCall`,
-/// `_FutureCapCall`, `_ErrorCapCall`, and `_UnresolvedImportCapCall`'s
-/// already-settled fallback in the RPC layer. Wire-level `receiverAnswer`/
-/// `promisedAnswer` targets instead go through
+/// schema-known constant baked into generated code — `_DeferredDispatchHandle`,
+/// `_FutureDispatchHandle`, `_ErrorDispatchHandle`, and
+/// `_UnresolvedImportDispatchHandle`'s already-settled fallback in the RPC
+/// layer. Wire-level `receiverAnswer`/`promisedAnswer` targets instead go through
 /// [requireCapabilityFromResultPath], since those can name a capability
 /// nested more than one struct deep in the result.
 ///
-/// Returns a vended handle (see [vendCapabilityHandle]), not the raw
+/// Returns a capability lease (see [acquireCapabilityLease]), not the raw
 /// [DispatchResult.caps] entry directly: the same underlying capability is
 /// commonly reachable through more than one independent path from generated
 /// code (e.g. an eagerly-pipelined `XxxPipeline.someCap` and the same field
@@ -42,7 +42,7 @@ Capability requireCapabilityFromResult(DispatchResult result, int ptrIndex) {
         'capability table index $capIdx is out of range for ${result.caps.length} result capabilities',
       );
     }
-    return vendCapabilityHandle(result.caps[capIdx]);
+    return acquireCapabilityLease(result.caps[capIdx]);
   } on RpcException {
     rethrow;
   } catch (e) {
@@ -58,7 +58,7 @@ Capability requireCapabilityFromResult(DispatchResult result, int ptrIndex) {
 /// entry but the last is followed as a nested struct pointer, the last as
 /// the capability itself). Returns null instead of throwing on any
 /// resolution failure.
-Capability? capabilityFromResultPath(DispatchResult result, List<int> path) {
+Capability? tryGetCapabilityFromResultPath(DispatchResult result, List<int> path) {
   try {
     return requireCapabilityFromResultPath(result, path);
   } catch (_) {
@@ -66,7 +66,7 @@ Capability? capabilityFromResultPath(DispatchResult result, List<int> path) {
   }
 }
 
-/// Throwing counterpart of [capabilityFromResultPath] — see
+/// Throwing counterpart of [tryGetCapabilityFromResultPath] — see
 /// [requireCapabilityFromResult] for the single-hop version this
 /// generalizes.
 Capability requireCapabilityFromResultPath(
@@ -117,7 +117,7 @@ Capability requireCapabilityFromResultPath(
         'capability table index $capIdx is out of range for ${result.caps.length} result capabilities',
       );
     }
-    return vendCapabilityHandle(result.caps[capIdx]);
+    return acquireCapabilityLease(result.caps[capIdx]);
   } on RpcException {
     rethrow;
   } catch (e) {

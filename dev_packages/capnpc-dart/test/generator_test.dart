@@ -436,7 +436,7 @@ void main() {
       expect(
         src,
         contains(
-          'ListReader<SessionClient?>? get sessions => getCapabilityListFieldWith<SessionClient>(0, (cap) => SessionClient(vendCapabilityHandle(cap as Capability)))',
+          'ListReader<SessionClient?>? get sessions => getCapabilityListFieldWith<SessionClient>(0, (cap) => SessionClient(acquireCapabilityLease(cap as Capability)))',
         ),
       );
       expect(
@@ -628,7 +628,7 @@ void main() {
       expect(
         src,
         contains(
-          '_cap.dispatchBuilding(0x000000001234abcd, 0, (anyPtr) => build(anyPtr.initStruct(greetParamsFactory)))',
+          '_cap.dispatchWithParamsBuilder(0x000000001234abcd, 0, (anyPtr) => build(anyPtr.initStruct(greetParamsFactory)))',
         ),
       );
       expect(
@@ -1443,14 +1443,14 @@ void main() {
 
     test('also generates a pipeline method', () {
       expect(src, contains('GreeterNewSessionPipeline newSessionPipeline('));
-      expect(src, contains('beginDispatch('));
+      expect(src, contains('dispatchForPipelining('));
     });
 
     test('pipeline class uses correct ptr slot (not hardcoded 0)', () {
       expect(src, contains('final class GreeterNewSessionPipeline'));
       expect(
         src,
-        contains('call.pipelineResultPath([...const <int>[], 0])'),
+        contains('call.pipelinedCapabilityFromResultPath([...const <int>[], 0])'),
       );
     });
 
@@ -1499,7 +1499,7 @@ void main() {
 
       expect(
         s,
-        contains('call.pipelineResultPath([...const <int>[], 2])'),
+        contains('call.pipelinedCapabilityFromResultPath([...const <int>[], 2])'),
       );
       expect(
         s,
@@ -1509,7 +1509,7 @@ void main() {
       );
       expect(
         s,
-        isNot(contains('call.pipelineResultPath([...const <int>[], 0])')),
+        isNot(contains('call.pipelinedCapabilityFromResultPath([...const <int>[], 0])')),
       );
     });
   });
@@ -1564,11 +1564,11 @@ void main() {
 
         // Shared per-struct-type nested Pipeline class.
         expect(s, contains('final class InnerPipeline'));
-        expect(s, contains('InnerPipeline(CapCall call, List<int> basePath)'));
+        expect(s, contains('InnerPipeline(DispatchHandle call, List<int> basePath)'));
         expect(
           s,
           contains(
-            'session = SessionClient(call.pipelineResultPath([...basePath, 0]))',
+            'session = SessionClient(call.pipelinedCapabilityFromResultPath([...basePath, 0]))',
           ),
         );
         expect(s, contains('final SessionClient session;'));
@@ -2206,7 +2206,7 @@ void main() {
     test(
       'a capability-returning method with a nested capability param also '
       'generates a xxxPipeline() using the capTable accumulator with '
-      'beginDispatch',
+      'dispatchForPipelining',
       () {
         const bundleId = 9016;
         final bundleNode = structNode(bundleId, 'Bundle', 0, 1, [
@@ -2247,7 +2247,7 @@ void main() {
         expect(
           s,
           contains(
-            'beginDispatch(',
+            'dispatchForPipelining(',
           ),
         );
         expect(s, contains('paramsCapabilities: capTable.capabilities'));
@@ -2412,7 +2412,7 @@ void main() {
       expect(
         bothServerSection(),
         contains(
-          'Future<DispatchResult> leftProcessWithContext(LeftProcessParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>',
+          'Future<DispatchResult> leftProcessWithContext(LeftProcessParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>',
         ),
       );
       expect(

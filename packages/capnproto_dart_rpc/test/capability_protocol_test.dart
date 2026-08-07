@@ -74,7 +74,7 @@ void main() {
     test('handleRelease tears the connection down for a non-positive '
         'referenceCount, without releasing', () {
       final h = _Harness();
-      final id = h.exportTable.getOrCreate(_FakeCapability());
+      final id = h.exportTable.retainOrCreateExportId(_FakeCapability());
 
       h.protocol.handleRelease(parseRpcMessage(buildReleaseMessage(id, 0)));
 
@@ -85,7 +85,7 @@ void main() {
     test('handleRelease tears the connection down for a referenceCount '
         'exceeding the outstanding remote refcount, without releasing', () {
       final h = _Harness();
-      final id = h.exportTable.getOrCreate(_FakeCapability());
+      final id = h.exportTable.retainOrCreateExportId(_FakeCapability());
 
       h.protocol.handleRelease(parseRpcMessage(buildReleaseMessage(id, 2)));
 
@@ -96,7 +96,7 @@ void main() {
     test('handleRelease releases the reference for a valid release, and '
         'never tears the connection down', () {
       final h = _Harness();
-      final id = h.exportTable.getOrCreate(_FakeCapability());
+      final id = h.exportTable.retainOrCreateExportId(_FakeCapability());
 
       h.protocol.handleRelease(parseRpcMessage(buildReleaseMessage(id, 1)));
 
@@ -141,26 +141,26 @@ void main() {
       expect(h.sentBytes, hasLength(1));
     });
 
-    test('resolveCapTableMaybeSync resolves synchronously when no RPC '
+    test('resolveParameterCapabilityDescriptors resolves synchronously when no RPC '
         'capability reference can be extracted', () {
       final h = _Harness();
       final capA = _FakeCapability();
       final capB = _FakeCapability();
 
-      final result = h.protocol.resolveCapTableMaybeSync([
+      final result = h.protocol.resolveParameterCapabilityDescriptors([
         capA,
         capB,
       ], ensureActive: () {});
 
-      expect(result, isA<List<RpcCapDescriptor>>());
-      final descriptors = result as List<RpcCapDescriptor>;
+      expect(result, isA<List<RpcCapabilityDescriptor>>());
+      final descriptors = result as List<RpcCapabilityDescriptor>;
       expect(descriptors, hasLength(2));
       for (final d in descriptors) {
         expect(d.disc, equals(1)); // senderHosted
       }
     });
 
-    test('resolveCapTableMaybeSync encodes an extracted pipelined reference '
+    test('resolveParameterCapabilityDescriptors encodes an extracted pipelined reference '
         'as receiverAnswer', () {
       final h = _Harness();
       final cap = _FakeCapability();
@@ -173,18 +173,18 @@ void main() {
                   )
                   : null;
 
-      final result = h.protocol.resolveCapTableMaybeSync([
+      final result = h.protocol.resolveParameterCapabilityDescriptors([
         cap,
       ], ensureActive: () {});
 
-      expect(result, isA<List<RpcCapDescriptor>>());
-      final descriptor = (result as List<RpcCapDescriptor>).single;
+      expect(result, isA<List<RpcCapabilityDescriptor>>());
+      final descriptor = (result as List<RpcCapabilityDescriptor>).single;
       expect(descriptor.disc, equals(4));
       expect(descriptor.questionId, equals(17));
       expect(descriptor.path, equals([2, 3]));
     });
 
-    test('resolveCapTableMaybeSync falls back to async and threads '
+    test('resolveParameterCapabilityDescriptors falls back to async and threads '
         'ensureActive at entry and after the await', () async {
       final h = _Harness();
       final capA = _FakeCapability();
@@ -196,62 +196,62 @@ void main() {
                   : null;
 
       var ensureActiveCalls = 0;
-      final result = h.protocol.resolveCapTableMaybeSync([
+      final result = h.protocol.resolveParameterCapabilityDescriptors([
         capA,
       ], ensureActive: () => ensureActiveCalls++);
 
-      expect(result, isA<Future<List<RpcCapDescriptor>>>());
+      expect(result, isA<Future<List<RpcCapabilityDescriptor>>>());
       final callsBeforeResolve = ensureActiveCalls;
       expect(callsBeforeResolve, greaterThanOrEqualTo(1));
 
       importId.complete(9);
-      final descriptors = await (result as Future<List<RpcCapDescriptor>>);
+      final descriptors = await (result as Future<List<RpcCapabilityDescriptor>>);
 
       expect(ensureActiveCalls, greaterThan(callsBeforeResolve));
       expect(descriptors.single.disc, equals(3)); // receiverHosted
       expect(descriptors.single.id, equals(9));
     });
 
-    test('capabilityFromDescriptor routes none/senderHosted/senderPromise/'
+    test('acquireCapabilityFromDescriptor routes none/senderHosted/senderPromise/'
         'receiverHosted to the right dependency', () {
       final h = _Harness();
 
       expect(
-        h.protocol.capabilityFromDescriptor(const RpcCapDescriptor.none()),
+        h.protocol.acquireCapabilityFromDescriptor(const RpcCapabilityDescriptor.none()),
         isA<NullCapability>(),
       );
 
-      h.protocol.capabilityFromDescriptor(
-        const RpcCapDescriptor.senderHosted(5),
+      h.protocol.acquireCapabilityFromDescriptor(
+        const RpcCapabilityDescriptor.senderHosted(5),
       );
       expect(h.importTable.isTracked(5), isTrue);
 
-      final promiseState = h.importTable.stateFor(
+      final promiseState = h.importTable.getOrCreateState(
         6,
       ); // capture before retain, to check isPromise
-      h.protocol.capabilityFromDescriptor(
-        const RpcCapDescriptor.senderPromise(6),
+      h.protocol.acquireCapabilityFromDescriptor(
+        const RpcCapabilityDescriptor.senderPromise(6),
       );
       expect(h.importTable.isTracked(6), isTrue);
       expect(promiseState.isPromise, isTrue);
 
       final exported = _FakeCapability();
-      final exportId = h.exportTable.getOrCreate(exported);
-      final vended = h.protocol.capabilityFromDescriptor(
-        RpcCapDescriptor.receiverHosted(exportId),
+      final exportId = h.exportTable.retainOrCreateExportId(exported);
+      final lease = h.protocol.acquireCapabilityFromDescriptor(
+        RpcCapabilityDescriptor.receiverHosted(exportId),
       );
-      expect(identical(unwrapVendedCapability(vended), exported), isTrue);
+      expect(identical(unwrapCapabilityLease(lease), exported), isTrue);
     });
 
-    test('capabilityFromDescriptor delegates receiverAnswer construction to '
+    test('acquireCapabilityFromDescriptor delegates receiverAnswer construction to '
         'receiverAnswerCapability, normalizing an empty path to [0]', () {
       final h = _Harness();
 
-      h.protocol.capabilityFromDescriptor(
-        RpcCapDescriptor.receiverAnswer(7, const [1, 2]),
+      h.protocol.acquireCapabilityFromDescriptor(
+        RpcCapabilityDescriptor.receiverAnswer(7, const [1, 2]),
       );
-      h.protocol.capabilityFromDescriptor(
-        RpcCapDescriptor.receiverAnswer(8, const []),
+      h.protocol.acquireCapabilityFromDescriptor(
+        RpcCapabilityDescriptor.receiverAnswer(8, const []),
       );
 
       // Compared component-wise, not via equals() on the whole record list:
@@ -276,7 +276,7 @@ void main() {
       state.receivedCall = true;
 
       final exported = _FakeCapability();
-      final exportId = h.exportTable.getOrCreate(exported);
+      final exportId = h.exportTable.retainOrCreateExportId(exported);
       // tryExtractCapabilityReference defaults to `null`, so the decoded
       // receiverHosted replacement counts as local.
       final msg = parseRpcMessage(
@@ -301,7 +301,7 @@ void main() {
       h.isSameConnectionPeerCapability = (cap) => true;
 
       final exported = _FakeCapability();
-      final exportId = h.exportTable.getOrCreate(exported);
+      final exportId = h.exportTable.retainOrCreateExportId(exported);
       final msg = parseRpcMessage(
         buildResolveCapMessage(promiseId: 7, capDisc: 3, capId: exportId),
       );

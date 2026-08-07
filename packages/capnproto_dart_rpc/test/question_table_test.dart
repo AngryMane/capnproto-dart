@@ -173,7 +173,7 @@ void main() {
       table.markSent(qid);
       expect(table.takeReturn(qid), isNotNull);
       expect(table.takeParamExportIds(qid), equals([10]));
-      expect(table.remove(qid), isNull);
+      expect(table.takeQuestion(qid), isNull);
     });
   });
 }

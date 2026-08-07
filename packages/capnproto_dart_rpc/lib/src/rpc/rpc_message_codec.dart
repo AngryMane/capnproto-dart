@@ -119,7 +119,7 @@ const int _returnTakeFromOtherQuestionOff = 8;
 const int _retResults = 0;
 const int _retException = 1;
 // Not implemented by this vat (see OutgoingCallCoordinator's internal
-// _awaitReturn, in outgoing_call_coordinator.dart).
+// _awaitAndProcessReturn, in outgoing_call_coordinator.dart).
 const int _retCanceled = 2;
 const int _retResultsSentElsewhere = 3;
 const int _retTakeFromOtherQuestion = 4;
@@ -129,7 +129,7 @@ const int _retAcceptFromThirdParty = 5;
 /// (e.g. a future peer-side enumerant this vat doesn't know about yet) fall
 /// back to [ErrorKind.failed] rather than throwing — matches this file's
 /// existing "never crash on a value from an untrusted peer" pattern (see
-/// [describeReturnDisc]'s `unknown($disc)` fallback).
+/// [describeReturnVariant]'s `unknown($disc)` fallback).
 ErrorKind _errorKindFromWire(int wireType) =>
     wireType >= 0 && wireType < ErrorKind.values.length
         ? ErrorKind.values[wireType]
@@ -137,7 +137,7 @@ ErrorKind _errorKindFromWire(int wireType) =>
 
 /// Human-readable name for a [RpcMessage.returnDisc] value, for diagnostics
 /// when a peer sends a `Return` variant this vat doesn't implement.
-String describeReturnDisc(int disc) => switch (disc) {
+String describeReturnVariant(int disc) => switch (disc) {
   _retResults => 'results',
   _retException => 'exception',
   _retCanceled => 'canceled',
@@ -201,8 +201,8 @@ const int _capDescReceiverAnswer = 4;
 // StructReader / StructBuilder subclasses (internal, rpc_message_codec only)
 // ---------------------------------------------------------------------------
 
-class _MsgReader extends StructReader {
-  _MsgReader(super.raw);
+class _RpcMessageReader extends StructReader {
+  _RpcMessageReader(super.raw);
   int get disc => getUint16Field(_msgDiscOff);
   _BootstrapReader? get asBootstrap =>
       getStructFieldWith(0, _BootstrapReader.new);
@@ -216,8 +216,8 @@ class _MsgReader extends StructReader {
   _ExceptionReader? get asAbort => getStructFieldWith(0, _ExceptionReader.new);
 }
 
-class _MsgBuilder extends StructBuilder {
-  _MsgBuilder(super.raw);
+class _RpcMessageBuilder extends StructBuilder {
+  _RpcMessageBuilder(super.raw);
   @override
   StructReader asReader() => throw UnsupportedError('internal');
   void setDisc(int v) => setUint16Field(_msgDiscOff, v);
@@ -297,7 +297,7 @@ class _MessageTargetBuilder extends StructBuilder {
   }
 
   /// [transformPath] is the full sequence of `getPointerField` hops (see
-  /// [RpcCapDescriptor.path]) — not just a single index — so a capability
+  /// [RpcCapabilityDescriptor.path]) — not just a single index — so a capability
   /// nested more than one struct deep in the target answer round-trips
   /// correctly.
   void setPromisedAnswer(int questionId, List<int> transformPath) {
@@ -348,8 +348,8 @@ class _PayloadReader extends StructReader {
   // content (ptr 0): AnyPointer, read in place — no copy, no re-parse.
   AnyPointerReader? get content => getAnyPointerField(0);
   // capTable (ptr 1): composite list of CapDescriptor.
-  ListReader<_CapDescReader>? get capTable =>
-      getStructListFieldWith(1, _CapDescReader.new);
+  ListReader<_CapDescriptorReader>? get capTable =>
+      getStructListFieldWith(1, _CapDescriptorReader.new);
 }
 
 class _PayloadBuilder extends StructBuilder {
@@ -366,12 +366,12 @@ class _PayloadBuilder extends StructBuilder {
     0,
   ).setFromRawStruct(v, preserveCapabilityPointers: true);
   // capTable built via initCapTable
-  ListBuilder<_CapDescBuilder> initCapTable(int count) =>
-      initStructListFieldWith(1, count, _CapDescBuilder.new, 1, 1);
+  ListBuilder<_CapDescriptorBuilder> initCapTable(int count) =>
+      initStructListFieldWith(1, count, _CapDescriptorBuilder.new, 1, 1);
 }
 
-class _CapDescReader extends StructReader {
-  _CapDescReader(super.raw);
+class _CapDescriptorReader extends StructReader {
+  _CapDescriptorReader(super.raw);
   int get disc => getUint16Field(_capDescDisc);
   int get id => getUint32Field(_capDescData);
   int get senderHostedId => id;
@@ -379,8 +379,8 @@ class _CapDescReader extends StructReader {
       getStructFieldWith(0, _PromisedAnswerReader.new);
 }
 
-class _CapDescBuilder extends StructBuilder {
-  _CapDescBuilder(super.raw);
+class _CapDescriptorBuilder extends StructBuilder {
+  _CapDescriptorBuilder(super.raw);
   @override
   StructReader asReader() => throw UnsupportedError('internal');
   void setSenderHosted(int exportId) {
@@ -452,7 +452,7 @@ class _ResolveReader extends StructReader {
   _ResolveReader(super.raw);
   int get promiseId => getUint32Field(_resolvePromiseId);
   int get disc => getUint16Field(_resolveDisc);
-  _CapDescReader? get cap => getStructFieldWith(0, _CapDescReader.new);
+  _CapDescriptorReader? get cap => getStructFieldWith(0, _CapDescriptorReader.new);
   _ExceptionReader? get exception =>
       getStructFieldWith(0, _ExceptionReader.new);
 }
@@ -464,8 +464,8 @@ class _ResolveBuilder extends StructBuilder {
   void setPromiseId(int v) => setUint32Field(_resolvePromiseId, v);
   void setDiscCap() => setUint16Field(_resolveDisc, _resolveCap);
   void setDiscException() => setUint16Field(_resolveDisc, _resolveException);
-  _CapDescBuilder initCap() =>
-      initStructFieldWith(0, _CapDescBuilder.new, 1, 1);
+  _CapDescriptorBuilder initCap() =>
+      initStructFieldWith(0, _CapDescriptorBuilder.new, 1, 1);
   _ExceptionBuilder initException() =>
       initStructFieldWith(0, _ExceptionBuilder.new, 1, 2);
 }
@@ -539,18 +539,19 @@ class _ExceptionBuilder extends StructBuilder {
 // Factories
 // ---------------------------------------------------------------------------
 
-final class _MsgFactory extends StructFactory<_MsgReader, _MsgBuilder> {
+final class _RpcMessageFactory
+    extends StructFactory<_RpcMessageReader, _RpcMessageBuilder> {
   @override
   int get dataWords => 1;
   @override
   int get ptrWords => 1;
   @override
-  _MsgReader fromRawReader(RawStructReader r) => _MsgReader(r);
+  _RpcMessageReader fromRawReader(RawStructReader r) => _RpcMessageReader(r);
   @override
-  _MsgBuilder fromRawBuilder(RawStructBuilder r) => _MsgBuilder(r);
+  _RpcMessageBuilder fromRawBuilder(RawStructBuilder r) => _RpcMessageBuilder(r);
 }
 
-final _msgFactory = _MsgFactory();
+final _rpcMessageFactory = _RpcMessageFactory();
 
 // ---------------------------------------------------------------------------
 // Parsed message type
@@ -573,37 +574,37 @@ enum RpcMessageType {
 /// A decoded CapDescriptor from an RPC Payload capTable.
 ///
 /// For hosted descriptors [id] carries the ExportId / ImportId. For
-/// [RpcCapDescriptor.receiverAnswer], [questionId] and [path] identify the
+/// [RpcCapabilityDescriptor.receiverAnswer], [questionId] and [path] identify the
 /// promised answer pipeline path: [path] is the full sequence of
 /// `getPointerField` hops a `PromisedAnswer.transform` names (`noop` entries
 /// are dropped — see `_readTransformPath`), so a capability nested more than
 /// one struct deep in the answer (e.g. `result.a.b`, a two-hop path) is
 /// represented faithfully rather than collapsed to just its first hop.
-final class RpcCapDescriptor {
+final class RpcCapabilityDescriptor {
   final int disc;
   final int id;
   final int questionId;
   final List<int> path;
 
-  const RpcCapDescriptor._({
+  const RpcCapabilityDescriptor._({
     required this.disc,
     this.id = 0,
     this.questionId = 0,
     this.path = const [],
   });
 
-  const RpcCapDescriptor.none() : this._(disc: _capDescNone);
+  const RpcCapabilityDescriptor.none() : this._(disc: _capDescNone);
 
-  const RpcCapDescriptor.senderHosted(int exportId)
+  const RpcCapabilityDescriptor.senderHosted(int exportId)
     : this._(disc: _capDescSenderHosted, id: exportId);
 
-  const RpcCapDescriptor.senderPromise(int exportId)
+  const RpcCapabilityDescriptor.senderPromise(int exportId)
     : this._(disc: _capDescSenderPromise, id: exportId);
 
-  const RpcCapDescriptor.receiverHosted(int importId)
+  const RpcCapabilityDescriptor.receiverHosted(int importId)
     : this._(disc: _capDescReceiverHosted, id: importId);
 
-  const RpcCapDescriptor.receiverAnswer(int questionId, List<int> path)
+  const RpcCapabilityDescriptor.receiverAnswer(int questionId, List<int> path)
     : this._(disc: _capDescReceiverAnswer, questionId: questionId, path: path);
 
   (int, int) get legacyEntry => (disc, id);
@@ -623,7 +624,7 @@ final class RpcMessage {
   final int targetImportId;
   final bool targetIsPromisedAnswer;
   final int targetPromisedAnswerQid;
-  // Full getPointerField hop sequence (see RpcCapDescriptor.path) — not
+  // Full getPointerField hop sequence (see RpcCapabilityDescriptor.path) — not
   // just the first hop.
   final List<int> targetTransformPath;
   final AnyPointerReader? paramsContent;
@@ -669,14 +670,14 @@ final class RpcMessage {
   // Raw (disc, id) descriptors from the return payload's capTable, in order.
   // disc: 0=none, 1=senderHosted, 2=senderPromise, 3=receiverHosted.
   final List<(int, int)> capTableEntries;
-  final List<RpcCapDescriptor> capTableDescriptors;
+  final List<RpcCapabilityDescriptor> capTableDescriptors;
 
   // resolve
   final int promiseId;
   final bool isResolveCap;
   final bool isResolveException;
   final (int, int)? resolveCap;
-  final RpcCapDescriptor? resolveCapDescriptor;
+  final RpcCapabilityDescriptor? resolveCapDescriptor;
 
   // disembargo
   final int disembargoContextDisc;
@@ -745,7 +746,7 @@ Uint8List buildBootstrapMessage(int questionId) {
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgBootstrap);
   msg.initBootstrap().setQuestionId(questionId);
   return mb.serialize();
@@ -757,7 +758,7 @@ Uint8List buildBootstrapMessage(int questionId) {
 /// - To target an already-imported cap: set [targetImportId] (default).
 /// - To target a pending question result: set [targetPromisedAnswerQid] and
 ///   [targetTransformPath] (the getPointerField hop sequence inside the
-///   result struct — see [RpcCapDescriptor.path]).
+///   result struct — see [RpcCapabilityDescriptor.path]).
 ///
 /// [capTableEntries] is an ordered list of `(disc, id)` pairs for the capTable:
 ///   - disc=1 (senderHosted): we export [id] to the peer
@@ -771,9 +772,9 @@ Uint8List buildCallMessage({
   required int methodId,
   required Uint8List paramsBytes,
   List<(int, int)> capTableEntries = const [],
-  List<RpcCapDescriptor>? capTableDescriptors,
+  List<RpcCapabilityDescriptor>? capTableDescriptors,
   bool sendResultsToYourself = false,
-}) => buildCallMessageBuildingSync(
+}) => buildCallMessageWithParamsBuilderSync(
   questionId: questionId,
   targetImportId: targetImportId,
   targetPromisedAnswerQid: targetPromisedAnswerQid,
@@ -803,7 +804,7 @@ Uint8List buildCallMessage({
 /// their encoder runs) and *before* the message is serialized, to resolve
 /// the wire capTable descriptors. It's async because that resolution may
 /// need to wait on an import ID (see callers in `two_party_connection.dart`).
-Future<Uint8List> buildCallMessageBuilding({
+Future<Uint8List> buildCallMessageWithParamsBuilder({
   required int questionId,
   int targetImportId = 0,
   int? targetPromisedAnswerQid,
@@ -811,7 +812,7 @@ Future<Uint8List> buildCallMessageBuilding({
   required int interfaceId,
   required int methodId,
   required void Function(AnyPointerBuilder) buildParams,
-  required Future<List<RpcCapDescriptor>> Function() resolveCapTable,
+  required Future<List<RpcCapabilityDescriptor>> Function() resolveCapTable,
   bool sendResultsToYourself = false,
 }) async {
   final (mb, params) = _beginCallMessage(
@@ -828,10 +829,10 @@ Future<Uint8List> buildCallMessageBuilding({
   return _finishCallMessage(mb, params, descriptors);
 }
 
-/// Synchronous counterpart of [buildCallMessageBuilding] for callers that
+/// Synchronous counterpart of [buildCallMessageWithParamsBuilder] for callers that
 /// already have a fully-resolved capTable (no async resolution needed) —
 /// used by [buildCallMessage] itself.
-Uint8List buildCallMessageBuildingSync({
+Uint8List buildCallMessageWithParamsBuilderSync({
   required int questionId,
   int targetImportId = 0,
   int? targetPromisedAnswerQid,
@@ -839,7 +840,7 @@ Uint8List buildCallMessageBuildingSync({
   required int interfaceId,
   required int methodId,
   required void Function(AnyPointerBuilder) buildParams,
-  required List<RpcCapDescriptor> descriptors,
+  required List<RpcCapabilityDescriptor> descriptors,
   bool sendResultsToYourself = false,
 }) {
   final (mb, params) = _beginCallMessage(
@@ -855,7 +856,7 @@ Uint8List buildCallMessageBuildingSync({
   return _finishCallMessage(mb, params, descriptors);
 }
 
-/// Like [buildCallMessageBuilding], but for callers whose capTable
+/// Like [buildCallMessageWithParamsBuilder], but for callers whose capTable
 /// descriptors might be resolvable with no `await` at all — the common
 /// case for an already-resolved call target with capability params that
 /// are all locally resolvable already. Returns the finished bytes
@@ -863,10 +864,10 @@ Uint8List buildCallMessageBuildingSync({
 /// `Future`/microtask; falls back to actually awaiting [resolveDescriptors]
 /// only when it returns a `Future` (some param genuinely isn't resolvable
 /// yet). [buildParams] always runs synchronously either way, so any
-/// capabilities it appends as a side effect (see [buildCallMessageBuilding]'s
+/// capabilities it appends as a side effect (see [buildCallMessageWithParamsBuilder]'s
 /// doc comment) are visible to [resolveDescriptors] exactly as they would
 /// be with the fully-async version.
-FutureOr<Uint8List> buildCallMessageBuildingMaybeSync({
+FutureOr<Uint8List> buildCallMessageWithParamsBuilderMaybeSync({
   required int questionId,
   int targetImportId = 0,
   int? targetPromisedAnswerQid,
@@ -874,7 +875,7 @@ FutureOr<Uint8List> buildCallMessageBuildingMaybeSync({
   required int interfaceId,
   required int methodId,
   required void Function(AnyPointerBuilder) buildParams,
-  required FutureOr<List<RpcCapDescriptor>> Function() resolveDescriptors,
+  required FutureOr<List<RpcCapabilityDescriptor>> Function() resolveDescriptors,
   bool sendResultsToYourself = false,
 }) {
   final (mb, params) = _beginCallMessage(
@@ -888,7 +889,7 @@ FutureOr<Uint8List> buildCallMessageBuildingMaybeSync({
   );
   buildParams(params.initAnyPointerField(0));
   final descriptorsOrFuture = resolveDescriptors();
-  if (descriptorsOrFuture is List<RpcCapDescriptor>) {
+  if (descriptorsOrFuture is List<RpcCapabilityDescriptor>) {
     return _finishCallMessage(mb, params, descriptorsOrFuture);
   }
   return descriptorsOrFuture.then(
@@ -908,7 +909,7 @@ FutureOr<Uint8List> buildCallMessageBuildingMaybeSync({
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgCall);
   final call = msg.initCall();
   call.setQuestionId(questionId);
@@ -933,7 +934,7 @@ FutureOr<Uint8List> buildCallMessageBuildingMaybeSync({
 Uint8List _finishCallMessage(
   MessageBuilder mb,
   _PayloadBuilder params,
-  List<RpcCapDescriptor> descriptors,
+  List<RpcCapabilityDescriptor> descriptors,
 ) {
   if (descriptors.isNotEmpty) {
     final capTable = params.initCapTable(descriptors.length);
@@ -964,14 +965,14 @@ Uint8List buildReturnResultsMessage({
 Uint8List buildReturnResultsMessageFromReader({
   required int answerId,
   required RawStructReader resultsRoot,
-  List<RpcCapDescriptor> descriptors = const [],
+  List<RpcCapabilityDescriptor> descriptors = const [],
   bool releaseParamCaps = true,
   bool noFinishNeeded = false,
 }) {
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgReturn);
   final ret = msg.initReturn();
   ret.setAnswerId(answerId);
@@ -1002,7 +1003,7 @@ Uint8List buildReturnResultsWithCapsMessage({
     answerId: answerId,
     resultsBytes: resultsBytes,
     descriptors: exportIds
-        .map(RpcCapDescriptor.senderHosted)
+        .map(RpcCapabilityDescriptor.senderHosted)
         .toList(growable: false),
     releaseParamCaps: releaseParamCaps,
     noFinishNeeded: noFinishNeeded,
@@ -1012,13 +1013,16 @@ Uint8List buildReturnResultsWithCapsMessage({
 /// Serializes a `Return` message with a raw disc value and no payload —
 /// covers the variants this vat doesn't implement (canceled,
 /// resultsSentElsewhere, takeFromOtherQuestion, acceptFromThirdParty; see
-/// [describeReturnDisc]). Used to test how a vat reacts to receiving one of
-/// these from a peer, since this vat never sends them itself.
-Uint8List buildReturnOtherMessage({required int answerId, required int disc}) {
+/// [describeReturnVariant]). Used to test how a vat reacts to receiving
+/// one of these from a peer, since this vat never sends them itself.
+Uint8List buildRawReturnVariantMessage({
+  required int answerId,
+  required int disc,
+}) {
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgReturn);
   final ret = msg.initReturn();
   ret.setAnswerId(answerId);
@@ -1030,7 +1034,7 @@ Uint8List buildReturnOtherMessage({required int answerId, required int disc}) {
 Uint8List buildReturnResultsWithCapDescriptorsMessage({
   required int answerId,
   required Uint8List resultsBytes,
-  required List<RpcCapDescriptor> descriptors,
+  required List<RpcCapabilityDescriptor> descriptors,
   bool releaseParamCaps = true,
   bool noFinishNeeded = false,
 }) => buildReturnResultsMessageFromReader(
@@ -1050,7 +1054,7 @@ Uint8List buildResolveCapMessage({
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgResolve);
   final resolve = msg.initResolve();
   resolve.setPromiseId(promiseId);
@@ -1071,7 +1075,7 @@ Uint8List buildResolveExceptionMessage({
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgResolve);
   final resolve = msg.initResolve();
   resolve.setPromiseId(promiseId);
@@ -1096,7 +1100,7 @@ Uint8List buildDisembargoMessage({
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgDisembargo);
   final disembargo = msg.initDisembargo();
   disembargo.setContext(contextDisc, contextId);
@@ -1120,7 +1124,7 @@ Uint8List buildBootstrapReturnMessage({
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgReturn);
   final ret = msg.initReturn();
   ret.setAnswerId(answerId);
@@ -1141,7 +1145,7 @@ Uint8List buildReturnExceptionMessage({
   // Exceptions never carry a results payload/capTable, so it's always
   // *wire-format*-safe to set this — but the sender must also make sure it
   // doesn't need the peer's Finish for its own answer-table bookkeeping
-  // (see incoming_call_coordinator.dart's _runDispatch, the only call site that
+  // (see incoming_call_coordinator.dart's _executeIncomingDispatch, the only call site that
   // passes true) before opting in. Defaults to false so every other call
   // site (unknown-export-id/pipelining-error/tail-call-error Returns, which
   // still rely on Finish to clear their `_answers` entry) keeps its
@@ -1151,7 +1155,7 @@ Uint8List buildReturnExceptionMessage({
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgReturn);
   final ret = msg.initReturn();
   ret.setAnswerId(answerId);
@@ -1176,7 +1180,7 @@ Uint8List buildReturnTakeFromOtherQuestionMessage({
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgReturn);
   final ret = msg.initReturn();
   ret.setAnswerId(answerId);
@@ -1194,7 +1198,7 @@ Uint8List buildReturnResultsSentElsewhereMessage({required int answerId}) {
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgReturn);
   final ret = msg.initReturn();
   ret.setAnswerId(answerId);
@@ -1207,7 +1211,7 @@ Uint8List buildFinishMessage(int questionId, {bool releaseResultCaps = true}) {
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgFinish);
   final finish = msg.initFinish();
   finish.setQuestionId(questionId);
@@ -1220,7 +1224,7 @@ Uint8List buildReleaseMessage(int id, int referenceCount) {
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgRelease);
   final rel = msg.initRelease();
   rel.setId(id);
@@ -1237,7 +1241,7 @@ Uint8List buildUnimplementedMessage(Uint8List originalMessageBytes) {
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgUnimplemented);
   msg.setUnimplementedPayload(originalMessageBytes);
   return mb.serialize();
@@ -1251,7 +1255,7 @@ Uint8List buildAbortMessage(
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgAbort);
   final exc = msg.initAbort();
   exc.setType(kind.index);
@@ -1259,7 +1263,7 @@ Uint8List buildAbortMessage(
   return mb.serialize();
 }
 
-void _writeCapDescriptor(_CapDescBuilder builder, RpcCapDescriptor descriptor) {
+void _writeCapDescriptor(_CapDescriptorBuilder builder, RpcCapabilityDescriptor descriptor) {
   switch (descriptor.disc) {
     case _capDescSenderPromise:
       builder.setSenderPromise(descriptor.id);
@@ -1277,25 +1281,25 @@ void _writeCapDescriptor(_CapDescBuilder builder, RpcCapDescriptor descriptor) {
   }
 }
 
-RpcCapDescriptor _legacyEntryToCapDescriptor(int disc, int id) {
+RpcCapabilityDescriptor _legacyEntryToCapDescriptor(int disc, int id) {
   switch (disc) {
     case _capDescSenderHosted:
-      return RpcCapDescriptor.senderHosted(id);
+      return RpcCapabilityDescriptor.senderHosted(id);
     case _capDescSenderPromise:
-      return RpcCapDescriptor.senderPromise(id);
+      return RpcCapabilityDescriptor.senderPromise(id);
     case _capDescReceiverHosted:
-      return RpcCapDescriptor.receiverHosted(id);
+      return RpcCapabilityDescriptor.receiverHosted(id);
     default:
       // Preserve descriptors we do not implement so the connection layer can
       // reject them explicitly instead of treating them as application nulls.
-      return RpcCapDescriptor._(disc: disc, id: id);
+      return RpcCapabilityDescriptor._(disc: disc, id: id);
   }
 }
 
-RpcCapDescriptor _readCapDescriptor(_CapDescReader entry) {
+RpcCapabilityDescriptor _readCapDescriptor(_CapDescriptorReader entry) {
   if (entry.disc == _capDescReceiverAnswer) {
     final promisedAnswer = entry.receiverAnswer;
-    return RpcCapDescriptor.receiverAnswer(
+    return RpcCapabilityDescriptor.receiverAnswer(
       promisedAnswer?.questionId ?? 0,
       _readTransformPath(promisedAnswer?.transform),
     );
@@ -1335,7 +1339,7 @@ RpcMessage parseRpcMessage(Uint8List bytes) =>
 
 /// Parses an RPC message from an already-deserialized [MessageReader].
 RpcMessage parseRpcMessageFromReader(MessageReader mr) {
-  final msg = mr.getRoot(_msgFactory);
+  final msg = mr.getRoot(_rpcMessageFactory);
 
   switch (msg.disc) {
     case _msgBootstrap:
@@ -1350,7 +1354,7 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
       final params = call?.params;
       final callCapTable = params?.capTable;
       final capTablePairs = <(int, int)>[];
-      final capTableDescriptors = <RpcCapDescriptor>[];
+      final capTableDescriptors = <RpcCapabilityDescriptor>[];
       if (callCapTable != null) {
         for (int i = 0; i < callCapTable.length; i++) {
           final entry = callCapTable[i];
@@ -1390,7 +1394,7 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
         final capTable = payload?.capTable;
         final exportIds = <int>[];
         final capTablePairs = <(int, int)>[];
-        final capTableDescriptors = <RpcCapDescriptor>[];
+        final capTableDescriptors = <RpcCapabilityDescriptor>[];
         if (capTable != null) {
           for (int i = 0; i < capTable.length; i++) {
             final entry = capTable[i];
@@ -1438,7 +1442,7 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
       } else {
         // canceled(2) / resultsSentElsewhere(3) / acceptFromThirdParty(5) —
         // none of these are implemented (see OutgoingCallCoordinator's
-        // internal _awaitReturn), but the disc is still preserved here
+        // internal _awaitAndProcessReturn), but the disc is still preserved here
         // rather than silently discarded, so callers can report exactly
         // what happened.
         return RpcMessage._(

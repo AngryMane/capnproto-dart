@@ -608,7 +608,7 @@ void _writeClientMethod(
 
   if (method.resultStructTypeId == streamResultTypeId) {
     // `-> stream` method: dispatchStreaming() applies flow-control windowing
-    // on RPC-connected capabilities (see FlowController) instead of a plain
+    // on RPC-connected capabilities (see StreamingCallFlowController) instead of a plain
     // awaited dispatch. The result is always the empty StreamResult struct,
     // so there's nothing to return. No pipeline method is generated —
     // StreamResult never has fields to pipeline on — but a Typed convenience
@@ -671,15 +671,15 @@ void _writeClientMethod(
   if (usesCapTableParam) {
     sb.writeln('    final capTable = CapabilityTableBuilder();');
     sb.writeln(
-      '    final result = await _cap.dispatchBuilding($ifaceId, $ordinal, (anyPtr) => build(anyPtr.initStruct(${_lcfirst(paramsName)}Factory), capTable)$dispatchCaps);',
+      '    final result = await _cap.dispatchWithParamsBuilder($ifaceId, $ordinal, (anyPtr) => build(anyPtr.initStruct(${_lcfirst(paramsName)}Factory), capTable)$dispatchCaps);',
     );
   } else if (effectiveCapParams.isEmpty) {
     sb.writeln(
-      '    final result = await _cap.dispatchBuilding($ifaceId, $ordinal, (anyPtr) => build(anyPtr.initStruct(${_lcfirst(paramsName)}Factory))$dispatchCaps);',
+      '    final result = await _cap.dispatchWithParamsBuilder($ifaceId, $ordinal, (anyPtr) => build(anyPtr.initStruct(${_lcfirst(paramsName)}Factory))$dispatchCaps);',
     );
   } else {
     sb.writeln(
-      '    final result = await _cap.dispatchBuilding($ifaceId, $ordinal, (anyPtr) {',
+      '    final result = await _cap.dispatchWithParamsBuilder($ifaceId, $ordinal, (anyPtr) {',
     );
     sb.writeln('      final b = anyPtr.initStruct(${_lcfirst(paramsName)}Factory);');
     for (final (_, fname, capIdx) in effectiveCapParams) {
@@ -721,7 +721,7 @@ void _writeClientMethod(
       sb.writeln('    build(b);');
     }
     sb.writeln(
-      '    return $pipelineName._(_cap.beginDispatch($ifaceId, $ordinal, RpcPayload.fromBytes(mb.serialize())$dispatchCaps));',
+      '    return $pipelineName._(_cap.dispatchForPipelining($ifaceId, $ordinal, RpcPayload.fromBytes(mb.serialize())$dispatchCaps));',
     );
     sb.writeln('  }');
   }
@@ -871,7 +871,7 @@ void _writeTypedClientMethod(
   }
   sb.writeln('    final typedCapabilities = <Capability>[];');
   sb.writeln(
-    '    final dispatchResult = await _cap.dispatchBuilding($ifaceId, $ordinal, (anyPtr) {',
+    '    final dispatchResult = await _cap.dispatchWithParamsBuilder($ifaceId, $ordinal, (anyPtr) {',
   );
   sb.writeln('      final b = anyPtr.initStruct(${_lcfirst(paramsName)}Factory);');
   for (final (fieldName, paramIndex) in paramFields) {
@@ -925,7 +925,7 @@ void _writeTypedClientMethod(
       );
     }
     sb.writeln(
-      '    return $pipelineName._(_cap.beginDispatch($ifaceId, $ordinal, RpcPayload.fromBytes(mb.serialize()), paramsCapabilities: typedCapabilities));',
+      '    return $pipelineName._(_cap.dispatchForPipelining($ifaceId, $ordinal, RpcPayload.fromBytes(mb.serialize()), paramsCapabilities: typedCapabilities));',
     );
     sb.writeln('  }');
   }
@@ -1094,7 +1094,7 @@ void _writeServerStub(
         '  Future<void> $methodName(${paramsName}Reader params, List<Capability> paramsCapabilities);',
       );
       sb.writeln(
-        '  Future<void> ${methodName}WithContext(${paramsName}Reader params, List<Capability> paramsCapabilities, DispatchContext context) =>',
+        '  Future<void> ${methodName}WithContext(${paramsName}Reader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>',
       );
       sb.writeln('      $methodName(params, paramsCapabilities);');
     } else {
@@ -1102,7 +1102,7 @@ void _writeServerStub(
         '  Future<DispatchResult> $methodName(${paramsName}Reader params, List<Capability> paramsCapabilities);',
       );
       sb.writeln(
-        '  Future<DispatchResult> ${methodName}WithContext(${paramsName}Reader params, List<Capability> paramsCapabilities, DispatchContext context) =>',
+        '  Future<DispatchResult> ${methodName}WithContext(${paramsName}Reader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>',
       );
       sb.writeln('      $methodName(params, paramsCapabilities);');
 
@@ -1135,10 +1135,10 @@ void _writeServerStub(
     '  Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, RpcPayload params, {',
   );
   sb.writeln('    List<Capability> paramsCapabilities = const [],');
-  sb.writeln('    DispatchContext? context,');
+  sb.writeln('    DispatchCancellationContext? context,');
   sb.writeln('  }) async {');
   sb.writeln(
-    '    final dispatchContext = context ?? DispatchContext.neverCanceled;',
+    '    final dispatchContext = context ?? DispatchCancellationContext.neverCanceled;',
   );
 
   if (allMethods.isNotEmpty) {
@@ -1416,7 +1416,7 @@ Map<int, String> _resolvePipelineClassNames(
       fieldDecls.add('  final ${capIfaceName}Client $fname;');
       fieldInits.add(
         '    $fname = ${capIfaceName}Client('
-        'call.pipelineResultPath([...$basePathExpr, ${fieldBody.offset}]))',
+        'call.pipelinedCapabilityFromResultPath([...$basePathExpr, ${fieldBody.offset}]))',
       );
     } else if (type is StructRefType && type.typeArgs.isEmpty) {
       if (!_structContainsCapability(type.typeId, nodeMap, memo)) continue;
@@ -1462,7 +1462,7 @@ void _writeNestedPipelineClass(
   final className = pipelineClassNames[typeId]!;
   sb.writeln();
   sb.writeln('final class $className {');
-  sb.writeln('  $className(CapCall call, List<int> basePath)');
+  sb.writeln('  $className(DispatchHandle call, List<int> basePath)');
   sb.writeln('    : ${fields.fieldInits.join(',\n      ')};');
   sb.writeln();
   for (final decl in fields.fieldDecls) {
@@ -1579,7 +1579,7 @@ void _writeResultsPipeline(
   );
   sb.writeln();
   sb.writeln('final class $pipelineName {');
-  sb.writeln('  $pipelineName._(CapCall call)');
+  sb.writeln('  $pipelineName._(DispatchHandle call)');
   final pipelineInits = [
     ...pipelineFields.fieldInits,
     '    result = call.result.then((r) => r.payload.getTyped(${_lcfirst(resultsName)}Factory, capabilities: r.caps))',
@@ -1903,7 +1903,7 @@ void _writeReaderField(
     sb.writeln('  ${capIfaceName}Client? get $fname {');
     sb.writeln('    final cap = getCapabilityObjectField($offset);');
     sb.writeln(
-      '    return cap == null ? null : ${capIfaceName}Client(vendCapabilityHandle(cap as Capability));',
+      '    return cap == null ? null : ${capIfaceName}Client(acquireCapabilityLease(cap as Capability));',
     );
     sb.writeln('  }');
     sb.writeln();
@@ -2500,7 +2500,7 @@ String _dartBytesLiteral(Uint8List bytes) =>
   final name = _dartClassName(node?.displayName ?? 'UnknownInterface');
   return (
     'ListReader<${name}Client?>?',
-    'getCapabilityListFieldWith<${name}Client>($ptrIndex, (cap) => ${name}Client(vendCapabilityHandle(cap as Capability)))',
+    'getCapabilityListFieldWith<${name}Client>($ptrIndex, (cap) => ${name}Client(acquireCapabilityLease(cap as Capability)))',
   );
 }
 

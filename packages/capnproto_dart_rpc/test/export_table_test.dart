@@ -13,92 +13,92 @@ class _FakeCapability extends Capability {
 
 void main() {
   group('ExportTable', () {
-    test('getOrCreate dedupes by identity, bumping the remote refcount '
+    test('retainOrCreateExportId dedupes by identity, bumping the remote refcount '
         'instead of allocating a new export id', () {
       final table = ExportTable();
       final cap = _FakeCapability();
 
-      final id1 = table.getOrCreate(cap);
+      final id1 = table.retainOrCreateExportId(cap);
       expect(table.remoteRefCountFor(id1), equals(1));
 
-      final id2 = table.getOrCreate(cap);
+      final id2 = table.retainOrCreateExportId(cap);
       expect(id2, equals(id1));
       expect(table.remoteRefCountFor(id1), equals(2));
       expect(table.count, equals(1));
     });
 
-    test('getOrCreate for two distinct identities allocates two distinct '
+    test('retainOrCreateExportId for two distinct identities allocates two distinct '
         'export ids', () {
       final table = ExportTable();
       final capA = _FakeCapability();
       final capB = _FakeCapability();
 
-      final idA = table.getOrCreate(capA);
-      final idB = table.getOrCreate(capB);
+      final idA = table.retainOrCreateExportId(capA);
+      final idB = table.retainOrCreateExportId(capB);
 
       expect(idA, isNot(equals(idB)));
       expect(table.count, equals(2));
     });
 
-    test('releaseRef only disposes the export once the remote refcount '
+    test('releaseReferences only disposes the export once the remote refcount '
         'reaches zero', () async {
       final table = ExportTable();
       final cap = _FakeCapability();
-      final id = table.getOrCreate(cap);
-      table.getOrCreate(cap); // remoteRefCount now 2.
+      final id = table.retainOrCreateExportId(cap);
+      table.retainOrCreateExportId(cap); // remoteRefCount now 2.
 
-      Capability? disposedHandle;
+      Capability? disposedLease;
       void disposeIgnoringErrors(Capability c) {
-        disposedHandle = c;
+        disposedLease = c;
         c.dispose();
       }
 
-      table.releaseRef(id, 1, disposeIgnoringErrors);
+      table.releaseReferences(id, 1, disposeIgnoringErrors);
       expect(table.remoteRefCountFor(id), equals(1));
-      expect(disposedHandle, isNull);
+      expect(disposedLease, isNull);
       expect(cap.disposed, isFalse);
-      expect(table.identityFor(id), same(cap));
+      expect(table.getCapability(id), same(cap));
 
-      table.releaseRef(id, 1, disposeIgnoringErrors);
+      table.releaseReferences(id, 1, disposeIgnoringErrors);
       expect(table.remoteRefCountFor(id), isNull);
-      expect(table.identityFor(id), isNull);
-      expect(disposedHandle, isNotNull);
-      // releaseRef disposes ExportTable's own vendCapabilityHandle reference
-      // (not `cap` directly), which — since it was the only handle vended
+      expect(table.getCapability(id), isNull);
+      expect(disposedLease, isNotNull);
+      // releaseReferences disposes ExportTable's own CapabilityLease
+      // (not `cap` directly), which — since it was the only lease acquired
       // for `cap` — cascades into disposing `cap` itself once the shared
       // refcount reaches zero.
       expect(cap.disposed, isTrue);
     });
 
-    test('releaseRef with a referenceCount greater than 1 releases that '
+    test('releaseReferences with a referenceCount greater than 1 releases that '
         'many references in one call', () {
       final table = ExportTable();
       final cap = _FakeCapability();
-      final id = table.getOrCreate(cap);
-      table.getOrCreate(cap);
-      table.getOrCreate(cap); // remoteRefCount now 3.
+      final id = table.retainOrCreateExportId(cap);
+      table.retainOrCreateExportId(cap);
+      table.retainOrCreateExportId(cap); // remoteRefCount now 3.
 
-      table.releaseRef(id, 3, (c) => c.dispose());
-      expect(table.identityFor(id), isNull);
+      table.releaseReferences(id, 3, (c) => c.dispose());
+      expect(table.getCapability(id), isNull);
       expect(cap.disposed, isTrue);
     });
 
-    test('release() releases exactly one reference, unconditionally', () {
+    test('releaseReference releases exactly one reference, unconditionally', () {
       final table = ExportTable();
       final cap = _FakeCapability();
-      final id = table.getOrCreate(cap);
-      table.getOrCreate(cap); // remoteRefCount now 2.
+      final id = table.retainOrCreateExportId(cap);
+      table.retainOrCreateExportId(cap); // remoteRefCount now 2.
 
-      table.release(id, (c) => c.dispose());
+      table.releaseReference(id, (c) => c.dispose());
       expect(table.remoteRefCountFor(id), equals(1));
       expect(cap.disposed, isFalse);
     });
 
-    test('releaseRef for an export id that is not (or no longer) exported '
+    test('releaseReferences for an export id that is not (or no longer) exported '
         'is a no-op', () {
       final table = ExportTable();
       var disposeCalls = 0;
-      table.releaseRef(42, 1, (c) => disposeCalls++);
+      table.releaseReferences(42, 1, (c) => disposeCalls++);
       expect(disposeCalls, equals(0));
     });
 
@@ -118,10 +118,10 @@ void main() {
         'expected capability', () {
       final table = ExportTable();
       final cap = _FakeCapability();
-      final id = table.getOrCreate(cap);
+      final id = table.retainOrCreateExportId(cap);
 
       expect(table.isCurrentIdentity(id, cap), isTrue);
-      table.release(id, (c) => c.dispose());
+      table.releaseReference(id, (c) => c.dispose());
       expect(table.isCurrentIdentity(id, cap), isFalse);
     });
 
@@ -130,8 +130,8 @@ void main() {
       final table = ExportTable();
       final capA = _FakeCapability();
       final capB = _FakeCapability();
-      table.getOrCreate(capA);
-      table.getOrCreate(capB);
+      table.retainOrCreateExportId(capA);
+      table.retainOrCreateExportId(capB);
 
       table.tearDown((c) => c.dispose());
       expect(table.count, equals(0));
@@ -139,13 +139,13 @@ void main() {
       expect(capB.disposed, isTrue);
     });
 
-    test('markScheduled/clearScheduled track sender-promise resolution '
-        'watchers without affecting export state', () {
+    test('promise-resolution scheduling tracks watchers without affecting '
+        'export state', () {
       final table = ExportTable();
-      expect(table.markScheduled(5), isTrue);
-      expect(table.markScheduled(5), isFalse); // already scheduled.
-      table.clearScheduled(5);
-      expect(table.markScheduled(5), isTrue); // can be scheduled again.
+      expect(table.markPromiseResolutionScheduled(5), isTrue);
+      expect(table.markPromiseResolutionScheduled(5), isFalse); // already scheduled.
+      table.clearPromiseResolutionScheduled(5);
+      expect(table.markPromiseResolutionScheduled(5), isTrue); // can be scheduled again.
     });
   });
 }

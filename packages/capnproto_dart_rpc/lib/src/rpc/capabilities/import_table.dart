@@ -87,7 +87,7 @@ class ImportTable {
   /// resolve a pending promise) independent of whether this call should
   /// also hold a reference — callers that need to hold one use [retain]
   /// instead.
-  ImportState stateFor(int importId) =>
+  ImportState getOrCreateState(int importId) =>
       _imports.putIfAbsent(importId, () => ImportState(importId));
 
   /// Records that [importId]'s promise resolved to an exception.

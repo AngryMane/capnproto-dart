@@ -21,8 +21,9 @@ import 'import_table.dart';
 ///
 /// See https://github.com/AngryMane/capnproto-dart/issues/64.
 abstract interface class RpcCapabilityDelegate {
-  /// Current resolution state of import [importId] — see [ImportState].
-  ImportState importStateFor(int importId);
+  /// Returns the current [ImportState] for [importId], creating an unretained
+  /// state if none exists.
+  ImportState getOrCreateImportState(int importId);
 
   /// Releases this vat's reference to import [importId], batching the
   /// outgoing wire Release with any other releases in the same microtask.
@@ -30,8 +31,8 @@ abstract interface class RpcCapabilityDelegate {
 
   /// Starts a call against [target] with [params]. Returns the question ID
   /// immediately (for pipelining) alongside the eventual result — see
-  /// [StartedCall].
-  StartedCall startOutgoingCall({
+  /// [StartedOutgoingCall].
+  StartedOutgoingCall startOutgoingCall({
     required OutgoingCallTarget target,
     required OutgoingParams params,
     required int interfaceId,
@@ -45,6 +46,6 @@ abstract interface class RpcCapabilityDelegate {
   Future<ResolvedAnswer> resolveAnswer(int questionId);
 
   /// Flow-control window size (bytes) for streaming (`-> stream`) calls —
-  /// see `FlowController`.
+  /// see `StreamingCallFlowController`.
   int get streamWindowSize;
 }

@@ -4,16 +4,16 @@ import 'dart:async';
 ///
 /// Mirrors capnp-rust's `FixedWindowFlowController`: a streaming call is
 /// always sent immediately (message order on the wire must be preserved),
-/// but the [Future] returned by [send] only completes once the number of
+/// but the [Future] returned by [trackCall] only completes once the number of
 /// in-flight bytes drops back under [windowSize] — i.e. once enough prior
 /// calls have been acknowledged (their [DispatchResult] future completed).
 ///
 /// This gives callers cooperative backpressure for free: a loop that awaits
-/// each [send] before making the next call is automatically throttled to
+/// each [trackCall] before making the next call is automatically throttled to
 /// roughly [windowSize] bytes of outstanding, unacknowledged calls, instead
 /// of either buffering an unbounded number of in-flight calls or forcing a
 /// full round-trip between every single call.
-class FlowController {
+class StreamingCallFlowController {
   /// Matches capnp-rust's `DEFAULT_WINDOW_SIZE`.
   static const int defaultWindowSize = 64 * 1024;
 
@@ -28,7 +28,7 @@ class FlowController {
   Object? _failure;
   StackTrace? _failureStackTrace;
 
-  FlowController({this.windowSize = defaultWindowSize});
+  StreamingCallFlowController({this.windowSize = defaultWindowSize});
 
   bool get _isReady => _inFlight < windowSize + _maxMessageSize;
 
@@ -36,20 +36,19 @@ class FlowController {
   /// that completes once the window has room for another message.
   ///
   /// The caller must have already sent the message on the wire before
-  /// calling this — [send] only tracks accounting and backpressure, it does
+  /// calling this — [trackCall] only tracks accounting and backpressure, it does
   /// not perform the send itself, so message ordering is unaffected by
   /// whether the window is currently full.
   ///
   /// [ack] should complete when the call this message belongs to has been
   /// acknowledged by the peer (its Return arrived), freeing this message's
   /// share of the window. If [ack] fails, the flow controller records the
-  /// failure and every subsequently-blocked (and future) [send] fails with
+  /// failure and every subsequently-blocked (and future) [trackCall] fails with
   /// the same error — matching capnp-rust, one failed streaming call poisons
   /// the stream rather than silently continuing to buffer behind it.
-  Future<void> send(int messageSize, Future<void> ack) {
-    _maxMessageSize = messageSize > _maxMessageSize
-        ? messageSize
-        : _maxMessageSize;
+  Future<void> trackCall(int messageSize, Future<void> ack) {
+    _maxMessageSize =
+        messageSize > _maxMessageSize ? messageSize : _maxMessageSize;
     _inFlight += messageSize;
 
     ack.then(

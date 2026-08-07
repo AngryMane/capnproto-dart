@@ -64,23 +64,25 @@ final _emptyResultBytes = Uint8List.fromList([
 /// narrow closures rather than holding either object directly: both are
 /// declared `final class`, so a test file in a different library can't
 /// fake either by implementing it — narrow closures keep this class's own
-/// test harness as lightweight as its two siblings'. [startUsing] closes
+/// test harness as lightweight as its two siblings'. [startCallWithAllocatedQuestion] closes
 /// the one genuine circular dependency in this refactor:
-/// `_sendTailForwardCall` needs `OutgoingCallCoordinator.startUsing`, while
+/// `_sendForwardedTailCall` needs `OutgoingCallCoordinator.startCallWithAllocatedQuestion`, while
 /// `OutgoingCallCoordinator`'s own `resolveLocalAnswer` field needs
 /// [resolveLocalAnswer] — see the wiring site
 /// (`two_party_connection.dart`) for how both directions are kept
 /// deferred (closures, not eager reads) so neither side's construction
 /// depends on the other's having already finished.
 ///
-/// [beginParamCapsRelease]/[finalizeParamCapsRelease] bridge a different
-/// boundary from [tryExtractCapabilityReference]/[capabilityFromDescriptor]/
-/// [returnCapDescriptor]. Those callbacks only extract a public
+/// [startParameterCapabilityDisposalTracking] and
+/// [finishParameterCapabilityDisposalTracking] bridge a different
+/// boundary from [tryExtractCapabilityReference]/[acquireCapabilityFromDescriptor]/
+/// [exportResultCapabilityAsDescriptor]. Those callbacks only extract a public
 /// [RpcCapabilityReference] or construct a [Capability]. Params-capability
 /// release tracking instead mutates private
 /// `_ImportedCapability._deferredReleaseSink` state and reads accumulated
 /// results back later, so it is threaded through as an opaque `Object?`
-/// ticket this class never inspects — see [beginParamCapsRelease]'s doc.
+/// ticket this class never inspects — see
+/// [startParameterCapabilityDisposalTracking]'s doc.
 final class IncomingCallCoordinator {
   /// Shared with the owning connection — also read directly by
   /// `CapabilityProtocol`/`OutgoingCallCoordinator`, so this class does not
@@ -97,7 +99,7 @@ final class IncomingCallCoordinator {
   final void Function(Capability) disposeIgnoringErrors;
 
   /// Whether the owning connection has already torn down — checked in
-  /// [_dispatchTailCall]/[_runDispatch]'s async continuations, which may
+  /// [_dispatchTailCall]/[_executeIncomingDispatch]'s async continuations, which may
   /// run after teardown has already cleared the answer tables they'd
   /// otherwise touch.
   final bool Function() isClosed;
@@ -112,11 +114,12 @@ final class IncomingCallCoordinator {
   final RpcCapabilityReference? Function(Capability cap)
   tryExtractCapabilityReference;
 
-  final Capability Function(RpcCapDescriptor descriptor)
-  capabilityFromDescriptor;
-  final RpcCapDescriptor Function(Capability cap) returnCapDescriptor;
+  final Capability Function(RpcCapabilityDescriptor descriptor)
+  acquireCapabilityFromDescriptor;
+  final RpcCapabilityDescriptor Function(Capability cap)
+  exportResultCapabilityAsDescriptor;
 
-  /// `OutgoingCallCoordinator.startUsing` — see this class's own doc
+  /// `OutgoingCallCoordinator.startCallWithAllocatedQuestion` — see this class's own doc
   /// comment for why this closure, not a direct reference to that
   /// coordinator, is what closes the circular dependency between them.
   final void Function({
@@ -128,20 +131,22 @@ final class IncomingCallCoordinator {
     required List<Capability> paramsCapabilities,
     bool sendResultsToYourself,
   })
-  startUsing;
+  startCallWithAllocatedQuestion;
 
   /// Starts a deferred-release tracking window for whichever of a call's
   /// params capabilities are same-connection imports freshly created for
   /// it, returning an opaque ticket (`null` if there's nothing to track)
-  /// to pass back to [finalizeParamCapsRelease] once the call settles —
-  /// see [_runDispatch]'s own doc comment for why this tracking exists.
+  /// to pass back to [finishParameterCapabilityDisposalTracking] once the call
+  /// settles — see [_executeIncomingDispatch]'s own doc comment for why this
+  /// tracking exists.
   /// Opaque because setting it up means writing a deferred-release sink
   /// onto each `_ImportedCapability` wrapper, private to
   /// `rpc_capability.dart`'s library.
   final Object? Function(List<Capability> paramsCapabilities)
-  beginParamCapsRelease;
+  startParameterCapabilityDisposalTracking;
 
-  /// Ends the tracking window [beginParamCapsRelease] started (a no-op,
+  /// Ends the tracking window that
+  /// [startParameterCapabilityDisposalTracking] started (a no-op,
   /// reporting `allDisposed` true, for a null ticket) and reports two
   /// independent things: `allDisposed` decides `Return.releaseParamCaps`
   /// directly; `explicitReleaseIds` is exactly the import ids that were
@@ -152,12 +157,12 @@ final class IncomingCallCoordinator {
   /// positional one with names in the type signature, which wouldn't
   /// actually create `.allDisposed`/`.explicitReleaseIds` getters — so the
   /// two can't be collapsed into one ambiguous empty list at the call site
-  /// (see [_finalizeParamCapsTracker], this class's own wrapper around this
-  /// closure that does the actual sending).
+  /// (see [_finishParameterCapabilityDisposalTrackingAndSendReleases], this
+  /// class's own wrapper around this closure that does the actual sending).
   final ({bool allDisposed, List<int> explicitReleaseIds}) Function(
     Object? ticket,
   )
-  finalizeParamCapsRelease;
+  finishParameterCapabilityDisposalTracking;
 
   IncomingCallCoordinator({
     required this.exportTable,
@@ -168,17 +173,17 @@ final class IncomingCallCoordinator {
     required this.isClosed,
     required this.tearDownConnection,
     required this.tryExtractCapabilityReference,
-    required this.capabilityFromDescriptor,
-    required this.returnCapDescriptor,
-    required this.startUsing,
-    required this.beginParamCapsRelease,
-    required this.finalizeParamCapsRelease,
+    required this.acquireCapabilityFromDescriptor,
+    required this.exportResultCapabilityAsDescriptor,
+    required this.startCallWithAllocatedQuestion,
+    required this.startParameterCapabilityDisposalTracking,
+    required this.finishParameterCapabilityDisposalTracking,
   });
 
   void handleBootstrap(RpcMessage msg) {
     if (_rejectDuplicateQuestionId(msg.questionId)) return;
     // Each Bootstrap request hands the peer a new reference to export 0,
-    // exactly like ExportTable.getOrCreate does for capabilities returned
+    // exactly like ExportTable.retainOrCreateExportId does for capabilities returned
     // from ordinary calls — without this, a peer that bootstraps twice and
     // later disposes just one of the two resulting capabilities would drop
     // this side's refcount to 0 and dispose the capability out from under
@@ -191,11 +196,11 @@ final class IncomingCallCoordinator {
     // Return through a synchronously-reentrant sink (an in-memory or
     // `sync: true` transport) could otherwise observe a pipelined call
     // targeting this answer, a Finish for it, or a Release for export 0,
-    // before this bookkeeping exists (see _runDispatch's own matching
+    // before this bookkeeping exists (see _executeIncomingDispatch's own matching
     // comment for why the same ordering matters there).
     final bootstrapCap = exportTable.retainExisting(0);
     if (bootstrapCap != null) {
-      answerTable.completeSuccessfully(
+      answerTable.recordAnswer(
         msg.questionId,
         resolved: ResolvedAnswer(_bootstrapResultBytes, [bootstrapCap]),
       );
@@ -212,8 +217,8 @@ final class IncomingCallCoordinator {
       return;
     }
 
-    final identity = exportTable.identityFor(msg.targetImportId);
-    if (identity == null) {
+    final target = exportTable.getCapability(msg.targetImportId);
+    if (target == null) {
       sendBytes(
         buildReturnExceptionMessage(
           answerId: msg.questionId,
@@ -222,7 +227,7 @@ final class IncomingCallCoordinator {
       );
       return;
     }
-    _dispatchToCapability(msg, identity);
+    _dispatchToCapability(msg, target);
   }
 
   void _handlePipelinedCall(RpcMessage msg) {
@@ -241,7 +246,7 @@ final class IncomingCallCoordinator {
     // Already resolved: dispatch immediately.
     final resolved = answerTable.resolvedFor(parentQid);
     if (resolved != null) {
-      final cap = _capFromPath(resolved, path);
+      final cap = _tryGetCapabilityFromAnswerPath(resolved, path);
       if (cap == null) {
         sendBytes(
           buildReturnExceptionMessage(
@@ -276,7 +281,7 @@ final class IncomingCallCoordinator {
           // no-op anyway, so there's nothing left to do for a peer that's
           // no longer there.
           if (isClosed()) return;
-          final cap = _capFromPath(resolved, path);
+          final cap = _tryGetCapabilityFromAnswerPath(resolved, path);
           if (cap == null) {
             sendBytes(
               buildReturnExceptionMessage(
@@ -301,14 +306,16 @@ final class IncomingCallCoordinator {
         .ignore();
   }
 
-  Capability? _capFromPath(ResolvedAnswer resolved, List<int> path) =>
-      capabilityFromResultPath(
-        DispatchResult(
-          payload: RpcPayload.fromBytes(resolved.resultBytes),
-          caps: resolved.caps,
-        ),
-        path,
-      );
+  Capability? _tryGetCapabilityFromAnswerPath(
+    ResolvedAnswer resolved,
+    List<int> path,
+  ) => tryGetCapabilityFromResultPath(
+    DispatchResult(
+      payload: RpcPayload.fromBytes(resolved.resultBytes),
+      caps: resolved.caps,
+    ),
+    path,
+  );
 
   void _dispatchToCapability(RpcMessage msg, Capability cap) {
     final qid = msg.questionId;
@@ -329,17 +336,17 @@ final class IncomingCallCoordinator {
     final paramsCapabilities = <Capability>[];
     try {
       for (final descriptor in msg.capTableDescriptors) {
-        paramsCapabilities.add(capabilityFromDescriptor(descriptor));
+        paramsCapabilities.add(acquireCapabilityFromDescriptor(descriptor));
       }
     } catch (error) {
       // Every entry decoded successfully before whatever failed is a real,
-      // live reference (an import refcount bump, a vended receiverHosted
-      // handle, ...) — dispose them *before* deciding what to do with the
-      // error itself, including the unimplemented/rethrow path below,
+      // live reference (an import refcount bump, a receiverHosted
+      // capability lease, ...) — dispose them *before* deciding what to do
+      // with the error itself, including the unimplemented/rethrow path below,
       // which tears the whole connection down: tearDownConnection only
       // ever disposes each export's own single `ownedReference` (see that
       // field's doc comment) — it has no way to know about an *additional*
-      // handle vended into a local variable like this one, so leaving one
+      // lease acquired into a local variable like this one, so leaving one
       // undisposed here would leak a permanent share of that identity's
       // refcount, potentially high enough that its own real capability
       // never actually gets disposed even once every other reference to it
@@ -352,11 +359,11 @@ final class IncomingCallCoordinator {
 
       // A disc this vat doesn't implement at all (e.g. thirdPartyHosted) is
       // a bigger deal than a single bad call — see the `default` case in
-      // CapabilityProtocol.capabilityFromDescriptor and the "tears down the
+      // CapabilityProtocol.acquireCapabilityFromDescriptor and the "tears down the
       // connection as unimplemented" test for this exact behavior — so let
       // that kind keep propagating to this listener's own outer try/catch,
       // which tears the whole connection down. Same for anything that
-      // isn't even an RpcException: capabilityFromDescriptor itself never
+      // isn't even an RpcException: acquireCapabilityFromDescriptor itself never
       // throws anything else today, but this being a peer-triggered decode
       // loop, silently downgrading an unexpected failure type to an
       // ordinary per-call Return.exception would be the wrong default.
@@ -374,9 +381,9 @@ final class IncomingCallCoordinator {
       // so _rejectDuplicateQuestionId can still catch a peer illegally
       // reusing this same qid before sending Finish for it, exactly like
       // every other Return sent without a real dispatch throughout this
-      // file (see the sibling `answerTable.completeSuccessfully(qid)`
+      // file (see the sibling `answerTable.recordAnswer(qid)`
       // sites).
-      answerTable.completeSuccessfully(qid);
+      answerTable.recordAnswer(qid);
 
       sendBytes(
         buildReturnExceptionMessage(
@@ -405,16 +412,16 @@ final class IncomingCallCoordinator {
     // real Return once it settles.
     final sendResultsToYourself = msg.sendResultsToDisc == 1;
     if (!sendResultsToYourself) {
-      final TailCall? tailCall;
+      final TailCallRequest? tailCallRequest;
       try {
-        tailCall = cap.tryTailCall(
+        tailCallRequest = cap.tryTailCall(
           msg.interfaceId,
           msg.methodId,
           params,
           paramsCapabilities: paramsCapabilities,
         );
       } catch (error) {
-        answerTable.completeSuccessfully(qid);
+        answerTable.recordAnswer(qid);
         sendBytes(
           buildReturnExceptionMessage(
             answerId: qid,
@@ -424,13 +431,13 @@ final class IncomingCallCoordinator {
         );
         return;
       }
-      if (tailCall != null) {
-        _dispatchTailCall(qid, tailCall);
+      if (tailCallRequest != null) {
+        _dispatchTailCall(qid, tailCallRequest);
         return;
       }
     }
 
-    _runDispatch(
+    _executeIncomingDispatch(
       qid,
       cap,
       msg.interfaceId,
@@ -443,7 +450,7 @@ final class IncomingCallCoordinator {
 
   /// Handles a [Capability.tryTailCall] result for the call answered by
   /// [qid]. When [tryExtractCapabilityReference] yields an
-  /// [ImportedCapabilityReference] for [tailCall]'s target, that target is
+  /// [ImportedCapabilityReference] for [request]'s target, that target is
   /// an import from this same peer connection, so this applies the Level 1
   /// wire optimization: forwards a new Call (flagged
   /// `sendResultsTo=yourself`) to that peer and answers [qid] immediately
@@ -451,13 +458,13 @@ final class IncomingCallCoordinator {
   /// to complete. Otherwise, falls back to a transparent proxy —
   /// dispatching the tail-called method directly and answering [qid]
   /// normally, with no wire-level difference from an ordinary call.
-  void _dispatchTailCall(int qid, TailCall tailCall) {
-    final target = tailCall.target;
+  void _dispatchTailCall(int qid, TailCallRequest request) {
+    final target = request.target;
     final reference = tryExtractCapabilityReference(target);
     if (reference is ImportedCapabilityReference) {
-      final (forwardQid, sent) = _sendTailForwardCall(
+      final (forwardQid, sent) = _sendForwardedTailCall(
         reference.importId,
-        tailCall,
+        request,
       );
       // Must wait for the forwarded Call to actually be on the wire before
       // answering qid with takeFromOtherQuestion — otherwise the peer could
@@ -475,12 +482,12 @@ final class IncomingCallCoordinator {
             // pending answer state is deliberately never populated here.
             //
             // Recorded *before* sending the Return — same reentrancy
-            // reasoning as _runDispatch/handleBootstrap: a peer reacting to
+            // reasoning as _executeIncomingDispatch/handleBootstrap: a peer reacting to
             // this Return through a synchronously-reentrant sink could
             // otherwise send a Finish for qid before this bookkeeping
             // exists, which would then be silently dropped as a no-op
             // instead of ever clearing it.
-            answerTable.completeSuccessfully(qid);
+            answerTable.recordAnswer(qid);
             sendBytes(
               buildReturnTakeFromOtherQuestionMessage(
                 answerId: qid,
@@ -490,7 +497,7 @@ final class IncomingCallCoordinator {
           })
           .catchError((Object err) {
             if (isClosed()) return;
-            answerTable.completeSuccessfully(qid);
+            answerTable.recordAnswer(qid);
             sendBytes(
               buildReturnExceptionMessage(
                 answerId: qid,
@@ -502,13 +509,13 @@ final class IncomingCallCoordinator {
     }
     // Not a same-connection import: no wire optimization possible, just
     // dispatch the tail-called method directly and answer qid normally.
-    _runDispatch(
+    _executeIncomingDispatch(
       qid,
       target,
-      tailCall.interfaceId,
-      tailCall.methodId,
-      tailCall.params,
-      tailCall.paramsCapabilities,
+      request.interfaceId,
+      request.methodId,
+      request.params,
+      request.paramsCapabilities,
     );
   }
 
@@ -524,32 +531,32 @@ final class IncomingCallCoordinator {
   /// delivered to whichever of this vat's own outgoing calls the peer
   /// correlates via `takeFromOtherQuestion` (see [resolveLocalAnswer]), not
   /// to us. This just needs to send Finish once any Return arrives, so it
-  /// talks to the wire directly via [startUsing] rather than going through
-  /// `OutgoingCallCoordinator.start`/its internal `_awaitReturn` (which
+  /// talks to the wire directly via [startCallWithAllocatedQuestion] rather than going through
+  /// `OutgoingCallCoordinator.start`/its internal `_awaitAndProcessReturn` (which
   /// expects a real result).
-  (int, Future<void>) _sendTailForwardCall(
+  (int, Future<void>) _sendForwardedTailCall(
     FutureOr<int> targetImportId,
-    TailCall tailCall,
+    TailCallRequest request,
   ) {
     final question = questions.allocate();
     final qid = question.id;
     final completer = question.returnCompleter;
     final sentCompleter = question.sentCompleter!;
 
-    // Usually a no-op rollback target: tailCall's params are almost always
+    // Usually a no-op rollback target: request's params are almost always
     // _ImportedCapability from this same connection, which capTable
     // resolution categorizes as receiverHosted (no export created) — but a
     // receiverHosted-descriptor param on the *original* incoming call
     // resolves to this vat's own capability object (see
-    // CapabilityProtocol.capabilityFromDescriptor's disc-3 case), which
+    // CapabilityProtocol.acquireCapabilityFromDescriptor's disc-3 case), which
     // *does* get a fresh senderHosted export when forwarded here.
-    startUsing(
+    startCallWithAllocatedQuestion(
       question: question,
       target: ImportedCapabilityTarget(targetImportId),
-      params: SerializedParams(tailCall.params.bytes),
-      interfaceId: tailCall.interfaceId,
-      methodId: tailCall.methodId,
-      paramsCapabilities: tailCall.paramsCapabilities,
+      params: SerializedParams(request.params.bytes),
+      interfaceId: request.interfaceId,
+      methodId: request.methodId,
+      paramsCapabilities: request.paramsCapabilities,
       sendResultsToYourself: true,
     );
 
@@ -574,7 +581,7 @@ final class IncomingCallCoordinator {
   /// generalized so it also serves [_dispatchTailCall]'s fallback path and
   /// calls received with `sendResultsTo=yourself` — [sendResultsToYourself]
   /// only changes which kind of Return is sent on completion.
-  void _runDispatch(
+  void _executeIncomingDispatch(
     int qid,
     Capability cap,
     int interfaceId,
@@ -586,14 +593,15 @@ final class IncomingCallCoordinator {
     final cancellation = DispatchCancellationController();
 
     // Params capabilities freshly imported for this call (see
-    // _dispatchToCapability/CapabilityProtocol.capabilityFromDescriptor —
+    // _dispatchToCapability/CapabilityProtocol.acquireCapabilityFromDescriptor —
     // every senderHosted/senderPromise entry in the incoming Call's
     // capTable creates a brand new _ImportedCapability wrapper) get a
     // deferred release sink for the lifetime of this dispatch, so
     // Return.releaseParamCaps can be set without an extra wire Release
     // when the callee turns out not to need them past the call — see
-    // _finalizeParamCapsTracker.
-    final paramCapsTicket = beginParamCapsRelease(paramsCapabilities);
+    // _finishParameterCapabilityDisposalTrackingAndSendReleases.
+    final parameterCapabilityDisposalTicket =
+        startParameterCapabilityDisposalTracking(paramsCapabilities);
 
     final dispatchFuture = Future.sync(
       () => cap.dispatchWithContext(
@@ -612,7 +620,7 @@ final class IncomingCallCoordinator {
       (r) => ResolvedAnswer(r.payload.bytes, r.caps),
     );
     resolvedFuture.ignore();
-    answerTable.beginDispatch(qid, resolvedFuture, cancellation);
+    answerTable.recordPendingAnswer(qid, resolvedFuture, cancellation);
 
     dispatchFuture
         .then((result) {
@@ -625,9 +633,11 @@ final class IncomingCallCoordinator {
           // capabilities it carries would otherwise never be disposed —
           // dispose them here instead.
           if (isClosed()) {
-            answerTable.settleDispatch(qid);
+            answerTable.clearPendingAnswer(qid);
             _disposeResultCapabilities(result);
-            _finalizeParamCapsTracker(paramCapsTicket);
+            _finishParameterCapabilityDisposalTrackingAndSendReleases(
+              parameterCapabilityDisposalTicket,
+            );
             return;
           }
 
@@ -636,38 +646,42 @@ final class IncomingCallCoordinator {
             // outgoing calls receives Return.takeFromOtherQuestion=qid —
             // nothing is put on the wire for this Return.
             // The answer table is a non-owning rendezvous point in this path:
-            // `_awaitReturn()` hands the same local capabilities to the
+            // `_awaitAndProcessReturn()` hands the same local capabilities to the
             // original caller as its DispatchResult, and the later Finish for
             // this forwarded question uses releaseResultCaps=false. Therefore
             // Finish must only drop bookkeeping here, not dispose result.caps.
             //
-            // completeDispatchSuccessfully() runs *before* sendBytes(): if it
-            // ran after (like the plain answerTable.completeSuccessfully()
+            // tryRecordAnswer() runs *before* sendBytes(): if it
+            // ran after (like the plain answerTable.recordAnswer()
             // this used to be), qid would sit briefly untracked between the
             // two calls, which a peer that reacts to this very Return
             // through a synchronously-reentrant sink (e.g. an in-memory or
             // `sync: true` transport) could observe — see that method's doc
             // comment.
-            final completed = answerTable.completeDispatchSuccessfully(
+            final completed = answerTable.tryRecordAnswer(
               qid,
               resolved: ResolvedAnswer(result.payload.bytes, result.caps),
             );
             if (!completed) {
               _disposeResultCapabilities(result);
-              _finalizeParamCapsTracker(paramCapsTicket);
+              _finishParameterCapabilityDisposalTrackingAndSendReleases(
+                parameterCapabilityDisposalTicket,
+              );
               return;
             }
             sendBytes(buildReturnResultsSentElsewhereMessage(answerId: qid));
             // No Return field exists on this variant to carry
             // releaseParamCaps, so just flush any deferred params releases
             // as ordinary Release messages.
-            _finalizeParamCapsTracker(paramCapsTicket);
+            _finishParameterCapabilityDisposalTrackingAndSendReleases(
+              parameterCapabilityDisposalTicket,
+            );
             return;
           }
 
-          final resultDescriptors = <RpcCapDescriptor>[];
+          final resultDescriptors = <RpcCapabilityDescriptor>[];
           for (final c in result.caps) {
-            resultDescriptors.add(returnCapDescriptor(c));
+            resultDescriptors.add(exportResultCapabilityAsDescriptor(c));
           }
           // No capabilities anywhere in the results means no wire-level
           // pipelined call against this answer could ever resolve to
@@ -677,7 +691,7 @@ final class IncomingCallCoordinator {
           final noFinishNeeded = resultDescriptors.isEmpty;
           // Record the answer before sending — see the comment on the
           // sendResultsToYourself branch above for why the ordering matters.
-          final completed = answerTable.completeDispatchSuccessfully(
+          final completed = answerTable.tryRecordAnswer(
             qid,
             resolved: ResolvedAnswer(result.payload.bytes, result.caps),
             resultExportIds: [
@@ -687,10 +701,15 @@ final class IncomingCallCoordinator {
           );
           if (!completed) {
             _disposeResultCapabilities(result);
-            _finalizeParamCapsTracker(paramCapsTicket);
+            _finishParameterCapabilityDisposalTrackingAndSendReleases(
+              parameterCapabilityDisposalTicket,
+            );
             return;
           }
-          final releaseParamCaps = _finalizeParamCapsTracker(paramCapsTicket);
+          final releaseParamCaps =
+              _finishParameterCapabilityDisposalTrackingAndSendReleases(
+                parameterCapabilityDisposalTicket,
+              );
           // getRootRaw() resolves in place for an envelope- or
           // builder-backed payload (no serialize-then-reparse round trip;
           // see RpcPayload/buildReturnResultsMessageFromReader) and only
@@ -705,18 +724,20 @@ final class IncomingCallCoordinator {
             ),
           );
           if (noFinishNeeded) {
-            // No Finish is coming for this qid (see above) — drop the
-            // answer bookkeeping just recorded, exactly as if Finish had
-            // already arrived for it. Recording it before send (above) and
-            // only dropping it now, after, still keeps it visible for the
-            // whole synchronous span the Return is actually sent in.
-            answerTable.finish(qid);
+            // No Finish is needed for this qid (see above), so clear only
+            // the local answer bookkeeping. Recording it before send and
+            // clearing it after keeps it visible while the Return is sent;
+            // if a synchronously-reentrant peer sends Finish anyway, that
+            // may consume the state first and this cleanup becomes a no-op.
+            answerTable.clearAnswerForNoFinishNeeded(qid);
           }
         })
         .catchError((Object err) {
           if (isClosed()) {
-            answerTable.settleDispatch(qid);
-            _finalizeParamCapsTracker(paramCapsTicket);
+            answerTable.clearPendingAnswer(qid);
+            _finishParameterCapabilityDisposalTrackingAndSendReleases(
+              parameterCapabilityDisposalTicket,
+            );
             return;
           }
           final rpcError =
@@ -726,28 +747,34 @@ final class IncomingCallCoordinator {
           if (sendResultsToYourself) {
             // See the matching comment in the success branch above for why
             // this runs before sendBytes().
-            final completed = answerTable.completeDispatchWithError(
-              qid,
-              rpcError,
-            );
+            final completed = answerTable.tryRecordFailedAnswer(qid, rpcError);
             if (!completed) {
-              _finalizeParamCapsTracker(paramCapsTicket);
+              _finishParameterCapabilityDisposalTrackingAndSendReleases(
+                parameterCapabilityDisposalTicket,
+              );
               return;
             }
             sendBytes(buildReturnResultsSentElsewhereMessage(answerId: qid));
-            _finalizeParamCapsTracker(paramCapsTicket);
+            _finishParameterCapabilityDisposalTrackingAndSendReleases(
+              parameterCapabilityDisposalTicket,
+            );
             return;
           }
           // An exception Return never carries a results payload/capTable,
           // so — same reasoning as the noFinishNeeded branch above — no
           // Finish is ever needed for it, and no answer-lifecycle state
-          // needs to be recorded for this qid at all. settleDispatch() still
+          // needs to be recorded for this qid at all. clearPendingAnswer() still
           // needs to run, though, to detect a Finish that arrived early.
-          if (answerTable.settleDispatch(qid)) {
-            _finalizeParamCapsTracker(paramCapsTicket);
+          if (answerTable.clearPendingAnswer(qid)) {
+            _finishParameterCapabilityDisposalTrackingAndSendReleases(
+              parameterCapabilityDisposalTicket,
+            );
             return;
           }
-          final releaseParamCaps = _finalizeParamCapsTracker(paramCapsTicket);
+          final releaseParamCaps =
+              _finishParameterCapabilityDisposalTrackingAndSendReleases(
+                parameterCapabilityDisposalTicket,
+              );
           sendBytes(
             buildReturnExceptionMessage(
               answerId: qid,
@@ -761,10 +788,10 @@ final class IncomingCallCoordinator {
   }
 
   void handleFinish(RpcMessage msg) {
-    final resultExportIds = answerTable.finish(msg.questionId);
+    final resultExportIds = answerTable.applyPeerFinish(msg.questionId);
     if (resultExportIds == null || !msg.releaseResultCaps) return;
     for (final eid in resultExportIds) {
-      exportTable.release(eid, disposeIgnoringErrors);
+      exportTable.releaseReference(eid, disposeIgnoringErrors);
     }
   }
 
@@ -829,15 +856,18 @@ final class IncomingCallCoordinator {
     }
   }
 
-  /// Thin wrapper around [finalizeParamCapsRelease] that also sends the
-  /// wire Release for any import ids it reports needing one, and forwards
+  /// Thin wrapper around [finishParameterCapabilityDisposalTracking] that also
+  /// sends a wire Release for each reported import ID and forwards
   /// `allDisposed` as `Return.releaseParamCaps` — see
-  /// [finalizeParamCapsRelease]'s own doc comment for the actual decision
-  /// logic.
-  bool _finalizeParamCapsTracker(Object? ticket) {
-    final (:allDisposed, :explicitReleaseIds) = finalizeParamCapsRelease(
-      ticket,
-    );
+  /// [finishParameterCapabilityDisposalTracking]'s own doc comment for the
+  /// actual decision logic.
+  bool _finishParameterCapabilityDisposalTrackingAndSendReleases(
+    Object? ticket,
+  ) {
+    final (
+      :allDisposed,
+      :explicitReleaseIds,
+    ) = finishParameterCapabilityDisposalTracking(ticket);
     // sendBytes() would silently no-op post-teardown anyway (a real
     // connection's own send path already does), but this coordinator
     // shouldn't rely on that — skip the send outright rather than depend on

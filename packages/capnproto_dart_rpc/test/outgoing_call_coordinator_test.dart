@@ -34,25 +34,25 @@ class _Harness {
   final releasedExportIds = <List<int>>[];
   final returnsSeenByHook = <RpcMessage>[];
 
-  /// When set, [resolveCapTableMaybeSync] throws this instead of resolving.
+  /// When set, [resolveParameterCapabilityDescriptors] throws this instead of resolving.
   Object? failWith;
 
-  /// Number of times [resolveCapTableMaybeSync] has actually run — used to
+  /// Number of times [resolveParameterCapabilityDescriptors] has actually run — used to
   /// prove a torn-down coordinator bails out *before* triggering its real
   /// side effects (export creation, refcount bumps), not just before
   /// [sendBytes].
   var resolveCapTableCallCount = 0;
 
-  /// When set, [resolveCapTableMaybeSync] doesn't resolve until this
+  /// When set, [resolveParameterCapabilityDescriptors] doesn't resolve until this
   /// completes — used to open a window between a build's capTable
   /// resolution starting and finishing, for tests that need `tearDown()` to
   /// land inside it.
   Completer<void>? capTableGate;
 
-  /// Recorded every time [resolveCapTableMaybeSync]'s fake reaches the
+  /// Recorded every time [resolveParameterCapabilityDescriptors]'s fake reaches the
   /// point past [capTableGate] where a real resolver (e.g.
   /// `CapabilityProtocol`'s internal `_resolveCapTableAsync`) would commit
-  /// a side effect with lasting state — `ExportTable.getOrCreate`, recording a
+  /// a side effect with lasting state — `ExportTable.retainOrCreateExportId`, recording a
   /// param export id against the question. Standing in for that real side
   /// effect here (rather than actually wiring up an `ExportTable`) so this
   /// harness stays connection-free — see the coordinator-level test that
@@ -68,7 +68,7 @@ class _Harness {
     questions: questions,
     imports: imports,
     sendBytes: sentBytes.add,
-    resolveCapTableMaybeSync: (
+    resolveParameterCapabilityDescriptors: (
       paramsCapabilities, {
       qid,
       required ensureActive,
@@ -88,11 +88,11 @@ class _Harness {
         ensureActive();
         postGateSideEffects.add(42);
         if (qid != null) questions.recordParamExportIds(qid, [42]);
-        return const [RpcCapDescriptor.senderHosted(42)];
+        return const [RpcCapabilityDescriptor.senderHosted(42)];
       });
     },
-    applyReleaseParamCaps: releasedExportIds.add,
-    capabilityFromDescriptor: (descriptor) => _NeverDisposedCapability(),
+    releaseParameterCapabilityExports: releasedExportIds.add,
+    acquireCapabilityFromDescriptor: (descriptor) => _NeverDisposedCapability(),
     resolveLocalAnswer:
         (qid) => Future.error(
           const RpcException('resolveLocalAnswer not stubbed for this test'),
@@ -156,14 +156,14 @@ void main() {
       await expectLater(started.result, completes);
     });
 
-    test('startUsing rolls back via applyReleaseParamCaps and never calls '
+    test('startCallWithAllocatedQuestion rolls back via releaseParameterCapabilityExports and never calls '
         'sendBytes when capTable resolution fails synchronously', () {
       final h = _Harness();
       h.failWith = const RpcException('boom');
       final question = h.questions.allocate();
       h.questions.recordParamExportIds(question.id, [42]);
 
-      h.coordinator.startUsing(
+      h.coordinator.startCallWithAllocatedQuestion(
         question: question,
         target: const ImportedCapabilityTarget(5),
         params: SerializedParams(_emptyMessageBytes),
@@ -192,7 +192,7 @@ void main() {
       // handleReturn takes it, so this must be captured *before* that.
       final question = h.questions.allocate();
       final returnCompleter = question.returnCompleter!;
-      h.coordinator.startUsing(
+      h.coordinator.startCallWithAllocatedQuestion(
         question: question,
         target: const ImportedCapabilityTarget(5),
         params: SerializedParams(_emptyMessageBytes),
@@ -256,16 +256,16 @@ void main() {
       },
     );
 
-    test('startUsing after tearDown fails the supplied question without '
+    test('startCallWithAllocatedQuestion after tearDown fails the supplied question without '
         'sending', () {
       final h = _Harness();
       h.coordinator.tearDown(const RpcException('connection torn down'));
 
-      // Mirrors _sendTailForwardCall: allocates its own question, then
-      // calls startUsing directly — never through start(), so startUsing's
+      // Mirrors _sendForwardedTailCall: allocates its own question, then
+      // calls startCallWithAllocatedQuestion directly — never through start(), so startCallWithAllocatedQuestion's
       // own entry guard is the only thing that can catch this.
       final question = h.questions.allocate();
-      h.coordinator.startUsing(
+      h.coordinator.startCallWithAllocatedQuestion(
         question: question,
         target: const ImportedCapabilityTarget(5),
         params: SerializedParams(_emptyMessageBytes),
@@ -316,13 +316,13 @@ void main() {
       // target-await guard the previous test already covers.
       final question = h.questions.allocate();
       // Mirrors start()'s own defensive ignore() for the sent completer —
-      // startUsing() is called directly here (like _sendTailForwardCall
+      // startCallWithAllocatedQuestion() is called directly here (like _sendForwardedTailCall
       // does), so nothing else ever attaches to it, and tearDown() below
       // completes it with an error unconditionally (unlike the return
       // completer, QuestionTable.tearDown doesn't ignore() this one itself,
       // since every real caller already has by this point).
       question.sentCompleter!.future.ignore();
-      h.coordinator.startUsing(
+      h.coordinator.startCallWithAllocatedQuestion(
         question: question,
         target: const ImportedCapabilityTarget(5),
         params: SerializedParams(_emptyMessageBytes),
@@ -342,10 +342,10 @@ void main() {
       expect(h.sentBytes, isEmpty);
     });
 
-    test('resolveCapTableMaybeSync side effects that would resume after '
+    test('resolveParameterCapabilityDescriptors side effects that would resume after '
         'tearDown during the gate wait never run, and are never recorded '
         'against the question', () async {
-      // Reproduces the gap a real resolver has: resolveCapTableMaybeSync
+      // Reproduces the gap a real resolver has: resolveParameterCapabilityDescriptors
       // isn't a pure function — a real implementation
       // (_resolveCapTableAsync) creates exports and records their ids
       // against qid as a side effect. _failIfTornDown alone can't roll
@@ -359,7 +359,7 @@ void main() {
 
       final question = h.questions.allocate();
       question.sentCompleter!.future.ignore();
-      h.coordinator.startUsing(
+      h.coordinator.startCallWithAllocatedQuestion(
         question: question,
         target: const ImportedCapabilityTarget(5),
         params: SerializedParams(_emptyMessageBytes),
@@ -387,7 +387,7 @@ void main() {
       expect(h.questions.takeParamExportIds(question.id), isNull);
     });
 
-    test('resolveCapTableMaybeSync side effects past the gate still run '
+    test('resolveParameterCapabilityDescriptors side effects past the gate still run '
         'normally, and still send, when tearDown never happens', () async {
       // Companion to the test above: proves ensureActive() only blocks the
       // torn-down case, not every gated resolution.

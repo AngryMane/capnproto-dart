@@ -1,8 +1,11 @@
 part of 'rpc_capability.dart';
 
-/// Tracks a single `IncomingCallCoordinator._runDispatch` call's params-caps
-/// deferred-release window — see that class's own
-/// `_finalizeParamCapsTracker`/`beginParamCapsRelease`/`finalizeParamCapsRelease`.
+/// Tracks parameter-capability disposal during one
+/// `IncomingCallCoordinator._executeIncomingDispatch` call — see that
+/// class's own
+/// `_finishParameterCapabilityDisposalTrackingAndSendReleases`,
+/// [startParameterCapabilityDisposalTracking], and
+/// [finishParameterCapabilityDisposalTracking].
 /// [wrappers] are every freshly-imported `_ImportedCapability` created for
 /// this call's params (one per senderHosted/senderPromise capTable entry);
 /// [disposedImportIds] accumulates the import ID each time one of them is
@@ -13,13 +16,14 @@ part of 'rpc_capability.dart';
 /// once per wrapper, matching the refcount contribution each one made.
 ///
 /// A plain data class, not a `Capability` — it exists only to be mutated by
-/// [beginParamCapsRelease]/[finalizeParamCapsRelease] below, so it lives
+/// [startParameterCapabilityDisposalTracking] and
+/// [finishParameterCapabilityDisposalTracking] below, so it lives
 /// here with its only callers rather than alongside the actual `Capability`
 /// implementations in rpc_capability.dart.
-class _ParamCapsReleaseTracker {
+class _ParameterCapabilityDisposalTracker {
   final List<_ImportedCapability> wrappers;
   final List<int> disposedImportIds = [];
-  _ParamCapsReleaseTracker(this.wrappers);
+  _ParameterCapabilityDisposalTracker(this.wrappers);
 }
 
 /// Builds the [Capability] proxying a remote capability whose import id
@@ -31,7 +35,7 @@ Capability createImportedCapability(
 ) => _ImportedCapability(delegate, importIdFuture);
 
 /// As [createImportedCapability], for an import whose [ImportState] is
-/// already known — see `CapabilityProtocol.capabilityFromDescriptor`'s
+/// already known — see `CapabilityProtocol.acquireCapabilityFromDescriptor`'s
 /// senderHosted/senderPromise branches, the only real caller.
 Capability createImportedCapabilityFromState(
   RpcCapabilityDelegate delegate,
@@ -39,7 +43,7 @@ Capability createImportedCapabilityFromState(
 ) => _ImportedCapability.fromState(delegate, state);
 
 /// Builds the [Capability] a `receiverAnswer` capTable entry resolves to —
-/// see `CapabilityProtocol.capabilityFromDescriptor`'s receiverAnswer
+/// see `CapabilityProtocol.acquireCapabilityFromDescriptor`'s receiverAnswer
 /// branch.
 Capability createReceiverAnswerCapability(
   RpcCapabilityDelegate delegate,
@@ -48,10 +52,11 @@ Capability createReceiverAnswerCapability(
 ) => _ReceiverAnswerCapability(delegate, questionId, path);
 
 /// Builds the [Capability] a `promisedAnswer`/pipelined call target
-/// resolves to (see [_OutgoingQuestionCapCall.pipelineResult]), bound to [delegate]
+/// resolves to (see [_OutgoingQuestionDispatchHandle.pipelinedCapability]), bound to [delegate]
 /// instead of a real connection. Test-only: nothing in production
-/// constructs a `_PipelinedCapability` directly — it's always vended
-/// internally by `_OutgoingQuestionCapCall`/`_UnresolvedImportCapCall` once a call is in
+/// constructs a `_PipelinedCapability` directly — it is always created
+/// internally by `_OutgoingQuestionDispatchHandle`/
+/// `_UnresolvedImportDispatchHandle` once a call is in
 /// flight, so unlike the `create*` functions above it has no non-debug
 /// counterpart.
 @visibleForTesting
@@ -105,14 +110,15 @@ bool isSameConnectionPeerCapability(
 /// Starts a deferred-release tracking window for whichever of
 /// [paramsCapabilities] are same-connection `_ImportedCapability` wrappers
 /// freshly imported for a call, bound to [delegate] — see
-/// `IncomingCallCoordinator._runDispatch`'s own doc comment for why.
+/// `IncomingCallCoordinator._executeIncomingDispatch`'s own doc comment for why.
 /// [decrementImportReference] is called with an import id exactly once for
 /// each wrapper disposed while the window is open. Returns an opaque
 /// ticket (`null` if there's nothing to track) to pass back to
-/// [finalizeParamCapsRelease] once the call settles; opaque because the
+/// [finishParameterCapabilityDisposalTracking] once the call settles;
+/// opaque because the
 /// caller has no legitimate use for anything about it besides handing it
 /// back unchanged.
-Object? beginParamCapsRelease(
+Object? startParameterCapabilityDisposalTracking(
   RpcCapabilityDelegate delegate,
   List<Capability> paramsCapabilities,
   void Function(int importId) decrementImportReference,
@@ -122,7 +128,7 @@ Object? beginParamCapsRelease(
       .where((c) => identical(c._delegate, delegate))
       .toList(growable: false);
   if (wrappers.isEmpty) return null;
-  final tracker = _ParamCapsReleaseTracker(wrappers);
+  final tracker = _ParameterCapabilityDisposalTracker(wrappers);
   for (final wrapper in wrappers) {
     wrapper._deferredReleaseSink = (id) {
       decrementImportReference(id);
@@ -151,10 +157,9 @@ Object? beginParamCapsRelease(
 /// site. Either way, clears each wrapper's sink so a *later* dispose() of
 /// one that's still outstanding goes through the normal (non-deferred)
 /// [RpcCapabilityDelegate.releaseImport] path.
-({bool allDisposed, List<int> explicitReleaseIds}) finalizeParamCapsRelease(
-  Object? ticket,
-) {
-  final tracker = ticket as _ParamCapsReleaseTracker?;
+({bool allDisposed, List<int> explicitReleaseIds})
+finishParameterCapabilityDisposalTracking(Object? ticket) {
+  final tracker = ticket as _ParameterCapabilityDisposalTracker?;
   if (tracker == null) {
     return (allDisposed: true, explicitReleaseIds: const []);
   }

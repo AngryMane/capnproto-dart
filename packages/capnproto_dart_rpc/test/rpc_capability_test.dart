@@ -50,7 +50,7 @@ class FakeRpcCapabilityDelegate implements RpcCapabilityDelegate {
   }
 
   @override
-  ImportState importStateFor(int importId) {
+  ImportState getOrCreateImportState(int importId) {
     final state = _importStates[importId];
     if (state == null) {
       throw RpcException('unknown import id $importId');
@@ -64,7 +64,7 @@ class FakeRpcCapabilityDelegate implements RpcCapabilityDelegate {
   }
 
   @override
-  StartedCall startOutgoingCall({
+  StartedOutgoingCall startOutgoingCall({
     required OutgoingCallTarget target,
     required OutgoingParams params,
     required int interfaceId,
@@ -79,7 +79,7 @@ class FakeRpcCapabilityDelegate implements RpcCapabilityDelegate {
       paramsCapabilities: paramsCapabilities,
     );
     startCallInvocations.add(invocation);
-    return StartedCall(_nextQid++, Future.value(resultFor(invocation)));
+    return StartedOutgoingCall(_nextQid++, Future.value(resultFor(invocation)));
   }
 
   @override
@@ -265,7 +265,7 @@ void main() {
       expect(delegate.releasedImportIds, [7]);
     });
 
-    test('dispatchStreaming() sizes its FlowController from the delegate\'s '
+    test('dispatchStreaming() sizes its StreamingCallFlowController from the delegate\'s '
         'streamWindowSize and calls startOutgoingCall', () async {
       final delegate = FakeRpcCapabilityDelegate()..streamWindowSize = 128;
       final state = ImportState(7);

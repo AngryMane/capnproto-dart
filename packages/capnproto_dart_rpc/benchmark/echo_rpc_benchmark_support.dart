@@ -67,7 +67,7 @@ class EchoClient extends Capability {
   EchoClient(this.cap);
 
   Future<String> echo(String message) async {
-    final result = await cap.dispatchBuilding(
+    final result = await cap.dispatchWithParamsBuilder(
       echoInterfaceId,
       echoMethodId,
       (anyPtr) =>

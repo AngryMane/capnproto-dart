@@ -257,7 +257,7 @@ final class GreeterNewSessionResultsReader extends StructReader {
 
   GreetSessionClient? get session {
     final cap = getCapabilityObjectField(0);
-    return cap == null ? null : GreetSessionClient(vendCapabilityHandle(cap as Capability));
+    return cap == null ? null : GreetSessionClient(acquireCapabilityLease(cap as Capability));
   }
 
   int get sessionCapIndex => getCapabilityField(0);
@@ -320,7 +320,7 @@ class GreetSessionClient extends Capability {
   Capability get capability => _cap;
 
   Future<GreetSessionGreetResultsReader> greet(void Function(GreetSessionGreetParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xb5f4a6c78d3e1029, 0, (anyPtr) => build(anyPtr.initStruct(greetSessionGreetParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xb5f4a6c78d3e1029, 0, (anyPtr) => build(anyPtr.initStruct(greetSessionGreetParamsFactory)));
     return result.payload.getTyped(greetSessionGreetResultsFactory, capabilities: result.caps);
   }
 
@@ -350,7 +350,7 @@ class GreetSessionClientFactory extends CapabilityFactory<GreetSessionClient> {
 abstract class GreetSessionServer extends Capability {
 
   Future<DispatchResult> greet(GreetSessionGreetParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> greetWithContext(GreetSessionGreetParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> greetWithContext(GreetSessionGreetParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       greet(params, paramsCapabilities);
 
   DispatchResult buildGreetResults(void Function(GreetSessionGreetResultsBuilder) build, {List<Capability> caps = const []}) =>
@@ -369,9 +369,9 @@ abstract class GreetSessionServer extends Capability {
   @override
   Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) async {
-    final dispatchContext = context ?? DispatchContext.neverCanceled;
+    final dispatchContext = context ?? DispatchCancellationContext.neverCanceled;
     switch (interfaceId) {
       case 0xb5f4a6c78d3e1029:
         switch (methodId) {
@@ -402,8 +402,8 @@ final class GreeterNewSessionResult {
 }
 
 final class GreeterNewSessionPipeline {
-  GreeterNewSessionPipeline._(CapCall call)
-      :     session = GreetSessionClient(call.pipelineResultPath([...const <int>[], 0])),
+  GreeterNewSessionPipeline._(DispatchHandle call)
+      :     session = GreetSessionClient(call.pipelinedCapabilityFromResultPath([...const <int>[], 0])),
     result = call.result.then((r) => r.payload.getTyped(greeterNewSessionResultsFactory, capabilities: r.caps));
 
   final Future<GreeterNewSessionResultsReader> result;
@@ -418,19 +418,19 @@ class GreeterClient extends Capability {
   Capability get capability => _cap;
 
   Future<GreeterGreetResultsReader> greet(void Function(GreeterGreetParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xd41d8cd98f00b204, 0, (anyPtr) => build(anyPtr.initStruct(greeterGreetParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xd41d8cd98f00b204, 0, (anyPtr) => build(anyPtr.initStruct(greeterGreetParamsFactory)));
     return result.payload.getTyped(greeterGreetResultsFactory, capabilities: result.caps);
   }
 
   Future<GreeterNewSessionResult> newSession(void Function(GreeterNewSessionParamsBuilder) build) async {
-    final result = await _cap.dispatchBuilding(0xd41d8cd98f00b204, 1, (anyPtr) => build(anyPtr.initStruct(greeterNewSessionParamsFactory)));
+    final result = await _cap.dispatchWithParamsBuilder(0xd41d8cd98f00b204, 1, (anyPtr) => build(anyPtr.initStruct(greeterNewSessionParamsFactory)));
     return GreeterNewSessionResult._(result);
   }
 
   GreeterNewSessionPipeline newSessionPipeline(void Function(GreeterNewSessionParamsBuilder) build) {
     final mb = MessageBuilder();
     build(mb.initRoot(greeterNewSessionParamsFactory));
-    return GreeterNewSessionPipeline._(_cap.beginDispatch(0xd41d8cd98f00b204, 1, RpcPayload.fromBytes(mb.serialize())));
+    return GreeterNewSessionPipeline._(_cap.dispatchForPipelining(0xd41d8cd98f00b204, 1, RpcPayload.fromBytes(mb.serialize())));
   }
 
   @override
@@ -465,14 +465,14 @@ class GreeterClientFactory extends CapabilityFactory<GreeterClient> {
 abstract class GreeterServer extends Capability {
 
   Future<DispatchResult> greet(GreeterGreetParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> greetWithContext(GreeterGreetParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> greetWithContext(GreeterGreetParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       greet(params, paramsCapabilities);
 
   DispatchResult buildGreetResults(void Function(GreeterGreetResultsBuilder) build, {List<Capability> caps = const []}) =>
       buildDispatchResult(greeterGreetResultsFactory, build, caps: caps);
 
   Future<DispatchResult> newSession(GreeterNewSessionParamsReader params, List<Capability> paramsCapabilities);
-  Future<DispatchResult> newSessionWithContext(GreeterNewSessionParamsReader params, List<Capability> paramsCapabilities, DispatchContext context) =>
+  Future<DispatchResult> newSessionWithContext(GreeterNewSessionParamsReader params, List<Capability> paramsCapabilities, DispatchCancellationContext context) =>
       newSession(params, paramsCapabilities);
 
   DispatchResult buildNewSessionResults(void Function(GreeterNewSessionResultsBuilder) build, {List<Capability> caps = const []}) =>
@@ -491,9 +491,9 @@ abstract class GreeterServer extends Capability {
   @override
   Future<DispatchResult> dispatchWithContext(int interfaceId, int methodId, RpcPayload params, {
     List<Capability> paramsCapabilities = const [],
-    DispatchContext? context,
+    DispatchCancellationContext? context,
   }) async {
-    final dispatchContext = context ?? DispatchContext.neverCanceled;
+    final dispatchContext = context ?? DispatchCancellationContext.neverCanceled;
     switch (interfaceId) {
       case 0xd41d8cd98f00b204:
         switch (methodId) {

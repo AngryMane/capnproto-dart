@@ -29,7 +29,7 @@ final class ImportedCapabilityTarget extends OutgoingCallTarget {
 /// Targets a pending question's result (wire-level promise pipelining).
 /// [transformPath] is the full getPointerField hop sequence into the parent
 /// answer — not just a single index, so a capability nested more than one
-/// struct deep is expressible (see `RpcCapDescriptor`'s path field).
+/// struct deep is expressible (see `RpcCapabilityDescriptor`'s path field).
 final class PromisedAnswerTarget extends OutgoingCallTarget {
   final int questionId;
   final List<int> transformPath;
@@ -50,7 +50,7 @@ final class SerializedParams extends OutgoingParams {
 
 /// Zero-copy params: [build] writes directly into the outgoing Call's
 /// Payload.content instead of the caller pre-building a standalone message.
-/// See `Capability.dispatchBuilding`.
+/// See `Capability.dispatchWithParamsBuilder`.
 final class BuilderParams extends OutgoingParams {
   final void Function(AnyPointerBuilder) build;
   const BuilderParams(this.build);
@@ -61,8 +61,8 @@ final class BuilderParams extends OutgoingParams {
 /// sending asynchronously — so a pipelined call can target it right away
 /// (see [PromisedAnswerTarget]); [result] resolves once the matching Return
 /// arrives.
-final class StartedCall {
+final class StartedOutgoingCall {
   final int questionId;
   final Future<DispatchResult> result;
-  const StartedCall(this.questionId, this.result);
+  const StartedOutgoingCall(this.questionId, this.result);
 }

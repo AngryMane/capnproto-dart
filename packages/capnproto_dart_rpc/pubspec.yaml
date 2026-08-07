@@ -1,6 +1,6 @@
 name: capnproto_dart_rpc
 description: Cap'n Proto RPC (Level 1) support for Dart, built on capnproto_dart.
-version: 0.1.1
+version: 0.2.0
 repository: https://github.com/AngryMane/capnproto-dart
 issue_tracker: https://github.com/AngryMane/capnproto-dart/issues
 documentation: https://angrymane.github.io/capnproto-dart/

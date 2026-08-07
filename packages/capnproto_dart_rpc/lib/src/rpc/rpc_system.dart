@@ -35,11 +35,11 @@ class RpcSystem {
   /// operation, so this is the only way to observe it.
   ///
   /// [streamWindowSize] sets the flow-control window (in bytes) for
-  /// `-> stream` method calls — see [FlowController].
+  /// `-> stream` method calls — see [StreamingCallFlowController].
   static Future<RpcConnection> connect(
     Uri address, {
     void Function(Object error, StackTrace stackTrace)? onDisposeError,
-    int streamWindowSize = FlowController.defaultWindowSize,
+    int streamWindowSize = StreamingCallFlowController.defaultWindowSize,
   }) async {
     switch (address.scheme) {
       case 'tcp':
@@ -105,7 +105,7 @@ class RpcSystem {
     Uri address,
     Capability bootstrap, {
     void Function(Object error, StackTrace stackTrace)? onDisposeError,
-    int streamWindowSize = FlowController.defaultWindowSize,
+    int streamWindowSize = StreamingCallFlowController.defaultWindowSize,
     int? maxConnections = 1024,
     SecurityContext? securityContext,
   }) async {
@@ -166,7 +166,7 @@ class _RpcServeOptions {
 
   const _RpcServeOptions({
     this.onDisposeError,
-    this.streamWindowSize = FlowController.defaultWindowSize,
+    this.streamWindowSize = StreamingCallFlowController.defaultWindowSize,
     this.maxConnections = 1024,
     this.securityContext,
   });
@@ -255,7 +255,7 @@ class _BootstrapLease {
   /// at all: matching [RpcSystem.serve]'s own doc comment, which promises
   /// `bootstrap` is left exactly as passed in when it throws. Every step
   /// here can itself fail (an already-spent `bootstrap` makes
-  /// [vendCapabilityHandle] throw; the caller's own handle's `dispose()`
+  /// [acquireCapabilityLease] throw; the caller's own lease's `dispose()`
   /// could throw too) — [onFailure] is always given a chance to release
   /// whatever the caller managed to allocate before this call itself fails
   /// or a later step throws, taking the server-lifetime reference with it
@@ -265,30 +265,29 @@ class _BootstrapLease {
     Capability bootstrap,
     Future<void> Function() onFailure,
   ) async {
-    // [bootstrap] as given might itself already be a [vendCapabilityHandle]
-    // handle (that function is public API, so a caller could pass one in
-    // directly) rather than a bare capability — unwrap first, the same way
-    // TwoPartyRpcConnection.server itself does, so the vend below targets
-    // the true underlying identity. Vending against `bootstrap` as-is when
-    // it's itself a handle would create a second, disconnected refcount
-    // cycle keyed on that handle object rather than on the identity every
+    // [bootstrap] may itself already be a [CapabilityLease], because that type is
+    // public API and a caller may pass one directly instead of a bare capability — unwrap first, the same way
+    // TwoPartyRpcConnection.server itself does, so the lease below targets
+    // the true underlying identity. Leasing against `bootstrap` as-is when
+    // it is itself a lease would create a second, disconnected refcount
+    // cycle keyed on that lease object rather than on the identity every
     // connection's own export ends up sharing — leaving the server-lifetime
     // reference holding on to nothing that actually keeps the real
     // bootstrap identity alive.
-    final identity = unwrapVendedCapability(bootstrap);
+    final identity = unwrapCapabilityLease(bootstrap);
 
     // Every accepted connection is handed `identity` and (per
     // TwoPartyRpcConnection.server's ownership contract) disposes its own
     // reference to it on close — with connections coming and going over
     // the server's lifetime (not all simultaneously alive), the *last*
     // connection open at any given moment closing would otherwise drop the
-    // shared refcount (see vendCapabilityHandle) to zero and trigger real
+    // shared refcount (see acquireCapabilityLease) to zero and trigger real
     // disposal, even though the server itself is still accepting new
     // connections that will go on to reuse the same identity (and
-    // vendCapabilityHandle deliberately refuses to vend a fresh handle for
-    // an identity whose disposal has already been triggered — see its own
+    // acquireCapabilityLease deliberately refuses to acquire a fresh
+    // lease for an identity whose disposal has already been triggered — see its own
     // doc comment — so that reuse would fail loudly instead of silently
-    // handing a later connection a handle to an already-torn-down object).
+    // returning a later connection a lease to an already-torn-down object).
     // Holding this server-lifetime reference for as long as `serve()`'s own
     // returned RpcServer is open keeps the shared refcount above zero
     // throughout, so no individual connection closing can ever trigger
@@ -297,16 +296,16 @@ class _BootstrapLease {
     // connection's own reference has also been released.
     final CapabilityLease serverRef;
     try {
-      serverRef = vendCapabilityHandle(identity);
+      serverRef = acquireCapabilityLease(identity);
     } catch (_) {
       await onFailure();
       rethrow;
     }
-    // Released *after* vending the reference above, never before, so the
+    // Released *after* acquiring the reference above, never before, so the
     // shared refcount never has a window where it could pass through zero
     // during this handoff.
     if (!identical(bootstrap, identity)) {
-      // The caller passed an already-vended handle rather than a bare
+      // The caller passed an existing [CapabilityLease] rather than a bare
       // capability — serverRef above now holds an equivalent reference to
       // the same identity, so this one is redundant and must be released,
       // or its share of identity's refcount would never be balanced.
