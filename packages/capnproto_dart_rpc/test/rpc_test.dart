@@ -1383,30 +1383,6 @@ Future<void> _waitUntil(
   }
 }
 
-/// Asserts that [future] has not completed (successfully or with an error)
-/// within [duration].
-///
-/// There's no positive state to poll for here — proving an *absence* of
-/// completion is inherently a bounded real-time wait, not something a
-/// polling helper like [_waitUntil] can express. Named and centralized
-/// specifically so a flaky failure here reads as "the wait was too short
-/// for this environment", not "this test is nondeterministic by design".
-Future<void> _expectStillPending(
-  Future<void> future, {
-  Duration duration = const Duration(milliseconds: 100),
-}) async {
-  var completed = false;
-  future
-      .then((_) => completed = true, onError: (_) => completed = true)
-      .ignore();
-  await Future<void>.delayed(duration);
-  expect(
-    completed,
-    isFalse,
-    reason: 'expected this to still be pending after $duration',
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -5962,10 +5938,9 @@ void main() {
       },
     );
 
-    test("known bug (#100): connection torn down while waiting on a "
+    test("connection torn down while waiting on a "
         "senderPromise's Resolve -- the pending pipelined call fails "
-        'instead of hanging, but the promise\'s own disposal is left '
-        'permanently pending', () async {
+        "without hanging", () async {
       final clientToServer = StreamController<Uint8List>();
       final serverToClient = StreamController<Uint8List>();
       final server = PromisedReturnServer();
@@ -6006,22 +5981,7 @@ void main() {
       expect(client.debugImportCount, equals(0));
       expect(client.debugBrokenImportCount, equals(0));
 
-      // Known bug, tracked as https://github.com/AngryMane/capnproto-dart/issues/100
-      // -- characterized here, not fixed: server.completer is never
-      // completed, so DeferredCapability.dispose() -- awaited by the
-      // export's CapabilityLease.dispose(), triggered fire-and-forget by
-      // ExportTable.tearDown() when serverConn tore down above -- awaits
-      // that never-settling Future first and never actually finishes. The
-      // table's own bookkeeping already looks clean, but the real disposal
-      // is permanently pending. If application code ever awaits disposing
-      // this same capability again (this call is safe only because
-      // dispose() is idempotent/cached, so it just *observes* the
-      // already-triggered disposal rather than starting a new one), that
-      // code hangs too -- see the linked issue.
-      await _expectStillPending(
-        server.promised.dispose(),
-        duration: const Duration(milliseconds: 200),
-      );
+      await server.promised.dispose().timeout(const Duration(seconds: 1));
     });
 
     test('server sends Resolve(exception) when senderPromise fails', () async {

@@ -11,9 +11,10 @@ class _DeferredDispatchHandle implements DispatchHandle {
   );
 
   @override
-  Capability pipelinedCapabilityFromResultPath(List<int> path) => DeferredCapability(
-    result.then((r) => requireCapabilityFromResultPath(r, path)),
-  );
+  Capability pipelinedCapabilityFromResultPath(List<int> path) =>
+      DeferredCapability(
+        result.then((r) => requireCapabilityFromResultPath(r, path)),
+      );
 }
 
 /// A capability backed by a [Future] that resolves to the real capability.
@@ -24,7 +25,8 @@ class _DeferredDispatchHandle implements DispatchHandle {
 class DeferredCapability extends Capability {
   final Future<Capability> _future;
   bool _disposed = false;
-  Future<void>? _disposeFuture;
+  Completer<void>? _disposeCompleter;
+  Future<void>? _cleanupFuture;
 
   /// Creates a capability that defers to whatever [future] resolves to.
   DeferredCapability(Future<Capability> future) : _future = future {
@@ -135,26 +137,45 @@ class DeferredCapability extends Capability {
   }
 
   @override
-  Future<void> dispose() async {
-    if (_disposed) return _disposeFuture ?? Future.value();
+  Future<void> dispose() {
+    final existing = _disposeCompleter;
+    if (existing != null) return existing.future;
     _disposed = true;
-    return _disposeFuture ??= () async {
-      final cap = await _future.catchError(
-        (_) => NullCapability() as Capability,
-      );
-      // Through acquireCapabilityLease, not `cap.dispose()` directly: the
-      // resolved capability this DeferredCapability holds the only
-      // *application*-visible reference to may still have an independent,
-      // uncoordinated reference of its own elsewhere — e.g. the RPC layer
-      // re-exporting it under a fresh export id once a senderPromise this
-      // wraps resolves (see `CapabilityProtocol`'s internal
-      // `_scheduleSenderPromiseResolve`), which is released separately and
-      // shares no bookkeeping with this object at all. Disposing `cap`
-      // directly would tear it down out from under that other reference
-      // instead of just releasing this one's own share.
-      await acquireCapabilityLease(cap).dispose();
-    }();
+    final completer = _disposeCompleter = Completer<void>();
+    _startCleanup().then(
+      (_) {
+        if (!completer.isCompleted) completer.complete();
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (!completer.isCompleted) completer.completeError(error, stackTrace);
+      },
+    );
+    return completer.future;
   }
+
+  /// Stops waiting for this capability promise as part of external teardown.
+  ///
+  /// The eventual resolved capability is still released if [resolution]
+  /// settles later, but current and future [dispose] calls complete
+  /// immediately. This is used when the owner of a wire-level senderPromise
+  /// has disconnected, so waiting for a promise that may depend on that
+  /// connection can no longer make progress.
+  void abandon() {
+    _disposed = true;
+    final completer = _disposeCompleter ??= Completer<void>();
+    _startCleanup().ignore();
+    if (!completer.isCompleted) completer.complete();
+  }
+
+  Future<void> _startCleanup() =>
+      _cleanupFuture ??= () async {
+        final cap = await _future.catchError(
+          (_) => NullCapability() as Capability,
+        );
+        // Use a lease so independent references remain valid while this one is
+        // released if the abandoned promise eventually resolves.
+        await acquireCapabilityLease(cap).dispose();
+      }();
 }
 
 /// A no-op capability used as a placeholder.

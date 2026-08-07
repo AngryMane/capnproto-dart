@@ -5,7 +5,7 @@ import 'package:capnproto_dart/capnproto_dart.dart';
 import 'package:meta/meta.dart';
 
 import '../capability/capability.dart'
-    show Capability, DispatchCancellationController, unwrapCapabilityLease;
+    show Capability, CapabilityLease, DispatchCancellationController, unwrapCapabilityLease;
 import '../capability/capability_factory.dart';
 import 'calls/answer_table.dart';
 import 'calls/incoming_call_coordinator.dart';
@@ -195,6 +195,9 @@ class TwoPartyRpcConnection implements RpcConnection {
     questions: _questionTable,
     sendBytes: _sendRaw,
     disposeIgnoringErrors: _disposeIgnoringErrors,
+    disposePipelinedTargetIgnoringErrors: _disposeIgnoringErrors,
+    disposeLeaseForConnectionTeardown:
+        _disposeExportLeaseForConnectionTeardown,
     isClosed: () => _closedError != null,
     tearDownConnection: (error) => _tearDown(error),
     tryExtractCapabilityReference:
@@ -534,6 +537,13 @@ class TwoPartyRpcConnection implements RpcConnection {
     Future<void>.sync(capability.dispose).catchError(_reportDisposeError);
   }
 
+  /// Releases an export-owned lease during connection teardown without
+  /// invalidating other leases for the same capability identity.
+  void _disposeExportLeaseForConnectionTeardown(CapabilityLease lease) {
+    Future<void>.sync(lease.disposeForConnectionTeardown)
+        .catchError(_reportDisposeError);
+  }
+
   /// Reports a dispose failure via [_onDisposeError], if one was supplied.
   /// Guards against the callback itself throwing, which would otherwise
   /// surface as an unhandled error on this future's cleanup zone instead of
@@ -613,7 +623,7 @@ class TwoPartyRpcConnection implements RpcConnection {
 
     // Dispose all exported capabilities (each export's own owned
     // reference — see ExportTable's own doc comment).
-    _exportTable.tearDown(_disposeIgnoringErrors);
+    _exportTable.tearDown(_disposeExportLeaseForConnectionTeardown);
     _importTable.tearDown();
     _embargoTable.tearDown(err);
 

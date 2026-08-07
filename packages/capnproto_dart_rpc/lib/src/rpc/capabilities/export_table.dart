@@ -184,7 +184,7 @@ class ExportTable {
 
   /// Disposes every export's own reference to its underlying capability and
   /// clears the table — called once when the owning connection tears down.
-  void tearDown(void Function(Capability) disposeIgnoringErrors) {
+  void tearDown(void Function(CapabilityLease) disposeIgnoringErrors) {
     for (final entry in _exports.values) {
       disposeIgnoringErrors(entry.ownedReference);
     }
