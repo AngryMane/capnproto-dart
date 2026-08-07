@@ -714,7 +714,7 @@ class _TwoPartyRpcCapabilityDelegate implements RpcCapabilityDelegate {
       _conn._capabilityProtocol.releaseImport(importId);
 
   @override
-  StartedCall startOutgoingCall({
+  StartedOutgoingCall startOutgoingCall({
     required OutgoingCallTarget target,
     required OutgoingParams params,
     required int interfaceId,

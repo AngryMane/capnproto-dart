@@ -30,8 +30,8 @@ abstract interface class RpcCapabilityDelegate {
 
   /// Starts a call against [target] with [params]. Returns the question ID
   /// immediately (for pipelining) alongside the eventual result — see
-  /// [StartedCall].
-  StartedCall startOutgoingCall({
+  /// [StartedOutgoingCall].
+  StartedOutgoingCall startOutgoingCall({
     required OutgoingCallTarget target,
     required OutgoingParams params,
     required int interfaceId,

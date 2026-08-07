@@ -64,7 +64,7 @@ class FakeRpcCapabilityDelegate implements RpcCapabilityDelegate {
   }
 
   @override
-  StartedCall startOutgoingCall({
+  StartedOutgoingCall startOutgoingCall({
     required OutgoingCallTarget target,
     required OutgoingParams params,
     required int interfaceId,
@@ -79,7 +79,7 @@ class FakeRpcCapabilityDelegate implements RpcCapabilityDelegate {
       paramsCapabilities: paramsCapabilities,
     );
     startCallInvocations.add(invocation);
-    return StartedCall(_nextQid++, Future.value(resultFor(invocation)));
+    return StartedOutgoingCall(_nextQid++, Future.value(resultFor(invocation)));
   }
 
   @override

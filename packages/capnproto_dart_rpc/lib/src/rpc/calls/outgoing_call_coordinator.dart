@@ -347,11 +347,11 @@ final class OutgoingCallCoordinator {
 
   /// Starts an outgoing Call against [target] with [params]. Allocates a
   /// question ID immediately (available synchronously for pipelining, via
-  /// [StartedCall.questionId]), then builds and sends the Call message —
+  /// [StartedOutgoingCall.questionId]), then builds and sends the Call message —
   /// synchronously when possible, asynchronously otherwise — via
-  /// [startUsing]. [StartedCall.result] resolves once the matching Return
+  /// [startUsing]. [StartedOutgoingCall.result] resolves once the matching Return
   /// arrives.
-  StartedCall start({
+  StartedOutgoingCall start({
     required OutgoingCallTarget target,
     required OutgoingParams params,
     required int interfaceId,
@@ -384,7 +384,7 @@ final class OutgoingCallCoordinator {
       paramsCapabilities: paramsCapabilities,
     );
 
-    return StartedCall(
+    return StartedOutgoingCall(
       question.id,
       _awaitAndProcessReturn(question.id, question.returnCompleter!),
     );

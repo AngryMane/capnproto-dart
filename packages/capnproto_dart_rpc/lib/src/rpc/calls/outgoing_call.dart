@@ -61,8 +61,8 @@ final class BuilderParams extends OutgoingParams {
 /// sending asynchronously — so a pipelined call can target it right away
 /// (see [PromisedAnswerTarget]); [result] resolves once the matching Return
 /// arrives.
-final class StartedCall {
+final class StartedOutgoingCall {
   final int questionId;
   final Future<DispatchResult> result;
-  const StartedCall(this.questionId, this.result);
+  const StartedOutgoingCall(this.questionId, this.result);
 }
