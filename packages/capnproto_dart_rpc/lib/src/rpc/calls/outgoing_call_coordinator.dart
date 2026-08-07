@@ -450,7 +450,7 @@ final class OutgoingCallCoordinator {
       // it unprompted — treating it as an empty success would silently hand
       // the caller a bogus empty-struct result instead of the real one.
       throw RpcException(
-        'unsupported Return variant: ${describeReturnDisc(ret.returnDisc)}',
+        'unsupported Return variant: ${describeReturnVariant(ret.returnDisc)}',
       );
     }
 

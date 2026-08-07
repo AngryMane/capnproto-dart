@@ -1657,7 +1657,7 @@ void main() {
       expect(msg.isReturnResults, isFalse);
       expect(msg.isReturnException, isFalse);
       expect(msg.isReturnTakeFromOtherQuestion, isFalse);
-      expect(describeReturnDisc(msg.returnDisc), 'resultsSentElsewhere');
+      expect(describeReturnVariant(msg.returnDisc), 'resultsSentElsewhere');
     });
   });
 
@@ -1771,7 +1771,7 @@ void main() {
               .toList();
       expect(clientReturns.length, 1);
       expect(
-        describeReturnDisc(clientReturns.single.returnDisc),
+        describeReturnVariant(clientReturns.single.returnDisc),
         'resultsSentElsewhere',
       );
 
@@ -1828,7 +1828,7 @@ void main() {
           captured.where((m) => m.type == RpcMessageType.return_).toList();
       expect(returns.length, 1);
       expect(
-        describeReturnDisc(returns.single.returnDisc),
+        describeReturnVariant(returns.single.returnDisc),
         'resultsSentElsewhere',
       );
       expect(returns.single.resultsContent, isNull);
@@ -7083,7 +7083,7 @@ void main() {
         );
 
         serverToClient.add(
-          buildReturnOtherMessage(answerId: callMsg.questionId, disc: disc),
+          buildRawReturnVariantMessage(answerId: callMsg.questionId, disc: disc),
         );
 
         await expectLater(

@@ -129,7 +129,7 @@ const int _retAcceptFromThirdParty = 5;
 /// (e.g. a future peer-side enumerant this vat doesn't know about yet) fall
 /// back to [ErrorKind.failed] rather than throwing — matches this file's
 /// existing "never crash on a value from an untrusted peer" pattern (see
-/// [describeReturnDisc]'s `unknown($disc)` fallback).
+/// [describeReturnVariant]'s `unknown($disc)` fallback).
 ErrorKind _errorKindFromWire(int wireType) =>
     wireType >= 0 && wireType < ErrorKind.values.length
         ? ErrorKind.values[wireType]
@@ -137,7 +137,7 @@ ErrorKind _errorKindFromWire(int wireType) =>
 
 /// Human-readable name for a [RpcMessage.returnDisc] value, for diagnostics
 /// when a peer sends a `Return` variant this vat doesn't implement.
-String describeReturnDisc(int disc) => switch (disc) {
+String describeReturnVariant(int disc) => switch (disc) {
   _retResults => 'results',
   _retException => 'exception',
   _retCanceled => 'canceled',
@@ -201,8 +201,8 @@ const int _capDescReceiverAnswer = 4;
 // StructReader / StructBuilder subclasses (internal, rpc_message_codec only)
 // ---------------------------------------------------------------------------
 
-class _MsgReader extends StructReader {
-  _MsgReader(super.raw);
+class _RpcMessageReader extends StructReader {
+  _RpcMessageReader(super.raw);
   int get disc => getUint16Field(_msgDiscOff);
   _BootstrapReader? get asBootstrap =>
       getStructFieldWith(0, _BootstrapReader.new);
@@ -216,8 +216,8 @@ class _MsgReader extends StructReader {
   _ExceptionReader? get asAbort => getStructFieldWith(0, _ExceptionReader.new);
 }
 
-class _MsgBuilder extends StructBuilder {
-  _MsgBuilder(super.raw);
+class _RpcMessageBuilder extends StructBuilder {
+  _RpcMessageBuilder(super.raw);
   @override
   StructReader asReader() => throw UnsupportedError('internal');
   void setDisc(int v) => setUint16Field(_msgDiscOff, v);
@@ -539,18 +539,19 @@ class _ExceptionBuilder extends StructBuilder {
 // Factories
 // ---------------------------------------------------------------------------
 
-final class _MsgFactory extends StructFactory<_MsgReader, _MsgBuilder> {
+final class _RpcMessageFactory
+    extends StructFactory<_RpcMessageReader, _RpcMessageBuilder> {
   @override
   int get dataWords => 1;
   @override
   int get ptrWords => 1;
   @override
-  _MsgReader fromRawReader(RawStructReader r) => _MsgReader(r);
+  _RpcMessageReader fromRawReader(RawStructReader r) => _RpcMessageReader(r);
   @override
-  _MsgBuilder fromRawBuilder(RawStructBuilder r) => _MsgBuilder(r);
+  _RpcMessageBuilder fromRawBuilder(RawStructBuilder r) => _RpcMessageBuilder(r);
 }
 
-final _msgFactory = _MsgFactory();
+final _rpcMessageFactory = _RpcMessageFactory();
 
 // ---------------------------------------------------------------------------
 // Parsed message type
@@ -745,7 +746,7 @@ Uint8List buildBootstrapMessage(int questionId) {
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgBootstrap);
   msg.initBootstrap().setQuestionId(questionId);
   return mb.serialize();
@@ -908,7 +909,7 @@ FutureOr<Uint8List> buildCallMessageWithParamsBuilderMaybeSync({
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgCall);
   final call = msg.initCall();
   call.setQuestionId(questionId);
@@ -971,7 +972,7 @@ Uint8List buildReturnResultsMessageFromReader({
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgReturn);
   final ret = msg.initReturn();
   ret.setAnswerId(answerId);
@@ -1012,13 +1013,16 @@ Uint8List buildReturnResultsWithCapsMessage({
 /// Serializes a `Return` message with a raw disc value and no payload —
 /// covers the variants this vat doesn't implement (canceled,
 /// resultsSentElsewhere, takeFromOtherQuestion, acceptFromThirdParty; see
-/// [describeReturnDisc]). Used to test how a vat reacts to receiving one of
-/// these from a peer, since this vat never sends them itself.
-Uint8List buildReturnOtherMessage({required int answerId, required int disc}) {
+/// [describeReturnVariant]). Used to test how a vat reacts to receiving
+/// one of these from a peer, since this vat never sends them itself.
+Uint8List buildRawReturnVariantMessage({
+  required int answerId,
+  required int disc,
+}) {
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgReturn);
   final ret = msg.initReturn();
   ret.setAnswerId(answerId);
@@ -1050,7 +1054,7 @@ Uint8List buildResolveCapMessage({
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgResolve);
   final resolve = msg.initResolve();
   resolve.setPromiseId(promiseId);
@@ -1071,7 +1075,7 @@ Uint8List buildResolveExceptionMessage({
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgResolve);
   final resolve = msg.initResolve();
   resolve.setPromiseId(promiseId);
@@ -1096,7 +1100,7 @@ Uint8List buildDisembargoMessage({
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgDisembargo);
   final disembargo = msg.initDisembargo();
   disembargo.setContext(contextDisc, contextId);
@@ -1120,7 +1124,7 @@ Uint8List buildBootstrapReturnMessage({
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgReturn);
   final ret = msg.initReturn();
   ret.setAnswerId(answerId);
@@ -1151,7 +1155,7 @@ Uint8List buildReturnExceptionMessage({
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgReturn);
   final ret = msg.initReturn();
   ret.setAnswerId(answerId);
@@ -1176,7 +1180,7 @@ Uint8List buildReturnTakeFromOtherQuestionMessage({
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgReturn);
   final ret = msg.initReturn();
   ret.setAnswerId(answerId);
@@ -1194,7 +1198,7 @@ Uint8List buildReturnResultsSentElsewhereMessage({required int answerId}) {
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgReturn);
   final ret = msg.initReturn();
   ret.setAnswerId(answerId);
@@ -1207,7 +1211,7 @@ Uint8List buildFinishMessage(int questionId, {bool releaseResultCaps = true}) {
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgFinish);
   final finish = msg.initFinish();
   finish.setQuestionId(questionId);
@@ -1220,7 +1224,7 @@ Uint8List buildReleaseMessage(int id, int referenceCount) {
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgRelease);
   final rel = msg.initRelease();
   rel.setId(id);
@@ -1237,7 +1241,7 @@ Uint8List buildUnimplementedMessage(Uint8List originalMessageBytes) {
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgUnimplemented);
   msg.setUnimplementedPayload(originalMessageBytes);
   return mb.serialize();
@@ -1251,7 +1255,7 @@ Uint8List buildAbortMessage(
   final mb = MessageBuilder(
     initialCapacityWords: _initialEnvelopeCapacityWords,
   );
-  final msg = mb.initRoot(_msgFactory);
+  final msg = mb.initRoot(_rpcMessageFactory);
   msg.setDisc(_msgAbort);
   final exc = msg.initAbort();
   exc.setType(kind.index);
@@ -1335,7 +1339,7 @@ RpcMessage parseRpcMessage(Uint8List bytes) =>
 
 /// Parses an RPC message from an already-deserialized [MessageReader].
 RpcMessage parseRpcMessageFromReader(MessageReader mr) {
-  final msg = mr.getRoot(_msgFactory);
+  final msg = mr.getRoot(_rpcMessageFactory);
 
   switch (msg.disc) {
     case _msgBootstrap:
