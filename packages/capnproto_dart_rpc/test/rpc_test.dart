@@ -4,9 +4,24 @@ import 'dart:typed_data';
 import 'package:capnproto_dart_rpc/capnproto_dart_rpc.dart';
 import 'package:capnproto_dart_rpc/src/capability/capability.dart';
 import 'package:capnproto_dart_rpc/src/rpc/capabilities/rpc_capability.dart';
+import 'package:capnproto_dart_rpc/src/rpc/capabilities/wire_capability_reference.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_message_codec.dart';
 import 'package:capnproto_dart_rpc/src/rpc/two_party_connection.dart';
 import 'package:test/test.dart';
+
+/// Extracts the export id from a senderHosted/senderPromise
+/// [WireCapabilityReference] — a test-only helper for assertions against a
+/// decoded message's `capabilityTableReferences`, wherever the test already
+/// knows (from how it built the corresponding outgoing message) that the
+/// entry in question is one of those two variants.
+int _exportIdOf(WireCapabilityReference reference) => switch (reference) {
+  SenderHostedCapabilityReference(:final exportId) => exportId,
+  SenderPromiseCapabilityReference(:final exportId) => exportId,
+  _ =>
+    throw StateError(
+      'expected a senderHosted/senderPromise reference, got $reference',
+    ),
+};
 
 class _SynchronousThrowingSink implements StreamSink<Uint8List> {
   final Completer<void> _done = Completer<void>();
@@ -1461,7 +1476,14 @@ void main() {
           ],
         );
         final msg = parseRpcMessage(bytes);
-        expect(msg.capTableDescriptors.single.path, [0, 2, 1]);
+        expect(
+          msg.capabilityTableReferences.single,
+          isA<ReceiverAnswerCapabilityReference>().having(
+            (r) => r.transformPath,
+            'transformPath',
+            equals([0, 2, 1]),
+          ),
+        );
       },
     );
   });
@@ -2187,7 +2209,9 @@ void main() {
             final parentCalls =
                 calls.where((m) => m.methodId == _pipelineMethodId).toList();
             final capCalls =
-                calls.where((m) => m.capTableDescriptors.isNotEmpty).toList();
+                calls
+                    .where((m) => m.capabilityTableReferences.isNotEmpty)
+                    .toList();
             if (parentCalls.isNotEmpty && capCalls.isNotEmpty) {
               return (parentCalls.single, capCalls.single);
             }
@@ -2196,12 +2220,11 @@ void main() {
           throw TestFailure('no Call with capTable captured');
         }();
 
-        expect(callWithCap.capTableDescriptors.single.disc, 4);
-        expect(
-          callWithCap.capTableDescriptors.single.questionId,
-          parentCall.questionId,
-        );
-        expect(callWithCap.capTableDescriptors.single.path, [0]);
+        final capReference = callWithCap.capabilityTableReferences.single;
+        expect(capReference, isA<ReceiverAnswerCapabilityReference>());
+        capReference as ReceiverAnswerCapabilityReference;
+        expect(capReference.questionId, parentCall.questionId);
+        expect(capReference.transformPath, [0]);
 
         completeParent.complete();
         await parent.result;
@@ -2890,10 +2913,10 @@ void main() {
                       .where(
                         (m) =>
                             m.type == RpcMessageType.call &&
-                            m.capTableDescriptors.isNotEmpty,
+                            m.capabilityTableReferences.isNotEmpty,
                       )
                       .single;
-              final exportId = callWithCap.capTableDescriptors.single.id;
+              final exportId = _exportIdOf(callWithCap.capabilityTableReferences.single);
 
               serverToClient.add(buildReleaseMessage(exportId, 1));
               await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -2959,10 +2982,10 @@ void main() {
                     .where(
                       (m) =>
                           m.type == RpcMessageType.call &&
-                          m.capTableDescriptors.isNotEmpty,
+                          m.capabilityTableReferences.isNotEmpty,
                     )
                     .single;
-            final exportId = callWithCap.capTableDescriptors.single.id;
+            final exportId = _exportIdOf(callWithCap.capabilityTableReferences.single);
 
             serverToClient.add(buildReleaseMessage(exportId, 1));
             await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -3145,10 +3168,10 @@ void main() {
               .where(
                 (m) =>
                     m.type == RpcMessageType.call &&
-                    m.capTableDescriptors.isNotEmpty,
+                    m.capabilityTableReferences.isNotEmpty,
               )
               .single;
-      final exportId = callWithCap.capTableDescriptors.single.id;
+      final exportId = _exportIdOf(callWithCap.capabilityTableReferences.single);
 
       // Peer claims to release 2 references when only 1 was ever granted.
       serverToClient.add(buildReleaseMessage(exportId, 2));
@@ -3209,10 +3232,10 @@ void main() {
               .where(
                 (m) =>
                     m.type == RpcMessageType.call &&
-                    m.capTableDescriptors.isNotEmpty,
+                    m.capabilityTableReferences.isNotEmpty,
               )
               .single;
-      final exportId = callWithCap.capTableDescriptors.single.id;
+      final exportId = _exportIdOf(callWithCap.capabilityTableReferences.single);
 
       // Releasing zero references is meaningless — a legitimate peer
       // never sends one — and must not be silently accepted as a no-op.
@@ -3782,8 +3805,8 @@ void main() {
           outgoingCaptured
               .where((m) => m.type == RpcMessageType.return_ && m.answerId == 1)
               .single;
-      expect(return1.capTableDescriptors, hasLength(1));
-      final exportId = return1.capTableDescriptors.single.id;
+      expect(return1.capabilityTableReferences, hasLength(1));
+      final exportId = _exportIdOf(return1.capabilityTableReferences.single);
       // Export 0 is the bootstrap (FixedCapServer); export [exportId] is target.
       expect(serverConn.debugExportCount, equals(2));
       expect(target.disposeCount, equals(0));
@@ -3809,7 +3832,10 @@ void main() {
               .where((m) => m.type == RpcMessageType.return_ && m.answerId == 2)
               .single;
       // Same capability -> the existing export id is reused, not a new one.
-      expect(return2.capTableDescriptors.single.id, equals(exportId));
+      expect(
+        _exportIdOf(return2.capabilityTableReferences.single),
+        equals(exportId),
+      );
       expect(serverConn.debugExportCount, equals(2));
 
       incoming.add(buildFinishMessage(2, releaseResultCaps: false));
@@ -4545,11 +4571,18 @@ void main() {
 
   group('rpc_message_codec — RPC-003 receiverHosted encoding', () {
     test('preserves an unsupported thirdPartyHosted descriptor', () {
-      final descriptor =
+      final reference =
           parseRpcMessage(
             _callWithCapDescriptorDisc(5),
-          ).capTableDescriptors.single;
-      expect(descriptor.disc, 5);
+          ).capabilityTableReferences.single;
+      expect(
+        reference,
+        isA<UnsupportedCapabilityReference>().having(
+          (r) => r.discriminant,
+          'discriminant',
+          5,
+        ),
+      );
     });
 
     test('buildCallMessage with receiverHosted entry encodes disc=3', () {
@@ -4605,10 +4638,13 @@ void main() {
         ],
       );
       final msg = parseRpcMessage(bytes);
-      expect(msg.capTableDescriptors, hasLength(1));
-      expect(msg.capTableDescriptors[0].disc, equals(4));
-      expect(msg.capTableDescriptors[0].questionId, equals(9));
-      expect(msg.capTableDescriptors[0].path, equals([2]));
+      expect(msg.capabilityTableReferences, hasLength(1));
+      expect(
+        msg.capabilityTableReferences[0],
+        isA<ReceiverAnswerCapabilityReference>()
+            .having((r) => r.questionId, 'questionId', equals(9))
+            .having((r) => r.transformPath, 'transformPath', equals([2])),
+      );
     });
   });
 
@@ -5658,7 +5694,7 @@ void main() {
                   .having(
                     (cause) => cause.message,
                     'message',
-                    contains('descriptor (disc=5)'),
+                    contains('reference (disc=5)'),
                   ),
             ),
           ),
@@ -5814,9 +5850,12 @@ void main() {
           RpcMessageType.return_,
         );
         expect(ret.isReturnResults, isTrue);
-        expect(ret.capTableDescriptors, hasLength(1));
-        expect(ret.capTableDescriptors.single.disc, 2);
-        final promiseId = ret.capTableDescriptors.single.id;
+        expect(ret.capabilityTableReferences, hasLength(1));
+        expect(
+          ret.capabilityTableReferences.single,
+          isA<SenderPromiseCapabilityReference>(),
+        );
+        final promiseId = _exportIdOf(ret.capabilityTableReferences.single);
 
         var pipelinedCompleted = false;
         pipelinedCall.then((_) => pipelinedCompleted = true).ignore();
@@ -5838,7 +5877,10 @@ void main() {
         );
         expect(resolve.promiseId, promiseId);
         expect(resolve.isResolveCap, isTrue);
-        expect(resolve.resolveCapDescriptor?.disc, 1);
+        expect(
+          resolve.resolutionCapabilityReference,
+          isA<SenderHostedCapabilityReference>(),
+        );
 
         await parent.result;
         await client.close();
@@ -5948,7 +5990,7 @@ void main() {
         serverCaptured,
         RpcMessageType.return_,
       );
-      final promiseId = ret.capTableDescriptors.single.id;
+      final promiseId = _exportIdOf(ret.capabilityTableReferences.single);
 
       server.completer.completeError(const RpcException('promise failed'));
       final resolve = await _waitForMessageType(

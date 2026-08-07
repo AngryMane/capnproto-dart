@@ -12,6 +12,8 @@ import 'dart:typed_data';
 
 import 'package:capnproto_dart/capnproto_dart.dart';
 
+import 'capabilities/wire_capability_reference.dart';
+
 // ---------------------------------------------------------------------------
 // Message discriminant values
 // ---------------------------------------------------------------------------
@@ -670,14 +672,20 @@ final class RpcMessage {
   // Raw (disc, id) descriptors from the return payload's capTable, in order.
   // disc: 0=none, 1=senderHosted, 2=senderPromise, 3=receiverHosted.
   final List<(int, int)> capTableEntries;
-  final List<RpcCapabilityDescriptor> capTableDescriptors;
+  // Semantic decode of the same capTable entries as [capTableEntries] — see
+  // WireCapabilityReference's own doc comment for why this is the
+  // representation code above the codec boundary should use instead of
+  // capTableEntries/a raw RpcCapabilityDescriptor.
+  final List<WireCapabilityReference> capabilityTableReferences;
 
   // resolve
   final int promiseId;
   final bool isResolveCap;
   final bool isResolveException;
   final (int, int)? resolveCap;
-  final RpcCapabilityDescriptor? resolveCapDescriptor;
+  // Semantic decode of [resolveCap] — see [capabilityTableReferences]'s doc
+  // comment.
+  final WireCapabilityReference? resolutionCapabilityReference;
 
   // disembargo
   final int disembargoContextDisc;
@@ -719,12 +727,12 @@ final class RpcMessage {
     this.exceptionKind = ErrorKind.failed,
     this.capTableExportIds = const [],
     this.capTableEntries = const [],
-    this.capTableDescriptors = const [],
+    this.capabilityTableReferences = const [],
     this.promiseId = 0,
     this.isResolveCap = false,
     this.isResolveException = false,
     this.resolveCap,
-    this.resolveCapDescriptor,
+    this.resolutionCapabilityReference,
     this.disembargoContextDisc = 0,
     this.disembargoContextId = 0,
     this.disembargoTargetImportId = 0,
@@ -1307,6 +1315,54 @@ RpcCapabilityDescriptor _readCapDescriptor(_CapDescriptorReader entry) {
   return _legacyEntryToCapDescriptor(entry.disc, entry.id);
 }
 
+/// Decodes [reader] into the semantic [WireCapabilityReference] the RPC
+/// implementation above the codec boundary uses — see that sealed class's
+/// own doc comment for why this is a distinct representation from
+/// [RpcCapabilityDescriptor]. Every discriminant this vat doesn't decode
+/// further (a future/Level 2+ variant, or one simply not implemented yet)
+/// becomes [UnsupportedCapabilityReference], preserving the raw
+/// discriminant instead of losing it to a generic "none".
+WireCapabilityReference _readCapabilityReference(_CapDescriptorReader reader) {
+  return switch (reader.disc) {
+    _capDescNone => const NoCapabilityReference(),
+    _capDescSenderHosted => SenderHostedCapabilityReference(reader.id),
+    _capDescSenderPromise => SenderPromiseCapabilityReference(reader.id),
+    _capDescReceiverHosted => ReceiverHostedCapabilityReference(reader.id),
+    _capDescReceiverAnswer => ReceiverAnswerCapabilityReference(
+      reader.receiverAnswer?.questionId ?? 0,
+      _readTransformPath(reader.receiverAnswer?.transform),
+    ),
+    final disc => UnsupportedCapabilityReference(disc),
+  };
+}
+
+/// Encodes [reference] into [builder] — the inverse of
+/// [_readCapabilityReference]. [UnsupportedCapabilityReference] can only
+/// ever result from decoding an incoming message (see that variant's own
+/// doc comment), so encoding one is a programming error, not a condition an
+/// outgoing message could legitimately hit.
+void _writeCapabilityReference(
+  _CapDescriptorBuilder builder,
+  WireCapabilityReference reference,
+) {
+  switch (reference) {
+    case NoCapabilityReference():
+      builder.setUint16Field(_capDescDisc, _capDescNone);
+    case SenderHostedCapabilityReference(:final exportId):
+      builder.setSenderHosted(exportId);
+    case SenderPromiseCapabilityReference(:final exportId):
+      builder.setSenderPromise(exportId);
+    case ReceiverHostedCapabilityReference(:final importId):
+      builder.setReceiverHosted(importId);
+    case ReceiverAnswerCapabilityReference(:final questionId, :final transformPath):
+      builder.setReceiverAnswer(questionId, transformPath);
+    case UnsupportedCapabilityReference(:final discriminant):
+      throw ArgumentError(
+        'unsupported capability reference cannot be encoded (disc=$discriminant)',
+      );
+  }
+}
+
 /// Collects every `getPointerField` index from [transform], in order,
 /// skipping `noop` entries (which per rpc.capnp's `PromisedAnswer.Op`
 /// contribute no hop) — the full multi-hop path a transform describes, not
@@ -1354,13 +1410,13 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
       final params = call?.params;
       final callCapTable = params?.capTable;
       final capTablePairs = <(int, int)>[];
-      final capTableDescriptors = <RpcCapabilityDescriptor>[];
+      final capabilityTableReferences = <WireCapabilityReference>[];
       if (callCapTable != null) {
         for (int i = 0; i < callCapTable.length; i++) {
           final entry = callCapTable[i];
           final descriptor = _readCapDescriptor(entry);
           capTablePairs.add(descriptor.legacyEntry);
-          capTableDescriptors.add(descriptor);
+          capabilityTableReferences.add(_readCapabilityReference(entry));
         }
       }
       final isPA = (target?.disc ?? 0) == _targetPromisedAnswer;
@@ -1382,7 +1438,7 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
         targetTransformPath: paPath,
         paramsContent: params?.content,
         paramsCapTable: capTablePairs,
-        capTableDescriptors: capTableDescriptors,
+        capabilityTableReferences: capabilityTableReferences,
         sendResultsToDisc: call?.sendResultsToDisc ?? 0,
       );
 
@@ -1394,13 +1450,13 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
         final capTable = payload?.capTable;
         final exportIds = <int>[];
         final capTablePairs = <(int, int)>[];
-        final capTableDescriptors = <RpcCapabilityDescriptor>[];
+        final capabilityTableReferences = <WireCapabilityReference>[];
         if (capTable != null) {
           for (int i = 0; i < capTable.length; i++) {
             final entry = capTable[i];
             final descriptor = _readCapDescriptor(entry);
             capTablePairs.add(descriptor.legacyEntry);
-            capTableDescriptors.add(descriptor);
+            capabilityTableReferences.add(_readCapabilityReference(entry));
             if (descriptor.disc == _capDescSenderHosted ||
                 descriptor.disc == _capDescSenderPromise) {
               exportIds.add(descriptor.id);
@@ -1417,7 +1473,7 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
           resultsContent: payload?.content,
           capTableExportIds: exportIds,
           capTableEntries: capTablePairs,
-          capTableDescriptors: capTableDescriptors,
+          capabilityTableReferences: capabilityTableReferences,
         );
       } else if (retDisc == _retException) {
         final exc = ret?.exception;
@@ -1472,7 +1528,8 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
         promiseId: resolve?.promiseId ?? 0,
         isResolveCap: true,
         resolveCap: descriptor?.legacyEntry,
-        resolveCapDescriptor: descriptor,
+        resolutionCapabilityReference:
+            cap == null ? null : _readCapabilityReference(cap),
       );
 
     case _msgFinish:

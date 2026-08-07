@@ -92,7 +92,7 @@ class _Harness {
       });
     },
     releaseParameterCapabilityExports: releasedExportIds.add,
-    acquireCapabilityFromDescriptor: (descriptor) => _NeverDisposedCapability(),
+    acquireCapabilityFromWireReference: (reference) => _NeverDisposedCapability(),
     resolveLocalAnswer:
         (qid) => Future.error(
           const RpcException('resolveLocalAnswer not stubbed for this test'),

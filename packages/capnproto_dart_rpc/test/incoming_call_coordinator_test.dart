@@ -10,6 +10,7 @@ import 'package:capnproto_dart_rpc/src/rpc/calls/outgoing_call.dart';
 import 'package:capnproto_dart_rpc/src/rpc/calls/question_table.dart';
 import 'package:capnproto_dart_rpc/src/rpc/capabilities/export_table.dart';
 import 'package:capnproto_dart_rpc/src/rpc/capabilities/rpc_capability_reference.dart';
+import 'package:capnproto_dart_rpc/src/rpc/capabilities/wire_capability_reference.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_exception.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_message_codec.dart';
 import 'package:test/test.dart';
@@ -120,9 +121,9 @@ class _Harness {
   tryExtractCapabilityReference = (cap) => null;
 
   /// Settable per test — defaults to a fresh [_FakeCapability] per
-  /// descriptor.
-  Capability Function(RpcCapabilityDescriptor descriptor) acquireCapabilityFromDescriptor =
-      (descriptor) => _FakeCapability();
+  /// reference.
+  Capability Function(WireCapabilityReference reference)
+  acquireCapabilityFromWireReference = (reference) => _FakeCapability();
 
   /// Settable per test — defaults to a `none` descriptor for every result
   /// capability.
@@ -154,8 +155,8 @@ class _Harness {
     isClosed: () => isClosed(),
     tearDownConnection: tearDownCalls.add,
     tryExtractCapabilityReference: (cap) => tryExtractCapabilityReference(cap),
-    acquireCapabilityFromDescriptor:
-        (descriptor) => acquireCapabilityFromDescriptor(descriptor),
+    acquireCapabilityFromWireReference:
+        (reference) => acquireCapabilityFromWireReference(reference),
     exportResultCapabilityAsDescriptor: (cap) => exportResultCapabilityAsDescriptor(cap),
     startCallWithAllocatedQuestion: ({
       required OutgoingQuestion question,
@@ -231,7 +232,14 @@ void main() {
       expect(h.sentBytes, hasLength(1));
       final sent = parseRpcMessage(h.sentBytes.single);
       expect(sent.type, equals(RpcMessageType.return_));
-      expect(sent.capTableDescriptors.single.id, equals(0));
+      expect(
+        sent.capabilityTableReferences.single,
+        isA<SenderHostedCapabilityReference>().having(
+          (r) => r.exportId,
+          'exportId',
+          equals(0),
+        ),
+      );
       expect(h.answerTable.isTracked(7), isTrue);
 
       // A pipelined call targeting {receiverAnswer: {questionId: 7, path: []}}
@@ -611,7 +619,7 @@ void main() {
       );
 
       var descriptorDecodeCount = 0;
-      h.acquireCapabilityFromDescriptor = (descriptor) {
+      h.acquireCapabilityFromWireReference = (reference) {
         descriptorDecodeCount++;
         return _FakeCapability();
       };

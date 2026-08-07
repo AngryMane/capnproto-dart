@@ -11,6 +11,7 @@ import 'embargo_table.dart';
 import 'export_table.dart';
 import 'import_table.dart';
 import 'rpc_capability_reference.dart';
+import 'wire_capability_reference.dart';
 
 /// Capability wire protocol: descriptor encode/decode, import/export
 /// bookkeeping glue, senderPromise resolution, Release, Resolve, and
@@ -409,17 +410,22 @@ final class CapabilityProtocol {
       return;
     }
 
-    final descriptor = msg.resolveCapDescriptor;
-    if (descriptor == null) return;
+    final reference = msg.resolutionCapabilityReference;
+    if (reference == null) return;
     if (!importTable.isTracked(msg.promiseId)) {
-      if (descriptor.disc == 1 || descriptor.disc == 2) {
-        sendBytes(buildReleaseMessage(descriptor.id, 1));
+      final exportId = switch (reference) {
+        SenderHostedCapabilityReference(:final exportId) => exportId,
+        SenderPromiseCapabilityReference(:final exportId) => exportId,
+        _ => null,
+      };
+      if (exportId != null) {
+        sendBytes(buildReleaseMessage(exportId, 1));
       }
       return;
     }
 
     final state = importTable.getOrCreateState(msg.promiseId);
-    final replacement = acquireCapabilityFromDescriptor(descriptor);
+    final replacement = acquireCapabilityFromWireReference(reference);
     if (state.receivedCall && _isLocalCapability(replacement)) {
       final completer = Completer<void>();
       final embargoId = embargoTable.register(
@@ -593,24 +599,24 @@ final class CapabilityProtocol {
     return descriptor;
   }
 
-  /// Acquires the runtime [Capability] represented by [descriptor].
+  /// Acquires the runtime [Capability] represented by [reference].
   ///
-  /// Sender-hosted descriptors retain an import; receiver-hosted descriptors
+  /// Sender-hosted references retain an import; receiver-hosted references
   /// acquire a [CapabilityLease]. Other variants construct the corresponding
   /// local capability wrapper.
-  Capability acquireCapabilityFromDescriptor(
-    RpcCapabilityDescriptor descriptor,
+  Capability acquireCapabilityFromWireReference(
+    WireCapabilityReference reference,
   ) {
-    switch (descriptor.disc) {
-      case 0: // none
+    switch (reference) {
+      case NoCapabilityReference():
         return NullCapability();
-      case 1: // senderHosted
-        final state = importTable.retain(descriptor.id);
+      case SenderHostedCapabilityReference(:final exportId):
+        final state = importTable.retain(exportId);
         return importedCapabilityFromState(state);
-      case 2: // senderPromise
-        final state = importTable.retain(descriptor.id, isPromise: true);
+      case SenderPromiseCapabilityReference(:final exportId):
+        final state = importTable.retain(exportId, isPromise: true);
         return importedCapabilityFromState(state);
-      case 3: // receiverHosted: we (the receiver) export this cap
+      case ReceiverHostedCapabilityReference(:final importId):
         // A fresh acquireCapabilityLease, not the export's own identity/
         // ownedReference directly: this capability is handed to
         // application code (a call's paramsCapabilities, a Return's result
@@ -625,46 +631,51 @@ final class CapabilityProtocol {
         // object) must unwrap it first — see unwrapCapabilityLease's doc
         // comment; this is the same discipline every other decode path
         // (requireCapabilityFromResult et al.) already requires.
-        final capability = exportTable.getCapability(descriptor.id);
+        final capability = exportTable.getCapability(importId);
         if (capability == null) {
           // A well-behaved peer, honoring the protocol's causal ordering
           // guarantees, never references an export id we haven't actually
           // exported to it — this is a genuine protocol violation (a buggy
           // or malicious peer), not a legitimate race. Silently mapping it
           // to NullCapability would conflate it with a schema-level `none`
-          // descriptor (disc 0), losing that distinction and changing the
-          // meaning of an otherwise valid call.
-          throw RpcException(
-            'unknown receiverHosted export id: ${descriptor.id}',
-          );
+          // reference, losing that distinction and changing the meaning of
+          // an otherwise valid call.
+          throw RpcException('unknown receiverHosted export id: $importId');
         }
         return acquireCapabilityLease(capability);
-      case 4: // receiverAnswer: capability in one of our outstanding answers
+      case ReceiverAnswerCapabilityReference(
+        :final questionId,
+        :final transformPath,
+      ):
         return receiverAnswerCapability(
-          descriptor.questionId,
+          questionId,
           // An empty/noop-only transform is normalized to a single hop at
           // pointer slot 0 (legitimate only for a Bootstrap answer's
           // capability, which has no wrapping struct to traverse).
-          descriptor.path.isEmpty ? const [0] : descriptor.path,
+          transformPath.isEmpty ? const [0] : transformPath,
         );
-      default:
+      case UnsupportedCapabilityReference(:final discriminant):
         throw RpcException(
-          'unsupported capability descriptor (disc=${descriptor.disc})',
+          'unsupported capability reference (disc=$discriminant)',
           kind: ErrorKind.unimplemented,
         );
     }
   }
 
-  /// Retains and returns the import ID represented by [descriptor].
+  /// Retains and returns the import ID represented by [reference].
   ///
-  /// Returns `null` without side effects when [descriptor] is not a
-  /// sender-hosted or sender-promise descriptor.
-  int? tryRetainImportIdFromCapabilityDescriptor(
-    RpcCapabilityDescriptor descriptor,
-  ) {
-    if (descriptor.disc != 1 && descriptor.disc != 2) return null;
-    importTable.retain(descriptor.id, isPromise: descriptor.disc == 2);
-    return descriptor.id;
+  /// Returns `null` without side effects when [reference] is not a
+  /// sender-hosted or sender-promise reference.
+  int? tryRetainImportIdFromWireReference(WireCapabilityReference reference) {
+    final (int, bool)? exportIdAndIsPromise = switch (reference) {
+      SenderHostedCapabilityReference(:final exportId) => (exportId, false),
+      SenderPromiseCapabilityReference(:final exportId) => (exportId, true),
+      _ => null,
+    };
+    if (exportIdAndIsPromise == null) return null;
+    final (exportId, isPromise) = exportIdAndIsPromise;
+    importTable.retain(exportId, isPromise: isPromise);
+    return exportId;
   }
 
   bool _isLocalCapability(Capability cap) =>

@@ -6,6 +6,7 @@ import 'package:capnproto_dart/capnproto_dart.dart';
 import '../../capability/capability.dart';
 import '../../capability/rpc_payload.dart';
 import '../capabilities/import_table.dart';
+import '../capabilities/wire_capability_reference.dart';
 import '../rpc_exception.dart';
 import '../rpc_message_codec.dart';
 import 'answer_table.dart';
@@ -86,8 +87,8 @@ final class OutgoingCallCoordinator {
   resolveParameterCapabilityDescriptors;
 
   final void Function(List<int> exportIds) releaseParameterCapabilityExports;
-  final Capability Function(RpcCapabilityDescriptor descriptor)
-  acquireCapabilityFromDescriptor;
+  final Capability Function(WireCapabilityReference reference)
+  acquireCapabilityFromWireReference;
   final Future<ResolvedAnswer> Function(int qid) resolveLocalAnswer;
 
   /// Invoked from [handleReturn], right after confirming a live completer
@@ -104,7 +105,7 @@ final class OutgoingCallCoordinator {
     required this.sendBytes,
     required this.resolveParameterCapabilityDescriptors,
     required this.releaseParameterCapabilityExports,
-    required this.acquireCapabilityFromDescriptor,
+    required this.acquireCapabilityFromWireReference,
     required this.resolveLocalAnswer,
     this.onReturn,
   });
@@ -456,8 +457,8 @@ final class OutgoingCallCoordinator {
 
     // Convert capTable entries into ImportedCapabilities.
     final caps = <Capability>[];
-    for (final descriptor in ret.capTableDescriptors) {
-      caps.add(acquireCapabilityFromDescriptor(descriptor));
+    for (final reference in ret.capabilityTableReferences) {
+      caps.add(acquireCapabilityFromWireReference(reference));
     }
 
     final resultsContent = ret.resultsContent;

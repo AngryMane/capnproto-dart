@@ -8,6 +8,7 @@ import 'package:capnproto_dart_rpc/src/rpc/capabilities/embargo_table.dart';
 import 'package:capnproto_dart_rpc/src/rpc/capabilities/export_table.dart';
 import 'package:capnproto_dart_rpc/src/rpc/capabilities/import_table.dart';
 import 'package:capnproto_dart_rpc/src/rpc/capabilities/rpc_capability_reference.dart';
+import 'package:capnproto_dart_rpc/src/rpc/capabilities/wire_capability_reference.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_exception.dart';
 import 'package:capnproto_dart_rpc/src/rpc/rpc_message_codec.dart';
 import 'package:test/test.dart';
@@ -212,46 +213,48 @@ void main() {
       expect(descriptors.single.id, equals(9));
     });
 
-    test('acquireCapabilityFromDescriptor routes none/senderHosted/senderPromise/'
+    test('acquireCapabilityFromWireReference routes none/senderHosted/senderPromise/'
         'receiverHosted to the right dependency', () {
       final h = _Harness();
 
       expect(
-        h.protocol.acquireCapabilityFromDescriptor(const RpcCapabilityDescriptor.none()),
+        h.protocol.acquireCapabilityFromWireReference(
+          const NoCapabilityReference(),
+        ),
         isA<NullCapability>(),
       );
 
-      h.protocol.acquireCapabilityFromDescriptor(
-        const RpcCapabilityDescriptor.senderHosted(5),
+      h.protocol.acquireCapabilityFromWireReference(
+        const SenderHostedCapabilityReference(5),
       );
       expect(h.importTable.isTracked(5), isTrue);
 
       final promiseState = h.importTable.getOrCreateState(
         6,
       ); // capture before retain, to check isPromise
-      h.protocol.acquireCapabilityFromDescriptor(
-        const RpcCapabilityDescriptor.senderPromise(6),
+      h.protocol.acquireCapabilityFromWireReference(
+        const SenderPromiseCapabilityReference(6),
       );
       expect(h.importTable.isTracked(6), isTrue);
       expect(promiseState.isPromise, isTrue);
 
       final exported = _FakeCapability();
       final exportId = h.exportTable.retainOrCreateExportId(exported);
-      final lease = h.protocol.acquireCapabilityFromDescriptor(
-        RpcCapabilityDescriptor.receiverHosted(exportId),
+      final lease = h.protocol.acquireCapabilityFromWireReference(
+        ReceiverHostedCapabilityReference(exportId),
       );
       expect(identical(unwrapCapabilityLease(lease), exported), isTrue);
     });
 
-    test('acquireCapabilityFromDescriptor delegates receiverAnswer construction to '
+    test('acquireCapabilityFromWireReference delegates receiverAnswer construction to '
         'receiverAnswerCapability, normalizing an empty path to [0]', () {
       final h = _Harness();
 
-      h.protocol.acquireCapabilityFromDescriptor(
-        RpcCapabilityDescriptor.receiverAnswer(7, const [1, 2]),
+      h.protocol.acquireCapabilityFromWireReference(
+        ReceiverAnswerCapabilityReference(7, const [1, 2]),
       );
-      h.protocol.acquireCapabilityFromDescriptor(
-        RpcCapabilityDescriptor.receiverAnswer(8, const []),
+      h.protocol.acquireCapabilityFromWireReference(
+        ReceiverAnswerCapabilityReference(8, const []),
       );
 
       // Compared component-wise, not via equals() on the whole record list:

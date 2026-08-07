@@ -8,6 +8,7 @@ import '../../capability/capability.dart';
 import '../../capability/rpc_payload.dart';
 import '../capabilities/export_table.dart';
 import '../capabilities/rpc_capability_reference.dart';
+import '../capabilities/wire_capability_reference.dart';
 import '../rpc_exception.dart';
 import '../rpc_message_codec.dart';
 import 'answer_table.dart';
@@ -114,8 +115,8 @@ final class IncomingCallCoordinator {
   final RpcCapabilityReference? Function(Capability cap)
   tryExtractCapabilityReference;
 
-  final Capability Function(RpcCapabilityDescriptor descriptor)
-  acquireCapabilityFromDescriptor;
+  final Capability Function(WireCapabilityReference reference)
+  acquireCapabilityFromWireReference;
   final RpcCapabilityDescriptor Function(Capability cap)
   exportResultCapabilityAsDescriptor;
 
@@ -173,7 +174,7 @@ final class IncomingCallCoordinator {
     required this.isClosed,
     required this.tearDownConnection,
     required this.tryExtractCapabilityReference,
-    required this.acquireCapabilityFromDescriptor,
+    required this.acquireCapabilityFromWireReference,
     required this.exportResultCapabilityAsDescriptor,
     required this.startCallWithAllocatedQuestion,
     required this.startParameterCapabilityDisposalTracking,
@@ -335,8 +336,8 @@ final class IncomingCallCoordinator {
     // meaning of an otherwise valid call.
     final paramsCapabilities = <Capability>[];
     try {
-      for (final descriptor in msg.capTableDescriptors) {
-        paramsCapabilities.add(acquireCapabilityFromDescriptor(descriptor));
+      for (final reference in msg.capabilityTableReferences) {
+        paramsCapabilities.add(acquireCapabilityFromWireReference(reference));
       }
     } catch (error) {
       // Every entry decoded successfully before whatever failed is a real,

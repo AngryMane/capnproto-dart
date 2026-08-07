@@ -170,7 +170,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     resolveParameterCapabilityDescriptors: _capabilityProtocol.resolveParameterCapabilityDescriptors,
     releaseParameterCapabilityExports:
         _capabilityProtocol.releaseParameterCapabilityExports,
-    acquireCapabilityFromDescriptor: _capabilityProtocol.acquireCapabilityFromDescriptor,
+    acquireCapabilityFromWireReference: _capabilityProtocol.acquireCapabilityFromWireReference,
     resolveLocalAnswer: (qid) => _incomingCalls.resolveLocalAnswer(qid),
     onReturn: _handleBootstrapReturn,
   );
@@ -199,7 +199,7 @@ class TwoPartyRpcConnection implements RpcConnection {
     tearDownConnection: (error) => _tearDown(error),
     tryExtractCapabilityReference:
         _capabilityProtocol.tryExtractCapabilityReference,
-    acquireCapabilityFromDescriptor: _capabilityProtocol.acquireCapabilityFromDescriptor,
+    acquireCapabilityFromWireReference: _capabilityProtocol.acquireCapabilityFromWireReference,
     exportResultCapabilityAsDescriptor: _capabilityProtocol.exportResultCapabilityAsDescriptor,
     startCallWithAllocatedQuestion: _outgoingCalls.startCallWithAllocatedQuestion,
     startParameterCapabilityDisposalTracking:
@@ -224,11 +224,10 @@ class TwoPartyRpcConnection implements RpcConnection {
     if (msg.answerId != _bootstrapQuestionId) return;
     final bootstrapQid = _bootstrapQuestionId!;
     _bootstrapQuestionId = null;
-    if (msg.isReturnResults && msg.capTableEntries.isNotEmpty) {
-      final importId =
-          _capabilityProtocol.tryRetainImportIdFromCapabilityDescriptor(
-            msg.capTableDescriptors.first,
-          );
+    if (msg.isReturnResults && msg.capabilityTableReferences.isNotEmpty) {
+      final importId = _capabilityProtocol.tryRetainImportIdFromWireReference(
+        msg.capabilityTableReferences.first,
+      );
       if (_bootstrapCompleter != null && !_bootstrapCompleter!.isCompleted) {
         if (importId == null) {
           _bootstrapCompleter!.completeError(
