@@ -73,14 +73,16 @@ final _emptyResultBytes = Uint8List.fromList([
 /// deferred (closures, not eager reads) so neither side's construction
 /// depends on the other's having already finished.
 ///
-/// [beginParamCapsRelease]/[finalizeParamCapsRelease] bridge a different
+/// [startParameterCapabilityDisposalTracking] and
+/// [finishParameterCapabilityDisposalTracking] bridge a different
 /// boundary from [tryExtractCapabilityReference]/[capabilityFromDescriptor]/
 /// [returnCapDescriptor]. Those callbacks only extract a public
 /// [RpcCapabilityReference] or construct a [Capability]. Params-capability
 /// release tracking instead mutates private
 /// `_ImportedCapability._deferredReleaseSink` state and reads accumulated
 /// results back later, so it is threaded through as an opaque `Object?`
-/// ticket this class never inspects — see [beginParamCapsRelease]'s doc.
+/// ticket this class never inspects — see
+/// [startParameterCapabilityDisposalTracking]'s doc.
 final class IncomingCallCoordinator {
   /// Shared with the owning connection — also read directly by
   /// `CapabilityProtocol`/`OutgoingCallCoordinator`, so this class does not
@@ -133,15 +135,15 @@ final class IncomingCallCoordinator {
   /// Starts a deferred-release tracking window for whichever of a call's
   /// params capabilities are same-connection imports freshly created for
   /// it, returning an opaque ticket (`null` if there's nothing to track)
-  /// to pass back to [finalizeParamCapsRelease] once the call settles —
-  /// see [_executeIncomingDispatch]'s own doc comment for why this tracking exists.
+  /// to pass back to [finishParameterCapabilityDisposalTracking] once the call settles — see [_executeIncomingDispatch]'s own doc comment for why this tracking exists.
   /// Opaque because setting it up means writing a deferred-release sink
   /// onto each `_ImportedCapability` wrapper, private to
   /// `rpc_capability.dart`'s library.
   final Object? Function(List<Capability> paramsCapabilities)
-  beginParamCapsRelease;
+  startParameterCapabilityDisposalTracking;
 
-  /// Ends the tracking window [beginParamCapsRelease] started (a no-op,
+  /// Ends the tracking window that
+  /// [startParameterCapabilityDisposalTracking] started (a no-op,
   /// reporting `allDisposed` true, for a null ticket) and reports two
   /// independent things: `allDisposed` decides `Return.releaseParamCaps`
   /// directly; `explicitReleaseIds` is exactly the import ids that were
@@ -152,12 +154,12 @@ final class IncomingCallCoordinator {
   /// positional one with names in the type signature, which wouldn't
   /// actually create `.allDisposed`/`.explicitReleaseIds` getters — so the
   /// two can't be collapsed into one ambiguous empty list at the call site
-  /// (see [_finalizeParamCapsTracker], this class's own wrapper around this
-  /// closure that does the actual sending).
+  /// (see [_finishParameterCapabilityDisposalTrackingAndReleaseExports], this
+  /// class's own wrapper around this closure that does the actual sending).
   final ({bool allDisposed, List<int> explicitReleaseIds}) Function(
     Object? ticket,
   )
-  finalizeParamCapsRelease;
+  finishParameterCapabilityDisposalTracking;
 
   IncomingCallCoordinator({
     required this.exportTable,
@@ -171,8 +173,8 @@ final class IncomingCallCoordinator {
     required this.capabilityFromDescriptor,
     required this.returnCapDescriptor,
     required this.startUsing,
-    required this.beginParamCapsRelease,
-    required this.finalizeParamCapsRelease,
+    required this.startParameterCapabilityDisposalTracking,
+    required this.finishParameterCapabilityDisposalTracking,
   });
 
   void handleBootstrap(RpcMessage msg) {
@@ -594,8 +596,9 @@ final class IncomingCallCoordinator {
     // deferred release sink for the lifetime of this dispatch, so
     // Return.releaseParamCaps can be set without an extra wire Release
     // when the callee turns out not to need them past the call — see
-    // _finalizeParamCapsTracker.
-    final paramCapsTicket = beginParamCapsRelease(paramsCapabilities);
+    // _finishParameterCapabilityDisposalTrackingAndReleaseExports.
+    final parameterCapabilityDisposalTicket =
+        startParameterCapabilityDisposalTracking(paramsCapabilities);
 
     final dispatchFuture = Future.sync(
       () => cap.dispatchWithContext(
@@ -629,7 +632,9 @@ final class IncomingCallCoordinator {
           if (isClosed()) {
             answerTable.clearPendingAnswer(qid);
             _disposeResultCapabilities(result);
-            _finalizeParamCapsTracker(paramCapsTicket);
+            _finishParameterCapabilityDisposalTrackingAndReleaseExports(
+              parameterCapabilityDisposalTicket,
+            );
             return;
           }
 
@@ -656,14 +661,18 @@ final class IncomingCallCoordinator {
             );
             if (!completed) {
               _disposeResultCapabilities(result);
-              _finalizeParamCapsTracker(paramCapsTicket);
+              _finishParameterCapabilityDisposalTrackingAndReleaseExports(
+                parameterCapabilityDisposalTicket,
+              );
               return;
             }
             sendBytes(buildReturnResultsSentElsewhereMessage(answerId: qid));
             // No Return field exists on this variant to carry
             // releaseParamCaps, so just flush any deferred params releases
             // as ordinary Release messages.
-            _finalizeParamCapsTracker(paramCapsTicket);
+            _finishParameterCapabilityDisposalTrackingAndReleaseExports(
+              parameterCapabilityDisposalTicket,
+            );
             return;
           }
 
@@ -689,10 +698,15 @@ final class IncomingCallCoordinator {
           );
           if (!completed) {
             _disposeResultCapabilities(result);
-            _finalizeParamCapsTracker(paramCapsTicket);
+            _finishParameterCapabilityDisposalTrackingAndReleaseExports(
+              parameterCapabilityDisposalTicket,
+            );
             return;
           }
-          final releaseParamCaps = _finalizeParamCapsTracker(paramCapsTicket);
+          final releaseParamCaps =
+              _finishParameterCapabilityDisposalTrackingAndReleaseExports(
+                parameterCapabilityDisposalTicket,
+              );
           // getRootRaw() resolves in place for an envelope- or
           // builder-backed payload (no serialize-then-reparse round trip;
           // see RpcPayload/buildReturnResultsMessageFromReader) and only
@@ -718,7 +732,9 @@ final class IncomingCallCoordinator {
         .catchError((Object err) {
           if (isClosed()) {
             answerTable.clearPendingAnswer(qid);
-            _finalizeParamCapsTracker(paramCapsTicket);
+            _finishParameterCapabilityDisposalTrackingAndReleaseExports(
+              parameterCapabilityDisposalTicket,
+            );
             return;
           }
           final rpcError =
@@ -730,11 +746,15 @@ final class IncomingCallCoordinator {
             // this runs before sendBytes().
             final completed = answerTable.tryRecordFailedAnswer(qid, rpcError);
             if (!completed) {
-              _finalizeParamCapsTracker(paramCapsTicket);
+              _finishParameterCapabilityDisposalTrackingAndReleaseExports(
+                parameterCapabilityDisposalTicket,
+              );
               return;
             }
             sendBytes(buildReturnResultsSentElsewhereMessage(answerId: qid));
-            _finalizeParamCapsTracker(paramCapsTicket);
+            _finishParameterCapabilityDisposalTrackingAndReleaseExports(
+              parameterCapabilityDisposalTicket,
+            );
             return;
           }
           // An exception Return never carries a results payload/capTable,
@@ -743,10 +763,15 @@ final class IncomingCallCoordinator {
           // needs to be recorded for this qid at all. clearPendingAnswer() still
           // needs to run, though, to detect a Finish that arrived early.
           if (answerTable.clearPendingAnswer(qid)) {
-            _finalizeParamCapsTracker(paramCapsTicket);
+            _finishParameterCapabilityDisposalTrackingAndReleaseExports(
+              parameterCapabilityDisposalTicket,
+            );
             return;
           }
-          final releaseParamCaps = _finalizeParamCapsTracker(paramCapsTicket);
+          final releaseParamCaps =
+              _finishParameterCapabilityDisposalTrackingAndReleaseExports(
+                parameterCapabilityDisposalTicket,
+              );
           sendBytes(
             buildReturnExceptionMessage(
               answerId: qid,
@@ -828,15 +853,18 @@ final class IncomingCallCoordinator {
     }
   }
 
-  /// Thin wrapper around [finalizeParamCapsRelease] that also sends the
-  /// wire Release for any import ids it reports needing one, and forwards
+  /// Thin wrapper around [finishParameterCapabilityDisposalTracking] that also
+  /// sends a wire Release for each reported import ID and forwards
   /// `allDisposed` as `Return.releaseParamCaps` — see
-  /// [finalizeParamCapsRelease]'s own doc comment for the actual decision
-  /// logic.
-  bool _finalizeParamCapsTracker(Object? ticket) {
-    final (:allDisposed, :explicitReleaseIds) = finalizeParamCapsRelease(
-      ticket,
-    );
+  /// [finishParameterCapabilityDisposalTracking]'s own doc comment for the
+  /// actual decision logic.
+  bool _finishParameterCapabilityDisposalTrackingAndReleaseExports(
+    Object? ticket,
+  ) {
+    final (:allDisposed, :explicitReleaseIds) =
+        finishParameterCapabilityDisposalTracking(
+          ticket,
+        );
     // sendBytes() would silently no-op post-teardown anyway (a real
     // connection's own send path already does), but this coordinator
     // shouldn't rely on that — skip the send outright rather than depend on

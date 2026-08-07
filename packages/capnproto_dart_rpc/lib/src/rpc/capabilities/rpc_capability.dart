@@ -23,7 +23,7 @@ class _ImportedCapability extends Capability {
   bool _disposed = false;
 
   // Set only for a call's freshly-imported params capabilities (see
-  // _executeIncomingDispatch/_ParamCapsReleaseTracker), for the window between dispatch
+  // _executeIncomingDispatch/_ParameterCapabilityDisposalTracker), for the window between dispatch
   // starting and its Return being sent. While set, dispose() defers the
   // wire Release entirely to the tracker instead of sending one itself, so
   // the connection can fold it into `Return.releaseParamCaps` when every

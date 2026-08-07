@@ -384,7 +384,7 @@ final class CapabilityProtocol {
   ///    for why that invariant holds — so this is safe to call
   ///    unconditionally there, with no separate "was it actually sent" flag
   ///    to track.
-  void applyReleaseParamCaps(List<int> exportIds) {
+  void releaseParameterCapabilityExports(List<int> exportIds) {
     for (final id in exportIds) {
       exportTable.releaseRef(id, 1, disposeIgnoringErrors);
     }

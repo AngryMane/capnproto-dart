@@ -136,13 +136,13 @@ class _Harness {
       (question, call) => question.sentCompleter?.complete();
 
   /// Settable per test — defaults to "nothing to track".
-  Object? Function(List<Capability> paramsCapabilities) beginParamCapsRelease =
+  Object? Function(List<Capability> paramsCapabilities) startParameterCapabilityDisposalTracking =
       (paramsCapabilities) => null;
 
   /// Settable per test — defaults to "always safe to fold into
   /// releaseParamCaps=true", matching a null/empty ticket.
   ({bool allDisposed, List<int> explicitReleaseIds}) Function(Object? ticket)
-  finalizeParamCapsRelease =
+  finishParameterCapabilityDisposalTracking =
       (ticket) => (allDisposed: true, explicitReleaseIds: const []);
 
   late final coordinator = IncomingCallCoordinator(
@@ -174,9 +174,9 @@ class _Harness {
       startUsingCalls.add(call);
       onStartUsing(question, call);
     },
-    beginParamCapsRelease:
-        (paramsCapabilities) => beginParamCapsRelease(paramsCapabilities),
-    finalizeParamCapsRelease: (ticket) => finalizeParamCapsRelease(ticket),
+    startParameterCapabilityDisposalTracking:
+        (paramsCapabilities) => startParameterCapabilityDisposalTracking(paramsCapabilities),
+    finishParameterCapabilityDisposalTracking: (ticket) => finishParameterCapabilityDisposalTracking(ticket),
   );
 }
 
@@ -525,9 +525,9 @@ void main() {
         'explicit Releases and releaseParamCaps=false; a duplicate question '
         'id tears the connection down as a protocol violation', () async {
       final h = _Harness();
-      h.beginParamCapsRelease = (paramsCapabilities) => 'ticket';
+      h.startParameterCapabilityDisposalTracking = (paramsCapabilities) => 'ticket';
 
-      h.finalizeParamCapsRelease =
+      h.finishParameterCapabilityDisposalTracking =
           (ticket) => (allDisposed: true, explicitReleaseIds: const []);
       final cap1 =
           _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
@@ -539,7 +539,7 @@ void main() {
       var sent = parseRpcMessage(h.sentBytes.single);
       expect(sent.returnReleaseParamCaps, isTrue);
 
-      h.finalizeParamCapsRelease =
+      h.finishParameterCapabilityDisposalTracking =
           (ticket) => (allDisposed: false, explicitReleaseIds: const [7, 8]);
       final cap2 =
           _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
@@ -562,7 +562,7 @@ void main() {
       // empty explicitReleaseIds list — only the latter is safe to fold
       // into releaseParamCaps=true.
       h.sentBytes.clear();
-      h.finalizeParamCapsRelease =
+      h.finishParameterCapabilityDisposalTracking =
           (ticket) => (allDisposed: false, explicitReleaseIds: const []);
       final cap3 =
           _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;

@@ -91,7 +91,7 @@ class _Harness {
         return const [RpcCapDescriptor.senderHosted(42)];
       });
     },
-    applyReleaseParamCaps: releasedExportIds.add,
+    releaseParameterCapabilityExports: releasedExportIds.add,
     capabilityFromDescriptor: (descriptor) => _NeverDisposedCapability(),
     resolveLocalAnswer:
         (qid) => Future.error(
@@ -156,7 +156,7 @@ void main() {
       await expectLater(started.result, completes);
     });
 
-    test('startUsing rolls back via applyReleaseParamCaps and never calls '
+    test('startUsing rolls back via releaseParameterCapabilityExports and never calls '
         'sendBytes when capTable resolution fails synchronously', () {
       final h = _Harness();
       h.failWith = const RpcException('boom');

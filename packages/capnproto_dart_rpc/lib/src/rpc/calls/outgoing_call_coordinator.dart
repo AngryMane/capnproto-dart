@@ -85,7 +85,7 @@ final class OutgoingCallCoordinator {
   })
   resolveCapTableMaybeSync;
 
-  final void Function(List<int> exportIds) applyReleaseParamCaps;
+  final void Function(List<int> exportIds) releaseParameterCapabilityExports;
   final Capability Function(RpcCapDescriptor descriptor)
   capabilityFromDescriptor;
   final Future<ResolvedAnswer> Function(int qid) resolveLocalAnswer;
@@ -103,7 +103,7 @@ final class OutgoingCallCoordinator {
     required this.imports,
     required this.sendBytes,
     required this.resolveCapTableMaybeSync,
-    required this.applyReleaseParamCaps,
+    required this.releaseParameterCapabilityExports,
     required this.capabilityFromDescriptor,
     required this.resolveLocalAnswer,
     this.onReturn,
@@ -272,12 +272,13 @@ final class OutgoingCallCoordinator {
     final error = _tornDownError;
     if (error == null) return false;
     final ids = questions.failBeforeSend(question, error, StackTrace.current);
-    if (ids != null) applyReleaseParamCaps(ids);
+    if (ids != null) releaseParameterCapabilityExports(ids);
     return true;
   }
 
   /// The single site wiring [QuestionTable.markSent] (on success) and
-  /// [QuestionTable.failBeforeSend] + [applyReleaseParamCaps] (on failure)
+  /// [QuestionTable.failBeforeSend] plus
+  /// [releaseParameterCapabilityExports] (on failure)
   /// together for an outgoing Call — shared by [start] and
   /// `_sendForwardedTailCall` (via this method directly), so this pairing is
   /// never wired up ad hoc at a third call site. Every path that reaches
@@ -313,7 +314,7 @@ final class OutgoingCallCoordinator {
     final qid = question.id;
     void onError(Object e, StackTrace st) {
       final ids = questions.failBeforeSend(question, e, st);
-      if (ids != null) applyReleaseParamCaps(ids);
+      if (ids != null) releaseParameterCapabilityExports(ids);
     }
 
     try {
@@ -414,7 +415,7 @@ final class OutgoingCallCoordinator {
     // results, mirrors buildReturnExceptionMessage's own support for it.
     final answersCall = ret.isReturnResults || ret.isReturnException;
     if (answersCall && ret.returnReleaseParamCaps && paramExportIds != null) {
-      applyReleaseParamCaps(paramExportIds);
+      releaseParameterCapabilityExports(paramExportIds);
     }
     if (!(answersCall && ret.returnNoFinishNeeded)) {
       sendBytes(buildFinishMessage(qid, releaseResultCaps: false));

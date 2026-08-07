@@ -168,7 +168,8 @@ class TwoPartyRpcConnection implements RpcConnection {
     imports: _importTable,
     sendBytes: _sendRaw,
     resolveCapTableMaybeSync: _capabilityProtocol.resolveCapTableMaybeSync,
-    applyReleaseParamCaps: _capabilityProtocol.applyReleaseParamCaps,
+    releaseParameterCapabilityExports:
+        _capabilityProtocol.releaseParameterCapabilityExports,
     capabilityFromDescriptor: _capabilityProtocol.capabilityFromDescriptor,
     resolveLocalAnswer: (qid) => _incomingCalls.resolveLocalAnswer(qid),
     onReturn: _handleBootstrapReturn,
@@ -201,13 +202,14 @@ class TwoPartyRpcConnection implements RpcConnection {
     capabilityFromDescriptor: _capabilityProtocol.capabilityFromDescriptor,
     returnCapDescriptor: _capabilityProtocol.returnCapDescriptor,
     startUsing: _outgoingCalls.startUsing,
-    beginParamCapsRelease:
-        (paramsCapabilities) => beginParamCapsRelease(
+    startParameterCapabilityDisposalTracking:
+        (paramsCapabilities) => startParameterCapabilityDisposalTracking(
           _rpcCapabilityDelegate,
           paramsCapabilities,
           _decrementImportReference,
         ),
-    finalizeParamCapsRelease: finalizeParamCapsRelease,
+    finishParameterCapabilityDisposalTracking:
+        finishParameterCapabilityDisposalTracking,
   );
 
   // Handles the bootstrap-specific half of a Return: distinguishing the
