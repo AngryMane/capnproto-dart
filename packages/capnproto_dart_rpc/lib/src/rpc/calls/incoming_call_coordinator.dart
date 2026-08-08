@@ -734,10 +734,6 @@ final class IncomingCallCoordinator {
             // through a synchronously-reentrant sink (e.g. an in-memory or
             // `sync: true` transport) could observe — see that method's doc
             // comment.
-            // handleDispatchSucceeded() never returns AnswerDiscarded (see
-            // DispatchSettlement's own doc comment) — a plain is-check
-            // avoids an unreachable switch case that only
-            // handleDispatchFailed's callers ever need.
             final settlement = answerTable.handleDispatchSucceeded(
               qid,
               resolved: ResolvedAnswer(result.payload.bytes, result.caps),
@@ -855,11 +851,7 @@ final class IncomingCallCoordinator {
           // the same call here, regardless of sendResultsToYourself.
           if (sendResultsToYourself) {
             // See the matching comment in the success branch above for why
-            // this runs before sendBytes(). A sendResultsToYourself dispatch
-            // always sets retainForLocalLookup, so handleDispatchFailed
-            // never returns AnswerDiscarded here — an is-check (rather than
-            // a switch with an unreachable case) makes that visible in the
-            // types instead of needing a defensive throw to explain it.
+            // this runs before sendBytes().
             final settlement = answerTable.handleDispatchFailed(qid, rpcError);
             if (settlement is AnswerAlreadyFinished) {
               _sendCanceledReturn(qid, parameterCapabilityDisposalTicket);
@@ -880,21 +872,10 @@ final class IncomingCallCoordinator {
             return;
           }
           // An ordinary (non-sendResultsToYourself) failure always answers
-          // with a normal exception Return — whether nothing was recorded
-          // (AnswerDiscarded) or a pipelined dependent had registered
-          // before an early Finish arrived, in which case
-          // handleDispatchFailed already resolved the dependency-tracker
-          // rendezvous on our behalf (AnswerSettled, reached via that
-          // early-Finish-with-dependents branch — see that method's own
-          // doc comment; never the retained-failure branch, which requires
-          // retainForLocalLookup, itself only ever true for
-          // sendResultsToYourself, handled above). Either way this table
-          // never carries capabilities for a failure, so noFinishNeeded is
-          // unconditionally true.
-          final releaseResultExportsAfterSend =
-              settlement is AnswerSettled
-                  ? settlement.releaseResultExportsAfterSend
-                  : null;
+          // with a normal exception Return — never carries capabilities, so
+          // noFinishNeeded is unconditionally true.
+          final AnswerSettled(:releaseResultExportsAfterSend) =
+              settlement as AnswerSettled;
           final releaseParamCaps =
               _finishParameterCapabilityDisposalTrackingAndSendReleases(
                 parameterCapabilityDisposalTicket,
@@ -969,12 +950,13 @@ final class IncomingCallCoordinator {
   /// closure `OutgoingCallCoordinator`'s own `resolveLocalAnswer` field is
   /// wired to (see the wiring site).
   ///
-  /// Checks [AnswerTable.takeLocalLookupResolved]/[AnswerTable.takeLocalLookupError]
-  /// first: unlike [AnswerTable.getResolvedAnswerFor]/[AnswerTable.getDispatchErrorFor],
-  /// those survive a real Finish already having arrived for [qid] — a
-  /// Finish only removes the requester's own reference to it, not this
-  /// vat's independent need to look the answer up here (see
-  /// [AnswerTable.handleDispatchStarted]'s `retainForLocalLookup`).
+  /// Must be called synchronously, as the correlating `takeFromOtherQuestion`
+  /// Return is first processed (see `OutgoingCallCoordinator.handleReturn`),
+  /// not deferred to a later continuation: this captures [qid]'s *current*
+  /// generation once, right here, into the returned `Future` — a real
+  /// Finish or the peer legally reusing [qid] for an unrelated new Call
+  /// afterward can no longer affect an already-captured reference. Nothing
+  /// past this call ever needs to re-look-up [qid] again for it.
   ///
   /// A still-pending dispatch is raced against connection teardown via
   /// [AnswerTable.failOnTearDown] rather than returned directly: dispatch
@@ -985,21 +967,23 @@ final class IncomingCallCoordinator {
   /// state even though the connection that correlated it is already gone
   /// — unlike every other still-pending call on this connection (see issue
   /// #99).
+  ///
+  /// Never throws synchronously — always returns a Future, even for the
+  /// error cases — since [OutgoingCallCoordinator.handleReturn] now calls
+  /// this from ordinary (non-`async`) code: a synchronous throw there would
+  /// escape before the completer it's about to feed even gets constructed,
+  /// leaving that completer (and whoever is awaiting it) hanging forever.
   Future<ResolvedAnswer> resolveLocalAnswer(int qid) {
-    final resolved =
-        answerTable.takeLocalLookupResolved(qid) ??
-        answerTable.getResolvedAnswerFor(qid);
+    final resolved = answerTable.getResolvedAnswerFor(qid);
     if (resolved != null) return Future.value(resolved);
     final dispatchResult = answerTable.getDispatchResultFor(qid);
     if (dispatchResult != null) {
       return answerTable.failOnTearDown(dispatchResult);
     }
-    final error =
-        answerTable.takeLocalLookupError(qid) ??
-        answerTable.getDispatchErrorFor(qid);
-    if (error != null) throw error;
-    throw RpcException(
-      'takeFromOtherQuestion referenced unknown question id $qid',
+    final error = answerTable.getDispatchErrorFor(qid);
+    if (error != null) return Future.error(error);
+    return Future.error(
+      RpcException('takeFromOtherQuestion referenced unknown question id $qid'),
     );
   }
 

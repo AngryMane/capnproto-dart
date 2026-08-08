@@ -66,7 +66,7 @@ void main() {
       // must not report "finished early" again now that it's untracked.
       expect(
         table.handleDispatchFailed(1, const CapnpException('boom')),
-        isA<AnswerDiscarded>(),
+        isA<AnswerSettled>(),
       );
     });
 
@@ -277,72 +277,6 @@ void main() {
       );
     });
 
-    test('takeLocalLookupResolved survives handleRequesterFinishedAnswer '
-        'removing the normal AnsweredState — regression test for PR #117 '
-        'review point 1: a real Finish only clears the requester\'s own '
-        'reference, not this vat\'s independent retainForLocalLookup need', () {
-      final table = AnswerTable();
-      final pending = Completer<ResolvedAnswer>();
-      pending.future.ignore();
-      table.handleDispatchStarted(
-        1,
-        pending.future,
-        DispatchCancellationController(),
-        retainForLocalLookup: true,
-      );
-      final resolved = _answer([NullCapability()]);
-      table.handleDispatchSucceeded(1, resolved: resolved);
-
-      table.handleRequesterFinishedAnswer(1, releaseResultCaps: true);
-      expect(
-        table.isTracked(1),
-        isFalse,
-        reason: 'the requester\'s own reference is gone',
-      );
-
-      expect(table.takeLocalLookupResolved(1), same(resolved));
-      expect(
-        table.takeLocalLookupResolved(1),
-        isNull,
-        reason: 'one-shot: consumed exactly once',
-      );
-    });
-
-    test('takeLocalLookupError survives handleRequesterFinishedAnswer '
-        'removing the normal FailedAnswerState', () {
-      final table = AnswerTable();
-      _installFailedAnswer(table, 1, const CapnpException('boom'));
-
-      table.handleRequesterFinishedAnswer(1, releaseResultCaps: true);
-      expect(table.isTracked(1), isFalse);
-
-      expect(
-        table.takeLocalLookupError(1),
-        isA<CapnpException>().having((e) => e.message, 'message', 'boom'),
-      );
-      expect(table.takeLocalLookupError(1), isNull);
-    });
-
-    test('takeLocalLookupResolved/takeLocalLookupError also survive the '
-        'early-Finish-with-pipelined-dependents settle path', () {
-      final table = AnswerTable();
-      final pending = Completer<ResolvedAnswer>();
-      pending.future.ignore();
-      table.handleDispatchStarted(
-        1,
-        pending.future,
-        DispatchCancellationController(),
-        retainForLocalLookup: true,
-      );
-      table.tryBeginPipelinedDependency(1);
-      table.handleRequesterFinishedAnswer(1, releaseResultCaps: true);
-
-      final resolved = _answer();
-      table.handleDispatchSucceeded(1, resolved: resolved);
-
-      expect(table.takeLocalLookupResolved(1), same(resolved));
-    });
-
     test('handleDispatchFailed discards the failure outright when the '
         'dispatch was started without retainForLocalLookup (the '
         'default): nothing is recorded, and a later takeFromOtherQuestion '
@@ -360,7 +294,7 @@ void main() {
         2,
         const CapnpException('boom'),
       );
-      expect(recorded, isA<AnswerDiscarded>());
+      expect(recorded, isA<AnswerSettled>());
       expect(table.isTracked(2), isFalse);
       expect(table.getDispatchErrorFor(2), isNull);
     });
@@ -457,7 +391,7 @@ void main() {
       expect(table.isTracked(3), isTrue, reason: 'pending answer');
       expect(
         table.handleDispatchFailed(3, const CapnpException('boom')),
-        isA<AnswerDiscarded>(),
+        isA<AnswerSettled>(),
       );
       expect(table.isTracked(3), isFalse);
 
