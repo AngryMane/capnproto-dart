@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:capnproto_dart/capnproto_dart.dart';
 import 'package:capnproto_dart_rpc/src/capability/capability.dart';
 import 'package:capnproto_dart_rpc/src/rpc/calls/answer_table.dart';
+import 'package:capnproto_dart_rpc/src/rpc/rpc_exception.dart';
 import 'package:test/test.dart';
 
 ResolvedAnswer _answer([List<Capability> caps = const []]) =>
@@ -12,10 +13,13 @@ ResolvedAnswer _answer([List<Capability> caps = const []]) =>
 const _tornDownProbeError = CapnpException('connection torn down (probe)');
 
 /// Installs a genuinely retained [FailedAnswerState] for [qid] — the real
-/// two-call path (`handleDispatchStarted(retainForLocalLookup: true)` then
+/// two-call path (`handleDispatchStarted(sendResultsToYourself: true)` then
 /// `handleDispatchFailed`) a `sendResultsToYourself` dispatch takes, used
 /// here as a fixture wherever a test just needs a failed, tracked answer to
-/// already exist.
+/// already exist. Completes [pending] with [error] too — the same
+/// underlying settlement `handleDispatchFailed`'s own [error] argument
+/// reports, in production — so [AnswerEntry.redirectedResult] (the same
+/// Future) is actually observable rather than hanging forever.
 void _installFailedAnswer(AnswerTable table, int qid, CapnpException error) {
   final pending = Completer<ResolvedAnswer>();
   pending.future.ignore();
@@ -23,8 +27,9 @@ void _installFailedAnswer(AnswerTable table, int qid, CapnpException error) {
     qid,
     pending.future,
     DispatchCancellationController(),
-    retainForLocalLookup: true,
+    sendResultsToYourself: true,
   );
+  pending.completeError(error);
   table.handleDispatchFailed(qid, error);
 }
 
@@ -104,7 +109,7 @@ void main() {
 
     test('handleDispatchSucceeded drops a successful answer immediately '
         'when nothing needs it retained: no result capabilities, no fresh '
-        'export ids, and not started with retainForLocalLookup — decided '
+        'export ids, and not started with sendResultsToYourself — decided '
         'in this same call, with no separate post-install event needed', () {
       final table = AnswerTable();
       final pending = Completer<ResolvedAnswer>();
@@ -143,7 +148,7 @@ void main() {
     });
 
     test('handleDispatchSucceeded keeps a successful answer tracked when '
-        'the dispatch was started with retainForLocalLookup: true, even '
+        'the dispatch was started with sendResultsToYourself: true, even '
         'with a capability-free result — regression test for review point '
         '6 on PR #117: a sendResultsToYourself dispatch always answers via '
         'resultsSentElsewhere, which (unlike the ordinary results/exception '
@@ -156,7 +161,7 @@ void main() {
         1,
         pending.future,
         DispatchCancellationController(),
-        retainForLocalLookup: true,
+        sendResultsToYourself: true,
       );
 
       table.handleDispatchSucceeded(1, resolved: _answer());
@@ -247,7 +252,7 @@ void main() {
     });
 
     test('handleDispatchFailed installs the retained error atomically '
-        'for a live dispatch started with retainForLocalLookup: true', () {
+        'for a live dispatch started with sendResultsToYourself: true', () {
       final table = AnswerTable();
       final pending = Completer<ResolvedAnswer>();
       pending.future.ignore();
@@ -255,7 +260,7 @@ void main() {
         2,
         pending.future,
         DispatchCancellationController(),
-        retainForLocalLookup: true,
+        sendResultsToYourself: true,
       );
 
       final error = const CapnpException('boom');
@@ -278,7 +283,7 @@ void main() {
     });
 
     test('handleDispatchFailed discards the failure outright when the '
-        'dispatch was started without retainForLocalLookup (the '
+        'dispatch was started without sendResultsToYourself (the '
         'default): nothing is recorded, and a later takeFromOtherQuestion '
         'correlation finds nothing to observe', () {
       final table = AnswerTable();
@@ -846,5 +851,213 @@ void main() {
         );
       });
     });
+
+    group(
+      'takeRedirectedResult (PR #117 review round 6: one-shot ownership '
+      'transfer, mirroring capnp-rpc\'s Answer.redirected_results.take())',
+      () {
+        test('unknown qid reports "unknown question id"', () async {
+          final table = AnswerTable();
+          await expectLater(
+            table.takeRedirectedResult(999),
+            throwsA(
+              isA<RpcException>().having(
+                (e) => e.message,
+                'message',
+                contains('unknown question id'),
+              ),
+            ),
+          );
+        });
+
+        test('a qid tracked but never started with sendResultsToYourself '
+            'reports the same "nothing to take" error as an already-taken '
+            'one — from the caller\'s perspective both are protocol '
+            'violations', () async {
+          final table = AnswerTable();
+          table.handleAnswerReadyWithoutDispatch(1, resolved: _answer());
+          await expectLater(
+            table.takeRedirectedResult(1),
+            throwsA(
+              isA<RpcException>().having(
+                (e) => e.message,
+                'message',
+                contains('did not use sendResultsTo.yourself'),
+              ),
+            ),
+          );
+        });
+
+        test('taken while pending, then the dispatch succeeds: resolves to '
+            'the real result, and a second take for the same generation '
+            'fails instead of returning it again', () async {
+          final table = AnswerTable();
+          final pending = Completer<ResolvedAnswer>();
+          table.handleDispatchStarted(
+            1,
+            pending.future,
+            DispatchCancellationController(),
+            sendResultsToYourself: true,
+          );
+
+          final taken = table.takeRedirectedResult(1);
+          await expectLater(
+            table.takeRedirectedResult(1),
+            throwsA(isA<RpcException>()),
+            reason:
+                'already taken by the call above, even though the '
+                'dispatch has not settled yet',
+          );
+
+          final resolved = _answer();
+          pending.complete(resolved);
+          expect(await taken, same(resolved));
+        });
+
+        test('taken while pending, then the dispatch fails: surfaces the '
+            'original error', () async {
+          final table = AnswerTable();
+          final pending = Completer<ResolvedAnswer>();
+          table.handleDispatchStarted(
+            2,
+            pending.future,
+            DispatchCancellationController(),
+            sendResultsToYourself: true,
+          );
+
+          final taken = table.takeRedirectedResult(2);
+          final error = const CapnpException('boom');
+          pending.completeError(error);
+          await expectLater(taken, throwsA(same(error)));
+        });
+
+        test('taken after the dispatch already succeeded resolves '
+            'immediately to the real result', () async {
+          final table = AnswerTable();
+          final pending = Completer<ResolvedAnswer>();
+          pending.future.ignore();
+          table.handleDispatchStarted(
+            3,
+            pending.future,
+            DispatchCancellationController(),
+            sendResultsToYourself: true,
+          );
+          final resolved = _answer();
+          pending.complete(resolved);
+          table.handleDispatchSucceeded(3, resolved: resolved);
+
+          expect(await table.takeRedirectedResult(3), same(resolved));
+        });
+
+        test('taken after the dispatch already failed surfaces the '
+            'retained error, and a second take for the same generation '
+            'fails instead of surfacing it again', () async {
+          final table = AnswerTable();
+          final error = const CapnpException('boom');
+          _installFailedAnswer(table, 4, error);
+
+          await expectLater(
+            table.takeRedirectedResult(4),
+            throwsA(same(error)),
+          );
+          await expectLater(
+            table.takeRedirectedResult(4),
+            throwsA(
+              isA<RpcException>().having(
+                (e) => e.message,
+                'message',
+                contains('already taken'),
+              ),
+            ),
+          );
+        });
+
+        test('a real Finish removes the whole entry once the dispatch has '
+            'settled, regardless of whether the redirect was already '
+            'taken, and the peer legally reusing the qid afterward starts '
+            'a fresh, unrelated generation untouched by the old one', () async {
+          final table = AnswerTable();
+          final pending = Completer<ResolvedAnswer>();
+          table.handleDispatchStarted(
+            1,
+            pending.future,
+            DispatchCancellationController(),
+            sendResultsToYourself: true,
+          );
+          final taken = table.takeRedirectedResult(1);
+          final resolvedA = _answer();
+          pending.complete(resolvedA);
+          // Matches the real causal order: a redirected call's own Return
+          // is only ever sent (and handleDispatchSucceeded called) once its
+          // dispatch settles, and a real Finish can only arrive after that
+          // Return reaches the peer — see AnswerTable.takeRedirectedResult's
+          // own doc comment.
+          table.handleDispatchSucceeded(1, resolved: resolvedA);
+          expect(await taken, same(resolvedA));
+          expect(
+            table.isTracked(1),
+            isTrue,
+            reason:
+                'a resultsSentElsewhere Return always still owes a '
+                'real Finish',
+          );
+
+          table.handleRequesterFinishedAnswer(1, releaseResultCaps: true);
+          expect(table.isTracked(1), isFalse);
+
+          // The peer reuses qid 1 for a brand-new, unrelated generation.
+          final resolvedB = _answer();
+          table.handleAnswerReadyWithoutDispatch(1, resolved: resolvedB);
+          await expectLater(
+            table.takeRedirectedResult(1),
+            throwsA(isA<RpcException>()),
+            reason: 'generation B was never started with sendResultsToYourself',
+          );
+        });
+
+        test('still-pending when connection teardown wins the race fails '
+            'with the teardown error, not the eventual local result', () async {
+          final table = AnswerTable();
+          final pending = Completer<ResolvedAnswer>();
+          pending.future.ignore();
+          table.handleDispatchStarted(
+            1,
+            pending.future,
+            DispatchCancellationController(),
+            sendResultsToYourself: true,
+          );
+
+          final taken = table.takeRedirectedResult(1);
+          final error = const CapnpException('connection torn down');
+          table.tearDown(error);
+          await expectLater(taken, throwsA(same(error)));
+
+          // The dispatch itself keeps running, uninterrupted, in the
+          // background (issue #99) — completing it afterward must not
+          // resurrect anything or throw.
+          pending.complete(_answer());
+        });
+
+        test('already resolved before teardown stays immune to it — only a '
+            'still-pending take races teardown', () async {
+          final table = AnswerTable();
+          final pending = Completer<ResolvedAnswer>();
+          pending.future.ignore();
+          table.handleDispatchStarted(
+            1,
+            pending.future,
+            DispatchCancellationController(),
+            sendResultsToYourself: true,
+          );
+          final resolved = _answer();
+          pending.complete(resolved);
+          table.handleDispatchSucceeded(1, resolved: resolved);
+          final taken = table.takeRedirectedResult(1);
+
+          table.tearDown(const CapnpException('connection torn down'));
+          expect(await taken, same(resolved));
+        });
+      },
+    );
   });
 }

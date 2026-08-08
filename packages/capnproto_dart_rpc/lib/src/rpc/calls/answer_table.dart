@@ -5,6 +5,7 @@ import 'package:capnproto_dart/capnproto_dart.dart';
 
 import '../../capability/capability.dart'
     show Capability, DispatchCancellationController;
+import '../rpc_exception.dart';
 
 /// Pointer slots in [resultBytes] map to [caps] indices via a
 /// `CapabilityPointer`, not by slot number — `IncomingCallCoordinator` must
@@ -79,18 +80,12 @@ sealed class AnswerState {
 }
 
 /// [cancellation] only fires with no pipelined dependents left outstanding
-/// — see [AnswerTable.handleRequesterFinishedAnswer]. [retainForLocalLookup]:
-/// see [AnswerTable.handleDispatchStarted].
+/// — see [AnswerTable.handleRequesterFinishedAnswer].
 final class PendingAnswerState extends AnswerState {
   final Future<ResolvedAnswer> dispatchResult;
   final DispatchCancellationController cancellation;
-  final bool retainForLocalLookup;
   final _PipelineDependencyTracker _dependents = _PipelineDependencyTracker();
-  PendingAnswerState(
-    this.dispatchResult,
-    this.cancellation, {
-    this.retainForLocalLookup = false,
-  });
+  PendingAnswerState(this.dispatchResult, this.cancellation);
 }
 
 /// Installed *before* the Return is sent (see
@@ -142,6 +137,38 @@ final class AnswerSettled extends DispatchSettlement {
   const AnswerSettled({this.releaseResultExportsAfterSend});
 }
 
+/// One incoming question's full tracked state — [state] is the transition-
+/// driven half ([AnswerState]'s own sealed hierarchy); [redirectedResult]
+/// is independent of those transitions, so a `sendResultsTo=yourself`
+/// dispatch's eventual result survives a `Pending` → `Answered`/`Failed`
+/// transition intact instead of having to be re-derived from whichever
+/// state currently applies — see [AnswerTable.takeRedirectedResult].
+final class AnswerEntry {
+  AnswerState state;
+
+  /// Non-null exactly from [AnswerTable.handleDispatchStarted] being called
+  /// with `sendResultsToYourself: true`, until
+  /// [AnswerTable.takeRedirectedResult] takes it — at most once, ever, for
+  /// a given question id's current generation (mirrors
+  /// `capnp-rpc`'s own `Answer.redirected_results: Option<Promise<...>>`,
+  /// taken via `Option::take()` the instant a correlating
+  /// `Return.takeFromOtherQuestion` is processed). Untouched by [state]'s
+  /// own transitions or by a real peer Finish — those affect only whether
+  /// this question id stays tracked at all, never this field directly.
+  Future<ResolvedAnswer>? redirectedResult;
+
+  /// Set once, permanently, from the same `sendResultsToYourself` fact
+  /// [redirectedResult] started from — unlike that field, this never
+  /// clears once [redirectedResult] is taken: this question's own Return is
+  /// always `resultsSentElsewhere`, which (unlike an ordinary results/
+  /// exception Return) has no `noFinishNeeded` optimization at all, so a
+  /// real peer Finish is always still owed regardless of whether the
+  /// redirected result has already been taken.
+  final bool isRedirected;
+
+  AnswerEntry(this.state, {this.isRedirected = false, this.redirectedResult});
+}
+
 /// Invalid combinations (e.g. a retained error alongside a live dispatch)
 /// can't be constructed through this table's API. Doesn't send
 /// Returns/Finishes or release exports itself — the caller (today,
@@ -153,7 +180,7 @@ final class AnswerSettled extends DispatchSettlement {
 /// the peer's Finish is **wire-driven** instead, like `QuestionTable`'s
 /// Return wait.
 class AnswerTable {
-  final Map<int, AnswerState> _answers = {};
+  final Map<int, AnswerEntry> _answers = {};
 
   Object? _tearDownError;
   final List<Completer<Never>> _tearDownWaiters = [];
@@ -165,24 +192,24 @@ class AnswerTable {
   int get count => _answers.length;
 
   int get cancellationCount =>
-      _answers.values.whereType<PendingAnswerState>().length;
+      _answers.values.where((e) => e.state is PendingAnswerState).length;
 
   /// Used to reject a peer illegally reusing a question id before it has
   /// fully settled.
   bool isTracked(int qid) => _answers.containsKey(qid);
 
   ResolvedAnswer? getResolvedAnswerFor(int qid) {
-    final state = _answers[qid];
+    final state = _answers[qid]?.state;
     return state is AnsweredState ? state.resolved : null;
   }
 
   Future<ResolvedAnswer>? getDispatchResultFor(int qid) {
-    final state = _answers[qid];
+    final state = _answers[qid]?.state;
     return state is PendingAnswerState ? state.dispatchResult : null;
   }
 
   CapnpException? getDispatchErrorFor(int qid) {
-    final state = _answers[qid];
+    final state = _answers[qid]?.state;
     return state is FailedAnswerState ? state.error : null;
   }
 
@@ -192,29 +219,23 @@ class AnswerTable {
   // decides the consequence from its own current state.
   // ---------------------------------------------------------------------
 
-  /// [retainForLocalLookup]: `true` means this Return's wire shape always
-  /// still expects a real peer Finish regardless of the result's own
-  /// content, because this same vat itself may still need to look up the
-  /// eventual result or error — through `takeFromOtherQuestion`/
-  /// `IncomingCallCoordinator.resolveLocalAnswer` — before that Finish
-  /// arrives. Today, exactly when this call was itself a forwarded tail
-  /// call (`sendResultsTo=yourself`), whose Return is always
-  /// `resultsSentElsewhere`, which has no `noFinishNeeded` optimization at
-  /// all. `resolveLocalAnswer` captures its own reference to [qid]'s
-  /// current generation synchronously, as soon as the correlating
-  /// `takeFromOtherQuestion` is observed — see its own doc comment — so
-  /// this table never needs to retain anything past that capture beyond
-  /// the normal Finish-driven lifecycle every other answer already has.
+  /// [sendResultsToYourself]: `true` exactly when this call was itself a
+  /// forwarded tail call — sets up [AnswerEntry.redirectedResult] for
+  /// [takeRedirectedResult] to hand to this same vat's own correlating
+  /// `Return.takeFromOtherQuestion`, and permanently marks
+  /// [AnswerEntry.isRedirected] so a real peer Finish is always still
+  /// expected regardless of whether that redirect has been taken yet — see
+  /// both fields' own doc comments.
   void handleDispatchStarted(
     int qid,
     Future<ResolvedAnswer> dispatchResult,
     DispatchCancellationController cancellation, {
-    bool retainForLocalLookup = false,
+    bool sendResultsToYourself = false,
   }) {
-    _answers[qid] = PendingAnswerState(
-      dispatchResult,
-      cancellation,
-      retainForLocalLookup: retainForLocalLookup,
+    _answers[qid] = AnswerEntry(
+      PendingAnswerState(dispatchResult, cancellation),
+      isRedirected: sendResultsToYourself,
+      redirectedResult: sendResultsToYourself ? dispatchResult : null,
     );
   }
 
@@ -227,8 +248,8 @@ class AnswerTable {
     ResolvedAnswer? resolved,
     List<int> resultExportIds = const [],
   }) {
-    final state = _answers[qid];
-    switch (state) {
+    final entry = _answers[qid];
+    switch (entry?.state) {
       case FinishedBeforeCompletionState():
         _answers.remove(qid);
         return const AnswerAlreadyFinished();
@@ -237,13 +258,13 @@ class AnswerTable {
         final release = _dependents.tryTakeResultExports();
         _answers.remove(qid);
         return AnswerSettled(releaseResultExportsAfterSend: release);
-      case PendingAnswerState(:final retainForLocalLookup):
+      case PendingAnswerState():
         final stillNeeded =
-            retainForLocalLookup ||
+            entry!.isRedirected ||
             resultExportIds.isNotEmpty ||
             (resolved?.caps.isNotEmpty ?? false);
         if (stillNeeded) {
-          _answers[qid] = AnsweredState(
+          entry.state = AnsweredState(
             resolved: resolved,
             resultExportIds: resultExportIds,
           );
@@ -252,9 +273,8 @@ class AnswerTable {
         }
         return const AnswerSettled();
       default:
-        _answers[qid] = AnsweredState(
-          resolved: resolved,
-          resultExportIds: resultExportIds,
+        _answers[qid] = AnswerEntry(
+          AnsweredState(resolved: resolved, resultExportIds: resultExportIds),
         );
         return const AnswerSettled();
     }
@@ -262,14 +282,14 @@ class AnswerTable {
 
   /// Same atomicity contract as [handleDispatchSucceeded]. A failure has no
   /// peer-visible Finish/pipelining need of its own, so
-  /// [PendingAnswerState.retainForLocalLookup] is the only reason to retain
-  /// it as a [FailedAnswerState] instead of discarding outright — the
-  /// discarded case is still an [AnswerSettled] with no export ids to
-  /// release, indistinguishable to the caller from the retained one after
-  /// the Return has been sent.
+  /// [AnswerEntry.isRedirected] is the only reason to retain it as a
+  /// [FailedAnswerState] instead of discarding outright — the discarded
+  /// case is still an [AnswerSettled] with no export ids to release,
+  /// indistinguishable to the caller from the retained one after the
+  /// Return has been sent.
   DispatchSettlement handleDispatchFailed(int qid, CapnpException error) {
-    final state = _answers[qid];
-    switch (state) {
+    final entry = _answers[qid];
+    switch (entry?.state) {
       case FinishedBeforeCompletionState():
         _answers.remove(qid);
         return const AnswerAlreadyFinished();
@@ -278,8 +298,12 @@ class AnswerTable {
         final release = _dependents.tryTakeResultExports();
         _answers.remove(qid);
         return AnswerSettled(releaseResultExportsAfterSend: release);
-      case PendingAnswerState(retainForLocalLookup: true):
-        _answers[qid] = FailedAnswerState(error);
+      case PendingAnswerState():
+        if (entry!.isRedirected) {
+          entry.state = FailedAnswerState(error);
+        } else {
+          _answers.remove(qid);
+        }
         return const AnswerSettled();
       default:
         _answers.remove(qid);
@@ -297,21 +321,25 @@ class AnswerTable {
     ResolvedAnswer? resolved,
     List<int> resultExportIds = const [],
   }) {
-    _answers[qid] = AnsweredState(
-      resolved: resolved,
-      resultExportIds: resultExportIds,
+    _answers[qid] = AnswerEntry(
+      AnsweredState(resolved: resolved, resultExportIds: resultExportIds),
     );
   }
 
   /// Named for *who* finished, not the Answer's own lifecycle: a
   /// still-outstanding pipelined dependent can keep this question's
-  /// bookkeeping alive well past this call.
+  /// bookkeeping alive well past this call. Removing [qid] here drops
+  /// [AnswerEntry.redirectedResult] too, whether or not it was ever taken —
+  /// safe, because [takeRedirectedResult] is only ever meant to be called
+  /// synchronously as the correlating `takeFromOtherQuestion` Return is
+  /// first processed (see its own doc comment), strictly before a real
+  /// Finish for this same generation could ever arrive.
   List<int>? handleRequesterFinishedAnswer(
     int qid, {
     required bool releaseResultCaps,
   }) {
-    final state = _answers[qid];
-    switch (state) {
+    final entry = _answers[qid];
+    switch (entry?.state) {
       case null:
       case FinishedBeforeCompletionState():
         return null;
@@ -320,7 +348,7 @@ class AnswerTable {
         _dependents.peerFinished = true;
         _dependents.releaseResultCapsOnFinish = releaseResultCaps;
         if (_dependents.dependentCount == 0) {
-          _answers[qid] = const FinishedBeforeCompletionState();
+          entry!.state = const FinishedBeforeCompletionState();
           cancellation.cancel();
         }
         return null;
@@ -331,6 +359,62 @@ class AnswerTable {
         _answers.remove(qid);
         return null;
     }
+  }
+
+  /// Takes [qid]'s not-yet-taken redirected result, if any — the local
+  /// counterpart to `capnp-rpc`'s `Answer.redirected_results.take()`.
+  /// One-shot: a second call for the same still-tracked generation (or a
+  /// [qid] that was never `sendResultsToYourself` in the first place) gets
+  /// the same "nothing to take" error as an unknown question id, since
+  /// both are protocol violations from a well-behaved peer's perspective.
+  ///
+  /// Must be called synchronously, as the correlating `takeFromOtherQuestion`
+  /// Return is first processed (see `OutgoingCallCoordinator.handleReturn`),
+  /// not deferred to a later continuation: this reads [qid]'s *current*
+  /// generation once, right here — a real Finish or the peer legally
+  /// reusing [qid] for an unrelated new Call afterward can no longer affect
+  /// the `Future` this returns. Nothing past this call ever needs to
+  /// re-look-up [qid] again for it.
+  ///
+  /// A still-pending redirected result is raced against connection
+  /// teardown via [failOnTearDown] rather than returned directly: dispatch
+  /// cancellation on teardown is only ever a cooperative request the
+  /// dispatch is free to ignore (see that method's own doc comment), so
+  /// without this race, a caller correlating a tail-called dispatch
+  /// through this method could observe it succeed later from purely local
+  /// state even though the connection that correlated it is already gone
+  /// — unlike every other still-pending call on this connection (see issue
+  /// #99). An already-settled redirected result needs no such race: it
+  /// already exists, independent of the connection's own health.
+  ///
+  /// Never throws synchronously — always returns a Future, even for the
+  /// error cases — since `OutgoingCallCoordinator.handleReturn` calls this
+  /// (via `IncomingCallCoordinator.resolveLocalAnswer`) from ordinary
+  /// (non-`async`) code: a synchronous throw there would escape before the
+  /// completer it's about to feed even gets constructed, leaving that
+  /// completer (and whoever is awaiting it) hanging forever.
+  Future<ResolvedAnswer> takeRedirectedResult(int qid) {
+    final entry = _answers[qid];
+    if (entry == null) {
+      return Future.error(
+        RpcException(
+          'takeFromOtherQuestion referenced unknown question id $qid',
+        ),
+      );
+    }
+    final redirected = entry.redirectedResult;
+    if (redirected == null) {
+      return Future.error(
+        RpcException(
+          'takeFromOtherQuestion referenced a call that did not use '
+          'sendResultsTo.yourself, or whose result was already taken',
+        ),
+      );
+    }
+    entry.redirectedResult = null;
+    return entry.state is PendingAnswerState
+        ? failOnTearDown(redirected)
+        : redirected;
   }
 
   // ---------------------------------------------------------------------
@@ -348,11 +432,10 @@ class AnswerTable {
   ///
   /// Used where a dispatch's settlement is awaited directly, bypassing this
   /// table's own Return/Finish bookkeeping — today, only
-  /// `IncomingCallCoordinator.resolveLocalAnswer`, resolving a
-  /// `takeFromOtherQuestion` for a tail-called dispatch. Without it, that
-  /// caller would observe [operation] succeed from purely
-  /// local state even after the connection is gone (issue #99, matching
-  /// `QuestionTable.tearDown`).
+  /// [takeRedirectedResult], resolving a `takeFromOtherQuestion` for a
+  /// still-pending tail-called dispatch. Without it, that caller would
+  /// observe [operation] succeed from purely local state even after the
+  /// connection is gone (issue #99, matching `QuestionTable.tearDown`).
   ///
   /// Deliberately has no caller-visible "watch" handle to cancel — that
   /// would risk a leaked registration per call if a caller forgot.
@@ -370,8 +453,10 @@ class AnswerTable {
   /// Fails every outstanding *and future* [failOnTearDown] race with
   /// [error] — called once when the owning connection tears down.
   void tearDown(Object error) {
-    for (final state in _answers.values) {
-      if (state is PendingAnswerState) state.cancellation.cancel();
+    for (final entry in _answers.values) {
+      if (entry.state case PendingAnswerState(:final cancellation)) {
+        cancellation.cancel();
+      }
     }
     _answers.clear();
     if (_tearDownError == null) {
@@ -392,7 +477,7 @@ class AnswerTable {
   /// [endPipelinedDependency] (see [PendingPipelineDependency]'s own doc
   /// for the exactly-once contract).
   PipelineDependency? tryBeginPipelinedDependency(int qid) {
-    final state = _answers[qid];
+    final state = _answers[qid]?.state;
     switch (state) {
       case AnsweredState(:final resolved):
         return resolved != null ? ResolvedPipelineDependency(resolved) : null;

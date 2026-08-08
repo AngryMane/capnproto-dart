@@ -695,7 +695,7 @@ final class IncomingCallCoordinator {
       qid,
       resolvedFuture,
       cancellation,
-      retainForLocalLookup: sendResultsToYourself,
+      sendResultsToYourself: sendResultsToYourself,
     );
 
     dispatchFuture
@@ -846,7 +846,7 @@ final class IncomingCallCoordinator {
                   ? err
                   : RpcException(err.toString(), kind: ErrorKind.failed);
           // handleDispatchFailed() decides retain-vs-discard for itself,
-          // from the retainForLocalLookup fact this dispatch was started
+          // from the sendResultsToYourself fact this dispatch was started
           // with (see handleDispatchStarted) — every failure goes through
           // the same call here, regardless of sendResultsToYourself.
           if (sendResultsToYourself) {
@@ -948,44 +948,13 @@ final class IncomingCallCoordinator {
   /// Resolves [qid] against this vat's own incoming-answer bookkeeping, for
   /// correlating a `Return.takeFromOtherQuestion` from the peer — the
   /// closure `OutgoingCallCoordinator`'s own `resolveLocalAnswer` field is
-  /// wired to (see the wiring site).
-  ///
-  /// Must be called synchronously, as the correlating `takeFromOtherQuestion`
-  /// Return is first processed (see `OutgoingCallCoordinator.handleReturn`),
-  /// not deferred to a later continuation: this captures [qid]'s *current*
-  /// generation once, right here, into the returned `Future` — a real
-  /// Finish or the peer legally reusing [qid] for an unrelated new Call
-  /// afterward can no longer affect an already-captured reference. Nothing
-  /// past this call ever needs to re-look-up [qid] again for it.
-  ///
-  /// A still-pending dispatch is raced against connection teardown via
-  /// [AnswerTable.failOnTearDown] rather than returned directly: dispatch
-  /// cancellation on teardown is only ever a cooperative request the
-  /// dispatch is free to ignore (see that method's own doc comment), so
-  /// without this race, a caller correlating a tail-called dispatch
-  /// through this method could observe it succeed later from purely local
-  /// state even though the connection that correlated it is already gone
-  /// — unlike every other still-pending call on this connection (see issue
-  /// #99).
-  ///
-  /// Never throws synchronously — always returns a Future, even for the
-  /// error cases — since [OutgoingCallCoordinator.handleReturn] now calls
-  /// this from ordinary (non-`async`) code: a synchronous throw there would
-  /// escape before the completer it's about to feed even gets constructed,
-  /// leaving that completer (and whoever is awaiting it) hanging forever.
-  Future<ResolvedAnswer> resolveLocalAnswer(int qid) {
-    final resolved = answerTable.getResolvedAnswerFor(qid);
-    if (resolved != null) return Future.value(resolved);
-    final dispatchResult = answerTable.getDispatchResultFor(qid);
-    if (dispatchResult != null) {
-      return answerTable.failOnTearDown(dispatchResult);
-    }
-    final error = answerTable.getDispatchErrorFor(qid);
-    if (error != null) return Future.error(error);
-    return Future.error(
-      RpcException('takeFromOtherQuestion referenced unknown question id $qid'),
-    );
-  }
+  /// wired to (see the wiring site). A thin name-preserving wrapper around
+  /// [AnswerTable.takeRedirectedResult] — see that method's own doc
+  /// comment for the synchronous-capture requirement, the teardown race,
+  /// and the never-throws-synchronously contract, all of which apply here
+  /// unchanged.
+  Future<ResolvedAnswer> resolveLocalAnswer(int qid) =>
+      answerTable.takeRedirectedResult(qid);
 
   /// If [qid] already has tracked answer-lifecycle state (from Bootstrap or
   /// an in-flight/finished Call — see [AnswerTable.isTracked]), tears the

@@ -1458,7 +1458,7 @@ void main() {
 
     group(
       'generation-safe local-answer capture across a real OutgoingCallCoordinator '
-      '(PR #117 review round 5)',
+      '(PR #117 review rounds 5-6)',
       () {
         // Wires an OutgoingCallCoordinator's resolveLocalAnswer straight to
         // [h]'s own IncomingCallCoordinator — the same relationship
@@ -1544,11 +1544,21 @@ void main() {
               ),
             );
 
-            // A *fresh* local lookup against reused qid 5 must observe only
-            // generation #2's own (empty) result, never generation #1's —
-            // there is no qid-keyed stash left that could leak it through.
-            final freshLookup = await h.coordinator.resolveLocalAnswer(5);
-            expect(freshLookup.caps, isEmpty);
+            // A *fresh* local lookup against reused qid 5 must never observe
+            // generation #1's result — there is no qid-keyed stash left
+            // that could leak it through, and generation #2 itself was
+            // never sendResultsToYourself, so takeRedirectedResult reports
+            // that instead of returning generation #2's own data either.
+            await expectLater(
+              h.coordinator.resolveLocalAnswer(5),
+              throwsA(
+                isA<RpcException>().having(
+                  (e) => e.message,
+                  'message',
+                  contains('did not use sendResultsTo.yourself'),
+                ),
+              ),
+            );
 
             final resolved = await started.result;
             expect(resolved.caps, equals([resultCap]));
@@ -1674,6 +1684,48 @@ void main() {
 
           final resolved = await started.result;
           expect(resolved.caps, equals([resultCap]));
+        });
+
+        test('a second takeFromOtherQuestion Return naming the same '
+            'still-current generation is a protocol violation, not a '
+            'second delivery of the same result — one-shot ownership '
+            'transfer, mirroring capnp-rpc\'s own '
+            'Answer.redirected_results.take()', () async {
+          final h = _Harness();
+
+          final resultCap = _FakeCapability();
+          final cap =
+              _FakeCapability()
+                ..onDispatch =
+                    (_, _, _) => DispatchResult(
+                      payload: RpcPayload.fromBytes(_singleCapResultBytes),
+                      caps: [resultCap],
+                    );
+          final exportId = h.exportTable.retainOrCreateExportId(cap);
+
+          h.coordinator.handleCall(
+            parseRpcMessage(
+              _buildCall(
+                questionId: 8,
+                targetExportId: exportId,
+                sendResultsToYourself: true,
+              ),
+            ),
+          );
+
+          final first = await h.coordinator.resolveLocalAnswer(8);
+          expect(first.caps, equals([resultCap]));
+
+          await expectLater(
+            h.coordinator.resolveLocalAnswer(8),
+            throwsA(
+              isA<RpcException>().having(
+                (e) => e.message,
+                'message',
+                contains('already taken'),
+              ),
+            ),
+          );
         });
       },
     );
