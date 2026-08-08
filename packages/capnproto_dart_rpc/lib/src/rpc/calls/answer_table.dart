@@ -126,10 +126,10 @@ sealed class AnswerState {
 /// still running. [dispatchResult] lets a pipelined call queue behind it;
 /// [cancellation] lets a Finish that arrives before completion — and with
 /// no pipelined dependents left outstanding — cancel the invocation.
-/// [retainFailureForCorrelation] is the fact [AnswerTable.handleDispatchFailed]
-/// acts on if this dispatch ends up failing — see
-/// [AnswerTable.handleDispatchStarted] for what it means. Every pipelined
-/// call that queues behind [dispatchResult] (see
+/// [retainForLocalLookup] is the fact [AnswerTable.handleDispatchSucceeded]/
+/// [AnswerTable.handleDispatchFailed] act on once this dispatch settles —
+/// see [AnswerTable.handleDispatchStarted] for what it means. Every
+/// pipelined call that queues behind [dispatchResult] (see
 /// `AnswerTable.tryBeginPipelinedDependency`) is tracked in the private
 /// dependency tracker below, which outlives this state object once the
 /// dispatch settles — see `_PipelineDependencyTracker`'s own doc comment.
@@ -138,20 +138,20 @@ sealed class AnswerState {
 final class PendingAnswerState extends AnswerState {
   final Future<ResolvedAnswer> dispatchResult;
   final DispatchCancellationController cancellation;
-  final bool retainFailureForCorrelation;
+  final bool retainForLocalLookup;
   final _PipelineDependencyTracker _dependents = _PipelineDependencyTracker();
   PendingAnswerState(
     this.dispatchResult,
     this.cancellation, {
-    this.retainFailureForCorrelation = false,
+    this.retainForLocalLookup = false,
   });
 }
 
 /// The answer for this question is established — [resolved]/[resultExportIds]
-/// are final — and its protocol lifecycle is retained until Finish (or a
-/// local [AnswerTable.handleAnswerIssued] cleanup, for a
-/// Return that needs none). This is installed *before* the matching Return
-/// is actually sent (see [AnswerTable.handleDispatchSucceeded]/
+/// are final — and its protocol lifecycle is retained until a real peer
+/// Finish arrives; a Return that needs none never reaches this state at all
+/// (see this class's own doc comment below). This is installed *before* the
+/// matching Return is actually sent (see [AnswerTable.handleDispatchSucceeded]/
 /// [AnswerTable.handleAnswerReadyWithoutDispatch]'s own doc comments for
 /// why: closing the gap where a synchronously-reentrant peer could observe
 /// a pipelined call, Finish, or Release for this qid before this
@@ -161,21 +161,19 @@ final class PendingAnswerState extends AnswerState {
 /// Return variant with no result payload of its own (an exception, or a
 /// takeFromOtherQuestion forward). [resultExportIds] are the export ids (if
 /// any) that a later Finish(releaseResultCaps: true) should release.
-/// [awaitingFinish] is the fact [AnswerTable.handleAnswerIssued] acts on:
-/// whether a real peer Finish is still genuinely expected for this answer.
-/// Decided by whoever installs this state, from the very Return it's about
-/// to send — never re-derived later from [resolved]/[resultExportIds]
-/// alone, since a Return can carry neither and still owe the peer a Finish
-/// (e.g. a plain exception, where `Return.noFinishNeeded` was never set).
+///
+/// Existing *only* as an entry in this table's map already means a real
+/// peer Finish is still genuinely expected: [AnswerTable.handleDispatchSucceeded]
+/// decides *at install time* whether an answer needs one at all (from the
+/// very result it's about to install — see that method's own doc comment)
+/// and simply never installs this state — dropping the qid immediately
+/// instead — when it doesn't. There is deliberately no separate post-install
+/// fact or event for that; re-deriving it from a caller-visible field here
+/// would let it drift out of sync with what actually got installed.
 final class AnsweredState extends AnswerState {
   final ResolvedAnswer? resolved;
   final List<int> resultExportIds;
-  final bool awaitingFinish;
-  const AnsweredState({
-    this.resolved,
-    this.resultExportIds = const [],
-    required this.awaitingFinish,
-  });
+  const AnsweredState({this.resolved, this.resultExportIds = const []});
 }
 
 /// This question's dispatch failed, and the error is retained (instead of
@@ -213,24 +211,20 @@ sealed class DispatchSettlement {
 /// settled, with no pipelined dependents ever registered for it — this
 /// table dropped every trace of it already. The caller must answer with
 /// `Return(canceled)` instead of a normal Return (see
-/// `IncomingCallCoordinator._sendCanceledReturn`), and must not call
-/// [AnswerTable.handleAnswerIssued] for it.
+/// `IncomingCallCoordinator._sendCanceledReturn`).
 final class AnswerAlreadyFinished extends DispatchSettlement {
   const AnswerAlreadyFinished();
 }
 
-/// The dispatch's outcome is now recorded as this question's answer. The
-/// caller must send a normal Return for it.
+/// The dispatch's outcome has been fully handled by this table — installed
+/// as this question's answer if anything about it still needs to remain
+/// locally reachable (a real peer Finish is still expected, or this same
+/// vat may still need it via a later `takeFromOtherQuestion` correlation —
+/// see [AnswerTable.handleDispatchSucceeded]/[AnswerTable.handleDispatchFailed]'s
+/// own doc comments for exactly which), dropped immediately otherwise. The
+/// caller doesn't need to know which happened — only that it must send a
+/// normal Return for it.
 final class AnswerRecorded extends DispatchSettlement {
-  /// Whether this question's answer bookkeeping is still tracked in the
-  /// table after this call. `false` only when the peer had already sent an
-  /// early Finish while pipelined dependents were still outstanding — the
-  /// table already freed the question id itself in that case, so a later
-  /// [AnswerTable.handleAnswerIssued] call for it must be skipped: the id
-  /// may already have been legally (and, over a synchronously-reentrant
-  /// transport, synchronously) reused by the peer for an unrelated new Call.
-  final bool answerStillTracked;
-
   /// Result export ids to release now that the caller's own Return has been
   /// sent, or `null` if there's nothing to release right now. Only non-null
   /// when the peer's own early Finish already determined this while
@@ -239,20 +233,17 @@ final class AnswerRecorded extends DispatchSettlement {
   /// sent, never before.
   final List<int>? releaseResultExportsAfterSend;
 
-  const AnswerRecorded({
-    required this.answerStillTracked,
-    this.releaseResultExportsAfterSend,
-  });
+  const AnswerRecorded({this.releaseResultExportsAfterSend});
 }
 
 /// The dispatch failed, and this table decided — from
-/// [PendingAnswerState.retainFailureForCorrelation], the fact recorded back
+/// [PendingAnswerState.retainForLocalLookup], the fact recorded back
 /// when [AnswerTable.handleDispatchStarted] began it — that the failure does
 /// not need to remain locally resolvable: no later `takeFromOtherQuestion`
 /// correlation will ever look it up. Nothing was recorded for this
-/// question; the caller must send a normal Return.exception for it, with no
-/// follow-up [AnswerTable] call. Only ever returned by
-/// [AnswerTable.handleDispatchFailed].
+/// question; the caller must send a normal Return.exception for it. Only
+/// ever returned by [AnswerTable.handleDispatchFailed] — a successful
+/// dispatch always has an answer worth sending.
 final class AnswerDiscarded extends DispatchSettlement {
   const AnswerDiscarded();
 }
@@ -349,32 +340,50 @@ class AnswerTable {
   /// pipelined call queue behind the running capability invocation, and
   /// [cancellation] lets an early Finish cancel it.
   ///
-  /// [retainFailureForCorrelation] is an Answer-domain fact about what this
-  /// question needs if the dispatch ends up failing: `true` means the
-  /// failure must stay locally resolvable afterward (via
-  /// [getDispatchErrorFor]) because a later `takeFromOtherQuestion`
-  /// correlation may still need to look it up — today, exactly when this
-  /// call was itself a forwarded tail call (`sendResultsTo=yourself`), the
-  /// only case with a local consumer of its own besides the peer. `false`
-  /// (the default) lets [handleDispatchFailed] discard the failure outright
-  /// once this vat has answered it, instead of retaining a
-  /// [FailedAnswerState] nothing will ever look up.
+  /// [retainForLocalLookup] is an Answer-domain fact about what this
+  /// question needs once dispatch settles, regardless of whether it
+  /// succeeds or fails: `true` means this same vat may itself still need
+  /// the eventual result or error later, via a `takeFromOtherQuestion`
+  /// correlation racing dispatch completion (see [getResolvedAnswerFor]/
+  /// [getDispatchErrorFor]) — today, exactly when this call was itself a
+  /// forwarded tail call (`sendResultsTo=yourself`), the only case with a
+  /// local consumer of its own besides the peer. `false` (the default)
+  /// means only the peer's own Finish/pipelining needs can keep this
+  /// question's answer alive past dispatch settling — see
+  /// [handleDispatchSucceeded]/[handleDispatchFailed].
   void handleDispatchStarted(
     int qid,
     Future<ResolvedAnswer> dispatchResult,
     DispatchCancellationController cancellation, {
-    bool retainFailureForCorrelation = false,
+    bool retainForLocalLookup = false,
   }) {
     _answers[qid] = PendingAnswerState(
       dispatchResult,
       cancellation,
-      retainFailureForCorrelation: retainFailureForCorrelation,
+      retainForLocalLookup: retainForLocalLookup,
     );
   }
 
   /// Reports that [qid]'s capability invocation succeeded — see
   /// [DispatchSettlement] for what the returned value means and requires of
   /// the caller.
+  ///
+  /// Decides, in this same call, whether [qid]'s answer needs to remain
+  /// reachable at all: [PendingAnswerState.retainForLocalLookup] (recorded
+  /// back when [handleDispatchStarted] began it) covers this same vat's own
+  /// later needs, and — independently — no capability anywhere in the
+  /// result means no future message (a peer Finish, or a pipelined call
+  /// naming [qid]) could ever resolve to a usable capability against it, so
+  /// the peer doesn't need to send Finish for it either (the wire encoding
+  /// tells it so independently, via `Return.noFinishNeeded`, computed from
+  /// this same data — see `IncomingCallCoordinator`). When *neither* reason
+  /// applies, this table drops [qid] immediately instead of installing an
+  /// [AnsweredState] nothing will ever look up or Finish — deliberately not
+  /// a separate post-install event: see [AnsweredState]'s own doc comment
+  /// for why re-deriving that decision later, from a caller-visible qid
+  /// lookup, is exactly the hazard this design avoids (a reused qid could,
+  /// over a synchronously-reentrant transport, refer to an entirely
+  /// different call's state by the time such a lookup ran).
   ///
   /// Call this *before* actually sending the Return, not after a two-step
   /// "check whether this qid was finished early, then record the answer"
@@ -398,39 +407,44 @@ class AnswerTable {
         _dependents.resultExportIds = resultExportIds;
         final release = _dependents.tryTakeResultExports();
         _answers.remove(qid);
-        return AnswerRecorded(
-          answerStillTracked: false,
-          releaseResultExportsAfterSend: release,
-        );
+        return AnswerRecorded(releaseResultExportsAfterSend: release);
+      case PendingAnswerState(:final retainForLocalLookup):
+        final stillNeeded =
+            retainForLocalLookup ||
+            resultExportIds.isNotEmpty ||
+            (resolved?.caps.isNotEmpty ?? false);
+        if (stillNeeded) {
+          _answers[qid] = AnsweredState(
+            resolved: resolved,
+            resultExportIds: resultExportIds,
+          );
+        } else {
+          _answers.remove(qid);
+        }
+        return const AnswerRecorded();
       default:
         _answers[qid] = AnsweredState(
           resolved: resolved,
           resultExportIds: resultExportIds,
-          // No capabilities anywhere in the result means no future message
-          // — a peer Finish, or a pipelined call naming this qid — could
-          // ever resolve to a usable capability against it, so the peer
-          // doesn't need to send Finish for it either (the wire encoding
-          // tells it so independently, via `Return.noFinishNeeded`, computed
-          // from this same data — see IncomingCallCoordinator).
-          awaitingFinish:
-              resultExportIds.isNotEmpty ||
-              (resolved?.caps.isNotEmpty ?? false),
         );
-        return const AnswerRecorded(answerStillTracked: true);
+        return const AnswerRecorded();
     }
   }
 
-  /// Reports that [qid]'s capability invocation failed. This table decides
-  /// — from [PendingAnswerState.retainFailureForCorrelation], the fact
-  /// recorded when [handleDispatchStarted] began it — whether [error] needs
-  /// to stay locally resolvable for a racing `takeFromOtherQuestion`
+  /// Reports that [qid]'s capability invocation failed. Same atomicity
+  /// contract as [handleDispatchSucceeded] (including the same
+  /// [DispatchSettlement] meaning) and the same early-Finish-with-dependents
+  /// handling. This table decides — from
+  /// [PendingAnswerState.retainForLocalLookup], the fact recorded when
+  /// [handleDispatchStarted] began it — whether [error] needs to stay
+  /// locally resolvable for a racing `takeFromOtherQuestion`
   /// ([AnswerRecorded], installing a [FailedAnswerState]) or can be
   /// discarded outright ([AnswerDiscarded], recording nothing for [qid] at
-  /// all). Same atomicity contract as [handleDispatchSucceeded] (including
-  /// the same [DispatchSettlement] meaning) and the same
-  /// early-Finish-with-dependents handling — a failure never carries result
-  /// capabilities, so [AnswerRecorded.releaseResultExportsAfterSend] is
-  /// always empty or `null` here, never a real export id.
+  /// all — a failure has no peer-visible Finish/pipelining need of its own
+  /// the way a success can, so this is the only reason to retain one). A
+  /// failure never carries result capabilities, so
+  /// [AnswerRecorded.releaseResultExportsAfterSend] is always empty or
+  /// `null` here, never a real export id.
   DispatchSettlement handleDispatchFailed(int qid, CapnpException error) {
     final state = _answers[qid];
     switch (state) {
@@ -441,13 +455,10 @@ class AnswerTable {
         _dependents.resultExportIds = const [];
         final release = _dependents.tryTakeResultExports();
         _answers.remove(qid);
-        return AnswerRecorded(
-          answerStillTracked: false,
-          releaseResultExportsAfterSend: release,
-        );
-      case PendingAnswerState(retainFailureForCorrelation: true):
+        return AnswerRecorded(releaseResultExportsAfterSend: release);
+      case PendingAnswerState(retainForLocalLookup: true):
         _answers[qid] = FailedAnswerState(error);
-        return const AnswerRecorded(answerStillTracked: true);
+        return const AnswerRecorded();
       default:
         _answers.remove(qid);
         return const AnswerDiscarded();
@@ -462,9 +473,8 @@ class AnswerTable {
   /// a Return with no result payload at all (an exception, or a
   /// takeFromOtherQuestion forward — neither [resolved] nor
   /// [resultExportIds] set). Every current caller's matching Return
-  /// genuinely still owes the peer a Finish, so this always installs
-  /// [AnsweredState.awaitingFinish] `true` — unlike [handleDispatchSucceeded],
-  /// which derives it from the actual result instead.
+  /// genuinely still owes the peer a Finish, so — unlike
+  /// [handleDispatchSucceeded] — this always installs, never drops.
   void handleAnswerReadyWithoutDispatch(
     int qid, {
     ResolvedAnswer? resolved,
@@ -473,52 +483,6 @@ class AnswerTable {
     _answers[qid] = AnsweredState(
       resolved: resolved,
       resultExportIds: resultExportIds,
-      awaitingFinish: true,
-    );
-  }
-
-  /// Reports that [qid]'s Return has been issued to its requester — call
-  /// this once, right after the matching Return has actually been sent,
-  /// for every answer this table still tracks (`AnswerRecorded
-  /// .answerStillTracked`; skip the call entirely when that was `false`,
-  /// since the peer's own early Finish already freed [qid] itself, and the
-  /// id may already have been legally — and, over a synchronously-reentrant
-  /// transport, synchronously — reused by the peer for an unrelated new
-  /// Call by now). This table (not the caller) then decides, from
-  /// [AnsweredState.awaitingFinish] — a fact recorded when the answer was
-  /// installed (see [handleDispatchSucceeded]/[handleAnswerReadyWithoutDispatch]),
-  /// never re-derived here from [AnsweredState.resolved]/[AnsweredState.resultExportIds]
-  /// alone — whether [qid] still needs to wait for a real peer Finish:
-  /// `false` drops this table's own tracking immediately instead of waiting
-  /// for a Finish a well-behaved peer knows not to send (the wire encoding
-  /// tells it so, via `Return.noFinishNeeded`, computed independently from
-  /// the same source data). Otherwise this is a no-op: [qid] keeps waiting
-  /// for a real [handleRequesterFinishedAnswer], exactly as before.
-  ///
-  /// Must not be called until *after* the matching Return has actually been
-  /// sent: acting on this before the send would let a synchronously-
-  /// reentrant peer observe this table not tracking [qid] at all, ahead of
-  /// the very Return that tells the peer [qid] exists. This method has no
-  /// way to enforce that ordering itself (it doesn't know about
-  /// `sendBytes`) — that's the caller's responsibility.
-  ///
-  /// A missing entry is a silent no-op, because synchronously sending the
-  /// Return can reenter [handleRequesterFinishedAnswer], which may consume
-  /// the state first. Only an [AnsweredState] is otherwise valid here —
-  /// throws [StateError] for anything else, a caller bug (this must only
-  /// ever be called for an answer [handleDispatchSucceeded] or
-  /// [handleAnswerReadyWithoutDispatch] just installed).
-  void handleAnswerIssued(int qid) {
-    final state = _answers[qid];
-    if (state == null) return;
-    if (state case AnsweredState(:final awaitingFinish)) {
-      if (!awaitingFinish) {
-        _answers.remove(qid);
-      }
-      return;
-    }
-    throw StateError(
-      'answer $qid is ${state.runtimeType}, not a completed answer',
     );
   }
 

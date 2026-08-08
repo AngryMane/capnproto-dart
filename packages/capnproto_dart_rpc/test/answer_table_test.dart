@@ -12,10 +12,10 @@ ResolvedAnswer _answer([List<Capability> caps = const []]) =>
 const _tornDownProbeError = CapnpException('connection torn down (probe)');
 
 /// Installs a genuinely retained [FailedAnswerState] for [qid] — the real
-/// two-call path (`handleDispatchStarted(retainFailureForCorrelation:
-/// true)` then `handleDispatchFailed`) a `sendResultsToYourself` dispatch
-/// takes, used here as a fixture wherever a test just needs a failed,
-/// tracked answer to already exist.
+/// two-call path (`handleDispatchStarted(retainForLocalLookup: true)` then
+/// `handleDispatchFailed`) a `sendResultsToYourself` dispatch takes, used
+/// here as a fixture wherever a test just needs a failed, tracked answer to
+/// already exist.
 void _installFailedAnswer(AnswerTable table, int qid, CapnpException error) {
   final pending = Completer<ResolvedAnswer>();
   pending.future.ignore();
@@ -23,7 +23,7 @@ void _installFailedAnswer(AnswerTable table, int qid, CapnpException error) {
     qid,
     pending.future,
     DispatchCancellationController(),
-    retainFailureForCorrelation: true,
+    retainForLocalLookup: true,
   );
   table.handleDispatchFailed(qid, error);
 }
@@ -102,125 +102,84 @@ void main() {
       );
     });
 
-    test('handleAnswerIssued removes an answer with no result capabilities '
-        'of its own, and does not cancel its already-settled dispatch', () {
+    test('handleDispatchSucceeded drops a successful answer immediately '
+        'when nothing needs it retained: no result capabilities, no fresh '
+        'export ids, and not started with retainForLocalLookup — decided '
+        'in this same call, with no separate post-install event needed', () {
       final table = AnswerTable();
       final pending = Completer<ResolvedAnswer>();
       final cancellation = DispatchCancellationController();
       pending.future.ignore();
       table.handleDispatchStarted(1, pending.future, cancellation);
-      expect(
-        table.handleDispatchSucceeded(1, resolved: _answer()),
-        isA<AnswerRecorded>(),
-      );
 
-      table.handleAnswerIssued(1);
+      table.handleDispatchSucceeded(1, resolved: _answer());
 
       expect(table.isTracked(1), isFalse);
       expect(cancellation.context.isCanceled, isFalse);
     });
 
-    test('handleAnswerIssued is a no-op when a reentrant peer '
-        'Finish already consumed the completed answer', () {
+    test('handleDispatchSucceeded keeps a successful answer tracked when '
+        'its result carries capabilities of its own, even with no fresh '
+        'export ids (e.g. a receiverHosted capability handed back to the '
+        'peer) — pipelining can still target it, and a real Finish is '
+        'still expected', () {
       final table = AnswerTable();
-      table.handleAnswerReadyWithoutDispatch(2, resolved: _answer());
+      final pending = Completer<ResolvedAnswer>();
+      pending.future.ignore();
+      table.handleDispatchStarted(
+        1,
+        pending.future,
+        DispatchCancellationController(),
+      );
+
+      table.handleDispatchSucceeded(1, resolved: _answer([NullCapability()]));
+
+      expect(table.isTracked(1), isTrue);
       expect(
-        table.handleRequesterFinishedAnswer(2, releaseResultCaps: true),
-        equals(const []),
-      );
-
-      expect(() => table.handleAnswerIssued(2), returnsNormally);
-      expect(table.isTracked(2), isFalse);
-    });
-
-    test(
-      'handleAnswerIssued rejects a pending answer without '
-      'canceling or removing it — a caller bug, since this must only '
-      'ever follow handleDispatchSucceeded/handleAnswerReadyWithoutDispatch',
-      () {
-        final table = AnswerTable();
-        final pending = Completer<ResolvedAnswer>();
-        final cancellation = DispatchCancellationController();
-        pending.future.ignore();
-        table.handleDispatchStarted(3, pending.future, cancellation);
-
-        expect(() => table.handleAnswerIssued(3), throwsStateError);
-        expect(table.isTracked(3), isTrue);
-        expect(cancellation.context.isCanceled, isFalse);
-        table.handleDispatchFailed(3, const CapnpException('cleanup'));
-      },
-    );
-
-    test('handleAnswerIssued leaves an answer installed via '
-        'handleAnswerReadyWithoutDispatch tracked — that installer always '
-        'sets AnsweredState.awaitingFinish true, since every current '
-        'caller\'s Return genuinely still owes the peer a Finish — and it '
-        'is still available for a real peer Finish afterward', () {
-      final table = AnswerTable();
-      table.handleAnswerReadyWithoutDispatch(
-        4,
-        resolved: _answer(),
-        resultExportIds: [7],
-      );
-
-      expect(() => table.handleAnswerIssued(4), returnsNormally);
-      expect(table.isTracked(4), isTrue);
-      expect(
-        table.handleRequesterFinishedAnswer(4, releaseResultCaps: true),
-        equals([7]),
-      );
-    });
-
-    test('handleAnswerIssued leaves an answer installed via '
-        'handleAnswerReadyWithoutDispatch tracked even with capabilities '
-        'but no fresh export ids of its own (e.g. a receiverHosted '
-        'capability handed back to the peer) — pipelining can still '
-        'target it', () {
-      final table = AnswerTable();
-      table.handleAnswerReadyWithoutDispatch(
-        5,
-        resolved: _answer([NullCapability()]),
-      );
-
-      expect(() => table.handleAnswerIssued(5), returnsNormally);
-      expect(table.isTracked(5), isTrue);
-      expect(
-        table.handleRequesterFinishedAnswer(5, releaseResultCaps: true),
+        table.handleRequesterFinishedAnswer(1, releaseResultCaps: true),
         isEmpty,
         reason: 'no result export ids of its own to release',
       );
     });
 
-    test('handleAnswerIssued does not assume "no capabilities means no '
-        'Finish needed" for every answer — regression test for the hidden '
-        'precondition PR #117 review flagged: an answer installed via '
-        'handleAnswerReadyWithoutDispatch (e.g. a decode-failure exception '
-        'Return, which never sets Return.noFinishNeeded) keeps waiting for '
-        'a real Finish even with no capabilities of its own, unlike one '
-        'from handleDispatchSucceeded, where empty capabilities really do '
-        'mean noFinishNeeded was sent', () {
+    test('handleDispatchSucceeded keeps a successful answer tracked when '
+        'the dispatch was started with retainForLocalLookup: true, even '
+        'with a capability-free result — regression test for review point '
+        '6 on PR #117: a sendResultsToYourself dispatch always answers via '
+        'resultsSentElsewhere, which (unlike the ordinary results/exception '
+        'Return) has no noFinishNeeded optimization at all, so a real '
+        'Finish is always still expected regardless of the result content', () {
+      final table = AnswerTable();
+      final pending = Completer<ResolvedAnswer>();
+      pending.future.ignore();
+      table.handleDispatchStarted(
+        1,
+        pending.future,
+        DispatchCancellationController(),
+        retainForLocalLookup: true,
+      );
+
+      table.handleDispatchSucceeded(1, resolved: _answer());
+
+      expect(
+        table.isTracked(1),
+        isTrue,
+        reason: 'this vat may still need it via resolveLocalAnswer later',
+      );
+    });
+
+    test('an answer installed via handleAnswerReadyWithoutDispatch always '
+        'stays tracked, regardless of capabilities — regression test for '
+        'the hidden precondition PR #117 review originally flagged: unlike '
+        'handleDispatchSucceeded, none of this method\'s current callers '
+        '(e.g. a decode-failure exception Return) ever set '
+        'Return.noFinishNeeded, so a real Finish is always still expected', () {
       final table = AnswerTable();
       table.handleAnswerReadyWithoutDispatch(1);
-      table.handleAnswerIssued(1);
       expect(
         table.isTracked(1),
         isTrue,
         reason: 'still genuinely awaiting a real peer Finish',
-      );
-
-      final pending = Completer<ResolvedAnswer>();
-      pending.future.ignore();
-      table.handleDispatchStarted(
-        2,
-        pending.future,
-        DispatchCancellationController(),
-      );
-      table.handleDispatchSucceeded(2, resolved: _answer());
-      table.handleAnswerIssued(2);
-      expect(
-        table.isTracked(2),
-        isFalse,
-        reason: 'no capabilities anywhere means no Finish will ever come',
       );
     });
 
@@ -245,13 +204,11 @@ void main() {
       );
       expect(
         recorded,
-        isA<AnswerRecorded>()
-            .having((r) => r.answerStillTracked, 'answerStillTracked', isTrue)
-            .having(
-              (r) => r.releaseResultExportsAfterSend,
-              'releaseResultExportsAfterSend',
-              isNull,
-            ),
+        isA<AnswerRecorded>().having(
+          (r) => r.releaseResultExportsAfterSend,
+          'releaseResultExportsAfterSend',
+          isNull,
+        ),
       );
       expect(table.isTracked(1), isTrue);
       expect(table.getResolvedAnswerFor(1), same(resolved));
@@ -290,8 +247,7 @@ void main() {
     });
 
     test('handleDispatchFailed installs the retained error atomically '
-        'for a live dispatch started with retainFailureForCorrelation: '
-        'true', () {
+        'for a live dispatch started with retainForLocalLookup: true', () {
       final table = AnswerTable();
       final pending = Completer<ResolvedAnswer>();
       pending.future.ignore();
@@ -299,20 +255,18 @@ void main() {
         2,
         pending.future,
         DispatchCancellationController(),
-        retainFailureForCorrelation: true,
+        retainForLocalLookup: true,
       );
 
       final error = const CapnpException('boom');
       final recorded = table.handleDispatchFailed(2, error);
       expect(
         recorded,
-        isA<AnswerRecorded>()
-            .having((r) => r.answerStillTracked, 'answerStillTracked', isTrue)
-            .having(
-              (r) => r.releaseResultExportsAfterSend,
-              'releaseResultExportsAfterSend',
-              isNull,
-            ),
+        isA<AnswerRecorded>().having(
+          (r) => r.releaseResultExportsAfterSend,
+          'releaseResultExportsAfterSend',
+          isNull,
+        ),
       );
       expect(table.getDispatchErrorFor(2), same(error));
       // A retained error never carries result capabilities, so there is
@@ -324,7 +278,7 @@ void main() {
     });
 
     test('handleDispatchFailed discards the failure outright when the '
-        'dispatch was started without retainFailureForCorrelation (the '
+        'dispatch was started without retainForLocalLookup (the '
         'default): nothing is recorded, and a later takeFromOtherQuestion '
         'correlation finds nothing to observe', () {
       final table = AnswerTable();

@@ -695,7 +695,7 @@ final class IncomingCallCoordinator {
       qid,
       resolvedFuture,
       cancellation,
-      retainFailureForCorrelation: sendResultsToYourself,
+      retainForLocalLookup: sendResultsToYourself,
     );
 
     dispatchFuture
@@ -776,13 +776,20 @@ final class IncomingCallCoordinator {
           // AnswerTable.handleRequesterFinishedAnswer's own doc comment for
           // why those two are kept separate) — so a real peer reading it is
           // never misled about a Return that does carry live capability
-          // references. AnswerTable.handleAnswerIssued (below) makes this
-          // same determination independently, from the very data recorded
-          // into AnsweredState — this is the wire-facing half of the same
-          // fact, computed from the same source.
+          // references. AnswerTable.handleDispatchSucceeded (below) makes
+          // this same determination independently, to decide whether to
+          // keep tracking this qid at all — this is the wire-facing half of
+          // the same fact, computed from the same source.
           final noFinishNeeded = resultReferences.isEmpty;
           // Record the answer before sending — see the comment on the
           // sendResultsToYourself branch above for why the ordering matters.
+          // AnswerTable decides for itself, in this same call, whether qid
+          // needs to stay tracked at all (see handleDispatchSucceeded's own
+          // doc comment) — there is deliberately no separate post-send
+          // event for that decision: a caller-visible one would have to
+          // re-look-up qid after sendBytes() below, which a synchronously-
+          // reentrant peer could have already legally reused for an
+          // unrelated new Call by then.
           final settlement = answerTable.handleDispatchSucceeded(
             qid,
             resolved: ResolvedAnswer(result.payload.bytes, result.caps),
@@ -802,10 +809,8 @@ final class IncomingCallCoordinator {
             );
             return;
           }
-          final AnswerRecorded(
-            :answerStillTracked,
-            :releaseResultExportsAfterSend,
-          ) = settlement as AnswerRecorded;
+          final AnswerRecorded(:releaseResultExportsAfterSend) =
+              settlement as AnswerRecorded;
           final releaseParamCaps =
               _finishParameterCapabilityDisposalTrackingAndSendReleases(
                 parameterCapabilityDisposalTicket,
@@ -823,29 +828,6 @@ final class IncomingCallCoordinator {
               noFinishNeeded: noFinishNeeded,
             ),
           );
-          if (answerStillTracked) {
-            // Report the Return as sent regardless of whether it actually
-            // needed a Finish — AnswerTable decides that for itself, from
-            // the very AnsweredState it already holds (see
-            // handleAnswerIssued's own doc comment), rather than being
-            // told noFinishNeeded here. Recording the answer before send
-            // and reporting it issued after keeps it visible for the
-            // whole synchronously-reentrant send window; if a peer Finish
-            // arrives during that window anyway, it may consume the state
-            // first and this call becomes a no-op.
-            //
-            // Skipped entirely when !answerStillTracked (the peer already
-            // sent an early Finish while dependents were outstanding — see
-            // handleDispatchSucceeded's own doc comment): this table
-            // already freed qid *before* the send above, so the peer may
-            // have legally — and, over a synchronously-reentrant
-            // transport, synchronously during that very send — reused it
-            // for an unrelated new Call by now. Looking qid back up here
-            // would risk touching that new call's own answer state instead
-            // of a no-op, exactly the id-reuse hazard the dependency
-            // ticket design (see endPipelinedDependency) exists to avoid.
-            answerTable.handleAnswerIssued(qid);
-          }
           // Only non-null when the peer had already sent an early Finish
           // while pipelined dependents were still outstanding — releasing
           // (if requested) only after the Return above is actually sent,
@@ -868,65 +850,65 @@ final class IncomingCallCoordinator {
                   ? err
                   : RpcException(err.toString(), kind: ErrorKind.failed);
           // handleDispatchFailed() decides retain-vs-discard for itself,
-          // from the retainFailureForCorrelation fact this dispatch was
-          // started with (see handleDispatchStarted) — every failure goes
-          // through the same call here, regardless of sendResultsToYourself.
-          // sendResultsToYourself only still gates which Return variant a
-          // *retained* failure gets: resultsSentElsewhere is exactly the
-          // wire shape a sendResultsToYourself dispatch's Return always
-          // takes, retained or not, so AnswerRecorded only ever reaches the
-          // branch below when sendResultsToYourself is what caused the
-          // retention in the first place.
+          // from the retainForLocalLookup fact this dispatch was started
+          // with (see handleDispatchStarted) — every failure goes through
+          // the same call here, regardless of sendResultsToYourself.
           if (sendResultsToYourself) {
             // See the matching comment in the success branch above for why
-            // this runs before sendBytes().
-            switch (answerTable.handleDispatchFailed(qid, rpcError)) {
-              case AnswerAlreadyFinished():
-                _sendCanceledReturn(qid, parameterCapabilityDisposalTicket);
-                return;
-              case AnswerRecorded(:final releaseResultExportsAfterSend):
-                sendBytes(
-                  buildReturnResultsSentElsewhereMessage(answerId: qid),
-                );
-                _finishParameterCapabilityDisposalTrackingAndSendReleases(
-                  parameterCapabilityDisposalTicket,
-                );
-                _releaseResultExportsIfAny(releaseResultExportsAfterSend);
-                return;
-              case AnswerDiscarded():
-                throw StateError(
-                  'unreachable: a sendResultsToYourself dispatch always '
-                  'sets retainFailureForCorrelation, so handleDispatchFailed '
-                  'never discards it',
-                );
-            }
-          }
-          switch (answerTable.handleDispatchFailed(qid, rpcError)) {
-            case AnswerAlreadyFinished():
+            // this runs before sendBytes(). A sendResultsToYourself dispatch
+            // always sets retainForLocalLookup, so handleDispatchFailed
+            // never returns AnswerDiscarded here — an is-check (rather than
+            // a switch with an unreachable case) makes that visible in the
+            // types instead of needing a defensive throw to explain it.
+            final settlement = answerTable.handleDispatchFailed(qid, rpcError);
+            if (settlement is AnswerAlreadyFinished) {
               _sendCanceledReturn(qid, parameterCapabilityDisposalTicket);
               return;
-            case AnswerDiscarded():
-              final releaseParamCaps =
-                  _finishParameterCapabilityDisposalTrackingAndSendReleases(
-                    parameterCapabilityDisposalTicket,
-                  );
-              sendBytes(
-                buildReturnExceptionMessage(
-                  answerId: qid,
-                  reason: rpcError.message,
-                  kind: rpcError.kind,
-                  releaseParamCaps: releaseParamCaps,
-                  noFinishNeeded: true,
-                ),
-              );
-              return;
-            case AnswerRecorded():
-              throw StateError(
-                'unreachable: an ordinary (non-sendResultsToYourself) '
-                'dispatch never sets retainFailureForCorrelation, so '
-                'handleDispatchFailed never retains it',
-              );
+            }
+            final AnswerRecorded(:releaseResultExportsAfterSend) =
+                settlement as AnswerRecorded;
+            sendBytes(buildReturnResultsSentElsewhereMessage(answerId: qid));
+            _finishParameterCapabilityDisposalTrackingAndSendReleases(
+              parameterCapabilityDisposalTicket,
+            );
+            _releaseResultExportsIfAny(releaseResultExportsAfterSend);
+            return;
           }
+          final settlement = answerTable.handleDispatchFailed(qid, rpcError);
+          if (settlement is AnswerAlreadyFinished) {
+            _sendCanceledReturn(qid, parameterCapabilityDisposalTicket);
+            return;
+          }
+          // An ordinary (non-sendResultsToYourself) failure always answers
+          // with a normal exception Return — whether nothing was recorded
+          // (AnswerDiscarded) or a pipelined dependent had registered
+          // before an early Finish arrived, in which case
+          // handleDispatchFailed already resolved the dependency-tracker
+          // rendezvous on our behalf (AnswerRecorded, reached via that
+          // early-Finish-with-dependents branch — see that method's own
+          // doc comment; never the retained-failure branch, which requires
+          // retainForLocalLookup, itself only ever true for
+          // sendResultsToYourself, handled above). Either way this table
+          // never carries capabilities for a failure, so noFinishNeeded is
+          // unconditionally true.
+          final releaseResultExportsAfterSend =
+              settlement is AnswerRecorded
+                  ? settlement.releaseResultExportsAfterSend
+                  : null;
+          final releaseParamCaps =
+              _finishParameterCapabilityDisposalTrackingAndSendReleases(
+                parameterCapabilityDisposalTicket,
+              );
+          sendBytes(
+            buildReturnExceptionMessage(
+              answerId: qid,
+              reason: rpcError.message,
+              kind: rpcError.kind,
+              releaseParamCaps: releaseParamCaps,
+              noFinishNeeded: true,
+            ),
+          );
+          _releaseResultExportsIfAny(releaseResultExportsAfterSend);
         });
   }
 

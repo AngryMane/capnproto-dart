@@ -1176,8 +1176,7 @@ void main() {
       test('a reentrant peer that synchronously reuses a qid during its '
           'own noFinishNeeded Return (early Finish + an existing pipelined '
           'dependent, no result capabilities of its own) does not have '
-          'that new answer state corrupted by the old '
-          'handleAnswerIssued cleanup — regression test for the '
+          'that new answer state corrupted — regression test for the '
           'id-reuse-during-send hazard the dependency ticket design exists '
           'to avoid', () async {
         final h = _Harness();
@@ -1245,6 +1244,106 @@ void main() {
             .map(parseRpcMessage)
             .lastWhere((m) => m.answerId == 1);
         expect(newReturn.isReturnResults, isTrue);
+      });
+
+      test('a reentrant peer that sends Finish then immediately reuses a '
+          'qid during an ordinary, no-pipelined-dependents, '
+          'capability-bearing Return does not have the new call corrupted '
+          '— regression test for PR #117 review point 1: this exact '
+          'scenario used to reach a post-send handleAnswerIssued(qid) '
+          're-lookup that could observe a different call\'s state under '
+          'the same qid; that whole hazard class is gone now that '
+          'AnswerTable decides retention in the same call as installing '
+          'the answer, before the Return is ever sent', () async {
+        final h = _Harness();
+        final resultCap = _FakeCapability();
+        final parentCap =
+            _FakeCapability()
+              ..onDispatch =
+                  (_, _, _) => DispatchResult(
+                    payload: RpcPayload.fromBytes(_singleCapResultBytes),
+                    caps: [resultCap],
+                  );
+        final parentExportId = h.exportTable.retainOrCreateExportId(parentCap);
+
+        final newCap =
+            _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
+        final newExportId = h.exportTable.retainOrCreateExportId(newCap);
+
+        var reentered = false;
+        h.sendBytes = (bytes) {
+          h.sentBytes.add(bytes);
+          final msg = parseRpcMessage(bytes);
+          if (!reentered && msg.answerId == 1 && msg.isReturnResults) {
+            reentered = true;
+            // The Return carries a live capability, so a well-behaved peer
+            // still owes a real Finish for it — but nothing stops it from
+            // sending that Finish and then reusing qid 1 for a brand-new
+            // Call, both synchronously as a reaction to this very Return.
+            h.coordinator.handleFinish(parseRpcMessage(buildFinishMessage(1)));
+            h.coordinator.handleCall(
+              parseRpcMessage(
+                _buildCall(questionId: 1, targetExportId: newExportId),
+              ),
+            );
+          }
+        };
+
+        h.coordinator.handleCall(
+          parseRpcMessage(
+            _buildCall(questionId: 1, targetExportId: parentExportId),
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        expect(reentered, isTrue);
+        // The new call reusing qid 1 must be untouched by anything the old
+        // call's completion handler does after sendBytes() returns.
+        expect(newCap.dispatches, hasLength(1));
+        final newReturn = h.sentBytes
+            .map(parseRpcMessage)
+            .lastWhere((m) => m.answerId == 1);
+        expect(newReturn.isReturnResults, isTrue);
+      });
+
+      test('an ordinary (non-sendResultsToYourself) call with a pipelined '
+          'dependent that receives an early Finish, and then fails '
+          'instead of succeeding: still answers with a normal exception '
+          'Return, and the dependent still gets its own exception Return '
+          'too — regression test for PR #117 review point 2, where the '
+          'caller used to treat this exact AnswerRecorded outcome as '
+          'unreachable and throw', () async {
+        final h = _Harness();
+        final dispatchGate = Completer<void>();
+        final parentCap =
+            _FakeCapability()
+              ..dispatchGate = dispatchGate.future
+              ..onDispatch =
+                  (_, _, _) => throw const RpcException('parent broke');
+        final parentExportId = h.exportTable.retainOrCreateExportId(parentCap);
+
+        h.coordinator.handleCall(
+          parseRpcMessage(
+            _buildCall(questionId: 1, targetExportId: parentExportId),
+          ),
+        );
+        h.coordinator.handleCall(
+          parseRpcMessage(_buildPipelinedCall(questionId: 2, parentQid: 1)),
+        );
+        h.coordinator.handleFinish(parseRpcMessage(buildFinishMessage(1)));
+
+        dispatchGate.complete();
+        await Future<void>.delayed(Duration.zero);
+
+        final parentReturn = h.sentBytes
+            .map(parseRpcMessage)
+            .firstWhere((m) => m.answerId == 1);
+        expect(parentReturn.isReturnException, isTrue);
+        expect(parentReturn.exceptionReason, equals('parent broke'));
+        final dependentReturn = h.sentBytes
+            .map(parseRpcMessage)
+            .firstWhere((m) => m.answerId == 2);
+        expect(dependentReturn.isReturnException, isTrue);
       });
     });
   });
