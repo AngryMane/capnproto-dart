@@ -68,8 +68,8 @@ void main() {
       expect(table.handleAnswerFinished(42, releaseResultCaps: true), isNull);
     });
 
-    test('handleAnswerFinishNotNeeded removes only completed local '
-        'bookkeeping and does not cancel its settled dispatch', () {
+    test('handleAnswerIssued removes an answer with no result capabilities '
+        'of its own, and does not cancel its already-settled dispatch', () {
       final table = AnswerTable();
       final pending = Completer<ResolvedAnswer>();
       final cancellation = DispatchCancellationController();
@@ -80,13 +80,13 @@ void main() {
         isA<AnswerRecorded>(),
       );
 
-      table.handleAnswerFinishNotNeeded(1);
+      table.handleAnswerIssued(1);
 
       expect(table.isTracked(1), isFalse);
       expect(cancellation.context.isCanceled, isFalse);
     });
 
-    test('handleAnswerFinishNotNeeded is a no-op when a reentrant peer '
+    test('handleAnswerIssued is a no-op when a reentrant peer '
         'Finish already consumed the completed answer', () {
       final table = AnswerTable();
       table.handleAnswerReadyWithoutDispatch(2, resolved: _answer());
@@ -95,26 +95,32 @@ void main() {
         equals(const []),
       );
 
-      expect(() => table.handleAnswerFinishNotNeeded(2), returnsNormally);
+      expect(() => table.handleAnswerIssued(2), returnsNormally);
       expect(table.isTracked(2), isFalse);
     });
 
-    test('handleAnswerFinishNotNeeded rejects a pending answer without '
-        'canceling or removing it', () {
-      final table = AnswerTable();
-      final pending = Completer<ResolvedAnswer>();
-      final cancellation = DispatchCancellationController();
-      pending.future.ignore();
-      table.handleDispatchStarted(3, pending.future, cancellation);
+    test(
+      'handleAnswerIssued rejects a pending answer without '
+      'canceling or removing it — a caller bug, since this must only '
+      'ever follow handleDispatchSucceeded/handleAnswerReadyWithoutDispatch',
+      () {
+        final table = AnswerTable();
+        final pending = Completer<ResolvedAnswer>();
+        final cancellation = DispatchCancellationController();
+        pending.future.ignore();
+        table.handleDispatchStarted(3, pending.future, cancellation);
 
-      expect(() => table.handleAnswerFinishNotNeeded(3), throwsStateError);
-      expect(table.isTracked(3), isTrue);
-      expect(cancellation.context.isCanceled, isFalse);
-      table.handleDispatchSettledWithoutAnswer(3);
-    });
+        expect(() => table.handleAnswerIssued(3), throwsStateError);
+        expect(table.isTracked(3), isTrue);
+        expect(cancellation.context.isCanceled, isFalse);
+        table.handleDispatchSettledWithoutAnswer(3);
+      },
+    );
 
-    test('handleAnswerFinishNotNeeded rejects a completed answer with '
-        'result exports and leaves it for peer Finish', () {
+    test('handleAnswerIssued leaves a completed answer with result export '
+        'ids tracked — AnswerTable decides retention from its own state, '
+        'not from being told noFinishNeeded — and it is still available '
+        'for a real peer Finish afterward', () {
       final table = AnswerTable();
       table.handleAnswerReadyWithoutDispatch(
         4,
@@ -122,11 +128,30 @@ void main() {
         resultExportIds: [7],
       );
 
-      expect(() => table.handleAnswerFinishNotNeeded(4), throwsStateError);
+      expect(() => table.handleAnswerIssued(4), returnsNormally);
       expect(table.isTracked(4), isTrue);
       expect(
         table.handleAnswerFinished(4, releaseResultCaps: true),
         equals([7]),
+      );
+    });
+
+    test('handleAnswerIssued leaves a completed answer with result '
+        'capabilities of its own tracked, even when it produced no fresh '
+        'export ids (e.g. a receiverHosted capability handed back to the '
+        'peer) — pipelining can still target it', () {
+      final table = AnswerTable();
+      table.handleAnswerReadyWithoutDispatch(
+        5,
+        resolved: _answer([NullCapability()]),
+      );
+
+      expect(() => table.handleAnswerIssued(5), returnsNormally);
+      expect(table.isTracked(5), isTrue);
+      expect(
+        table.handleAnswerFinished(5, releaseResultCaps: true),
+        isEmpty,
+        reason: 'no result export ids of its own to release',
       );
     });
 

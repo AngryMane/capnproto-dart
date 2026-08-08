@@ -759,16 +759,19 @@ final class IncomingCallCoordinator {
           for (final c in result.caps) {
             resultReferences.add(exportResultCapabilityAsWireReference(c));
           }
-          // No capabilities anywhere in the results means no wire-level
-          // pipelined call against this answer could ever resolve to
-          // anything but "not a capability" — so it's safe to tell the peer
-          // no Finish is needed and immediately drop the answer's
-          // pipelining bookkeeping ourselves, instead of waiting for it.
-          // This stays keyed purely on the result's own shape — never on
-          // whether the peer already sent an early Finish (see
-          // AnswerTable.handleAnswerFinished's own doc comment for why those two
-          // are kept separate) — so a real peer reading it is never misled
-          // about a Return that does carry live capability references.
+          // No capabilities anywhere in the results means no future
+          // message — a peer Finish, or a pipelined call naming this qid —
+          // could ever resolve to a usable capability against it, so the
+          // peer doesn't need to send Finish for it either. This stays
+          // keyed purely on the result's own shape — never on whether the
+          // peer already sent an early Finish (see
+          // AnswerTable.handleAnswerFinished's own doc comment for why
+          // those two are kept separate) — so a real peer reading it is
+          // never misled about a Return that does carry live capability
+          // references. AnswerTable.handleAnswerIssued (below) makes this
+          // same determination independently, from the very data recorded
+          // into AnsweredState — this is the wire-facing half of the same
+          // fact, computed from the same source.
           final noFinishNeeded = resultReferences.isEmpty;
           // Record the answer before sending — see the comment on the
           // sendResultsToYourself branch above for why the ordering matters.
@@ -812,12 +815,16 @@ final class IncomingCallCoordinator {
               noFinishNeeded: noFinishNeeded,
             ),
           );
-          if (noFinishNeeded && answerStillTracked) {
-            // No Finish is needed for this qid (see above), so clear only
-            // the local answer bookkeeping. Recording it before send and
-            // clearing it after keeps it visible while the Return is sent;
-            // if a synchronously-reentrant peer sends Finish anyway, that
-            // may consume the state first and this cleanup becomes a no-op.
+          if (answerStillTracked) {
+            // Report the Return as sent regardless of whether it actually
+            // needed a Finish — AnswerTable decides that for itself, from
+            // the very AnsweredState it already holds (see
+            // handleAnswerIssued's own doc comment), rather than being
+            // told noFinishNeeded here. Recording the answer before send
+            // and reporting it issued after keeps it visible for the
+            // whole synchronously-reentrant send window; if a peer Finish
+            // arrives during that window anyway, it may consume the state
+            // first and this call becomes a no-op.
             //
             // Skipped entirely when !answerStillTracked (the peer already
             // sent an early Finish while dependents were outstanding — see
@@ -829,7 +836,7 @@ final class IncomingCallCoordinator {
             // would risk touching that new call's own answer state instead
             // of a no-op, exactly the id-reuse hazard the dependency
             // ticket design (see endPipelinedDependency) exists to avoid.
-            answerTable.handleAnswerFinishNotNeeded(qid);
+            answerTable.handleAnswerIssued(qid);
           }
           // Only non-null when the peer had already sent an early Finish
           // while pipelined dependents were still outstanding — releasing

@@ -141,7 +141,7 @@ final class PendingAnswerState extends AnswerState {
 
 /// The answer for this question is established — [resolved]/[resultExportIds]
 /// are final — and its protocol lifecycle is retained until Finish (or a
-/// local [AnswerTable.handleAnswerFinishNotNeeded] cleanup, for a
+/// local [AnswerTable.handleAnswerIssued] cleanup, for a
 /// Return that needs none). This is installed *before* the matching Return
 /// is actually sent (see [AnswerTable.handleDispatchSucceeded]/
 /// [AnswerTable.handleAnswerReadyWithoutDispatch]'s own doc comments for
@@ -193,7 +193,7 @@ sealed class DispatchSettlement {
 /// table dropped every trace of it already. The caller must answer with
 /// `Return(canceled)` instead of a normal Return (see
 /// `IncomingCallCoordinator._sendCanceledReturn`), and must not call
-/// [AnswerTable.handleAnswerFinishNotNeeded] for it.
+/// [AnswerTable.handleAnswerIssued] for it.
 final class AnswerAlreadyFinished extends DispatchSettlement {
   const AnswerAlreadyFinished();
 }
@@ -205,7 +205,7 @@ final class AnswerRecorded extends DispatchSettlement {
   /// table after this call. `false` only when the peer had already sent an
   /// early Finish while pipelined dependents were still outstanding — the
   /// table already freed the question id itself in that case, so a later
-  /// [AnswerTable.handleAnswerFinishNotNeeded] call for it must be skipped: the id
+  /// [AnswerTable.handleAnswerIssued] call for it must be skipped: the id
   /// may already have been legally (and, over a synchronously-reentrant
   /// transport, synchronously) reused by the peer for an unrelated new Call.
   final bool answerStillTracked;
@@ -462,41 +462,46 @@ class AnswerTable {
     );
   }
 
-  /// Reports that this vat itself has determined [qid] will never need a
-  /// peer Finish (its Return carries no result capabilities, so no
-  /// pipelined call could ever target it and no wire Release is needed
-  /// either) — clears the completed answer bookkeeping accordingly, the
-  /// same way a real peer [handleAnswerFinished] would, just without one ever
-  /// arriving.
+  /// Reports that [qid]'s Return has been issued to its requester — call
+  /// this once, right after the matching Return has actually been sent,
+  /// for every answer this table still tracks (`AnswerRecorded
+  /// .answerStillTracked`; skip the call entirely when that was `false`,
+  /// since the peer's own early Finish already freed [qid] itself, and the
+  /// id may already have been legally — and, over a synchronously-reentrant
+  /// transport, synchronously — reused by the peer for an unrelated new
+  /// Call by now). This table (not the caller) then decides, from the very
+  /// [AnsweredState.resolved] it already holds, whether [qid] still needs
+  /// to wait for a real peer Finish: if the answer carries no result
+  /// capabilities, no future message — a peer Finish, or a pipelined call
+  /// naming [qid] — could ever resolve to a usable capability against it,
+  /// so this table drops its own tracking immediately instead of waiting
+  /// for a Finish a well-behaved peer knows not to send (the wire encoding
+  /// tells it so, via `Return.noFinishNeeded`, computed independently from
+  /// this same data). Otherwise this is a no-op: [qid] keeps waiting for a
+  /// real [handleAnswerFinished], exactly as before.
   ///
-  /// The caller (`IncomingCallCoordinator`) must not call this until
-  /// *after* the matching Return has actually been sent, never before or
-  /// instead of sending it: acting on "no Finish needed" before the send
-  /// would let a synchronously-reentrant peer observe this table not
-  /// tracking [qid] at all, ahead of the very Return that tells the peer
-  /// [qid] exists. This method has no way to enforce that ordering itself
-  /// (it doesn't know about `sendBytes`) — it only enforces the *state*
-  /// precondition below; the *timing* precondition is the caller's
-  /// responsibility.
+  /// Must not be called until *after* the matching Return has actually been
+  /// sent: acting on this before the send would let a synchronously-
+  /// reentrant peer observe this table not tracking [qid] at all, ahead of
+  /// the very Return that tells the peer [qid] exists. This method has no
+  /// way to enforce that ordering itself (it doesn't know about
+  /// `sendBytes`) — that's the caller's responsibility.
   ///
-  /// Only an [AnsweredState] with no result capabilities is valid here —
-  /// throws [StateError] otherwise, since that would mean a real Finish is
-  /// still needed. A missing entry is a silent no-op instead of an error,
-  /// because synchronously sending the Return can reenter [handleAnswerFinished],
-  /// which may consume the state first — or, with an early-Finish-with-
-  /// dependents answer, because [handleDispatchSucceeded] already removed
-  /// [qid] itself before this is ever called. This never cancels a dispatch
-  /// or releases an export.
-  void handleAnswerFinishNotNeeded(int qid) {
+  /// A missing entry is a silent no-op, because synchronously sending the
+  /// Return can reenter [handleAnswerFinished], which may consume the state
+  /// first. Only an [AnsweredState] is otherwise valid here — throws
+  /// [StateError] for anything else, a caller bug (this must only ever be
+  /// called for an answer [handleDispatchSucceeded] or
+  /// [handleAnswerReadyWithoutDispatch] just installed).
+  void handleAnswerIssued(int qid) {
     final state = _answers[qid];
     if (state == null) return;
     if (state case AnsweredState(:final resolved, :final resultExportIds)) {
-      if (resultExportIds.isNotEmpty || (resolved?.caps.isNotEmpty ?? false)) {
-        throw StateError(
-          'answer $qid has result capabilities and needs peer Finish',
-        );
+      final needsPeerFinish =
+          resultExportIds.isNotEmpty || (resolved?.caps.isNotEmpty ?? false);
+      if (!needsPeerFinish) {
+        _answers.remove(qid);
       }
-      _answers.remove(qid);
       return;
     }
     throw StateError(
