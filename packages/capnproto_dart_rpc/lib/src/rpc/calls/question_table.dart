@@ -38,16 +38,33 @@ final class OutgoingQuestion {
   });
 }
 
+/// Lifecycle category: every long-lived Future/Completer this table owns is
+/// **wire-driven** — [OutgoingQuestion.returnCompleter] only ever advances
+/// when the peer's `Return` arrives. [OutgoingQuestion.sentCompleter] is
+/// driven locally instead: it completes the instant `sendBytes(...)`
+/// returns in `OutgoingCallCoordinator.startCallWithAllocatedQuestion` —
+/// i.e. once the Call has been handed to the connection's send path — not
+/// once a socket flush or peer receipt is confirmed, neither of which this
+/// table (or its caller) ever observes. Both completers must still be
+/// failed (never left pending) the moment the peer becomes unreachable —
+/// see [tearDown]. Contrast with `AnswerTable`, whose pending state instead
+/// advances on local capability-dispatch settlement, and
+/// `ImportTable.batchedReleaseImportCount`, which tracks operations already
+/// decided and merely queued for a future wire send rather than awaiting
+/// anything external.
 class QuestionTable {
   final Map<int, OutgoingQuestion> _questions = {};
   int _nextQuestionId = 0;
 
   /// Number of outgoing questions still awaiting their `Return`.
-  int get pendingCount =>
+  int get awaitingReturnCount =>
       _questions.values.where((q) => q.returnCompleter != null).length;
 
-  /// Number of outgoing questions whose Call hasn't reached the wire yet.
-  int get pendingSentCount =>
+  /// Number of outgoing questions whose Call hasn't been handed to
+  /// `sendBytes` yet — not a measure of transport flush or peer receipt,
+  /// neither of which this table observes (see the class-level doc comment
+  /// above).
+  int get notYetSentCount =>
       _questions.values.where((q) => q.sentCompleter != null).length;
 
   /// Allocates a fresh question id and registers a `Return` completer for

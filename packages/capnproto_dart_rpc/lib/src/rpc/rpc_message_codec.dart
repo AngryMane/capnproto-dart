@@ -454,7 +454,8 @@ class _ResolveReader extends StructReader {
   _ResolveReader(super.raw);
   int get promiseId => getUint32Field(_resolvePromiseId);
   int get disc => getUint16Field(_resolveDisc);
-  _CapDescriptorReader? get cap => getStructFieldWith(0, _CapDescriptorReader.new);
+  _CapDescriptorReader? get cap =>
+      getStructFieldWith(0, _CapDescriptorReader.new);
   _ExceptionReader? get exception =>
       getStructFieldWith(0, _ExceptionReader.new);
 }
@@ -550,7 +551,8 @@ final class _RpcMessageFactory
   @override
   _RpcMessageReader fromRawReader(RawStructReader r) => _RpcMessageReader(r);
   @override
-  _RpcMessageBuilder fromRawBuilder(RawStructBuilder r) => _RpcMessageBuilder(r);
+  _RpcMessageBuilder fromRawBuilder(RawStructBuilder r) =>
+      _RpcMessageBuilder(r);
 }
 
 final _rpcMessageFactory = _RpcMessageFactory();
@@ -822,8 +824,7 @@ FutureOr<Uint8List> buildCallMessageWithParamsBuilderMaybeSync({
   required int interfaceId,
   required int methodId,
   required void Function(AnyPointerBuilder) buildParams,
-  required FutureOr<List<WireCapabilityReference>> Function()
-  resolveReferences,
+  required FutureOr<List<WireCapabilityReference>> Function() resolveReferences,
   bool sendResultsToYourself = false,
 }) {
   final (mb, params) = _beginCallMessage(
@@ -1156,7 +1157,8 @@ Uint8List buildReturnResultsSentElsewhereMessage({required int answerId}) {
 /// Sent when this vat accepts a peer's premature Finish (received before
 /// the call it names had completed) and, once that call's dispatch
 /// actually settles, chooses not to answer it for real — see
-/// `AnswerTable.applyPeerFinish`/`tryRecordAnswer`'s `completed: false`
+/// `AnswerTable.handlePeerFinish`/`handleDispatchSucceeded`'s `completed:
+/// false`
 /// case and `IncomingCallCoordinator._sendCanceledReturn`. Deliberately
 /// not sent the moment Finish arrives: `releaseParamCaps` isn't knowable
 /// until the dispatch's params-capability disposal tracking resolves, and
@@ -1274,7 +1276,10 @@ void _writeCapabilityReference(
       builder.setSenderPromise(exportId);
     case ReceiverHostedCapabilityReference(:final importId):
       builder.setReceiverHosted(importId);
-    case ReceiverAnswerCapabilityReference(:final questionId, :final transformPath):
+    case ReceiverAnswerCapabilityReference(
+      :final questionId,
+      :final transformPath,
+    ):
       builder.setReceiverAnswer(questionId, transformPath);
     case UnsupportedCapabilityReference(:final discriminant):
       throw ArgumentError(
@@ -1332,7 +1337,9 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
       final capabilityTableReferences = <WireCapabilityReference>[];
       if (callCapTable != null) {
         for (int i = 0; i < callCapTable.length; i++) {
-          capabilityTableReferences.add(_readCapabilityReference(callCapTable[i]));
+          capabilityTableReferences.add(
+            _readCapabilityReference(callCapTable[i]),
+          );
         }
       }
       final isPA = (target?.disc ?? 0) == _targetPromisedAnswer;
@@ -1366,7 +1373,9 @@ RpcMessage parseRpcMessageFromReader(MessageReader mr) {
         final capabilityTableReferences = <WireCapabilityReference>[];
         if (capTable != null) {
           for (int i = 0; i < capTable.length; i++) {
-            capabilityTableReferences.add(_readCapabilityReference(capTable[i]));
+            capabilityTableReferences.add(
+              _readCapabilityReference(capTable[i]),
+            );
           }
         }
         return RpcMessage._(

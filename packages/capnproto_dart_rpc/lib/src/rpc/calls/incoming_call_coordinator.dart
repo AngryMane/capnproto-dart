@@ -19,7 +19,7 @@ import 'question_table.dart';
 // Used as the synthesised result for Bootstrap answers so that pipelined
 // calls targeting {receiverAnswer: {questionId: <boot>, transform: []}}
 // can resolve ptr[0] → the resolved answer's caps[0] (see
-// AnswerTable.resolvedFor).
+// AnswerTable.getResolvedAnswerFor).
 // hi = (dataWords & 0xFFFF) | (ptrWords << 16)
 // For dataWords=0, ptrWords=1: hi = 0x00010000 → LE bytes [0,0,1,0]
 final _bootstrapResultBytes = Uint8List.fromList([
@@ -205,7 +205,7 @@ final class IncomingCallCoordinator {
     // comment for why the same ordering matters there).
     final bootstrapCap = exportTable.retainExisting(0);
     if (bootstrapCap != null) {
-      answerTable.recordAnswer(
+      answerTable.handleAnswerReadyWithoutDispatch(
         msg.questionId,
         resolved: ResolvedAnswer(_bootstrapResultBytes, [bootstrapCap]),
       );
@@ -267,8 +267,11 @@ final class IncomingCallCoordinator {
       case ResolvedPipelineDependency(:final resolved):
         _dispatchPipelinedResolved(msg, resolved, path);
         return;
-      case PendingPipelineDependency(:final pending, :final ticket):
-        pending
+      case PendingPipelineDependency(
+        :final parentDispatchResult,
+        :final ticket,
+      ):
+        parentDispatchResult
             .then((resolved) => _dispatchPipelinedResolved(msg, resolved, path))
             .catchError((Object err) {
               // The connection may have torn down while this call sat
@@ -424,9 +427,9 @@ final class IncomingCallCoordinator {
       // so _rejectDuplicateQuestionId can still catch a peer illegally
       // reusing this same qid before sending Finish for it, exactly like
       // every other Return sent without a real dispatch throughout this
-      // file (see the sibling `answerTable.recordAnswer(qid)`
+      // file (see the sibling `answerTable.handleAnswerReadyWithoutDispatch(qid)`
       // sites).
-      answerTable.recordAnswer(qid);
+      answerTable.handleAnswerReadyWithoutDispatch(qid);
 
       sendBytes(
         buildReturnExceptionMessage(
@@ -465,7 +468,7 @@ final class IncomingCallCoordinator {
         );
       } catch (error) {
         disposeOwnedTarget();
-        answerTable.recordAnswer(qid);
+        answerTable.handleAnswerReadyWithoutDispatch(qid);
         sendBytes(
           buildReturnExceptionMessage(
             answerId: qid,
@@ -533,7 +536,7 @@ final class IncomingCallCoordinator {
             // otherwise send a Finish for qid before this bookkeeping
             // exists, which would then be silently dropped as a no-op
             // instead of ever clearing it.
-            answerTable.recordAnswer(qid);
+            answerTable.handleAnswerReadyWithoutDispatch(qid);
             sendBytes(
               buildReturnTakeFromOtherQuestionMessage(
                 answerId: qid,
@@ -543,7 +546,7 @@ final class IncomingCallCoordinator {
           })
           .catchError((Object err) {
             if (isClosed()) return;
-            answerTable.recordAnswer(qid);
+            answerTable.handleAnswerReadyWithoutDispatch(qid);
             sendBytes(
               buildReturnExceptionMessage(
                 answerId: qid,
@@ -688,7 +691,7 @@ final class IncomingCallCoordinator {
       (r) => ResolvedAnswer(r.payload.bytes, r.caps),
     );
     resolvedFuture.ignore();
-    answerTable.recordPendingAnswer(qid, resolvedFuture, cancellation);
+    answerTable.handleDispatchStarted(qid, resolvedFuture, cancellation);
 
     dispatchFuture
         .then((result) {
@@ -701,7 +704,7 @@ final class IncomingCallCoordinator {
           // capabilities it carries would otherwise never be disposed —
           // dispose them here instead.
           if (isClosed()) {
-            answerTable.clearPendingAnswer(qid);
+            answerTable.handleDispatchSettledWithoutAnswer(qid);
             _disposeResultCapabilities(result);
             _finishParameterCapabilityDisposalTrackingAndSendReleases(
               parameterCapabilityDisposalTicket,
@@ -719,14 +722,14 @@ final class IncomingCallCoordinator {
             // this forwarded question uses releaseResultCaps=false. Therefore
             // Finish must only drop bookkeeping here, not dispose result.caps.
             //
-            // tryRecordAnswer() runs *before* sendBytes(): if it
-            // ran after (like the plain answerTable.recordAnswer()
+            // handleDispatchSucceeded() runs *before* sendBytes(): if it
+            // ran after (like the plain answerTable.handleAnswerReadyWithoutDispatch()
             // this used to be), qid would sit briefly untracked between the
             // two calls, which a peer that reacts to this very Return
             // through a synchronously-reentrant sink (e.g. an in-memory or
             // `sync: true` transport) could observe — see that method's doc
             // comment.
-            final recorded = answerTable.tryRecordAnswer(
+            final recorded = answerTable.handleDispatchSucceeded(
               qid,
               resolved: ResolvedAnswer(result.payload.bytes, result.caps),
             );
@@ -760,19 +763,20 @@ final class IncomingCallCoordinator {
           // pipelining bookkeeping ourselves, instead of waiting for it.
           // This stays keyed purely on the result's own shape — never on
           // whether the peer already sent an early Finish (see
-          // AnswerTable.applyPeerFinish's own doc comment for why those two
+          // AnswerTable.handlePeerFinish's own doc comment for why those two
           // are kept separate) — so a real peer reading it is never misled
           // about a Return that does carry live capability references.
           final noFinishNeeded = resultReferences.isEmpty;
           // Record the answer before sending — see the comment on the
           // sendResultsToYourself branch above for why the ordering matters.
-          final recorded = answerTable.tryRecordAnswer(
+          final recorded = answerTable.handleDispatchSucceeded(
             qid,
             resolved: ResolvedAnswer(result.payload.bytes, result.caps),
             resultExportIds: [
               for (final d in resultReferences)
-                if (d case SenderHostedCapabilityReference(:final exportId) ||
-                    SenderPromiseCapabilityReference(:final exportId))
+                if (d
+                    case SenderHostedCapabilityReference(:final exportId) ||
+                        SenderPromiseCapabilityReference(:final exportId))
                   exportId,
             ],
           );
@@ -810,7 +814,7 @@ final class IncomingCallCoordinator {
             //
             // Skipped entirely when !recorded.answerStateRetained (the
             // peer already sent an early Finish while dependents were
-            // outstanding — see tryRecordAnswer's own doc comment): this
+            // outstanding — see handleDispatchSucceeded's own doc comment): this
             // table already freed qid *before* the send above, so the peer
             // may have legally — and, over a synchronously-reentrant
             // transport, synchronously during that very send — reused it
@@ -818,7 +822,7 @@ final class IncomingCallCoordinator {
             // would risk touching that new call's own answer state instead
             // of a no-op, exactly the id-reuse hazard the dependency
             // ticket design (see endPipelinedDependency) exists to avoid.
-            answerTable.clearAnswerForNoFinishNeeded(qid);
+            answerTable.handleReturnSentWithNoFinishNeeded(qid);
           }
           // Only non-null when the peer had already sent an early Finish
           // while pipelined dependents were still outstanding — releasing
@@ -828,7 +832,7 @@ final class IncomingCallCoordinator {
         })
         .catchError((Object err) {
           if (isClosed()) {
-            answerTable.clearPendingAnswer(qid);
+            answerTable.handleDispatchSettledWithoutAnswer(qid);
             _finishParameterCapabilityDisposalTrackingAndSendReleases(
               parameterCapabilityDisposalTicket,
             );
@@ -841,7 +845,7 @@ final class IncomingCallCoordinator {
           if (sendResultsToYourself) {
             // See the matching comment in the success branch above for why
             // this runs before sendBytes().
-            final recorded = answerTable.tryRecordFailedAnswer(qid, rpcError);
+            final recorded = answerTable.handleDispatchFailed(qid, rpcError);
             if (!recorded.completed) {
               _sendCanceledReturn(qid, parameterCapabilityDisposalTicket);
               return;
@@ -856,9 +860,9 @@ final class IncomingCallCoordinator {
           // An exception Return never carries a results payload/capTable,
           // so — same reasoning as the noFinishNeeded branch above — no
           // Finish is ever needed for it, and no answer-lifecycle state
-          // needs to be recorded for this qid at all. clearPendingAnswer() still
+          // needs to be recorded for this qid at all. handleDispatchSettledWithoutAnswer() still
           // needs to run, though, to detect a Finish that arrived early.
-          if (answerTable.clearPendingAnswer(qid)) {
+          if (answerTable.handleDispatchSettledWithoutAnswer(qid)) {
             _sendCanceledReturn(qid, parameterCapabilityDisposalTicket);
             return;
           }
@@ -881,8 +885,8 @@ final class IncomingCallCoordinator {
   /// Answers [qid] with `Return(canceled)` in place of a normal Return,
   /// because its dispatch was accepted as canceled by an early Finish with
   /// no pipelined dependents ever registered for it (see
-  /// `AnswerTable.applyPeerFinish`/`tryRecordAnswer`/`tryRecordFailedAnswer`/
-  /// `clearPendingAnswer`'s "was finished early" outcomes). Disposes
+  /// `AnswerTable.handlePeerFinish`/`handleDispatchSucceeded`/`handleDispatchFailed`/
+  /// `handleDispatchSettledWithoutAnswer`'s "was finished early" outcomes). Disposes
   /// [result]'s capabilities, if any — they were never exported, so this is
   /// the only remaining chance to release them. Deliberately not sent until
   /// here (dispatch-settle time), not the moment Finish arrived: sending it
@@ -923,7 +927,7 @@ final class IncomingCallCoordinator {
   }
 
   void handleFinish(RpcMessage msg) {
-    final resultExportIds = answerTable.applyPeerFinish(
+    final resultExportIds = answerTable.handlePeerFinish(
       msg.questionId,
       releaseResultCaps: msg.releaseResultCaps,
     );
@@ -936,7 +940,7 @@ final class IncomingCallCoordinator {
   /// wired to (see the wiring site).
   ///
   /// Mirrors the resolved-then-pending lookup order [_handlePipelinedCall]
-  /// already uses (see [AnswerTable.resolvedFor]/[AnswerTable.pendingFor]),
+  /// already uses (see [AnswerTable.getResolvedAnswerFor]/[AnswerTable.getDispatchResultFor]),
   /// with one extra case: failed answers are retained until Finish so a
   /// `takeFromOtherQuestion` that races with the failure still observes
   /// the original server exception rather than a misleading "unknown
@@ -952,11 +956,13 @@ final class IncomingCallCoordinator {
   /// — unlike every other still-pending call on this connection (see issue
   /// #99).
   Future<ResolvedAnswer> resolveLocalAnswer(int qid) {
-    final resolved = answerTable.resolvedFor(qid);
+    final resolved = answerTable.getResolvedAnswerFor(qid);
     if (resolved != null) return Future.value(resolved);
-    final pending = answerTable.pendingFor(qid);
-    if (pending != null) return answerTable.failOnTearDown(pending);
-    final error = answerTable.errorFor(qid);
+    final dispatchResult = answerTable.getDispatchResultFor(qid);
+    if (dispatchResult != null) {
+      return answerTable.failOnTearDown(dispatchResult);
+    }
+    final error = answerTable.getDispatchErrorFor(qid);
     if (error != null) throw error;
     throw RpcException(
       'takeFromOtherQuestion referenced unknown question id $qid',
