@@ -1057,6 +1057,73 @@ void main() {
           table.tearDown(const CapnpException('connection torn down'));
           expect(await taken, same(resolved));
         });
+
+        test('a requester Finish arriving while the dispatch is still '
+            'pending must not cancel it once a local consumer has already '
+            'taken the redirected result — that consumer still needs the '
+            'real result, not whatever a cooperative cancellation would '
+            'produce instead; the dispatch settles normally afterward and '
+            'the taken Future delivers the real success', () async {
+          final table = AnswerTable();
+          final pending = Completer<ResolvedAnswer>();
+          final cancellation = DispatchCancellationController();
+          table.handleDispatchStarted(
+            1,
+            pending.future,
+            cancellation,
+            sendResultsToYourself: true,
+          );
+
+          final taken = table.takeRedirectedResult(1);
+          table.handleRequesterFinishedAnswer(1, releaseResultCaps: true);
+          expect(
+            cancellation.context.isCanceled,
+            isFalse,
+            reason:
+                'the local consumer holding `taken` still needs this '
+                'dispatch to actually finish',
+          );
+
+          final resolved = _answer();
+          pending.complete(resolved);
+          final settlement = table.handleDispatchSucceeded(
+            1,
+            resolved: resolved,
+          );
+          expect(
+            settlement,
+            isA<AnswerSettled>(),
+            reason:
+                'not AnswerAlreadyFinished — the requester Finish alone '
+                'must not have turned this into a canceled answer',
+          );
+          expect(await taken, same(resolved));
+        });
+
+        test('the same guard applies to a failure: a requester Finish '
+            'while pending must not cancel a dispatch whose redirected '
+            'result a local consumer already took, and that consumer '
+            'still gets the real failure once the dispatch settles', () async {
+          final table = AnswerTable();
+          final pending = Completer<ResolvedAnswer>();
+          final cancellation = DispatchCancellationController();
+          table.handleDispatchStarted(
+            2,
+            pending.future,
+            cancellation,
+            sendResultsToYourself: true,
+          );
+
+          final taken = table.takeRedirectedResult(2);
+          table.handleRequesterFinishedAnswer(2, releaseResultCaps: true);
+          expect(cancellation.context.isCanceled, isFalse);
+
+          final error = const CapnpException('boom');
+          pending.completeError(error);
+          final settlement = table.handleDispatchFailed(2, error);
+          expect(settlement, isA<AnswerSettled>());
+          await expectLater(taken, throwsA(same(error)));
+        });
       },
     );
   });
