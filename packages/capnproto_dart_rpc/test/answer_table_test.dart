@@ -89,7 +89,7 @@ void main() {
     test('handleReturnSentWithNoFinishNeeded is a no-op when a reentrant peer '
         'Finish already consumed the completed answer', () {
       final table = AnswerTable();
-      table.handleAnswerWithoutDispatch(2, resolved: _answer());
+      table.handleAnswerReadyWithoutDispatch(2, resolved: _answer());
       expect(
         table.handlePeerFinish(2, releaseResultCaps: true),
         equals(const []),
@@ -122,7 +122,7 @@ void main() {
     test('handleReturnSentWithNoFinishNeeded rejects a completed answer with '
         'result exports and leaves it for peer Finish', () {
       final table = AnswerTable();
-      table.handleAnswerWithoutDispatch(
+      table.handleAnswerReadyWithoutDispatch(
         4,
         resolved: _answer(),
         resultExportIds: [7],
@@ -240,7 +240,7 @@ void main() {
         'resolved) returns its recorded result export ids and clears the '
         'resolved answer', () {
       final table = AnswerTable();
-      table.handleAnswerWithoutDispatch(
+      table.handleAnswerReadyWithoutDispatch(
         2,
         resolved: _answer(),
         resultExportIds: [10, 11],
@@ -258,7 +258,7 @@ void main() {
     test('Finish with releaseResultCaps=false for an already-resolved qid '
         'reports nothing to release, but still clears the answer', () {
       final table = AnswerTable();
-      table.handleAnswerWithoutDispatch(
+      table.handleAnswerReadyWithoutDispatch(
         2,
         resolved: _answer(),
         resultExportIds: [10, 11],
@@ -301,7 +301,7 @@ void main() {
       expect(table.handleDispatchSettledWithoutAnswer(3), isFalse);
       expect(table.isTracked(3), isFalse);
 
-      table.handleAnswerWithoutDispatch(3, resolved: _answer());
+      table.handleAnswerReadyWithoutDispatch(3, resolved: _answer());
       expect(table.isTracked(3), isTrue, reason: 'resolved, awaiting Finish');
       table.handlePeerFinish(3, releaseResultCaps: true);
       expect(table.isTracked(3), isFalse);
@@ -311,11 +311,11 @@ void main() {
     });
 
     test(
-      'handleAnswerWithoutDispatch with no resolved answer still tracks the qid '
+      'handleAnswerReadyWithoutDispatch with no resolved answer still tracks the qid '
       '(so duplicate reuse is rejected) but reports no pipelining data',
       () {
         final table = AnswerTable();
-        table.handleAnswerWithoutDispatch(4);
+        table.handleAnswerReadyWithoutDispatch(4);
         expect(table.isTracked(4), isTrue);
         expect(table.getResolvedAnswerFor(4), isNull);
         expect(
@@ -344,7 +344,7 @@ void main() {
         expect(table.getDispatchErrorFor(1), isNull);
 
         final resolved = _answer();
-        table.handleAnswerWithoutDispatch(2, resolved: resolved);
+        table.handleAnswerReadyWithoutDispatch(2, resolved: resolved);
         expect(table.getResolvedAnswerFor(2), same(resolved));
         expect(table.getDispatchResultFor(2), isNull);
         expect(table.getDispatchErrorFor(2), isNull);
@@ -364,7 +364,7 @@ void main() {
     test('count is the number of distinct tracked qids, regardless of which '
         'state each one is in', () {
       final table = AnswerTable();
-      table.handleAnswerWithoutDispatch(1, resolved: _answer());
+      table.handleAnswerReadyWithoutDispatch(1, resolved: _answer());
       table.handleDispatchFailed(2, const CapnpException('x'));
       expect(table.count, equals(2));
     });
@@ -392,7 +392,7 @@ void main() {
       pending.future.ignore();
       final cancellation = DispatchCancellationController();
       table.handleDispatchStarted(1, pending.future, cancellation);
-      table.handleAnswerWithoutDispatch(2, resolved: _answer());
+      table.handleAnswerReadyWithoutDispatch(2, resolved: _answer());
       table.handleDispatchFailed(3, const CapnpException('x'));
 
       final error = const CapnpException('connection torn down');
@@ -479,7 +479,7 @@ void main() {
         final table = AnswerTable();
 
         final resolved = _answer();
-        table.handleAnswerWithoutDispatch(1, resolved: resolved);
+        table.handleAnswerReadyWithoutDispatch(1, resolved: resolved);
         final resolvedDependency = table.tryBeginPipelinedDependency(1);
         expect(
           resolvedDependency,
@@ -504,7 +504,9 @@ void main() {
           same(pending.future),
         );
 
-        table.handleAnswerWithoutDispatch(3); // no resolved payload of its own
+        table.handleAnswerReadyWithoutDispatch(
+          3,
+        ); // no resolved payload of its own
         expect(table.tryBeginPipelinedDependency(3), isNull);
 
         table.handleDispatchFailed(4, const CapnpException('boom'));
@@ -705,7 +707,7 @@ void main() {
         // The peer legally reuses qid 1 for a brand-new, unrelated Call —
         // this vat's own Return for the original call already went out.
         final newResolved = _answer();
-        table.handleAnswerWithoutDispatch(
+        table.handleAnswerReadyWithoutDispatch(
           1,
           resolved: newResolved,
           resultExportIds: [99],

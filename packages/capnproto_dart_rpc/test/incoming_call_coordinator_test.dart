@@ -285,7 +285,7 @@ void main() {
       final h = _Harness();
       final targetCap =
           _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
-      h.answerTable.handleAnswerWithoutDispatch(
+      h.answerTable.handleAnswerReadyWithoutDispatch(
         1,
         resolved: ResolvedAnswer(_singleCapResultBytes, [targetCap]),
       );
@@ -297,7 +297,7 @@ void main() {
 
       // A second, already-resolved parent whose result has no pointer
       // fields at all: path [0] can never be a capability there.
-      h.answerTable.handleAnswerWithoutDispatch(
+      h.answerTable.handleAnswerReadyWithoutDispatch(
         2,
         resolved: ResolvedAnswer(_emptyMessageBytes, const []),
       );
@@ -317,11 +317,11 @@ void main() {
       final deferred = DeferredCapability(resolution.future);
 
       h.exportTable.retainOrCreateExportId(deferred);
-      h.answerTable.handleAnswerWithoutDispatch(
+      h.answerTable.handleAnswerReadyWithoutDispatch(
         1,
         resolved: ResolvedAnswer(_singleCapResultBytes, [deferred]),
       );
-      h.answerTable.handleAnswerWithoutDispatch(200);
+      h.answerTable.handleAnswerReadyWithoutDispatch(200);
       h.onTearDownConnection = (error) {
         h.answerTable.tearDown(error);
         h.exportTable.tearDown((lease) => lease.disposeForConnectionTeardown());

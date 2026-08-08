@@ -139,12 +139,20 @@ final class PendingAnswerState extends AnswerState {
   PendingAnswerState(this.dispatchResult, this.cancellation);
 }
 
-/// A Return was already sent (or the equivalent resultsSentElsewhere path
-/// taken) for this question, and it's now awaiting Finish. [resolved] is
-/// only set when pipelined calls can target this answer's result — `null`
-/// for a Return variant with no result payload of its own (an exception, or
-/// a takeFromOtherQuestion forward). [resultExportIds] are the export ids
-/// (if any) that a later Finish(releaseResultCaps: true) should release.
+/// The answer for this question is established — [resolved]/[resultExportIds]
+/// are final — and its protocol lifecycle is retained until Finish (or a
+/// local [AnswerTable.handleReturnSentWithNoFinishNeeded] cleanup, for a
+/// Return that needs none). This is installed *before* the matching Return
+/// is actually sent (see [AnswerTable.handleDispatchSucceeded]/
+/// [AnswerTable.handleAnswerReadyWithoutDispatch]'s own doc comments for
+/// why: closing the gap where a synchronously-reentrant peer could observe
+/// a pipelined call, Finish, or Release for this qid before this
+/// bookkeeping exists), so this state does *not* mean "a Return was already
+/// sent" — only that the answer itself is now fixed. [resolved] is only set
+/// when pipelined calls can target this answer's result — `null` for a
+/// Return variant with no result payload of its own (an exception, or a
+/// takeFromOtherQuestion forward). [resultExportIds] are the export ids (if
+/// any) that a later Finish(releaseResultCaps: true) should release.
 final class AnsweredState extends AnswerState {
   final ResolvedAnswer? resolved;
   final List<int> resultExportIds;
@@ -205,9 +213,15 @@ final class FinishedBeforeCompletionState extends AnswerState {
 /// Every public member below is grouped, in order: **Query** (read-only
 /// lookups), **Event** (`handleXxx` methods — each reports a fact about the
 /// world to this table and lets it decide, from its own current state, what
-/// the caller must now do; none of them are commands whose effect the
-/// caller could predict without reading the return value), **Lifecycle**
-/// (table-wide, not per-qid), and **Other** (pipeline-dependency tracking).
+/// the caller must now do), **Lifecycle** (table-wide, not per-qid), and
+/// **Pipelining** (pipeline-dependency tracking).
+///
+/// One Event method is not yet a pure fact report:
+/// [handleDispatchSettledWithoutAnswer]'s caller still decides, from its own
+/// `sendResultsToYourself` context rather than from anything this table
+/// tracks, whether a dispatch failure should be retained as [FailedAnswerState]
+/// (call [handleDispatchFailed]) or discarded outright (call this instead)
+/// — see that method's own doc comment.
 class AnswerTable {
   final Map<int, AnswerState> _answers = {};
 
@@ -295,7 +309,7 @@ class AnswerTable {
   /// Return, never before.
   ///
   /// Otherwise records [resolved]/[resultExportIds] as the answer awaiting
-  /// Finish (see [handleAnswerWithoutDispatch], which this shares its
+  /// Finish (see [handleAnswerReadyWithoutDispatch], which this shares its
   /// recorded state with) and returns `(completed: true,
   /// answerStateRetained: true, releaseResultExportsAfterSend: null)`.
   ///
@@ -405,6 +419,15 @@ class AnswerTable {
   /// [qid] briefly untracked in between, which a caller that then sends the
   /// Return before its own follow-up call can observe (see those methods'
   /// doc comments).
+  ///
+  /// Unlike this table's other Event methods, the choice to call this
+  /// instead of [handleDispatchFailed] on a dispatch failure is not derived
+  /// from anything this table tracks — the caller (`sendResultsToYourself`,
+  /// known from before dispatch even started) decides whether the failure
+  /// needs retaining for a later `takeFromOtherQuestion` correlation. A
+  /// fully event-driven design would fold that mode into
+  /// [handleDispatchStarted] and let this table make that call itself; that
+  /// hasn't been done yet — see [AnswerTable]'s own doc comment.
   bool handleDispatchSettledWithoutAnswer(int qid) {
     final state = _answers[qid];
     if (state case PendingAnswerState(
@@ -433,7 +456,7 @@ class AnswerTable {
   /// a Return with no result payload at all (an exception, or a
   /// takeFromOtherQuestion forward — neither [resolved] nor
   /// [resultExportIds] set).
-  void handleAnswerWithoutDispatch(
+  void handleAnswerReadyWithoutDispatch(
     int qid, {
     ResolvedAnswer? resolved,
     List<int> resultExportIds = const [],
@@ -588,7 +611,7 @@ class AnswerTable {
   }
 
   // ---------------------------------------------------------------------
-  // Other (pipeline-dependency tracking)
+  // Pipelining (pipeline-dependency tracking)
   // ---------------------------------------------------------------------
 
   /// Atomically checks whether [qid] is a valid promisedAnswer target for a

@@ -205,7 +205,7 @@ final class IncomingCallCoordinator {
     // comment for why the same ordering matters there).
     final bootstrapCap = exportTable.retainExisting(0);
     if (bootstrapCap != null) {
-      answerTable.handleAnswerWithoutDispatch(
+      answerTable.handleAnswerReadyWithoutDispatch(
         msg.questionId,
         resolved: ResolvedAnswer(_bootstrapResultBytes, [bootstrapCap]),
       );
@@ -427,9 +427,9 @@ final class IncomingCallCoordinator {
       // so _rejectDuplicateQuestionId can still catch a peer illegally
       // reusing this same qid before sending Finish for it, exactly like
       // every other Return sent without a real dispatch throughout this
-      // file (see the sibling `answerTable.handleAnswerWithoutDispatch(qid)`
+      // file (see the sibling `answerTable.handleAnswerReadyWithoutDispatch(qid)`
       // sites).
-      answerTable.handleAnswerWithoutDispatch(qid);
+      answerTable.handleAnswerReadyWithoutDispatch(qid);
 
       sendBytes(
         buildReturnExceptionMessage(
@@ -468,7 +468,7 @@ final class IncomingCallCoordinator {
         );
       } catch (error) {
         disposeOwnedTarget();
-        answerTable.handleAnswerWithoutDispatch(qid);
+        answerTable.handleAnswerReadyWithoutDispatch(qid);
         sendBytes(
           buildReturnExceptionMessage(
             answerId: qid,
@@ -536,7 +536,7 @@ final class IncomingCallCoordinator {
             // otherwise send a Finish for qid before this bookkeeping
             // exists, which would then be silently dropped as a no-op
             // instead of ever clearing it.
-            answerTable.handleAnswerWithoutDispatch(qid);
+            answerTable.handleAnswerReadyWithoutDispatch(qid);
             sendBytes(
               buildReturnTakeFromOtherQuestionMessage(
                 answerId: qid,
@@ -546,7 +546,7 @@ final class IncomingCallCoordinator {
           })
           .catchError((Object err) {
             if (isClosed()) return;
-            answerTable.handleAnswerWithoutDispatch(qid);
+            answerTable.handleAnswerReadyWithoutDispatch(qid);
             sendBytes(
               buildReturnExceptionMessage(
                 answerId: qid,
@@ -723,7 +723,7 @@ final class IncomingCallCoordinator {
             // Finish must only drop bookkeeping here, not dispose result.caps.
             //
             // handleDispatchSucceeded() runs *before* sendBytes(): if it
-            // ran after (like the plain answerTable.handleAnswerWithoutDispatch()
+            // ran after (like the plain answerTable.handleAnswerReadyWithoutDispatch()
             // this used to be), qid would sit briefly untracked between the
             // two calls, which a peer that reacts to this very Return
             // through a synchronously-reentrant sink (e.g. an in-memory or
