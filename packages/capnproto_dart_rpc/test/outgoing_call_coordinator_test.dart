@@ -127,7 +127,7 @@ void main() {
       // No await anywhere above: if this were the async path, sendBytes
       // wouldn't have run yet.
       expect(h.sentBytes, hasLength(1));
-      expect(h.questions.awaitingSendCount, equals(0));
+      expect(h.questions.notYetSentCount, equals(0));
       expect(h.questions.awaitingReturnCount, equals(1));
 
       h.coordinator.handleReturn(_decodedEmptyReturn(started.questionId));

@@ -665,7 +665,7 @@ class TwoPartyRpcConnection implements RpcConnection {
       _rpcCapabilityDelegate;
 
   int get debugPendingQuestionCount => _questionTable.awaitingReturnCount;
-  int get debugPendingQuestionSentCount => _questionTable.awaitingSendCount;
+  int get debugPendingQuestionSentCount => _questionTable.notYetSentCount;
 
   /// Number of capabilities currently exported to the peer (i.e. still
   /// holding at least one outstanding remote reference).
@@ -688,7 +688,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// non-zero for the duration of a single, already-scheduled flush, and
   /// that flush clears it up front before it sends anything (so a
   /// mid-flush sink failure never leaves it non-empty either).
-  int get debugPendingReleaseCount => _importTable.queuedReleaseCount;
+  int get debugPendingReleaseCount => _importTable.batchedReleaseImportCount;
 
   /// Number of incoming calls with some tracked answer-lifecycle state:
   /// dispatch in flight, a resolved-but-not-yet-finished answer, or a

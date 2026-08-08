@@ -12,12 +12,12 @@ void main() {
       final qid = question.id;
 
       expect(table.awaitingReturnCount, equals(1));
-      expect(table.awaitingSendCount, equals(1));
+      expect(table.notYetSentCount, equals(1));
       expect(table.sentCompleterFor(qid), same(sentCompleter));
 
       table.abandon(qid);
       expect(table.awaitingReturnCount, equals(0));
-      expect(table.awaitingSendCount, equals(0));
+      expect(table.notYetSentCount, equals(0));
       expect(table.sentCompleterFor(qid), isNull);
       expect(table.takeReturn(qid), isNull);
       // abandon() itself never touches the completers the caller already
@@ -37,7 +37,7 @@ void main() {
       table.markSent(qid);
       expect(sentCompleter.isCompleted, isTrue);
       expect(table.sentCompleterFor(qid), isNull);
-      expect(table.awaitingSendCount, equals(0));
+      expect(table.notYetSentCount, equals(0));
       expect(table.awaitingReturnCount, equals(1), reason: 'still awaiting Return');
       expect(completer.isCompleted, isFalse);
 
@@ -62,7 +62,7 @@ void main() {
       table.tearDown(err);
 
       expect(table.awaitingReturnCount, equals(0));
-      expect(table.awaitingSendCount, equals(0));
+      expect(table.notYetSentCount, equals(0));
       await expectLater(completer1.future, throwsA(same(err)));
       await expectLater(sentCompleter1.future, throwsA(same(err)));
       await expectLater(completer2.future, throwsA(same(err)));
@@ -136,7 +136,7 @@ void main() {
       final completer = question.returnCompleter!;
 
       expect(table.awaitingReturnCount, equals(1));
-      expect(table.awaitingSendCount, equals(0));
+      expect(table.notYetSentCount, equals(0));
       expect(table.sentCompleterFor(qid), isNull);
       expect(table.takeReturn(qid), same(completer));
     });

@@ -199,7 +199,7 @@ final class FinishedBeforeCompletionState extends AnswerState {
 /// a dispatch already running is free to keep running to completion. Once
 /// dispatch settles into [AnsweredState], waiting for the peer's `Finish` is
 /// **wire-driven** instead, exactly like `QuestionTable`'s `Return` wait.
-/// Contrast both with `ImportTable.queuedReleaseCount`, which tracks
+/// Contrast both with `ImportTable.batchedReleaseImportCount`, which tracks
 /// already-decided operations merely queued for a future wire send.
 class AnswerTable {
   final Map<int, AnswerState> _answers = {};
