@@ -729,27 +729,30 @@ final class IncomingCallCoordinator {
             // through a synchronously-reentrant sink (e.g. an in-memory or
             // `sync: true` transport) could observe — see that method's doc
             // comment.
-            final recorded = answerTable.handleDispatchSucceeded(
+            switch (answerTable.handleDispatchSucceeded(
               qid,
               resolved: ResolvedAnswer(result.payload.bytes, result.caps),
-            );
-            if (!recorded.completed) {
-              _sendCanceledReturn(
-                qid,
-                parameterCapabilityDisposalTicket,
-                result: result,
-              );
-              return;
+            )) {
+              case AnswerAlreadyFinished():
+                _sendCanceledReturn(
+                  qid,
+                  parameterCapabilityDisposalTicket,
+                  result: result,
+                );
+                return;
+              case AnswerRecorded(:final releaseResultExportsAfterSend):
+                sendBytes(
+                  buildReturnResultsSentElsewhereMessage(answerId: qid),
+                );
+                // No Return field exists on this variant to carry
+                // releaseParamCaps, so just flush any deferred params
+                // releases as ordinary Release messages.
+                _finishParameterCapabilityDisposalTrackingAndSendReleases(
+                  parameterCapabilityDisposalTicket,
+                );
+                _releaseResultExportsIfAny(releaseResultExportsAfterSend);
+                return;
             }
-            sendBytes(buildReturnResultsSentElsewhereMessage(answerId: qid));
-            // No Return field exists on this variant to carry
-            // releaseParamCaps, so just flush any deferred params releases
-            // as ordinary Release messages.
-            _finishParameterCapabilityDisposalTrackingAndSendReleases(
-              parameterCapabilityDisposalTicket,
-            );
-            _releaseResultExportsIfAny(recorded.releaseResultExportsAfterSend);
-            return;
           }
 
           final resultReferences = <WireCapabilityReference>[];
@@ -763,13 +766,13 @@ final class IncomingCallCoordinator {
           // pipelining bookkeeping ourselves, instead of waiting for it.
           // This stays keyed purely on the result's own shape — never on
           // whether the peer already sent an early Finish (see
-          // AnswerTable.handlePeerFinish's own doc comment for why those two
+          // AnswerTable.finishAnswer's own doc comment for why those two
           // are kept separate) — so a real peer reading it is never misled
           // about a Return that does carry live capability references.
           final noFinishNeeded = resultReferences.isEmpty;
           // Record the answer before sending — see the comment on the
           // sendResultsToYourself branch above for why the ordering matters.
-          final recorded = answerTable.handleDispatchSucceeded(
+          final settlement = answerTable.handleDispatchSucceeded(
             qid,
             resolved: ResolvedAnswer(result.payload.bytes, result.caps),
             resultExportIds: [
@@ -780,7 +783,7 @@ final class IncomingCallCoordinator {
                   exportId,
             ],
           );
-          if (!recorded.completed) {
+          if (settlement is AnswerAlreadyFinished) {
             _sendCanceledReturn(
               qid,
               parameterCapabilityDisposalTicket,
@@ -788,6 +791,10 @@ final class IncomingCallCoordinator {
             );
             return;
           }
+          final AnswerRecorded(
+            :answerStillTracked,
+            :releaseResultExportsAfterSend,
+          ) = settlement as AnswerRecorded;
           final releaseParamCaps =
               _finishParameterCapabilityDisposalTrackingAndSendReleases(
                 parameterCapabilityDisposalTicket,
@@ -805,30 +812,30 @@ final class IncomingCallCoordinator {
               noFinishNeeded: noFinishNeeded,
             ),
           );
-          if (noFinishNeeded && recorded.answerStateRetained) {
+          if (noFinishNeeded && answerStillTracked) {
             // No Finish is needed for this qid (see above), so clear only
             // the local answer bookkeeping. Recording it before send and
             // clearing it after keeps it visible while the Return is sent;
             // if a synchronously-reentrant peer sends Finish anyway, that
             // may consume the state first and this cleanup becomes a no-op.
             //
-            // Skipped entirely when !recorded.answerStateRetained (the
-            // peer already sent an early Finish while dependents were
-            // outstanding — see handleDispatchSucceeded's own doc comment): this
-            // table already freed qid *before* the send above, so the peer
-            // may have legally — and, over a synchronously-reentrant
+            // Skipped entirely when !answerStillTracked (the peer already
+            // sent an early Finish while dependents were outstanding — see
+            // handleDispatchSucceeded's own doc comment): this table
+            // already freed qid *before* the send above, so the peer may
+            // have legally — and, over a synchronously-reentrant
             // transport, synchronously during that very send — reused it
             // for an unrelated new Call by now. Looking qid back up here
             // would risk touching that new call's own answer state instead
             // of a no-op, exactly the id-reuse hazard the dependency
             // ticket design (see endPipelinedDependency) exists to avoid.
-            answerTable.handleReturnSentWithNoFinishNeeded(qid);
+            answerTable.finishAnswerLocally(qid);
           }
           // Only non-null when the peer had already sent an early Finish
           // while pipelined dependents were still outstanding — releasing
           // (if requested) only after the Return above is actually sent,
           // never before, exactly like a real peer Finish would.
-          _releaseResultExportsIfAny(recorded.releaseResultExportsAfterSend);
+          _releaseResultExportsIfAny(releaseResultExportsAfterSend);
         })
         .catchError((Object err) {
           if (isClosed()) {
@@ -845,17 +852,20 @@ final class IncomingCallCoordinator {
           if (sendResultsToYourself) {
             // See the matching comment in the success branch above for why
             // this runs before sendBytes().
-            final recorded = answerTable.handleDispatchFailed(qid, rpcError);
-            if (!recorded.completed) {
-              _sendCanceledReturn(qid, parameterCapabilityDisposalTicket);
-              return;
+            switch (answerTable.handleDispatchFailed(qid, rpcError)) {
+              case AnswerAlreadyFinished():
+                _sendCanceledReturn(qid, parameterCapabilityDisposalTicket);
+                return;
+              case AnswerRecorded(:final releaseResultExportsAfterSend):
+                sendBytes(
+                  buildReturnResultsSentElsewhereMessage(answerId: qid),
+                );
+                _finishParameterCapabilityDisposalTrackingAndSendReleases(
+                  parameterCapabilityDisposalTicket,
+                );
+                _releaseResultExportsIfAny(releaseResultExportsAfterSend);
+                return;
             }
-            sendBytes(buildReturnResultsSentElsewhereMessage(answerId: qid));
-            _finishParameterCapabilityDisposalTrackingAndSendReleases(
-              parameterCapabilityDisposalTicket,
-            );
-            _releaseResultExportsIfAny(recorded.releaseResultExportsAfterSend);
-            return;
           }
           // An exception Return never carries a results payload/capTable,
           // so — same reasoning as the noFinishNeeded branch above — no
@@ -885,7 +895,7 @@ final class IncomingCallCoordinator {
   /// Answers [qid] with `Return(canceled)` in place of a normal Return,
   /// because its dispatch was accepted as canceled by an early Finish with
   /// no pipelined dependents ever registered for it (see
-  /// `AnswerTable.handlePeerFinish`/`handleDispatchSucceeded`/`handleDispatchFailed`/
+  /// `AnswerTable.finishAnswer`/`handleDispatchSucceeded`/`handleDispatchFailed`/
   /// `handleDispatchSettledWithoutAnswer`'s "was finished early" outcomes). Disposes
   /// [result]'s capabilities, if any — they were never exported, so this is
   /// the only remaining chance to release them. Deliberately not sent until
@@ -927,7 +937,7 @@ final class IncomingCallCoordinator {
   }
 
   void handleFinish(RpcMessage msg) {
-    final resultExportIds = answerTable.handlePeerFinish(
+    final resultExportIds = answerTable.finishAnswer(
       msg.questionId,
       releaseResultCaps: msg.releaseResultCaps,
     );
