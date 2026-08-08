@@ -11,13 +11,13 @@ void main() {
       final sentCompleter = question.sentCompleter!;
       final qid = question.id;
 
-      expect(table.pendingCount, equals(1));
-      expect(table.pendingSentCount, equals(1));
+      expect(table.awaitingReturnCount, equals(1));
+      expect(table.awaitingSendCount, equals(1));
       expect(table.sentCompleterFor(qid), same(sentCompleter));
 
       table.abandon(qid);
-      expect(table.pendingCount, equals(0));
-      expect(table.pendingSentCount, equals(0));
+      expect(table.awaitingReturnCount, equals(0));
+      expect(table.awaitingSendCount, equals(0));
       expect(table.sentCompleterFor(qid), isNull);
       expect(table.takeReturn(qid), isNull);
       // abandon() itself never touches the completers the caller already
@@ -37,8 +37,8 @@ void main() {
       table.markSent(qid);
       expect(sentCompleter.isCompleted, isTrue);
       expect(table.sentCompleterFor(qid), isNull);
-      expect(table.pendingSentCount, equals(0));
-      expect(table.pendingCount, equals(1), reason: 'still awaiting Return');
+      expect(table.awaitingSendCount, equals(0));
+      expect(table.awaitingReturnCount, equals(1), reason: 'still awaiting Return');
       expect(completer.isCompleted, isFalse);
 
       // Idempotent: marking an already-sent (or unknown) qid sent again
@@ -61,8 +61,8 @@ void main() {
       final err = StateError('connection torn down');
       table.tearDown(err);
 
-      expect(table.pendingCount, equals(0));
-      expect(table.pendingSentCount, equals(0));
+      expect(table.awaitingReturnCount, equals(0));
+      expect(table.awaitingSendCount, equals(0));
       await expectLater(completer1.future, throwsA(same(err)));
       await expectLater(sentCompleter1.future, throwsA(same(err)));
       await expectLater(completer2.future, throwsA(same(err)));
@@ -135,8 +135,8 @@ void main() {
       final qid = question.id;
       final completer = question.returnCompleter!;
 
-      expect(table.pendingCount, equals(1));
-      expect(table.pendingSentCount, equals(0));
+      expect(table.awaitingReturnCount, equals(1));
+      expect(table.awaitingSendCount, equals(0));
       expect(table.sentCompleterFor(qid), isNull);
       expect(table.takeReturn(qid), same(completer));
     });

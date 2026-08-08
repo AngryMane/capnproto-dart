@@ -38,16 +38,27 @@ final class OutgoingQuestion {
   });
 }
 
+/// Lifecycle category: every long-lived Future/Completer this table owns is
+/// **wire-driven** — [OutgoingQuestion.returnCompleter] only ever advances
+/// when the peer's `Return` arrives, and [OutgoingQuestion.sentCompleter]
+/// only when this vat's own transport confirms the Call reached the wire.
+/// Neither depends on any local computation running on this vat, so both
+/// must be failed (never left pending) the moment the peer becomes
+/// unreachable — see [tearDown]. Contrast with `AnswerTable`, whose pending
+/// state instead advances on local capability-dispatch settlement, and
+/// `ImportTable.queuedReleaseCount`, which tracks operations already decided
+/// and merely queued for a future wire send rather than awaiting anything
+/// external.
 class QuestionTable {
   final Map<int, OutgoingQuestion> _questions = {};
   int _nextQuestionId = 0;
 
   /// Number of outgoing questions still awaiting their `Return`.
-  int get pendingCount =>
+  int get awaitingReturnCount =>
       _questions.values.where((q) => q.returnCompleter != null).length;
 
   /// Number of outgoing questions whose Call hasn't reached the wire yet.
-  int get pendingSentCount =>
+  int get awaitingSendCount =>
       _questions.values.where((q) => q.sentCompleter != null).length;
 
   /// Allocates a fresh question id and registers a `Return` completer for

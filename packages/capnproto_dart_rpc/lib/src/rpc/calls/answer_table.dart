@@ -102,16 +102,17 @@ final class ResolvedPipelineDependency extends PipelineDependency {
   const ResolvedPipelineDependency(this.resolved);
 }
 
-/// The parent answer's dispatch is still running: queue behind [pending],
-/// and call [AnswerTable.endPipelinedDependency] with [ticket] exactly once
+/// The parent answer's dispatch is still running: queue behind
+/// [parentDispatchResult], and call [AnswerTable.endPipelinedDependency]
+/// with [ticket] exactly once
 /// this dependent is done with its eventual result (whether that result is
 /// used successfully or the parent call fails) — never re-derive that call
 /// from the parent's question id, which may have already been legally
 /// reused by the peer for an unrelated new Call by the time this settles.
 final class PendingPipelineDependency extends PipelineDependency {
-  final Future<ResolvedAnswer> pending;
+  final Future<ResolvedAnswer> parentDispatchResult;
   final Object ticket;
-  const PendingPipelineDependency(this.pending, this.ticket);
+  const PendingPipelineDependency(this.parentDispatchResult, this.ticket);
 }
 
 /// One incoming question's answer-lifecycle state, exactly one of which
@@ -122,20 +123,20 @@ sealed class AnswerState {
 }
 
 /// This question has an answer pending while its capability invocation is
-/// still running. [pending] lets a pipelined call queue behind it;
+/// still running. [dispatchResult] lets a pipelined call queue behind it;
 /// [cancellation] lets a Finish that arrives before completion — and with
 /// no pipelined dependents left outstanding — cancel the invocation. Every
-/// pipelined call that queues behind [pending] (see
+/// pipelined call that queues behind [dispatchResult] (see
 /// `AnswerTable.tryBeginPipelinedDependency`) is tracked in the private
 /// dependency tracker below, which outlives this state object once the
 /// dispatch settles — see `_PipelineDependencyTracker`'s own doc comment.
 /// (Private, not exposed as a named field here, purely so this otherwise-
 /// public class doesn't leak a private type through a public API.)
 final class PendingAnswerState extends AnswerState {
-  final Future<ResolvedAnswer> pending;
+  final Future<ResolvedAnswer> dispatchResult;
   final DispatchCancellationController cancellation;
   final _PipelineDependencyTracker _dependents = _PipelineDependencyTracker();
-  PendingAnswerState(this.pending, this.cancellation);
+  PendingAnswerState(this.dispatchResult, this.cancellation);
 }
 
 /// A Return was already sent (or the equivalent resultsSentElsewhere path
@@ -188,6 +189,18 @@ final class FinishedBeforeCompletionState extends AnswerState {
 /// that need releasing; the caller (today, `IncomingCallCoordinator`) owns
 /// translating that into an actual `ExportTable.releaseReference` call and
 /// any wire traffic.
+///
+/// Lifecycle category: this table straddles both halves of an incoming
+/// call's life. [PendingAnswerState.dispatchResult] (and the
+/// [PendingPipelineDependency.parentDispatchResult] pipelined calls queue
+/// behind) is **local** — it advances purely on this vat's own capability
+/// dispatch settling, with no peer message required, so connection teardown
+/// only *requests* cancellation (see [PendingAnswerState.cancellation]) and
+/// a dispatch already running is free to keep running to completion. Once
+/// dispatch settles into [AnsweredState], waiting for the peer's `Finish` is
+/// **wire-driven** instead, exactly like `QuestionTable`'s `Return` wait.
+/// Contrast both with `ImportTable.queuedReleaseCount`, which tracks
+/// already-decided operations merely queued for a future wire send.
 class AnswerTable {
   final Map<int, AnswerState> _answers = {};
 
@@ -219,9 +232,9 @@ class AnswerTable {
   }
 
   /// The in-flight dispatch future for [qid], if it hasn't settled yet.
-  Future<ResolvedAnswer>? pendingFor(int qid) {
+  Future<ResolvedAnswer>? dispatchResultFor(int qid) {
     final state = _answers[qid];
-    return state is PendingAnswerState ? state.pending : null;
+    return state is PendingAnswerState ? state.dispatchResult : null;
   }
 
   /// The error [qid]'s dispatch failed with, if any — retained until Finish
@@ -232,15 +245,15 @@ class AnswerTable {
     return state is FailedAnswerState ? state.error : null;
   }
 
-  /// Records [qid] as pending: [pending] lets a pipelined call queue behind
-  /// the running capability invocation, and [cancellation] lets an early
-  /// Finish cancel it.
+  /// Records [qid] as pending: [dispatchResult] lets a pipelined call queue
+  /// behind the running capability invocation, and [cancellation] lets an
+  /// early Finish cancel it.
   void recordPendingAnswer(
     int qid,
-    Future<ResolvedAnswer> pending,
+    Future<ResolvedAnswer> dispatchResult,
     DispatchCancellationController cancellation,
   ) {
-    _answers[qid] = PendingAnswerState(pending, cancellation);
+    _answers[qid] = PendingAnswerState(dispatchResult, cancellation);
   }
 
   /// Atomically checks whether [qid] is a valid promisedAnswer target for a
@@ -262,11 +275,11 @@ class AnswerTable {
     switch (state) {
       case AnsweredState(:final resolved):
         return resolved != null ? ResolvedPipelineDependency(resolved) : null;
-      case PendingAnswerState(:final pending, :final _dependents):
+      case PendingAnswerState(:final dispatchResult, :final _dependents):
         if (_dependents.peerFinished) return null;
         _dependents.dependentCount++;
         return PendingPipelineDependency(
-          pending,
+          dispatchResult,
           _PipelineDependencyTicket(_dependents),
         );
       case FailedAnswerState():
@@ -564,7 +577,7 @@ class AnswerTable {
   /// Exists for a dispatch whose own settlement is being awaited directly
   /// rather than through this table's own Return/Finish bookkeeping —
   /// today, only `IncomingCallCoordinator.resolveLocalAnswer`'s
-  /// `pendingFor(qid)` branch, used to correlate a peer's
+  /// `dispatchResultFor(qid)` branch, used to correlate a peer's
   /// `Return.takeFromOtherQuestion` for a tail-called dispatch. Without
   /// this race, a caller like that would observe [operation] succeed from
   /// purely local state even *after* the connection that correlated it is

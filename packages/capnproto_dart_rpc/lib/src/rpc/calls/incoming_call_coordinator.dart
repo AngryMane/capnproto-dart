@@ -267,8 +267,8 @@ final class IncomingCallCoordinator {
       case ResolvedPipelineDependency(:final resolved):
         _dispatchPipelinedResolved(msg, resolved, path);
         return;
-      case PendingPipelineDependency(:final pending, :final ticket):
-        pending
+      case PendingPipelineDependency(:final parentDispatchResult, :final ticket):
+        parentDispatchResult
             .then((resolved) => _dispatchPipelinedResolved(msg, resolved, path))
             .catchError((Object err) {
               // The connection may have torn down while this call sat
@@ -936,7 +936,7 @@ final class IncomingCallCoordinator {
   /// wired to (see the wiring site).
   ///
   /// Mirrors the resolved-then-pending lookup order [_handlePipelinedCall]
-  /// already uses (see [AnswerTable.resolvedFor]/[AnswerTable.pendingFor]),
+  /// already uses (see [AnswerTable.resolvedFor]/[AnswerTable.dispatchResultFor]),
   /// with one extra case: failed answers are retained until Finish so a
   /// `takeFromOtherQuestion` that races with the failure still observes
   /// the original server exception rather than a misleading "unknown
@@ -954,8 +954,10 @@ final class IncomingCallCoordinator {
   Future<ResolvedAnswer> resolveLocalAnswer(int qid) {
     final resolved = answerTable.resolvedFor(qid);
     if (resolved != null) return Future.value(resolved);
-    final pending = answerTable.pendingFor(qid);
-    if (pending != null) return answerTable.failOnTearDown(pending);
+    final dispatchResult = answerTable.dispatchResultFor(qid);
+    if (dispatchResult != null) {
+      return answerTable.failOnTearDown(dispatchResult);
+    }
     final error = answerTable.errorFor(qid);
     if (error != null) throw error;
     throw RpcException(

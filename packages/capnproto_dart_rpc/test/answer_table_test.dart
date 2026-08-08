@@ -147,7 +147,7 @@ void main() {
         expect(recorded.releaseResultExportsAfterSend, isNull);
         expect(table.isTracked(1), isTrue);
         expect(table.resolvedFor(1), same(resolved));
-        expect(table.pendingFor(1), isNull, reason: 'no longer pending');
+        expect(table.dispatchResultFor(1), isNull, reason: 'no longer pending');
         expect(
           table.applyPeerFinish(1, releaseResultCaps: true),
           equals([7]),
@@ -300,8 +300,9 @@ void main() {
       );
     });
 
-    test('resolvedFor/pendingFor/errorFor each only report data for their '
-        'own state, null for every other state and for an unknown qid', () {
+    test('resolvedFor/dispatchResultFor/errorFor each only report data for '
+        'their own state, null for every other state and for an unknown '
+        'qid', () {
       final table = AnswerTable();
       final pending = Completer<ResolvedAnswer>();
       pending.future.ignore();
@@ -311,24 +312,24 @@ void main() {
         pending.future,
         DispatchCancellationController(),
       );
-      expect(table.pendingFor(1), same(pending.future));
+      expect(table.dispatchResultFor(1), same(pending.future));
       expect(table.resolvedFor(1), isNull);
       expect(table.errorFor(1), isNull);
 
       final resolved = _answer();
       table.recordAnswer(2, resolved: resolved);
       expect(table.resolvedFor(2), same(resolved));
-      expect(table.pendingFor(2), isNull);
+      expect(table.dispatchResultFor(2), isNull);
       expect(table.errorFor(2), isNull);
 
       final error = const CapnpException('boom');
       table.tryRecordFailedAnswer(3, error);
       expect(table.errorFor(3), same(error));
       expect(table.resolvedFor(3), isNull);
-      expect(table.pendingFor(3), isNull);
+      expect(table.dispatchResultFor(3), isNull);
 
       expect(table.resolvedFor(999), isNull);
-      expect(table.pendingFor(999), isNull);
+      expect(table.dispatchResultFor(999), isNull);
       expect(table.errorFor(999), isNull);
     });
 
@@ -471,7 +472,7 @@ void main() {
         final pendingDependency = table.tryBeginPipelinedDependency(2);
         expect(pendingDependency, isA<PendingPipelineDependency>());
         expect(
-          (pendingDependency as PendingPipelineDependency).pending,
+          (pendingDependency as PendingPipelineDependency).parentDispatchResult,
           same(pending.future),
         );
 

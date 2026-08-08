@@ -37,11 +37,19 @@ class ImportState {
 /// wire-protocol concerns. This class only owns the invariant "an
 /// import's refcount and tracking state stay consistent with how many
 /// `_ImportedCapability` wrappers for it are still undisposed."
+///
+/// Lifecycle category: [queuedReleaseCount] is neither a local computation
+/// wait nor a peer-message wait — the decision to release is already made
+/// the moment [releaseAndBatch] runs; what's outstanding is purely getting
+/// the batched count onto the wire via the next [takeBatchedReleases] flush.
+/// Contrast with `QuestionTable` (wire-driven: advances only on a peer
+/// `Return`) and `AnswerTable` (local-then-wire-driven: dispatch settlement
+/// followed by a peer `Finish`).
 class ImportTable {
   final Map<int, int> _importRefCounts = {};
   final Map<int, ImportState> _imports = {};
   final Map<int, RpcException> _brokenImports = {};
-  final Map<int, int> _pendingReleaseCounts = {};
+  final Map<int, int> _queuedReleaseCounts = {};
 
   /// Number of remote capabilities currently imported from the peer (i.e.
   /// still holding at least one outstanding local reference).
@@ -58,7 +66,7 @@ class ImportTable {
   /// wire (see [releaseAndBatch]/[takeBatchedReleases]). Always zero
   /// between microtasks — it's only ever non-zero for the duration of a
   /// batched flush that hasn't run yet.
-  int get pendingReleaseCount => _pendingReleaseCounts.length;
+  int get queuedReleaseCount => _queuedReleaseCounts.length;
 
   /// Whether [importId] currently has any tracked reference at all —
   /// distinguishes "we still care about this import" from "we've already
@@ -149,8 +157,8 @@ class ImportTable {
     final count = _importRefCounts[importId];
     if (count == null || count <= 0) return false;
     decrementRefcount(importId, disposeIgnoringErrors);
-    _pendingReleaseCounts[importId] =
-        (_pendingReleaseCounts[importId] ?? 0) + 1;
+    _queuedReleaseCounts[importId] =
+        (_queuedReleaseCounts[importId] ?? 0) + 1;
     return true;
   }
 
@@ -158,10 +166,10 @@ class ImportTable {
   /// last call (import ID → reference count to release) — the caller is
   /// responsible for actually sending one Release message per entry.
   Map<int, int> takeBatchedReleases() {
-    if (_pendingReleaseCounts.isEmpty) return const {};
-    final pending = Map<int, int>.of(_pendingReleaseCounts);
-    _pendingReleaseCounts.clear();
-    return pending;
+    if (_queuedReleaseCounts.isEmpty) return const {};
+    final queued = Map<int, int>.of(_queuedReleaseCounts);
+    _queuedReleaseCounts.clear();
+    return queued;
   }
 
   /// Drops every import's tracking state — called once when the owning

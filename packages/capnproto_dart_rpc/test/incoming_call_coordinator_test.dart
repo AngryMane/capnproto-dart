@@ -1159,8 +1159,9 @@ void main() {
 
       test('resolveLocalAnswer still resolves a still-pending '
           'sendResultsToYourself dispatch correctly — regression guard '
-          'that the pipelined-dependency rewrite of resolvedFor/pendingFor '
-          "lookups left this unrelated correlation path untouched", () async {
+          'that the pipelined-dependency rewrite of '
+          'resolvedFor/dispatchResultFor lookups left this unrelated '
+          'correlation path untouched', () async {
         final h = _Harness();
         final resultCap = _FakeCapability();
         final cap =
@@ -1251,7 +1252,7 @@ void main() {
         // old call's post-send cleanup — still a live, pending answer, not
         // thrown away or corrupted by a StateError leaking into the old
         // dispatch's own completion handling.
-        expect(h.answerTable.pendingFor(1), isNotNull);
+        expect(h.answerTable.dispatchResultFor(1), isNotNull);
         expect(newCap.dispatches, hasLength(1));
 
         newCallGate.complete();

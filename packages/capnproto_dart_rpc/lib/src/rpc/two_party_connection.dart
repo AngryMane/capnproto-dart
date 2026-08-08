@@ -664,8 +664,8 @@ class TwoPartyRpcConnection implements RpcConnection {
   RpcCapabilityDelegate get debugRpcCapabilityDelegate =>
       _rpcCapabilityDelegate;
 
-  int get debugPendingQuestionCount => _questionTable.pendingCount;
-  int get debugPendingQuestionSentCount => _questionTable.pendingSentCount;
+  int get debugPendingQuestionCount => _questionTable.awaitingReturnCount;
+  int get debugPendingQuestionSentCount => _questionTable.awaitingSendCount;
 
   /// Number of capabilities currently exported to the peer (i.e. still
   /// holding at least one outstanding remote reference).
@@ -688,7 +688,7 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// non-zero for the duration of a single, already-scheduled flush, and
   /// that flush clears it up front before it sends anything (so a
   /// mid-flush sink failure never leaves it non-empty either).
-  int get debugPendingReleaseCount => _importTable.pendingReleaseCount;
+  int get debugPendingReleaseCount => _importTable.queuedReleaseCount;
 
   /// Number of incoming calls with some tracked answer-lifecycle state:
   /// dispatch in flight, a resolved-but-not-yet-finished answer, or a
@@ -742,8 +742,8 @@ class _TwoPartyRpcCapabilityDelegate implements RpcCapabilityDelegate {
   Future<ResolvedAnswer> resolveAnswer(int questionId) {
     final resolved = _conn._answerTable.resolvedFor(questionId);
     if (resolved != null) return Future.value(resolved);
-    final pending = _conn._answerTable.pendingFor(questionId);
-    if (pending != null) return pending;
+    final dispatchResult = _conn._answerTable.dispatchResultFor(questionId);
+    if (dispatchResult != null) return dispatchResult;
     return Future.error(
       RpcException('invalid receiverAnswer questionId: $questionId'),
     );

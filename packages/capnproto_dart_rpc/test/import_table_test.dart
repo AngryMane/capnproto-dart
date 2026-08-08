@@ -113,11 +113,11 @@ void main() {
 
       expect(table.releaseAndBatch(6, (c) {}), isTrue);
       expect(table.releaseAndBatch(6, (c) {}), isTrue);
-      expect(table.pendingReleaseCount, equals(1));
+      expect(table.queuedReleaseCount, equals(1));
 
       final batched = table.takeBatchedReleases();
       expect(batched, equals({6: 2}));
-      expect(table.pendingReleaseCount, equals(0));
+      expect(table.queuedReleaseCount, equals(0));
       // A second take before anything new happens hands back nothing.
       expect(table.takeBatchedReleases(), isEmpty);
     });
@@ -126,7 +126,7 @@ void main() {
         'batches nothing and returns false', () {
       final table = ImportTable();
       expect(table.releaseAndBatch(123, (c) {}), isFalse);
-      expect(table.pendingReleaseCount, equals(0));
+      expect(table.queuedReleaseCount, equals(0));
     });
 
     test('tearDown drops every import and broken-promise entry', () {
