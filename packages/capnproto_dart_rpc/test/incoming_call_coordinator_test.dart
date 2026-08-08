@@ -1177,7 +1177,7 @@ void main() {
           'own noFinishNeeded Return (early Finish + an existing pipelined '
           'dependent, no result capabilities of its own) does not have '
           'that new answer state corrupted by the old '
-          'finishAnswerLocally cleanup — regression test for the '
+          'handleAnswerFinishNotNeeded cleanup — regression test for the '
           'id-reuse-during-send hazard the dependency ticket design exists '
           'to avoid', () async {
         final h = _Harness();

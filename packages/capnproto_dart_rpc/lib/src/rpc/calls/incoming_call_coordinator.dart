@@ -766,7 +766,7 @@ final class IncomingCallCoordinator {
           // pipelining bookkeeping ourselves, instead of waiting for it.
           // This stays keyed purely on the result's own shape — never on
           // whether the peer already sent an early Finish (see
-          // AnswerTable.finishAnswer's own doc comment for why those two
+          // AnswerTable.handleAnswerFinished's own doc comment for why those two
           // are kept separate) — so a real peer reading it is never misled
           // about a Return that does carry live capability references.
           final noFinishNeeded = resultReferences.isEmpty;
@@ -829,7 +829,7 @@ final class IncomingCallCoordinator {
             // would risk touching that new call's own answer state instead
             // of a no-op, exactly the id-reuse hazard the dependency
             // ticket design (see endPipelinedDependency) exists to avoid.
-            answerTable.finishAnswerLocally(qid);
+            answerTable.handleAnswerFinishNotNeeded(qid);
           }
           // Only non-null when the peer had already sent an early Finish
           // while pipelined dependents were still outstanding — releasing
@@ -895,7 +895,7 @@ final class IncomingCallCoordinator {
   /// Answers [qid] with `Return(canceled)` in place of a normal Return,
   /// because its dispatch was accepted as canceled by an early Finish with
   /// no pipelined dependents ever registered for it (see
-  /// `AnswerTable.finishAnswer`/`handleDispatchSucceeded`/`handleDispatchFailed`/
+  /// `AnswerTable.handleAnswerFinished`/`handleDispatchSucceeded`/`handleDispatchFailed`/
   /// `handleDispatchSettledWithoutAnswer`'s "was finished early" outcomes). Disposes
   /// [result]'s capabilities, if any — they were never exported, so this is
   /// the only remaining chance to release them. Deliberately not sent until
@@ -937,7 +937,7 @@ final class IncomingCallCoordinator {
   }
 
   void handleFinish(RpcMessage msg) {
-    final resultExportIds = answerTable.finishAnswer(
+    final resultExportIds = answerTable.handleAnswerFinished(
       msg.questionId,
       releaseResultCaps: msg.releaseResultCaps,
     );

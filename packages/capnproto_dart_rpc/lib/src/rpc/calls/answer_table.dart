@@ -141,7 +141,7 @@ final class PendingAnswerState extends AnswerState {
 
 /// The answer for this question is established — [resolved]/[resultExportIds]
 /// are final — and its protocol lifecycle is retained until Finish (or a
-/// local [AnswerTable.finishAnswerLocally] cleanup, for a
+/// local [AnswerTable.handleAnswerFinishNotNeeded] cleanup, for a
 /// Return that needs none). This is installed *before* the matching Return
 /// is actually sent (see [AnswerTable.handleDispatchSucceeded]/
 /// [AnswerTable.handleAnswerReadyWithoutDispatch]'s own doc comments for
@@ -193,7 +193,7 @@ sealed class DispatchSettlement {
 /// table dropped every trace of it already. The caller must answer with
 /// `Return(canceled)` instead of a normal Return (see
 /// `IncomingCallCoordinator._sendCanceledReturn`), and must not call
-/// [AnswerTable.finishAnswerLocally] for it.
+/// [AnswerTable.handleAnswerFinishNotNeeded] for it.
 final class AnswerAlreadyFinished extends DispatchSettlement {
   const AnswerAlreadyFinished();
 }
@@ -205,7 +205,7 @@ final class AnswerRecorded extends DispatchSettlement {
   /// table after this call. `false` only when the peer had already sent an
   /// early Finish while pipelined dependents were still outstanding — the
   /// table already freed the question id itself in that case, so a later
-  /// [AnswerTable.finishAnswerLocally] call for it must be skipped: the id
+  /// [AnswerTable.handleAnswerFinishNotNeeded] call for it must be skipped: the id
   /// may already have been legally (and, over a synchronously-reentrant
   /// transport, synchronously) reused by the peer for an unrelated new Call.
   final bool answerStillTracked;
@@ -235,7 +235,7 @@ final class AnswerRecorded extends DispatchSettlement {
 /// table's API.
 ///
 /// Deliberately doesn't know how to actually send a Return/Finish, or how to
-/// release an export — [finishAnswer] only ever hands back the result
+/// release an export — [handleAnswerFinished] only ever hands back the result
 /// export ids
 /// that need releasing; the caller (today, `IncomingCallCoordinator`) owns
 /// translating that into an actual `ExportTable.releaseReference` call and
@@ -462,11 +462,11 @@ class AnswerTable {
     );
   }
 
-  /// Domain operation: this vat itself has determined [qid] will never need
-  /// a peer Finish (its Return carries no result capabilities, so no
+  /// Reports that this vat itself has determined [qid] will never need a
+  /// peer Finish (its Return carries no result capabilities, so no
   /// pipelined call could ever target it and no wire Release is needed
   /// either) — clears the completed answer bookkeeping accordingly, the
-  /// same way a real peer [finishAnswer] would, just without one ever
+  /// same way a real peer [handleAnswerFinished] would, just without one ever
   /// arriving.
   ///
   /// The caller (`IncomingCallCoordinator`) must not call this until
@@ -482,12 +482,12 @@ class AnswerTable {
   /// Only an [AnsweredState] with no result capabilities is valid here —
   /// throws [StateError] otherwise, since that would mean a real Finish is
   /// still needed. A missing entry is a silent no-op instead of an error,
-  /// because synchronously sending the Return can reenter [finishAnswer],
+  /// because synchronously sending the Return can reenter [handleAnswerFinished],
   /// which may consume the state first — or, with an early-Finish-with-
   /// dependents answer, because [handleDispatchSucceeded] already removed
   /// [qid] itself before this is ever called. This never cancels a dispatch
   /// or releases an export.
-  void finishAnswerLocally(int qid) {
+  void handleAnswerFinishNotNeeded(int qid) {
     final state = _answers[qid];
     if (state == null) return;
     if (state case AnsweredState(:final resolved, :final resultExportIds)) {
@@ -504,7 +504,7 @@ class AnswerTable {
     );
   }
 
-  /// Domain operation: the peer's side of [qid]'s Question/Answer
+  /// Reports that the peer's side of [qid]'s Question/Answer
   /// relationship is now finished (a real wire Finish arrived for it), with
   /// [releaseResultCaps] carrying that message's own flag of the same name.
   /// Drops [qid]'s answer state and returns the result export ids to
@@ -527,7 +527,7 @@ class AnswerTable {
   /// Also returns `null` (as a no-op) if [qid] is unknown, or already
   /// marked finished by an earlier call — a Finish must never resurrect or
   /// double-cancel anything.
-  List<int>? finishAnswer(int qid, {required bool releaseResultCaps}) {
+  List<int>? handleAnswerFinished(int qid, {required bool releaseResultCaps}) {
     final state = _answers[qid];
     switch (state) {
       case null:
