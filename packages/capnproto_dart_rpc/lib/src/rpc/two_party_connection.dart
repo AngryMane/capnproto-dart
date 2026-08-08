@@ -5,7 +5,11 @@ import 'package:capnproto_dart/capnproto_dart.dart';
 import 'package:meta/meta.dart';
 
 import '../capability/capability.dart'
-    show Capability, CapabilityLease, DispatchCancellationController, unwrapCapabilityLease;
+    show
+        Capability,
+        CapabilityLease,
+        DispatchCancellationController,
+        unwrapCapabilityLease;
 import '../capability/capability_factory.dart';
 import 'calls/answer_table.dart';
 import 'calls/incoming_call_coordinator.dart';
@@ -167,10 +171,12 @@ class TwoPartyRpcConnection implements RpcConnection {
     questions: _questionTable,
     imports: _importTable,
     sendBytes: _sendRaw,
-    resolveParameterCapabilityReferences: _capabilityProtocol.resolveParameterCapabilityReferences,
+    resolveParameterCapabilityReferences:
+        _capabilityProtocol.resolveParameterCapabilityReferences,
     releaseParameterCapabilityExports:
         _capabilityProtocol.releaseParameterCapabilityExports,
-    acquireCapabilityFromWireReference: _capabilityProtocol.acquireCapabilityFromWireReference,
+    acquireCapabilityFromWireReference:
+        _capabilityProtocol.acquireCapabilityFromWireReference,
     resolveLocalAnswer: (qid) => _incomingCalls.resolveLocalAnswer(qid),
     onReturn: _handleBootstrapReturn,
   );
@@ -196,15 +202,17 @@ class TwoPartyRpcConnection implements RpcConnection {
     sendBytes: _sendRaw,
     disposeIgnoringErrors: _disposeIgnoringErrors,
     disposePipelinedTargetIgnoringErrors: _disposeIgnoringErrors,
-    disposeLeaseForConnectionTeardown:
-        _disposeExportLeaseForConnectionTeardown,
+    disposeLeaseForConnectionTeardown: _disposeExportLeaseForConnectionTeardown,
     isClosed: () => _closedError != null,
     tearDownConnection: (error) => _tearDown(error),
     tryExtractCapabilityReference:
         _capabilityProtocol.tryExtractCapabilityReference,
-    acquireCapabilityFromWireReference: _capabilityProtocol.acquireCapabilityFromWireReference,
-    exportResultCapabilityAsWireReference: _capabilityProtocol.exportResultCapabilityAsWireReference,
-    startCallWithAllocatedQuestion: _outgoingCalls.startCallWithAllocatedQuestion,
+    acquireCapabilityFromWireReference:
+        _capabilityProtocol.acquireCapabilityFromWireReference,
+    exportResultCapabilityAsWireReference:
+        _capabilityProtocol.exportResultCapabilityAsWireReference,
+    startCallWithAllocatedQuestion:
+        _outgoingCalls.startCallWithAllocatedQuestion,
     startParameterCapabilityDisposalTracking:
         (paramsCapabilities) => startParameterCapabilityDisposalTracking(
           _rpcCapabilityDelegate,
@@ -540,8 +548,9 @@ class TwoPartyRpcConnection implements RpcConnection {
   /// Releases an export-owned lease during connection teardown without
   /// invalidating other leases for the same capability identity.
   void _disposeExportLeaseForConnectionTeardown(CapabilityLease lease) {
-    Future<void>.sync(lease.disposeForConnectionTeardown)
-        .catchError(_reportDisposeError);
+    Future<void>.sync(
+      lease.disposeForConnectionTeardown,
+    ).catchError(_reportDisposeError);
   }
 
   /// Reports a dispose failure via [_onDisposeError], if one was supplied.
@@ -740,9 +749,9 @@ class _TwoPartyRpcCapabilityDelegate implements RpcCapabilityDelegate {
 
   @override
   Future<ResolvedAnswer> resolveAnswer(int questionId) {
-    final resolved = _conn._answerTable.resolvedFor(questionId);
+    final resolved = _conn._answerTable.getResolvedAnswerFor(questionId);
     if (resolved != null) return Future.value(resolved);
-    final dispatchResult = _conn._answerTable.dispatchResultFor(questionId);
+    final dispatchResult = _conn._answerTable.getDispatchResultFor(questionId);
     if (dispatchResult != null) return dispatchResult;
     return Future.error(
       RpcException('invalid receiverAnswer questionId: $questionId'),

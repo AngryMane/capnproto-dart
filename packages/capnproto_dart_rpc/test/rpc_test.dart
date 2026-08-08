@@ -31,8 +31,9 @@ int _exportIdOf(WireCapabilityReference reference) => switch (reference) {
 /// just for this would be redundant).
 List<int> _exportIdsOf(List<WireCapabilityReference> references) => [
   for (final r in references)
-    if (r case SenderHostedCapabilityReference(:final exportId) ||
-        SenderPromiseCapabilityReference(:final exportId))
+    if (r
+        case SenderHostedCapabilityReference(:final exportId) ||
+            SenderPromiseCapabilityReference(:final exportId))
       exportId,
 ];
 
@@ -1232,7 +1233,8 @@ class SlowEchoServer extends Capability {
     List<Capability> paramsCapabilities = const [],
     DispatchCancellationContext? context,
   }) {
-    final dispatchContext = context ?? DispatchCancellationContext.neverCanceled;
+    final dispatchContext =
+        context ?? DispatchCancellationContext.neverCanceled;
     lastContext = dispatchContext;
     dispatchContext.canceled.then((_) {
       if (!canceled.isCompleted) canceled.complete();
@@ -1559,54 +1561,63 @@ void main() {
       },
     );
 
-    test('RPC-connected dispatchWithParamsBuilder (_ImportedCapability) builds params '
-        'directly into the outgoing Call and round-trips', () async {
-      final (client, serverConn) = _makePipe(EchoServer());
-      final bootstrapCap = client.bootstrap(EchoClientFactory());
-      await bootstrapCap.echo('warmup');
+    test(
+      'RPC-connected dispatchWithParamsBuilder (_ImportedCapability) builds params '
+      'directly into the outgoing Call and round-trips',
+      () async {
+        final (client, serverConn) = _makePipe(EchoServer());
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        await bootstrapCap.echo('warmup');
 
-      final result = await bootstrapCap.cap.dispatchWithParamsBuilder(
-        _echoInterfaceId,
-        _echoMethodId,
-        (anyPtr) => anyPtr
-            .initStruct(_TextParamFactory())
-            .setTextField(0, 'via dispatchWithParamsBuilder'),
-      );
-      expect(_parseEchoResult(result.payload), 'echo: via dispatchWithParamsBuilder');
+        final result = await bootstrapCap.cap.dispatchWithParamsBuilder(
+          _echoInterfaceId,
+          _echoMethodId,
+          (anyPtr) => anyPtr
+              .initStruct(_TextParamFactory())
+              .setTextField(0, 'via dispatchWithParamsBuilder'),
+        );
+        expect(
+          _parseEchoResult(result.payload),
+          'echo: via dispatchWithParamsBuilder',
+        );
 
-      await client.close();
-      await serverConn.close();
-    });
+        await client.close();
+        await serverConn.close();
+      },
+    );
 
-    test('dispatchWithParamsBuilder paramsCapabilities populated during build is read '
-        'correctly by the callee', () async {
-      final child = EchoServer();
-      final server = CapReceivingServer();
-      final (client, serverConn) = _makePipe(server);
-      final bootstrapCap = client.bootstrap(EchoClientFactory());
-      await bootstrapCap.echo('warmup');
+    test(
+      'dispatchWithParamsBuilder paramsCapabilities populated during build is read '
+      'correctly by the callee',
+      () async {
+        final child = EchoServer();
+        final server = CapReceivingServer();
+        final (client, serverConn) = _makePipe(server);
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        await bootstrapCap.echo('warmup');
 
-      final typedCapabilities = <Capability>[];
-      final result = await bootstrapCap.cap.dispatchWithParamsBuilder(
-        _echoInterfaceId,
-        _echoMethodId,
-        (anyPtr) {
-          // Simulates a Typed field encoder discovering a capability as a
-          // side effect of encoding — appended to paramsCapabilities only
-          // once build starts running, exactly like a real
-          // setXxxTyped(codec, value, capabilities: typedCapabilities)
-          // call would.
-          typedCapabilities.add(child);
-          anyPtr.initStruct(_TextParamFactory()).setTextField(0, 'x');
-        },
-        paramsCapabilities: typedCapabilities,
-      );
-      expect(_parseEchoResult(result.payload), 'ok');
-      expect(server.lastParams.length, 1);
+        final typedCapabilities = <Capability>[];
+        final result = await bootstrapCap.cap.dispatchWithParamsBuilder(
+          _echoInterfaceId,
+          _echoMethodId,
+          (anyPtr) {
+            // Simulates a Typed field encoder discovering a capability as a
+            // side effect of encoding — appended to paramsCapabilities only
+            // once build starts running, exactly like a real
+            // setXxxTyped(codec, value, capabilities: typedCapabilities)
+            // call would.
+            typedCapabilities.add(child);
+            anyPtr.initStruct(_TextParamFactory()).setTextField(0, 'x');
+          },
+          paramsCapabilities: typedCapabilities,
+        );
+        expect(_parseEchoResult(result.payload), 'ok');
+        expect(server.lastParams.length, 1);
 
-      await client.close();
-      await serverConn.close();
-    });
+        await client.close();
+        await serverConn.close();
+      },
+    );
   });
 
   group('rpc_message_codec — #53 tail call (Level 1) wire encoding', () {
@@ -1672,361 +1683,372 @@ void main() {
     });
   });
 
-  group('TwoPartyRpcConnection — #53 tail calls (Level 1 wire optimization)', () {
-    test('synchronous tryTailCall failure becomes a Return exception and keeps '
-        'the connection usable', () async {
-      final (client, serverConn) = _makePipe(ThrowingTryTailCallServer());
-      final bootstrapCap = client.bootstrap(EchoClientFactory());
+  group(
+    'TwoPartyRpcConnection — #53 tail calls (Level 1 wire optimization)',
+    () {
+      test(
+        'synchronous tryTailCall failure becomes a Return exception and keeps '
+        'the connection usable',
+        () async {
+          final (client, serverConn) = _makePipe(ThrowingTryTailCallServer());
+          final bootstrapCap = client.bootstrap(EchoClientFactory());
 
-      await expectLater(
-        bootstrapCap.cap.dispatch(
-          _echoInterfaceId,
-          _throwingTryTailCallMethodId,
-          RpcPayload.fromBytes(_buildEchoParams('')),
-        ),
-        throwsA(
-          allOf(
-            isA<RpcException>(),
-            predicate<Object>(
-              (e) => e.toString().contains('tryTailCall failed'),
+          await expectLater(
+            bootstrapCap.cap.dispatch(
+              _echoInterfaceId,
+              _throwingTryTailCallMethodId,
+              RpcPayload.fromBytes(_buildEchoParams('')),
             ),
+            throwsA(
+              allOf(
+                isA<RpcException>(),
+                predicate<Object>(
+                  (e) => e.toString().contains('tryTailCall failed'),
+                ),
+              ),
+            ),
+          );
+
+          final result = await bootstrapCap.cap.dispatch(
+            _echoInterfaceId,
+            _echoMethodId,
+            RpcPayload.fromBytes(_buildEchoParams('after')),
+          );
+          expect(_parseEchoResult(result.payload), 'still usable');
+
+          await client.close();
+          await serverConn.close();
+        },
+      );
+
+      test('tail call to a same-connection import avoids a second results '
+          'round trip', () async {
+        // target is hosted on the CLIENT; TailCallServer (on the server)
+        // receives it as an import and tail-calls into it.
+        final target = EchoServer();
+
+        final s2c = StreamController<Uint8List>();
+        final c2s = StreamController<Uint8List>();
+        final serverCaptured = <RpcMessage>[];
+        final clientCaptured = <RpcMessage>[];
+        final serverOutgoing =
+            StreamController<Uint8List>()
+              ..stream.listen((b) {
+                serverCaptured.add(parseRpcMessage(b));
+                s2c.add(b);
+              });
+        final clientOutgoing =
+            StreamController<Uint8List>()
+              ..stream.listen((b) {
+                clientCaptured.add(parseRpcMessage(b));
+                c2s.add(b);
+              });
+
+        TwoPartyRpcConnection.server(
+          incoming: c2s.stream,
+          outgoing: serverOutgoing.sink,
+          bootstrap: TailCallServer(),
+        );
+        final client = TwoPartyRpcConnection.client(
+          incoming: s2c.stream,
+          outgoing: clientOutgoing.sink,
+        );
+
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        await bootstrapCap.echo('warmup');
+
+        serverCaptured.clear();
+        clientCaptured.clear();
+
+        final result = await bootstrapCap.cap.dispatch(
+          _echoInterfaceId,
+          _tailCallMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('')),
+          paramsCapabilities: [target],
+        );
+        expect(_parseEchoResult(result.payload), 'echo: via tail call');
+
+        // The server answered the original call with takeFromOtherQuestion,
+        // not a full results payload — exactly one Return, redirecting.
+        final serverReturns =
+            serverCaptured
+                .where((m) => m.type == RpcMessageType.return_)
+                .toList();
+        expect(serverReturns.length, 1);
+        expect(serverReturns.single.isReturnTakeFromOtherQuestion, isTrue);
+
+        // The server forwarded a new Call, flagged sendResultsTo=yourself,
+        // targeting the import id it was given for `target` — and its
+        // question id is exactly what the takeFromOtherQuestion Return
+        // pointed at.
+        final serverCalls =
+            serverCaptured.where((m) => m.type == RpcMessageType.call).toList();
+        expect(serverCalls.length, 1);
+        expect(serverCalls.single.sendResultsToDisc, 1);
+        expect(
+          serverCalls.single.questionId,
+          serverReturns.single.takeFromOtherQuestion,
+        );
+
+        // The client (as the forwarded call's dispatcher) answered it with
+        // resultsSentElsewhere, not a normal results Return.
+        final clientReturns =
+            clientCaptured
+                .where((m) => m.type == RpcMessageType.return_)
+                .toList();
+        expect(clientReturns.length, 1);
+        expect(
+          describeReturnVariant(clientReturns.single.returnDisc),
+          'resultsSentElsewhere',
+        );
+
+        await client.close();
+      });
+
+      test('tryTailCall target that is not a same-connection import falls back '
+          'to a transparent proxy dispatch', () async {
+        final (client, serverConn) = _makePipe(
+          TailCallLocalServer(EchoServer()),
+        );
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+
+        final result = await bootstrapCap.cap.dispatch(
+          _echoInterfaceId,
+          _tailCallLocalMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('')),
+        );
+        expect(_parseEchoResult(result.payload), 'echo: local tail call');
+
+        await client.close();
+      });
+
+      test('an incoming Call flagged sendResultsTo=yourself is answered with '
+          'resultsSentElsewhere, independent of tryTailCall', () async {
+        // Raw wire injection (no tryTailCall involved on either side) —
+        // proves the *receiving* half of the mechanism, which matters for
+        // interop with a peer (e.g. a real capnp implementation) that
+        // tail-calls into this vat.
+        final clientToServer = StreamController<Uint8List>();
+        final serverToClient = StreamController<Uint8List>();
+        final captured = <RpcMessage>[];
+        serverToClient.stream.listen(
+          (bytes) => captured.add(parseRpcMessage(bytes)),
+        );
+
+        TwoPartyRpcConnection.server(
+          incoming: clientToServer.stream,
+          outgoing: serverToClient.sink,
+          bootstrap: EchoServer(),
+        );
+
+        clientToServer.add(
+          buildCallMessage(
+            questionId: 1,
+            targetImportId: 0,
+            interfaceId: _echoInterfaceId,
+            methodId: _echoMethodId,
+            paramsBytes: _buildEchoParams('hi'),
+            sendResultsToYourself: true,
           ),
-        ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        final returns =
+            captured.where((m) => m.type == RpcMessageType.return_).toList();
+        expect(returns.length, 1);
+        expect(
+          describeReturnVariant(returns.single.returnDisc),
+          'resultsSentElsewhere',
+        );
+        expect(returns.single.resultsContent, isNull);
+
+        await clientToServer.close();
+      });
+
+      test(
+        'takeFromOtherQuestion preserves the forwarded call failure reason',
+        () async {
+          final target = ThrowingEchoServer();
+          final (client, serverConn) = _makePipe(TailCallServer());
+          final bootstrapCap = client.bootstrap(EchoClientFactory());
+          await bootstrapCap.echo('warmup');
+
+          await expectLater(
+            bootstrapCap.cap.dispatch(
+              _echoInterfaceId,
+              _tailCallMethodId,
+              RpcPayload.fromBytes(_buildEchoParams('')),
+              paramsCapabilities: [target],
+            ),
+            throwsA(
+              allOf(
+                isA<RpcException>(),
+                predicate<Object>(
+                  (e) =>
+                      e.toString().contains('tail target failed') &&
+                      !e.toString().contains('unknown question id'),
+                ),
+              ),
+            ),
+          );
+
+          await client.close();
+          await serverConn.close();
+        },
       );
 
-      final result = await bootstrapCap.cap.dispatch(
-        _echoInterfaceId,
-        _echoMethodId,
-        RpcPayload.fromBytes(_buildEchoParams('after')),
-      );
-      expect(_parseEchoResult(result.payload), 'still usable');
-
-      await client.close();
-      await serverConn.close();
-    });
-
-    test('tail call to a same-connection import avoids a second results '
-        'round trip', () async {
-      // target is hosted on the CLIENT; TailCallServer (on the server)
-      // receives it as an import and tail-calls into it.
-      final target = EchoServer();
-
-      final s2c = StreamController<Uint8List>();
-      final c2s = StreamController<Uint8List>();
-      final serverCaptured = <RpcMessage>[];
-      final clientCaptured = <RpcMessage>[];
-      final serverOutgoing =
-          StreamController<Uint8List>()
-            ..stream.listen((b) {
-              serverCaptured.add(parseRpcMessage(b));
-              s2c.add(b);
-            });
-      final clientOutgoing =
-          StreamController<Uint8List>()
-            ..stream.listen((b) {
-              clientCaptured.add(parseRpcMessage(b));
-              c2s.add(b);
-            });
-
-      TwoPartyRpcConnection.server(
-        incoming: c2s.stream,
-        outgoing: serverOutgoing.sink,
-        bootstrap: TailCallServer(),
-      );
-      final client = TwoPartyRpcConnection.client(
-        incoming: s2c.stream,
-        outgoing: clientOutgoing.sink,
-      );
-
-      final bootstrapCap = client.bootstrap(EchoClientFactory());
-      await bootstrapCap.echo('warmup');
-
-      serverCaptured.clear();
-      clientCaptured.clear();
-
-      final result = await bootstrapCap.cap.dispatch(
-        _echoInterfaceId,
-        _tailCallMethodId,
-        RpcPayload.fromBytes(_buildEchoParams('')),
-        paramsCapabilities: [target],
-      );
-      expect(_parseEchoResult(result.payload), 'echo: via tail call');
-
-      // The server answered the original call with takeFromOtherQuestion,
-      // not a full results payload — exactly one Return, redirecting.
-      final serverReturns =
-          serverCaptured
-              .where((m) => m.type == RpcMessageType.return_)
-              .toList();
-      expect(serverReturns.length, 1);
-      expect(serverReturns.single.isReturnTakeFromOtherQuestion, isTrue);
-
-      // The server forwarded a new Call, flagged sendResultsTo=yourself,
-      // targeting the import id it was given for `target` — and its
-      // question id is exactly what the takeFromOtherQuestion Return
-      // pointed at.
-      final serverCalls =
-          serverCaptured.where((m) => m.type == RpcMessageType.call).toList();
-      expect(serverCalls.length, 1);
-      expect(serverCalls.single.sendResultsToDisc, 1);
-      expect(
-        serverCalls.single.questionId,
-        serverReturns.single.takeFromOtherQuestion,
-      );
-
-      // The client (as the forwarded call's dispatcher) answered it with
-      // resultsSentElsewhere, not a normal results Return.
-      final clientReturns =
-          clientCaptured
-              .where((m) => m.type == RpcMessageType.return_)
-              .toList();
-      expect(clientReturns.length, 1);
-      expect(
-        describeReturnVariant(clientReturns.single.returnDisc),
-        'resultsSentElsewhere',
-      );
-
-      await client.close();
-    });
-
-    test('tryTailCall target that is not a same-connection import falls back '
-        'to a transparent proxy dispatch', () async {
-      final (client, serverConn) = _makePipe(TailCallLocalServer(EchoServer()));
-      final bootstrapCap = client.bootstrap(EchoClientFactory());
-
-      final result = await bootstrapCap.cap.dispatch(
-        _echoInterfaceId,
-        _tailCallLocalMethodId,
-        RpcPayload.fromBytes(_buildEchoParams('')),
-      );
-      expect(_parseEchoResult(result.payload), 'echo: local tail call');
-
-      await client.close();
-    });
-
-    test('an incoming Call flagged sendResultsTo=yourself is answered with '
-        'resultsSentElsewhere, independent of tryTailCall', () async {
-      // Raw wire injection (no tryTailCall involved on either side) —
-      // proves the *receiving* half of the mechanism, which matters for
-      // interop with a peer (e.g. a real capnp implementation) that
-      // tail-calls into this vat.
-      final clientToServer = StreamController<Uint8List>();
-      final serverToClient = StreamController<Uint8List>();
-      final captured = <RpcMessage>[];
-      serverToClient.stream.listen(
-        (bytes) => captured.add(parseRpcMessage(bytes)),
-      );
-
-      TwoPartyRpcConnection.server(
-        incoming: clientToServer.stream,
-        outgoing: serverToClient.sink,
-        bootstrap: EchoServer(),
-      );
-
-      clientToServer.add(
-        buildCallMessage(
-          questionId: 1,
-          targetImportId: 0,
-          interfaceId: _echoInterfaceId,
-          methodId: _echoMethodId,
-          paramsBytes: _buildEchoParams('hi'),
-          sendResultsToYourself: true,
-        ),
-      );
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-
-      final returns =
-          captured.where((m) => m.type == RpcMessageType.return_).toList();
-      expect(returns.length, 1);
-      expect(
-        describeReturnVariant(returns.single.returnDisc),
-        'resultsSentElsewhere',
-      );
-      expect(returns.single.resultsContent, isNull);
-
-      await clientToServer.close();
-    });
-
-    test(
-      'takeFromOtherQuestion preserves the forwarded call failure reason',
-      () async {
-        final target = ThrowingEchoServer();
+      test('pipelining onto an answer resolved via takeFromOtherQuestion fails '
+          'clearly, not silently — a documented limitation', () async {
+        final target = EchoServer();
         final (client, serverConn) = _makePipe(TailCallServer());
         final bootstrapCap = client.bootstrap(EchoClientFactory());
         await bootstrapCap.echo('warmup');
 
+        final call = bootstrapCap.cap.dispatchForPipelining(
+          _echoInterfaceId,
+          _tailCallMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('')),
+          paramsCapabilities: [target],
+        );
+        final pipelinedCap = call.pipelinedCapability(0);
+
         await expectLater(
-          bootstrapCap.cap.dispatch(
+          pipelinedCap.dispatch(
             _echoInterfaceId,
-            _tailCallMethodId,
-            RpcPayload.fromBytes(_buildEchoParams('')),
-            paramsCapabilities: [target],
+            _echoMethodId,
+            RpcPayload.fromBytes(_buildEchoParams('x')),
           ),
+          throwsA(isA<RpcException>()),
+        );
+
+        // The original tail call itself must still complete correctly —
+        // the failed pipeline attempt must not have corrupted it.
+        final result = await call.result;
+        expect(_parseEchoResult(result.payload), 'echo: via tail call');
+
+        await client.close();
+      });
+
+      test('a tail-call-forwarded original call fails with a connection '
+          'error on teardown, exactly like every other pending call -- even '
+          'though the (uncancelled) forwarded dispatch keeps running '
+          'locally in the background', () async {
+        // target is hosted on the CLIENT; TailCallServer (on the server)
+        // receives it as an import and tail-calls into it -- same wiring
+        // as "tail call to a same-connection import" above, but with a
+        // target whose dispatch never finishes on its own, to observe
+        // what happens if the connection dies while it's still running.
+        final target = SlowEchoServer();
+
+        final s2c = StreamController<Uint8List>();
+        final c2s = StreamController<Uint8List>();
+        final serverCaptured = <Uint8List>[];
+        final serverOutgoing =
+            StreamController<Uint8List>()
+              ..stream.listen(
+                (b) {
+                  serverCaptured.add(b);
+                  s2c.add(b);
+                },
+                onDone: s2c.close,
+                onError: s2c.addError,
+              );
+        final clientOutgoing =
+            StreamController<Uint8List>()
+              ..stream.listen(
+                c2s.add,
+                onDone: c2s.close,
+                onError: c2s.addError,
+              );
+
+        final serverConn = TwoPartyRpcConnection.server(
+          incoming: c2s.stream,
+          outgoing: serverOutgoing.sink,
+          bootstrap: TailCallServer(),
+        );
+        final client = TwoPartyRpcConnection.client(
+          incoming: s2c.stream,
+          outgoing: clientOutgoing.sink,
+        );
+
+        final bootstrapCap = client.bootstrap(EchoClientFactory());
+        await bootstrapCap.echo('warmup');
+        serverCaptured.clear();
+
+        final callFuture = bootstrapCap.cap.dispatch(
+          _echoInterfaceId,
+          _tailCallMethodId,
+          RpcPayload.fromBytes(_buildEchoParams('')),
+          paramsCapabilities: [target],
+        );
+
+        await target.started.future.timeout(const Duration(seconds: 2));
+        final redirect = await _waitForMessageType(
+          serverCaptured,
+          RpcMessageType.return_,
+        );
+        expect(redirect.isReturnTakeFromOtherQuestion, isTrue);
+
+        // _waitForMessageType only confirms the SERVER sent the redirect —
+        // not that the CLIENT has received and processed it yet (its own
+        // async deframing/dispatch pipeline still needs a beat). Closing
+        // too early would cancel the incoming subscription while those
+        // already-in-flight bytes are still queued, discarding them
+        // before _awaitAndProcessReturn ever gets to call _resolveLocalAnswer —
+        // which would make this test exercise "outgoing question dropped
+        // before its Return arrived" (already covered elsewhere) instead
+        // of the tail-call-specific race this test is about. Waiting for
+        // debugPendingQuestionCount to drop is deterministic here:
+        // _handleReturn's very first line (QuestionTable.takeReturn)
+        // clears this synchronously, before _awaitAndProcessReturn's own
+        // _resolveLocalAnswer continuation even starts running.
+        await _waitUntil(() => client.debugPendingQuestionCount == 0);
+
+        // Fixed, was https://github.com/AngryMane/capnproto-dart/issues/99:
+        // AnswerTable.tornDown races the raw dispatch Future
+        // _awaitAndProcessReturn extracted via resolveLocalAnswer against the
+        // connection tearing down, so the original call observes the same
+        // disconnection failure every other still-pending call gets on
+        // teardown -- instead of staying pending and later succeeding from
+        // purely local state after the connection that correlated it is
+        // already gone. This does not abort the forwarded dispatch itself:
+        // SlowEchoServer still legally ignores cancellation and keeps
+        // running (isCanceled is still observed true, cooperative
+        // cancellation is still requested exactly as before) -- only what
+        // the *original caller* is told about it changes.
+        //
+        // expectLater is started (not awaited) *before* close() below, not
+        // after: callFuture's whole chain settles synchronously-ish inside
+        // close() once AnswerTable.tearDown runs, and attaching a listener
+        // only afterward would leave a real window where it has already
+        // rejected with nothing listening yet -- which Dart reports as an
+        // unhandled async error regardless of a listener arriving moments
+        // later, independent of anything AnswerTable/IncomingCallCoordinator
+        // do differently on their own end.
+        final callFailsWithConnectionError = expectLater(
+          callFuture,
           throwsA(
-            allOf(
-              isA<RpcException>(),
-              predicate<Object>(
-                (e) =>
-                    e.toString().contains('tail target failed') &&
-                    !e.toString().contains('unknown question id'),
-              ),
+            isA<RpcException>().having(
+              (error) => error.kind,
+              'kind',
+              ErrorKind.disconnected,
             ),
           ),
         );
 
         await client.close();
-        await serverConn.close();
-      },
-    );
+        await serverConn.done.catchError((_) {});
+        await callFailsWithConnectionError;
+        expect(target.lastContext?.isCanceled, isTrue);
 
-    test('pipelining onto an answer resolved via takeFromOtherQuestion fails '
-        'clearly, not silently — a documented limitation', () async {
-      final target = EchoServer();
-      final (client, serverConn) = _makePipe(TailCallServer());
-      final bootstrapCap = client.bootstrap(EchoClientFactory());
-      await bootstrapCap.echo('warmup');
-
-      final call = bootstrapCap.cap.dispatchForPipelining(
-        _echoInterfaceId,
-        _tailCallMethodId,
-        RpcPayload.fromBytes(_buildEchoParams('')),
-        paramsCapabilities: [target],
-      );
-      final pipelinedCap = call.pipelinedCapability(0);
-
-      await expectLater(
-        pipelinedCap.dispatch(
-          _echoInterfaceId,
-          _echoMethodId,
-          RpcPayload.fromBytes(_buildEchoParams('x')),
-        ),
-        throwsA(isA<RpcException>()),
-      );
-
-      // The original tail call itself must still complete correctly —
-      // the failed pipeline attempt must not have corrupted it.
-      final result = await call.result;
-      expect(_parseEchoResult(result.payload), 'echo: via tail call');
-
-      await client.close();
-    });
-
-    test('a tail-call-forwarded original call fails with a connection '
-        'error on teardown, exactly like every other pending call -- even '
-        'though the (uncancelled) forwarded dispatch keeps running '
-        'locally in the background', () async {
-      // target is hosted on the CLIENT; TailCallServer (on the server)
-      // receives it as an import and tail-calls into it -- same wiring
-      // as "tail call to a same-connection import" above, but with a
-      // target whose dispatch never finishes on its own, to observe
-      // what happens if the connection dies while it's still running.
-      final target = SlowEchoServer();
-
-      final s2c = StreamController<Uint8List>();
-      final c2s = StreamController<Uint8List>();
-      final serverCaptured = <Uint8List>[];
-      final serverOutgoing =
-          StreamController<Uint8List>()
-            ..stream.listen(
-              (b) {
-                serverCaptured.add(b);
-                s2c.add(b);
-              },
-              onDone: s2c.close,
-              onError: s2c.addError,
-            );
-      final clientOutgoing =
-          StreamController<Uint8List>()
-            ..stream.listen(c2s.add, onDone: c2s.close, onError: c2s.addError);
-
-      final serverConn = TwoPartyRpcConnection.server(
-        incoming: c2s.stream,
-        outgoing: serverOutgoing.sink,
-        bootstrap: TailCallServer(),
-      );
-      final client = TwoPartyRpcConnection.client(
-        incoming: s2c.stream,
-        outgoing: clientOutgoing.sink,
-      );
-
-      final bootstrapCap = client.bootstrap(EchoClientFactory());
-      await bootstrapCap.echo('warmup');
-      serverCaptured.clear();
-
-      final callFuture = bootstrapCap.cap.dispatch(
-        _echoInterfaceId,
-        _tailCallMethodId,
-        RpcPayload.fromBytes(_buildEchoParams('')),
-        paramsCapabilities: [target],
-      );
-
-      await target.started.future.timeout(const Duration(seconds: 2));
-      final redirect = await _waitForMessageType(
-        serverCaptured,
-        RpcMessageType.return_,
-      );
-      expect(redirect.isReturnTakeFromOtherQuestion, isTrue);
-
-      // _waitForMessageType only confirms the SERVER sent the redirect —
-      // not that the CLIENT has received and processed it yet (its own
-      // async deframing/dispatch pipeline still needs a beat). Closing
-      // too early would cancel the incoming subscription while those
-      // already-in-flight bytes are still queued, discarding them
-      // before _awaitAndProcessReturn ever gets to call _resolveLocalAnswer —
-      // which would make this test exercise "outgoing question dropped
-      // before its Return arrived" (already covered elsewhere) instead
-      // of the tail-call-specific race this test is about. Waiting for
-      // debugPendingQuestionCount to drop is deterministic here:
-      // _handleReturn's very first line (QuestionTable.takeReturn)
-      // clears this synchronously, before _awaitAndProcessReturn's own
-      // _resolveLocalAnswer continuation even starts running.
-      await _waitUntil(() => client.debugPendingQuestionCount == 0);
-
-      // Fixed, was https://github.com/AngryMane/capnproto-dart/issues/99:
-      // AnswerTable.tornDown races the raw dispatch Future
-      // _awaitAndProcessReturn extracted via resolveLocalAnswer against the
-      // connection tearing down, so the original call observes the same
-      // disconnection failure every other still-pending call gets on
-      // teardown -- instead of staying pending and later succeeding from
-      // purely local state after the connection that correlated it is
-      // already gone. This does not abort the forwarded dispatch itself:
-      // SlowEchoServer still legally ignores cancellation and keeps
-      // running (isCanceled is still observed true, cooperative
-      // cancellation is still requested exactly as before) -- only what
-      // the *original caller* is told about it changes.
-      //
-      // expectLater is started (not awaited) *before* close() below, not
-      // after: callFuture's whole chain settles synchronously-ish inside
-      // close() once AnswerTable.tearDown runs, and attaching a listener
-      // only afterward would leave a real window where it has already
-      // rejected with nothing listening yet -- which Dart reports as an
-      // unhandled async error regardless of a listener arriving moments
-      // later, independent of anything AnswerTable/IncomingCallCoordinator
-      // do differently on their own end.
-      final callFailsWithConnectionError = expectLater(
-        callFuture,
-        throwsA(
-          isA<RpcException>().having(
-            (error) => error.kind,
-            'kind',
-            ErrorKind.disconnected,
-          ),
-        ),
-      );
-
-      await client.close();
-      await serverConn.done.catchError((_) {});
-      await callFailsWithConnectionError;
-      expect(target.lastContext?.isCanceled, isTrue);
-
-      // The forwarded dispatch itself keeps running in the background
-      // regardless -- completing it late (after the original caller has
-      // already moved on) must not throw or otherwise misbehave.
-      target.complete.complete();
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-    });
-
-  });
+        // The forwarded dispatch itself keeps running in the background
+        // regardless -- completing it late (after the original caller has
+        // already moved on) must not throw or otherwise misbehave.
+        target.complete.complete();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      });
+    },
+  );
 
   group('TwoPartyRpcConnection — capability identity', () {
     test('export table keys use object identity, not operator ==', () async {
@@ -2924,7 +2946,9 @@ void main() {
                             m.capabilityTableReferences.isNotEmpty,
                       )
                       .single;
-              final exportId = _exportIdOf(callWithCap.capabilityTableReferences.single);
+              final exportId = _exportIdOf(
+                callWithCap.capabilityTableReferences.single,
+              );
 
               serverToClient.add(buildReleaseMessage(exportId, 1));
               await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -2993,7 +3017,9 @@ void main() {
                           m.capabilityTableReferences.isNotEmpty,
                     )
                     .single;
-            final exportId = _exportIdOf(callWithCap.capabilityTableReferences.single);
+            final exportId = _exportIdOf(
+              callWithCap.capabilityTableReferences.single,
+            );
 
             serverToClient.add(buildReleaseMessage(exportId, 1));
             await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -3179,7 +3205,9 @@ void main() {
                     m.capabilityTableReferences.isNotEmpty,
               )
               .single;
-      final exportId = _exportIdOf(callWithCap.capabilityTableReferences.single);
+      final exportId = _exportIdOf(
+        callWithCap.capabilityTableReferences.single,
+      );
 
       // Peer claims to release 2 references when only 1 was ever granted.
       serverToClient.add(buildReleaseMessage(exportId, 2));
@@ -3243,7 +3271,9 @@ void main() {
                     m.capabilityTableReferences.isNotEmpty,
               )
               .single;
-      final exportId = _exportIdOf(callWithCap.capabilityTableReferences.single);
+      final exportId = _exportIdOf(
+        callWithCap.capabilityTableReferences.single,
+      );
 
       // Releasing zero references is meaningless — a legitimate peer
       // never sends one — and must not be silently accepted as a no-op.
@@ -3340,7 +3370,7 @@ void main() {
         // The dispatch's own (real) result is suppressed — never sent as a
         // normal Return — but this vat still answers the question with
         // Return(canceled) once the dispatch actually settles (see
-        // AnswerTable.applyPeerFinish/IncomingCallCoordinator
+        // AnswerTable.handlePeerFinish/IncomingCallCoordinator
         // ._sendCanceledReturn), instead of leaving it hanging forever.
         final returns =
             captured.where((m) => m.type == RpcMessageType.return_).toList();
@@ -3707,13 +3737,21 @@ void main() {
           RpcPayload.fromBytes(_buildEchoParams('')),
           paramsCapabilities: [clientSideCap],
         );
-        call.pipelinedCapability(0); // capability lease, deliberately left undisposed
+        call.pipelinedCapability(
+          0,
+        ); // capability lease, deliberately left undisposed
         await call.result;
         await Future<void>.delayed(Duration.zero);
 
         expect(client.debugExportCount, equals(1)); // clientSideCap
-        expect(client.debugImportCount, equals(2)); // bootstrap + capability lease
-        expect(serverConn.debugExportCount, equals(2)); // bootstrap + capability lease
+        expect(
+          client.debugImportCount,
+          equals(2),
+        ); // bootstrap + capability lease
+        expect(
+          serverConn.debugExportCount,
+          equals(2),
+        ); // bootstrap + capability lease
         expect(serverConn.debugImportCount, equals(1)); // clientSideCap
 
         await client.close();
@@ -4307,51 +4345,58 @@ void main() {
       expect(paramsReq.getTextField(0), 'hello');
     });
 
-    test('buildCallMessageWithParamsBuilderSync builds params directly into the '
-        'envelope (matches buildCallMessage semantics)', () {
-      final bytes = buildCallMessageWithParamsBuilderSync(
-        questionId: 7,
-        targetImportId: 3,
-        interfaceId: 0xDEADBEEF,
-        methodId: 5,
-        buildParams:
-            (anyPtr) =>
-                anyPtr.initStruct(_TextParamFactory()).setTextField(0, 'hello'),
-        references: const [],
-      );
-      final msg = parseRpcMessage(bytes);
-      expect(msg.type, RpcMessageType.call);
-      expect(msg.questionId, 7);
-      expect(msg.targetImportId, 3);
-      expect(msg.interfaceId, 0xDEADBEEF);
-      expect(msg.methodId, 5);
-      final paramsReq = msg.paramsContent!.asStruct(_TextParamFactory())!;
-      expect(paramsReq.getTextField(0), 'hello');
-    });
+    test(
+      'buildCallMessageWithParamsBuilderSync builds params directly into the '
+      'envelope (matches buildCallMessage semantics)',
+      () {
+        final bytes = buildCallMessageWithParamsBuilderSync(
+          questionId: 7,
+          targetImportId: 3,
+          interfaceId: 0xDEADBEEF,
+          methodId: 5,
+          buildParams:
+              (anyPtr) => anyPtr
+                  .initStruct(_TextParamFactory())
+                  .setTextField(0, 'hello'),
+          references: const [],
+        );
+        final msg = parseRpcMessage(bytes);
+        expect(msg.type, RpcMessageType.call);
+        expect(msg.questionId, 7);
+        expect(msg.targetImportId, 3);
+        expect(msg.interfaceId, 0xDEADBEEF);
+        expect(msg.methodId, 5);
+        final paramsReq = msg.paramsContent!.asStruct(_TextParamFactory())!;
+        expect(paramsReq.getTextField(0), 'hello');
+      },
+    );
 
-    test('buildCallMessageWithParamsBuilder resolves the capTable after buildParams '
-        'runs', () async {
-      final order = <String>[];
-      final bytes = await buildCallMessageWithParamsBuilder(
-        questionId: 9,
-        targetImportId: 3,
-        interfaceId: 0xDEADBEEF,
-        methodId: 6,
-        buildParams: (anyPtr) {
-          order.add('build');
-          anyPtr.initStruct(_TextParamFactory()).setTextField(0, 'world');
-        },
-        resolveCapTable: () async {
-          order.add('resolve');
-          return const [];
-        },
-      );
-      expect(order, ['build', 'resolve']);
-      final msg = parseRpcMessage(bytes);
-      expect(msg.type, RpcMessageType.call);
-      final paramsReq = msg.paramsContent!.asStruct(_TextParamFactory())!;
-      expect(paramsReq.getTextField(0), 'world');
-    });
+    test(
+      'buildCallMessageWithParamsBuilder resolves the capTable after buildParams '
+      'runs',
+      () async {
+        final order = <String>[];
+        final bytes = await buildCallMessageWithParamsBuilder(
+          questionId: 9,
+          targetImportId: 3,
+          interfaceId: 0xDEADBEEF,
+          methodId: 6,
+          buildParams: (anyPtr) {
+            order.add('build');
+            anyPtr.initStruct(_TextParamFactory()).setTextField(0, 'world');
+          },
+          resolveCapTable: () async {
+            order.add('resolve');
+            return const [];
+          },
+        );
+        expect(order, ['build', 'resolve']);
+        final msg = parseRpcMessage(bytes);
+        expect(msg.type, RpcMessageType.call);
+        final paramsReq = msg.paramsContent!.asStruct(_TextParamFactory())!;
+        expect(paramsReq.getTextField(0), 'world');
+      },
+    );
 
     test('call params round-trip multi-segment payload semantics', () {
       final params = _buildLargeDataParams(10000);
@@ -4853,7 +4898,9 @@ void main() {
           interfaceId: _echoInterfaceId,
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
-          capabilityTableReferences: const [ReceiverHostedCapabilityReference(99999)],
+          capabilityTableReferences: const [
+            ReceiverHostedCapabilityReference(99999),
+          ],
         ),
       );
       await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -4998,7 +5045,9 @@ void main() {
             interfaceId: _echoInterfaceId,
             methodId: _echoMethodId,
             paramsBytes: _buildEchoParams(''),
-            capabilityTableReferences: const [ReceiverHostedCapabilityReference(99999)],
+            capabilityTableReferences: const [
+              ReceiverHostedCapabilityReference(99999),
+            ],
           ),
         );
         await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -5064,7 +5113,10 @@ void main() {
         _echoMethodId,
         RpcPayload.fromBytes(_buildEchoParams('still alive')),
       );
-      expect(_parseEchoResult(echoViaLease.payload), equals('echo: still alive'));
+      expect(
+        _parseEchoResult(echoViaLease.payload),
+        equals('echo: still alive'),
+      );
 
       // Vat A must not have seen a Release yet for `probe`'s export — the
       // relay hasn't disposed its own lease. (2, not 1: the bootstrap
@@ -5295,7 +5347,10 @@ void main() {
         // "fresh" lease for it now would be a lie (it would look live but
         // dispatch through it would just hit whatever broken state
         // target.dispose() already left behind).
-        expect(() => acquireCapabilityLease(target), throwsA(isA<StateError>()));
+        expect(
+          () => acquireCapabilityLease(target),
+          throwsA(isA<StateError>()),
+        );
       });
 
       test('leasing while the previous cycle\'s dispose() is still in flight '
@@ -5309,7 +5364,10 @@ void main() {
         // is "triggered" (disposeFuture assigned) but not yet finished.
         final h1DisposeFuture = h1.dispose();
 
-        expect(() => acquireCapabilityLease(target), throwsA(isA<StateError>()));
+        expect(
+          () => acquireCapabilityLease(target),
+          throwsA(isA<StateError>()),
+        );
 
         target.releaseDispose();
         await h1DisposeFuture;
@@ -6067,7 +6125,12 @@ void main() {
           bootstrap: EchoServer(),
         );
 
-        input.add(buildResolveCapMessage(promiseId: 9, reference: const SenderHostedCapabilityReference(42)));
+        input.add(
+          buildResolveCapMessage(
+            promiseId: 9,
+            reference: const SenderHostedCapabilityReference(42),
+          ),
+        );
         await Future<void>.delayed(Duration.zero);
 
         expect(
@@ -6138,7 +6201,9 @@ void main() {
           interfaceId: _echoInterfaceId,
           methodId: _echoMethodId,
           paramsBytes: _buildEchoParams(''),
-          capabilityTableReferences: const [SenderPromiseCapabilityReference(10)],
+          capabilityTableReferences: const [
+            SenderPromiseCapabilityReference(10),
+          ],
         ),
       );
       await Future<void>.delayed(Duration.zero);
@@ -6461,7 +6526,10 @@ void main() {
 
         captured.clear();
         serverToClient.add(
-          buildResolveCapMessage(promiseId: 10, reference: const ReceiverHostedCapabilityReference(1)),
+          buildResolveCapMessage(
+            promiseId: 10,
+            reference: const ReceiverHostedCapabilityReference(1),
+          ),
         );
         final disembargo = await _waitForMessageType(
           captured,
@@ -6533,7 +6601,10 @@ void main() {
 
         captured.clear();
         serverToClient.add(
-          buildResolveCapMessage(promiseId: 10, reference: const ReceiverHostedCapabilityReference(1)),
+          buildResolveCapMessage(
+            promiseId: 10,
+            reference: const ReceiverHostedCapabilityReference(1),
+          ),
         );
         await _waitForMessageType(captured, RpcMessageType.disembargo);
         expect(client.debugEmbargoCount, equals(1));
@@ -6597,7 +6668,10 @@ void main() {
 
       captured.clear();
       serverToClient.add(
-        buildResolveCapMessage(promiseId: 10, reference: const ReceiverHostedCapabilityReference(1)),
+        buildResolveCapMessage(
+          promiseId: 10,
+          reference: const ReceiverHostedCapabilityReference(1),
+        ),
       );
       await _waitForMessageType(captured, RpcMessageType.disembargo);
       expect(client.debugEmbargoCount, equals(1));
@@ -7161,7 +7235,10 @@ void main() {
         );
 
         serverToClient.add(
-          buildRawReturnVariantMessage(answerId: callMsg.questionId, disc: disc),
+          buildRawReturnVariantMessage(
+            answerId: callMsg.questionId,
+            disc: disc,
+          ),
         );
 
         await expectLater(

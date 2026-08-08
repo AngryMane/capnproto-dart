@@ -140,7 +140,8 @@ class _Harness {
   /// Settable per test — defaults to a `none` reference for every result
   /// capability.
   WireCapabilityReference Function(Capability cap)
-  exportResultCapabilityAsWireReference = (cap) => const NoCapabilityReference();
+  exportResultCapabilityAsWireReference =
+      (cap) => const NoCapabilityReference();
 
   /// Settable per test — defaults to completing [OutgoingQuestion.sentCompleter]
   /// immediately (mirrors `OutgoingCallCoordinator.startCallWithAllocatedQuestion`'s synchronous
@@ -149,8 +150,8 @@ class _Harness {
       (question, call) => question.sentCompleter?.complete();
 
   /// Settable per test — defaults to "nothing to track".
-  Object? Function(List<Capability> paramsCapabilities) startParameterCapabilityDisposalTracking =
-      (paramsCapabilities) => null;
+  Object? Function(List<Capability> paramsCapabilities)
+  startParameterCapabilityDisposalTracking = (paramsCapabilities) => null;
 
   /// Settable per test — defaults to "always safe to fold into
   /// releaseParamCaps=true", matching a null/empty ticket.
@@ -195,8 +196,10 @@ class _Harness {
       onStartUsing(question, call);
     },
     startParameterCapabilityDisposalTracking:
-        (paramsCapabilities) => startParameterCapabilityDisposalTracking(paramsCapabilities),
-    finishParameterCapabilityDisposalTracking: (ticket) => finishParameterCapabilityDisposalTracking(ticket),
+        (paramsCapabilities) =>
+            startParameterCapabilityDisposalTracking(paramsCapabilities),
+    finishParameterCapabilityDisposalTracking:
+        (ticket) => finishParameterCapabilityDisposalTracking(ticket),
   );
 }
 
@@ -282,7 +285,7 @@ void main() {
       final h = _Harness();
       final targetCap =
           _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
-      h.answerTable.recordAnswer(
+      h.answerTable.handleAnswerWithoutDispatch(
         1,
         resolved: ResolvedAnswer(_singleCapResultBytes, [targetCap]),
       );
@@ -294,7 +297,7 @@ void main() {
 
       // A second, already-resolved parent whose result has no pointer
       // fields at all: path [0] can never be a capability there.
-      h.answerTable.recordAnswer(
+      h.answerTable.handleAnswerWithoutDispatch(
         2,
         resolved: ResolvedAnswer(_emptyMessageBytes, const []),
       );
@@ -314,16 +317,14 @@ void main() {
       final deferred = DeferredCapability(resolution.future);
 
       h.exportTable.retainOrCreateExportId(deferred);
-      h.answerTable.recordAnswer(
+      h.answerTable.handleAnswerWithoutDispatch(
         1,
         resolved: ResolvedAnswer(_singleCapResultBytes, [deferred]),
       );
-      h.answerTable.recordAnswer(200);
+      h.answerTable.handleAnswerWithoutDispatch(200);
       h.onTearDownConnection = (error) {
         h.answerTable.tearDown(error);
-        h.exportTable.tearDown(
-          (lease) => lease.disposeForConnectionTeardown(),
-        );
+        h.exportTable.tearDown((lease) => lease.disposeForConnectionTeardown());
       };
 
       h.coordinator.handleCall(
@@ -346,7 +347,7 @@ void main() {
       final targetCap =
           _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
       final pending = Completer<ResolvedAnswer>();
-      h.answerTable.recordPendingAnswer(
+      h.answerTable.handleDispatchStarted(
         1,
         pending.future,
         DispatchCancellationController(),
@@ -362,7 +363,7 @@ void main() {
       expect(targetCap.dispatches, hasLength(1));
 
       final failingParent = Completer<ResolvedAnswer>();
-      h.answerTable.recordPendingAnswer(
+      h.answerTable.handleDispatchStarted(
         2,
         failingParent.future,
         DispatchCancellationController(),
@@ -584,7 +585,8 @@ void main() {
         'explicit Releases and releaseParamCaps=false; a duplicate question '
         'id tears the connection down as a protocol violation', () async {
       final h = _Harness();
-      h.startParameterCapabilityDisposalTracking = (paramsCapabilities) => 'ticket';
+      h.startParameterCapabilityDisposalTracking =
+          (paramsCapabilities) => 'ticket';
 
       h.finishParameterCapabilityDisposalTracking =
           (ticket) => (allDisposed: true, explicitReleaseIds: const []);
@@ -663,7 +665,7 @@ void main() {
       final target =
           _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
       final pending = Completer<ResolvedAnswer>();
-      h.answerTable.recordPendingAnswer(
+      h.answerTable.handleDispatchStarted(
         1,
         pending.future,
         DispatchCancellationController(),
@@ -701,7 +703,7 @@ void main() {
       // Companion case: the parent dispatch fails instead of succeeding —
       // the catchError continuation must equally refuse to send once closed.
       final failingPending = Completer<ResolvedAnswer>();
-      h.answerTable.recordPendingAnswer(
+      h.answerTable.handleDispatchStarted(
         3,
         failingPending.future,
         DispatchCancellationController(),
@@ -795,9 +797,7 @@ void main() {
         final h = _Harness();
         final targetCap =
             _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
-        final resultExportId = h.exportTable.retainOrCreateExportId(
-          targetCap,
-        );
+        final resultExportId = h.exportTable.retainOrCreateExportId(targetCap);
         h.exportResultCapabilityAsWireReference =
             (cap) => SenderHostedCapabilityReference(resultExportId);
         final parentCap =
@@ -807,9 +807,7 @@ void main() {
                     payload: RpcPayload.fromBytes(_singleCapResultBytes),
                     caps: [targetCap],
                   );
-        final parentExportId = h.exportTable.retainOrCreateExportId(
-          parentCap,
-        );
+        final parentExportId = h.exportTable.retainOrCreateExportId(parentCap);
 
         h.coordinator.handleCall(
           parseRpcMessage(
@@ -849,9 +847,7 @@ void main() {
           'dependent having started, not completed', () async {
         final h = _Harness();
         final targetCap = _FakeCapability();
-        final resultExportId = h.exportTable.retainOrCreateExportId(
-          targetCap,
-        );
+        final resultExportId = h.exportTable.retainOrCreateExportId(targetCap);
         h.exportResultCapabilityAsWireReference =
             (cap) => SenderHostedCapabilityReference(resultExportId);
         final dispatchGate = Completer<void>();
@@ -865,9 +861,7 @@ void main() {
                     payload: RpcPayload.fromBytes(_singleCapResultBytes),
                     caps: [targetCap],
                   );
-        final parentExportId = h.exportTable.retainOrCreateExportId(
-          parentCap,
-        );
+        final parentExportId = h.exportTable.retainOrCreateExportId(parentCap);
 
         h.coordinator.handleCall(
           parseRpcMessage(
@@ -907,9 +901,7 @@ void main() {
         final h = _Harness();
         final targetCap =
             _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
-        final resultExportId = h.exportTable.retainOrCreateExportId(
-          targetCap,
-        );
+        final resultExportId = h.exportTable.retainOrCreateExportId(targetCap);
         h.exportResultCapabilityAsWireReference =
             (cap) => SenderHostedCapabilityReference(resultExportId);
         final parentCap =
@@ -919,9 +911,7 @@ void main() {
                     payload: RpcPayload.fromBytes(_singleCapResultBytes),
                     caps: [targetCap],
                   );
-        final parentExportId = h.exportTable.retainOrCreateExportId(
-          parentCap,
-        );
+        final parentExportId = h.exportTable.retainOrCreateExportId(parentCap);
 
         h.coordinator.handleCall(
           parseRpcMessage(
@@ -941,67 +931,70 @@ void main() {
         expect(h.disposedFromTable, isEmpty);
       });
 
-      test('a pending parent Finished with no pipelined dependents: '
-          'nothing is sent synchronously from handleFinish; once the '
-          'dispatch settles, Return.canceled is sent with the '
-          'correctly-resolved releaseParamCaps (covering all-disposed / '
-          'partial / none-disposed parameter capability combinations)', () async {
-        Future<void> run(
-          ({bool allDisposed, List<int> explicitReleaseIds}) trackingResult,
-        ) async {
-          final h = _Harness();
-          h.startParameterCapabilityDisposalTracking =
-              (paramsCapabilities) => 'ticket';
-          h.finishParameterCapabilityDisposalTracking =
-              (ticket) => trackingResult;
-          final cap = _FakeCapability();
-          final dispatchGate = Completer<void>();
-          cap.dispatchGate = dispatchGate.future;
-          cap.onDispatch = (_, _, _) => DispatchResult.empty;
-          final exportId = h.exportTable.retainOrCreateExportId(cap);
+      test(
+        'a pending parent Finished with no pipelined dependents: '
+        'nothing is sent synchronously from handleFinish; once the '
+        'dispatch settles, Return.canceled is sent with the '
+        'correctly-resolved releaseParamCaps (covering all-disposed / '
+        'partial / none-disposed parameter capability combinations)',
+        () async {
+          Future<void> run(
+            ({bool allDisposed, List<int> explicitReleaseIds}) trackingResult,
+          ) async {
+            final h = _Harness();
+            h.startParameterCapabilityDisposalTracking =
+                (paramsCapabilities) => 'ticket';
+            h.finishParameterCapabilityDisposalTracking =
+                (ticket) => trackingResult;
+            final cap = _FakeCapability();
+            final dispatchGate = Completer<void>();
+            cap.dispatchGate = dispatchGate.future;
+            cap.onDispatch = (_, _, _) => DispatchResult.empty;
+            final exportId = h.exportTable.retainOrCreateExportId(cap);
 
-          h.coordinator.handleCall(
-            parseRpcMessage(
-              _buildCall(questionId: 90, targetExportId: exportId),
-            ),
-          );
-          await Future<void>.delayed(Duration.zero);
-          expect(h.sentBytes, isEmpty, reason: 'dispatch still in flight');
+            h.coordinator.handleCall(
+              parseRpcMessage(
+                _buildCall(questionId: 90, targetExportId: exportId),
+              ),
+            );
+            await Future<void>.delayed(Duration.zero);
+            expect(h.sentBytes, isEmpty, reason: 'dispatch still in flight');
 
-          h.coordinator.handleFinish(parseRpcMessage(buildFinishMessage(90)));
-          expect(
-            h.sentBytes,
-            isEmpty,
-            reason: 'Return(canceled) is deferred to settle time',
-          );
+            h.coordinator.handleFinish(parseRpcMessage(buildFinishMessage(90)));
+            expect(
+              h.sentBytes,
+              isEmpty,
+              reason: 'Return(canceled) is deferred to settle time',
+            );
 
-          dispatchGate.complete();
-          await Future<void>.delayed(Duration.zero);
+            dispatchGate.complete();
+            await Future<void>.delayed(Duration.zero);
 
-          final sent = h.sentBytes
-              .map(parseRpcMessage)
-              .firstWhere((m) => m.type == RpcMessageType.return_);
-          expect(sent.answerId, equals(90));
-          expect(sent.returnDisc, equals(2)); // canceled
-          expect(
-            sent.returnReleaseParamCaps,
-            equals(trackingResult.allDisposed),
-          );
-          final releaseMessages =
-              h.sentBytes
-                  .map(parseRpcMessage)
-                  .where((m) => m.type == RpcMessageType.release)
-                  .toList();
-          expect(
-            releaseMessages.map((m) => m.releaseId),
-            unorderedEquals(trackingResult.explicitReleaseIds),
-          );
-        }
+            final sent = h.sentBytes
+                .map(parseRpcMessage)
+                .firstWhere((m) => m.type == RpcMessageType.return_);
+            expect(sent.answerId, equals(90));
+            expect(sent.returnDisc, equals(2)); // canceled
+            expect(
+              sent.returnReleaseParamCaps,
+              equals(trackingResult.allDisposed),
+            );
+            final releaseMessages =
+                h.sentBytes
+                    .map(parseRpcMessage)
+                    .where((m) => m.type == RpcMessageType.release)
+                    .toList();
+            expect(
+              releaseMessages.map((m) => m.releaseId),
+              unorderedEquals(trackingResult.explicitReleaseIds),
+            );
+          }
 
-        await run((allDisposed: true, explicitReleaseIds: const []));
-        await run((allDisposed: false, explicitReleaseIds: const [7, 8]));
-        await run((allDisposed: false, explicitReleaseIds: const []));
-      });
+          await run((allDisposed: true, explicitReleaseIds: const []));
+          await run((allDisposed: false, explicitReleaseIds: const [7, 8]));
+          await run((allDisposed: false, explicitReleaseIds: const []));
+        },
+      );
 
       test('a new pipelined call targeting a parent that already has an '
           'outstanding dependent and already received Finish is rejected '
@@ -1012,9 +1005,7 @@ void main() {
             _FakeCapability()
               ..dispatchGate = dispatchGate.future
               ..onDispatch = (_, _, _) => DispatchResult.empty;
-        final resultExportId = h.exportTable.retainOrCreateExportId(
-          targetCap,
-        );
+        final resultExportId = h.exportTable.retainOrCreateExportId(targetCap);
         h.exportResultCapabilityAsWireReference =
             (cap) => SenderHostedCapabilityReference(resultExportId);
         final parentCap =
@@ -1025,9 +1016,7 @@ void main() {
                     payload: RpcPayload.fromBytes(_singleCapResultBytes),
                     caps: [targetCap],
                   );
-        final parentExportId = h.exportTable.retainOrCreateExportId(
-          parentCap,
-        );
+        final parentExportId = h.exportTable.retainOrCreateExportId(parentCap);
 
         h.coordinator.handleCall(
           parseRpcMessage(
@@ -1065,9 +1054,7 @@ void main() {
         final h = _Harness();
         final targetCap =
             _FakeCapability()..onDispatch = (_, _, _) => DispatchResult.empty;
-        final resultExportId = h.exportTable.retainOrCreateExportId(
-          targetCap,
-        );
+        final resultExportId = h.exportTable.retainOrCreateExportId(targetCap);
         h.exportResultCapabilityAsWireReference =
             (cap) => SenderHostedCapabilityReference(resultExportId);
         final parentCap =
@@ -1077,9 +1064,7 @@ void main() {
                     payload: RpcPayload.fromBytes(_singleCapResultBytes),
                     caps: [targetCap],
                   );
-        final parentExportId = h.exportTable.retainOrCreateExportId(
-          parentCap,
-        );
+        final parentExportId = h.exportTable.retainOrCreateExportId(parentCap);
 
         h.coordinator.handleCall(
           parseRpcMessage(
@@ -1116,9 +1101,7 @@ void main() {
         final dispatchGate = Completer<void>();
         succeedingCap.dispatchGate = dispatchGate.future;
         succeedingCap.onDispatch = (_, _, _) => DispatchResult.empty;
-        final exportId1 = h1.exportTable.retainOrCreateExportId(
-          succeedingCap,
-        );
+        final exportId1 = h1.exportTable.retainOrCreateExportId(succeedingCap);
         h1.coordinator.handleCall(
           parseRpcMessage(
             _buildCall(
@@ -1134,7 +1117,10 @@ void main() {
         await Future<void>.delayed(Duration.zero);
         final sent1 = parseRpcMessage(h1.sentBytes.single);
         expect(sent1.answerId, equals(40));
-        expect(sent1.returnDisc, equals(2)); // canceled, not resultsSentElsewhere(3)
+        expect(
+          sent1.returnDisc,
+          equals(2),
+        ); // canceled, not resultsSentElsewhere(3)
 
         final h2 = _Harness();
         final failingCap =
@@ -1160,7 +1146,7 @@ void main() {
       test('resolveLocalAnswer still resolves a still-pending '
           'sendResultsToYourself dispatch correctly — regression guard '
           'that the pipelined-dependency rewrite of '
-          'resolvedFor/dispatchResultFor lookups left this unrelated '
+          'getResolvedAnswerFor/getDispatchResultFor lookups left this unrelated '
           'correlation path untouched', () async {
         final h = _Harness();
         final resultCap = _FakeCapability();
@@ -1191,7 +1177,7 @@ void main() {
           'own noFinishNeeded Return (early Finish + an existing pipelined '
           'dependent, no result capabilities of its own) does not have '
           'that new answer state corrupted by the old '
-          'clearAnswerForNoFinishNeeded cleanup — regression test for the '
+          'handleReturnSentWithNoFinishNeeded cleanup — regression test for the '
           'id-reuse-during-send hazard the dependency ticket design exists '
           'to avoid', () async {
         final h = _Harness();
@@ -1200,9 +1186,7 @@ void main() {
             _FakeCapability()
               ..dispatchGate = dispatchGate.future
               ..onDispatch = (_, _, _) => DispatchResult.empty;
-        final parentExportId = h.exportTable.retainOrCreateExportId(
-          parentCap,
-        );
+        final parentExportId = h.exportTable.retainOrCreateExportId(parentCap);
 
         final newCallGate = Completer<void>();
         final newCap =
@@ -1252,7 +1236,7 @@ void main() {
         // old call's post-send cleanup — still a live, pending answer, not
         // thrown away or corrupted by a StateError leaking into the old
         // dispatch's own completion handling.
-        expect(h.answerTable.dispatchResultFor(1), isNotNull);
+        expect(h.answerTable.getDispatchResultFor(1), isNotNull);
         expect(newCap.dispatches, hasLength(1));
 
         newCallGate.complete();
