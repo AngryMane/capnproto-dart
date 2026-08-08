@@ -11,10 +11,27 @@ ResolvedAnswer _answer([List<Capability> caps = const []]) =>
 
 const _tornDownProbeError = CapnpException('connection torn down (probe)');
 
+/// Installs a genuinely retained [FailedAnswerState] for [qid] — the real
+/// two-call path (`handleDispatchStarted(retainFailureForCorrelation:
+/// true)` then `handleDispatchFailed`) a `sendResultsToYourself` dispatch
+/// takes, used here as a fixture wherever a test just needs a failed,
+/// tracked answer to already exist.
+void _installFailedAnswer(AnswerTable table, int qid, CapnpException error) {
+  final pending = Completer<ResolvedAnswer>();
+  pending.future.ignore();
+  table.handleDispatchStarted(
+    qid,
+    pending.future,
+    DispatchCancellationController(),
+    retainFailureForCorrelation: true,
+  );
+  table.handleDispatchFailed(qid, error);
+}
+
 void main() {
   group('AnswerTable', () {
     test('Finish arriving while dispatch is still pending with no '
-        'pipelined dependents: handleAnswerFinished() returns null, marks the '
+        'pipelined dependents: handleRequesterFinishedAnswer() returns null, marks the '
         'answer finished, and cancels the live dispatch — the eventual '
         'dispatch result must then be dropped instead of resurrecting '
         'answer state', () async {
@@ -24,7 +41,7 @@ void main() {
       pending.future.ignore();
       table.handleDispatchStarted(1, pending.future, cancellation);
 
-      final resultExportIds = table.handleAnswerFinished(
+      final resultExportIds = table.handleRequesterFinishedAnswer(
         1,
         releaseResultCaps: true,
       );
@@ -36,16 +53,21 @@ void main() {
         reason: 'finished-before-completion is still tracked',
       );
 
-      // The dispatch eventually settles — _executeIncomingDispatch calls handleDispatchSettledWithoutAnswer()
-      // (a path that ends up recording nothing further) or
-      // handleDispatchSucceeded()/handleDispatchFailed() (a path
-      // that does) to both drop dispatch-in-flight bookkeeping and learn
-      // whether Finish already arrived, in one call.
-      expect(table.handleDispatchSettledWithoutAnswer(1), isTrue);
+      // The dispatch eventually settles — _executeIncomingDispatch calls
+      // handleDispatchSucceeded()/handleDispatchFailed() either way to
+      // both drop dispatch-in-flight bookkeeping and learn whether Finish
+      // already arrived, in one call.
+      expect(
+        table.handleDispatchFailed(1, const CapnpException('boom')),
+        isA<AnswerAlreadyFinished>(),
+      );
       expect(table.isTracked(1), isFalse);
       // A second clear for the same qid must not resurrect anything, and
       // must not report "finished early" again now that it's untracked.
-      expect(table.handleDispatchSettledWithoutAnswer(1), isFalse);
+      expect(
+        table.handleDispatchFailed(1, const CapnpException('boom')),
+        isA<AnswerDiscarded>(),
+      );
     });
 
     test('a second Finish for a qid already marked finished-before-'
@@ -57,15 +79,27 @@ void main() {
       pending.future.ignore();
       table.handleDispatchStarted(1, pending.future, cancellation);
 
-      expect(table.handleAnswerFinished(1, releaseResultCaps: true), isNull);
-      expect(table.handleAnswerFinished(1, releaseResultCaps: true), isNull);
+      expect(
+        table.handleRequesterFinishedAnswer(1, releaseResultCaps: true),
+        isNull,
+      );
+      expect(
+        table.handleRequesterFinishedAnswer(1, releaseResultCaps: true),
+        isNull,
+      );
       expect(table.isTracked(1), isTrue);
-      expect(table.handleDispatchSettledWithoutAnswer(1), isTrue);
+      expect(
+        table.handleDispatchFailed(1, const CapnpException('boom')),
+        isA<AnswerAlreadyFinished>(),
+      );
     });
 
     test('Finish for an unknown qid is a no-op returning null', () {
       final table = AnswerTable();
-      expect(table.handleAnswerFinished(42, releaseResultCaps: true), isNull);
+      expect(
+        table.handleRequesterFinishedAnswer(42, releaseResultCaps: true),
+        isNull,
+      );
     });
 
     test('handleAnswerIssued removes an answer with no result capabilities '
@@ -91,7 +125,7 @@ void main() {
       final table = AnswerTable();
       table.handleAnswerReadyWithoutDispatch(2, resolved: _answer());
       expect(
-        table.handleAnswerFinished(2, releaseResultCaps: true),
+        table.handleRequesterFinishedAnswer(2, releaseResultCaps: true),
         equals(const []),
       );
 
@@ -113,14 +147,15 @@ void main() {
         expect(() => table.handleAnswerIssued(3), throwsStateError);
         expect(table.isTracked(3), isTrue);
         expect(cancellation.context.isCanceled, isFalse);
-        table.handleDispatchSettledWithoutAnswer(3);
+        table.handleDispatchFailed(3, const CapnpException('cleanup'));
       },
     );
 
-    test('handleAnswerIssued leaves a completed answer with result export '
-        'ids tracked — AnswerTable decides retention from its own state, '
-        'not from being told noFinishNeeded — and it is still available '
-        'for a real peer Finish afterward', () {
+    test('handleAnswerIssued leaves an answer installed via '
+        'handleAnswerReadyWithoutDispatch tracked — that installer always '
+        'sets AnsweredState.awaitingFinish true, since every current '
+        'caller\'s Return genuinely still owes the peer a Finish — and it '
+        'is still available for a real peer Finish afterward', () {
       final table = AnswerTable();
       table.handleAnswerReadyWithoutDispatch(
         4,
@@ -131,15 +166,16 @@ void main() {
       expect(() => table.handleAnswerIssued(4), returnsNormally);
       expect(table.isTracked(4), isTrue);
       expect(
-        table.handleAnswerFinished(4, releaseResultCaps: true),
+        table.handleRequesterFinishedAnswer(4, releaseResultCaps: true),
         equals([7]),
       );
     });
 
-    test('handleAnswerIssued leaves a completed answer with result '
-        'capabilities of its own tracked, even when it produced no fresh '
-        'export ids (e.g. a receiverHosted capability handed back to the '
-        'peer) — pipelining can still target it', () {
+    test('handleAnswerIssued leaves an answer installed via '
+        'handleAnswerReadyWithoutDispatch tracked even with capabilities '
+        'but no fresh export ids of its own (e.g. a receiverHosted '
+        'capability handed back to the peer) — pipelining can still '
+        'target it', () {
       final table = AnswerTable();
       table.handleAnswerReadyWithoutDispatch(
         5,
@@ -149,55 +185,86 @@ void main() {
       expect(() => table.handleAnswerIssued(5), returnsNormally);
       expect(table.isTracked(5), isTrue);
       expect(
-        table.handleAnswerFinished(5, releaseResultCaps: true),
+        table.handleRequesterFinishedAnswer(5, releaseResultCaps: true),
         isEmpty,
         reason: 'no result export ids of its own to release',
       );
     });
 
-    test(
-      'handleDispatchSucceeded installs the answer atomically for a '
-      'live dispatch: qid is never observably untracked, unlike calling '
-      'handleDispatchSettledWithoutAnswer and recording the answer as two separate calls',
-      () {
-        final table = AnswerTable();
-        final pending = Completer<ResolvedAnswer>();
-        pending.future.ignore();
-        table.handleDispatchStarted(
-          1,
-          pending.future,
-          DispatchCancellationController(),
-        );
+    test('handleAnswerIssued does not assume "no capabilities means no '
+        'Finish needed" for every answer — regression test for the hidden '
+        'precondition PR #117 review flagged: an answer installed via '
+        'handleAnswerReadyWithoutDispatch (e.g. a decode-failure exception '
+        'Return, which never sets Return.noFinishNeeded) keeps waiting for '
+        'a real Finish even with no capabilities of its own, unlike one '
+        'from handleDispatchSucceeded, where empty capabilities really do '
+        'mean noFinishNeeded was sent', () {
+      final table = AnswerTable();
+      table.handleAnswerReadyWithoutDispatch(1);
+      table.handleAnswerIssued(1);
+      expect(
+        table.isTracked(1),
+        isTrue,
+        reason: 'still genuinely awaiting a real peer Finish',
+      );
 
-        final resolved = _answer();
-        final recorded = table.handleDispatchSucceeded(
-          1,
-          resolved: resolved,
-          resultExportIds: [7],
-        );
-        expect(
-          recorded,
-          isA<AnswerRecorded>()
-              .having((r) => r.answerStillTracked, 'answerStillTracked', isTrue)
-              .having(
-                (r) => r.releaseResultExportsAfterSend,
-                'releaseResultExportsAfterSend',
-                isNull,
-              ),
-        );
-        expect(table.isTracked(1), isTrue);
-        expect(table.getResolvedAnswerFor(1), same(resolved));
-        expect(
-          table.getDispatchResultFor(1),
-          isNull,
-          reason: 'no longer pending',
-        );
-        expect(
-          table.handleAnswerFinished(1, releaseResultCaps: true),
-          equals([7]),
-        );
-      },
-    );
+      final pending = Completer<ResolvedAnswer>();
+      pending.future.ignore();
+      table.handleDispatchStarted(
+        2,
+        pending.future,
+        DispatchCancellationController(),
+      );
+      table.handleDispatchSucceeded(2, resolved: _answer());
+      table.handleAnswerIssued(2);
+      expect(
+        table.isTracked(2),
+        isFalse,
+        reason: 'no capabilities anywhere means no Finish will ever come',
+      );
+    });
+
+    test('handleDispatchSucceeded installs the answer atomically for a '
+        'live dispatch: qid is never observably untracked, unlike a '
+        '"check whether finished early, then record the answer" pattern '
+        'split across two separate calls', () {
+      final table = AnswerTable();
+      final pending = Completer<ResolvedAnswer>();
+      pending.future.ignore();
+      table.handleDispatchStarted(
+        1,
+        pending.future,
+        DispatchCancellationController(),
+      );
+
+      final resolved = _answer();
+      final recorded = table.handleDispatchSucceeded(
+        1,
+        resolved: resolved,
+        resultExportIds: [7],
+      );
+      expect(
+        recorded,
+        isA<AnswerRecorded>()
+            .having((r) => r.answerStillTracked, 'answerStillTracked', isTrue)
+            .having(
+              (r) => r.releaseResultExportsAfterSend,
+              'releaseResultExportsAfterSend',
+              isNull,
+            ),
+      );
+      expect(table.isTracked(1), isTrue);
+      expect(table.getResolvedAnswerFor(1), same(resolved));
+      expect(
+        table.getDispatchResultFor(1),
+        isNull,
+        reason: 'no longer pending',
+      );
+      expect(
+        table.handleRequesterFinishedAnswer(1, releaseResultCaps: true),
+        equals([7]),
+      );
+    });
 
     test('handleDispatchSucceeded for a qid finished early with no pipelined '
         'dependents: returns AnswerAlreadyFinished, drops every trace of '
@@ -212,7 +279,7 @@ void main() {
         DispatchCancellationController(),
       );
       expect(
-        table.handleAnswerFinished(1, releaseResultCaps: true),
+        table.handleRequesterFinishedAnswer(1, releaseResultCaps: true),
         isNull,
       ); // Finish arrives before dispatch settles.
 
@@ -223,7 +290,8 @@ void main() {
     });
 
     test('handleDispatchFailed installs the retained error atomically '
-        'for a live dispatch', () {
+        'for a live dispatch started with retainFailureForCorrelation: '
+        'true', () {
       final table = AnswerTable();
       final pending = Completer<ResolvedAnswer>();
       pending.future.ignore();
@@ -231,6 +299,7 @@ void main() {
         2,
         pending.future,
         DispatchCancellationController(),
+        retainFailureForCorrelation: true,
       );
 
       final error = const CapnpException('boom');
@@ -248,7 +317,32 @@ void main() {
       expect(table.getDispatchErrorFor(2), same(error));
       // A retained error never carries result capabilities, so there is
       // nothing for a Finish to release, regardless of releaseResultCaps.
-      expect(table.handleAnswerFinished(2, releaseResultCaps: true), isNull);
+      expect(
+        table.handleRequesterFinishedAnswer(2, releaseResultCaps: true),
+        isNull,
+      );
+    });
+
+    test('handleDispatchFailed discards the failure outright when the '
+        'dispatch was started without retainFailureForCorrelation (the '
+        'default): nothing is recorded, and a later takeFromOtherQuestion '
+        'correlation finds nothing to observe', () {
+      final table = AnswerTable();
+      final pending = Completer<ResolvedAnswer>();
+      pending.future.ignore();
+      table.handleDispatchStarted(
+        2,
+        pending.future,
+        DispatchCancellationController(),
+      );
+
+      final recorded = table.handleDispatchFailed(
+        2,
+        const CapnpException('boom'),
+      );
+      expect(recorded, isA<AnswerDiscarded>());
+      expect(table.isTracked(2), isFalse);
+      expect(table.getDispatchErrorFor(2), isNull);
     });
 
     test('handleDispatchFailed for a qid finished early with no '
@@ -262,7 +356,10 @@ void main() {
         pending.future,
         DispatchCancellationController(),
       );
-      expect(table.handleAnswerFinished(2, releaseResultCaps: true), isNull);
+      expect(
+        table.handleRequesterFinishedAnswer(2, releaseResultCaps: true),
+        isNull,
+      );
 
       final recorded = table.handleDispatchFailed(
         2,
@@ -283,7 +380,7 @@ void main() {
         resultExportIds: [10, 11],
       );
 
-      final resultExportIds = table.handleAnswerFinished(
+      final resultExportIds = table.handleRequesterFinishedAnswer(
         2,
         releaseResultCaps: true,
       );
@@ -301,7 +398,10 @@ void main() {
         resultExportIds: [10, 11],
       );
 
-      expect(table.handleAnswerFinished(2, releaseResultCaps: false), isNull);
+      expect(
+        table.handleRequesterFinishedAnswer(2, releaseResultCaps: false),
+        isNull,
+      );
       expect(table.isTracked(2), isFalse);
     });
 
@@ -309,10 +409,10 @@ void main() {
         'release (a failure never carries result capabilities) and drops '
         'the retained error', () {
       final table = AnswerTable();
-      table.handleDispatchFailed(2, const CapnpException('boom'));
+      _installFailedAnswer(table, 2, const CapnpException('boom'));
       expect(table.getDispatchErrorFor(2), isNotNull);
 
-      final resultExportIds = table.handleAnswerFinished(
+      final resultExportIds = table.handleRequesterFinishedAnswer(
         2,
         releaseResultCaps: true,
       );
@@ -335,15 +435,18 @@ void main() {
         DispatchCancellationController(),
       );
       expect(table.isTracked(3), isTrue, reason: 'pending answer');
-      expect(table.handleDispatchSettledWithoutAnswer(3), isFalse);
+      expect(
+        table.handleDispatchFailed(3, const CapnpException('boom')),
+        isA<AnswerDiscarded>(),
+      );
       expect(table.isTracked(3), isFalse);
 
       table.handleAnswerReadyWithoutDispatch(3, resolved: _answer());
       expect(table.isTracked(3), isTrue, reason: 'resolved, awaiting Finish');
-      table.handleAnswerFinished(3, releaseResultCaps: true);
+      table.handleRequesterFinishedAnswer(3, releaseResultCaps: true);
       expect(table.isTracked(3), isFalse);
 
-      table.handleDispatchFailed(3, const CapnpException('boom'));
+      _installFailedAnswer(table, 3, const CapnpException('boom'));
       expect(table.isTracked(3), isTrue, reason: 'failed answer retained');
     });
 
@@ -356,7 +459,7 @@ void main() {
         expect(table.isTracked(4), isTrue);
         expect(table.getResolvedAnswerFor(4), isNull);
         expect(
-          table.handleAnswerFinished(4, releaseResultCaps: true),
+          table.handleRequesterFinishedAnswer(4, releaseResultCaps: true),
           equals(const []),
         );
       },
@@ -387,7 +490,7 @@ void main() {
         expect(table.getDispatchErrorFor(2), isNull);
 
         final error = const CapnpException('boom');
-        table.handleDispatchFailed(3, error);
+        _installFailedAnswer(table, 3, error);
         expect(table.getDispatchErrorFor(3), same(error));
         expect(table.getResolvedAnswerFor(3), isNull);
         expect(table.getDispatchResultFor(3), isNull);
@@ -402,7 +505,7 @@ void main() {
         'state each one is in', () {
       final table = AnswerTable();
       table.handleAnswerReadyWithoutDispatch(1, resolved: _answer());
-      table.handleDispatchFailed(2, const CapnpException('x'));
+      _installFailedAnswer(table, 2, const CapnpException('x'));
       expect(table.count, equals(2));
     });
 
@@ -417,7 +520,7 @@ void main() {
         DispatchCancellationController(),
       );
       expect(table.cancellationCount, equals(1));
-      table.handleDispatchSettledWithoutAnswer(1);
+      table.handleDispatchFailed(1, const CapnpException('x'));
       expect(table.cancellationCount, equals(0));
     });
 
@@ -430,7 +533,7 @@ void main() {
       final cancellation = DispatchCancellationController();
       table.handleDispatchStarted(1, pending.future, cancellation);
       table.handleAnswerReadyWithoutDispatch(2, resolved: _answer());
-      table.handleDispatchFailed(3, const CapnpException('x'));
+      _installFailedAnswer(table, 3, const CapnpException('x'));
 
       final error = const CapnpException('connection torn down');
       table.tearDown(error);
@@ -546,7 +649,7 @@ void main() {
         ); // no resolved payload of its own
         expect(table.tryBeginPipelinedDependency(3), isNull);
 
-        table.handleDispatchFailed(4, const CapnpException('boom'));
+        _installFailedAnswer(table, 4, const CapnpException('boom'));
         expect(table.tryBeginPipelinedDependency(4), isNull);
 
         expect(table.tryBeginPipelinedDependency(999), isNull);
@@ -566,7 +669,7 @@ void main() {
           isA<PendingPipelineDependency>(),
         );
 
-        final resultExportIds = table.handleAnswerFinished(
+        final resultExportIds = table.handleRequesterFinishedAnswer(
           1,
           releaseResultCaps: true,
         );
@@ -579,7 +682,10 @@ void main() {
         expect(table.tryBeginPipelinedDependency(1), isNull);
 
         // A second Finish is a no-op — must not double up anything.
-        expect(table.handleAnswerFinished(1, releaseResultCaps: true), isNull);
+        expect(
+          table.handleRequesterFinishedAnswer(1, releaseResultCaps: true),
+          isNull,
+        );
         expect(cancellation.context.isCanceled, isFalse);
       });
 
@@ -597,7 +703,10 @@ void main() {
         final dep2 =
             table.tryBeginPipelinedDependency(1) as PendingPipelineDependency;
 
-        expect(table.handleAnswerFinished(1, releaseResultCaps: true), isNull);
+        expect(
+          table.handleRequesterFinishedAnswer(1, releaseResultCaps: true),
+          isNull,
+        );
         expect(cancellation.context.isCanceled, isFalse);
 
         final recorded = table.handleDispatchSucceeded(
@@ -645,7 +754,10 @@ void main() {
         final dep2 =
             table.tryBeginPipelinedDependency(1) as PendingPipelineDependency;
 
-        expect(table.handleAnswerFinished(1, releaseResultCaps: true), isNull);
+        expect(
+          table.handleRequesterFinishedAnswer(1, releaseResultCaps: true),
+          isNull,
+        );
 
         expect(table.endPipelinedDependency(dep1.ticket), isNull);
         expect(
@@ -683,7 +795,7 @@ void main() {
           );
           final dep =
               table.tryBeginPipelinedDependency(1) as PendingPipelineDependency;
-          table.handleAnswerFinished(1, releaseResultCaps: false);
+          table.handleRequesterFinishedAnswer(1, releaseResultCaps: false);
 
           if (drainBeforeSettle) {
             expect(table.endPipelinedDependency(dep.ticket), isNull);
@@ -745,7 +857,7 @@ void main() {
         final dep =
             table.tryBeginPipelinedDependency(1) as PendingPipelineDependency;
 
-        table.handleAnswerFinished(1, releaseResultCaps: true);
+        table.handleRequesterFinishedAnswer(1, releaseResultCaps: true);
         final recorded = table.handleDispatchSucceeded(
           1,
           resolved: _answer(),
@@ -775,7 +887,7 @@ void main() {
 
         // The new answer's own Finish still works normally.
         expect(
-          table.handleAnswerFinished(1, releaseResultCaps: true),
+          table.handleRequesterFinishedAnswer(1, releaseResultCaps: true),
           equals([99]),
         );
       });
