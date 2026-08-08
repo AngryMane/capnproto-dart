@@ -204,7 +204,7 @@ void main() {
       );
       expect(
         recorded,
-        isA<AnswerRecorded>().having(
+        isA<AnswerSettled>().having(
           (r) => r.releaseResultExportsAfterSend,
           'releaseResultExportsAfterSend',
           isNull,
@@ -262,7 +262,7 @@ void main() {
       final recorded = table.handleDispatchFailed(2, error);
       expect(
         recorded,
-        isA<AnswerRecorded>().having(
+        isA<AnswerSettled>().having(
           (r) => r.releaseResultExportsAfterSend,
           'releaseResultExportsAfterSend',
           isNull,
@@ -275,6 +275,72 @@ void main() {
         table.handleRequesterFinishedAnswer(2, releaseResultCaps: true),
         isNull,
       );
+    });
+
+    test('takeLocalLookupResolved survives handleRequesterFinishedAnswer '
+        'removing the normal AnsweredState — regression test for PR #117 '
+        'review point 1: a real Finish only clears the requester\'s own '
+        'reference, not this vat\'s independent retainForLocalLookup need', () {
+      final table = AnswerTable();
+      final pending = Completer<ResolvedAnswer>();
+      pending.future.ignore();
+      table.handleDispatchStarted(
+        1,
+        pending.future,
+        DispatchCancellationController(),
+        retainForLocalLookup: true,
+      );
+      final resolved = _answer([NullCapability()]);
+      table.handleDispatchSucceeded(1, resolved: resolved);
+
+      table.handleRequesterFinishedAnswer(1, releaseResultCaps: true);
+      expect(
+        table.isTracked(1),
+        isFalse,
+        reason: 'the requester\'s own reference is gone',
+      );
+
+      expect(table.takeLocalLookupResolved(1), same(resolved));
+      expect(
+        table.takeLocalLookupResolved(1),
+        isNull,
+        reason: 'one-shot: consumed exactly once',
+      );
+    });
+
+    test('takeLocalLookupError survives handleRequesterFinishedAnswer '
+        'removing the normal FailedAnswerState', () {
+      final table = AnswerTable();
+      _installFailedAnswer(table, 1, const CapnpException('boom'));
+
+      table.handleRequesterFinishedAnswer(1, releaseResultCaps: true);
+      expect(table.isTracked(1), isFalse);
+
+      expect(
+        table.takeLocalLookupError(1),
+        isA<CapnpException>().having((e) => e.message, 'message', 'boom'),
+      );
+      expect(table.takeLocalLookupError(1), isNull);
+    });
+
+    test('takeLocalLookupResolved/takeLocalLookupError also survive the '
+        'early-Finish-with-pipelined-dependents settle path', () {
+      final table = AnswerTable();
+      final pending = Completer<ResolvedAnswer>();
+      pending.future.ignore();
+      table.handleDispatchStarted(
+        1,
+        pending.future,
+        DispatchCancellationController(),
+        retainForLocalLookup: true,
+      );
+      table.tryBeginPipelinedDependency(1);
+      table.handleRequesterFinishedAnswer(1, releaseResultCaps: true);
+
+      final resolved = _answer();
+      table.handleDispatchSucceeded(1, resolved: resolved);
+
+      expect(table.takeLocalLookupResolved(1), same(resolved));
     });
 
     test('handleDispatchFailed discards the failure outright when the '
@@ -670,7 +736,7 @@ void main() {
         );
         expect(
           recorded,
-          isA<AnswerRecorded>().having(
+          isA<AnswerSettled>().having(
             (r) => r.releaseResultExportsAfterSend,
             'releaseResultExportsAfterSend',
             isNull,
@@ -727,7 +793,7 @@ void main() {
         );
         expect(
           recorded,
-          isA<AnswerRecorded>().having(
+          isA<AnswerSettled>().having(
             (r) => r.releaseResultExportsAfterSend,
             'releaseResultExportsAfterSend',
             equals([7]),
@@ -759,7 +825,7 @@ void main() {
                       resolved: _answer(),
                       resultExportIds: [7],
                     )
-                    as AnswerRecorded;
+                    as AnswerSettled;
             expect(recorded.releaseResultExportsAfterSend, isNull);
           } else {
             final recorded =
@@ -768,7 +834,7 @@ void main() {
                       resolved: _answer(),
                       resultExportIds: [7],
                     )
-                    as AnswerRecorded;
+                    as AnswerSettled;
             expect(recorded.releaseResultExportsAfterSend, isNull);
             expect(table.endPipelinedDependency(dep.ticket), isNull);
           }
@@ -817,7 +883,7 @@ void main() {
           resolved: _answer(),
           resultExportIds: [7],
         );
-        expect(recorded, isA<AnswerRecorded>());
+        expect(recorded, isA<AnswerSettled>());
         expect(table.isTracked(1), isFalse);
 
         // The peer legally reuses qid 1 for a brand-new, unrelated Call —

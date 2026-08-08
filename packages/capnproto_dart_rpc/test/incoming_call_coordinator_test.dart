@@ -1173,6 +1173,71 @@ void main() {
         expect(resolved.caps, equals([resultCap]));
       });
 
+      test('resolveLocalAnswer still resolves a completed '
+          'sendResultsToYourself dispatch after a real Finish has already '
+          'arrived for it — regression test for PR #117 review point 1: a '
+          'Finish only removes the requester\'s own reference, not this '
+          'vat\'s independent need to look the answer up locally', () async {
+        final h = _Harness();
+        final resultCap = _FakeCapability();
+        final cap =
+            _FakeCapability()
+              ..onDispatch =
+                  (_, _, _) => DispatchResult(
+                    payload: RpcPayload.fromBytes(_singleCapResultBytes),
+                    caps: [resultCap],
+                  );
+        final exportId = h.exportTable.retainOrCreateExportId(cap);
+
+        h.coordinator.handleCall(
+          parseRpcMessage(
+            _buildCall(
+              questionId: 62,
+              targetExportId: exportId,
+              sendResultsToYourself: true,
+            ),
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        h.coordinator.handleFinish(parseRpcMessage(buildFinishMessage(62)));
+
+        final resolved = await h.coordinator.resolveLocalAnswer(62);
+        expect(resolved.caps, equals([resultCap]));
+      });
+
+      test('resolveLocalAnswer still surfaces the original error for a '
+          'failed sendResultsToYourself dispatch after a real Finish has '
+          'already arrived for it', () async {
+        final h = _Harness();
+        final cap =
+            _FakeCapability()..throwOnDispatch = const RpcException('boom');
+        final exportId = h.exportTable.retainOrCreateExportId(cap);
+
+        h.coordinator.handleCall(
+          parseRpcMessage(
+            _buildCall(
+              questionId: 63,
+              targetExportId: exportId,
+              sendResultsToYourself: true,
+            ),
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        h.coordinator.handleFinish(parseRpcMessage(buildFinishMessage(63)));
+
+        // resolveLocalAnswer throws synchronously for this branch (it is
+        // not `async`), so the call must stay inside a closure here rather
+        // than being evaluated eagerly as expectLater's own argument.
+        expect(
+          () => h.coordinator.resolveLocalAnswer(63),
+          throwsA(
+            isA<RpcException>().having((e) => e.message, 'message', 'boom'),
+          ),
+        );
+      });
+
       test('a reentrant peer that synchronously reuses a qid during its '
           'own noFinishNeeded Return (early Finish + an existing pipelined '
           'dependent, no result capabilities of its own) does not have '

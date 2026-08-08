@@ -135,13 +135,13 @@ final class AnswerAlreadyFinished extends DispatchSettlement {
   const AnswerAlreadyFinished();
 }
 
-final class AnswerRecorded extends DispatchSettlement {
+final class AnswerSettled extends DispatchSettlement {
   /// Only non-null when the peer's own early Finish already determined
   /// this while dependents were still outstanding. Apply only *after* the
   /// Return has actually been sent.
   final List<int>? releaseResultExportsAfterSend;
 
-  const AnswerRecorded({this.releaseResultExportsAfterSend});
+  const AnswerSettled({this.releaseResultExportsAfterSend});
 }
 
 /// See [PendingAnswerState.retainForLocalLookup] for why.
@@ -161,6 +161,14 @@ final class AnswerDiscarded extends DispatchSettlement {
 /// Return wait.
 class AnswerTable {
   final Map<int, AnswerState> _answers = {};
+
+  /// Independent of [_answers]: a real Finish only removes the requester's
+  /// own reference to [qid] there, but this same vat's later local lookup
+  /// (via [takeLocalLookupResolved]/[takeLocalLookupError]) is a separate
+  /// reason to retain the outcome, on its own lifecycle — see
+  /// [PendingAnswerState.retainForLocalLookup].
+  final Map<int, ResolvedAnswer> _localLookupResolved = {};
+  final Map<int, CapnpException> _localLookupErrors = {};
 
   Object? _tearDownError;
   final List<Completer<Never>> _tearDownWaiters = [];
@@ -193,6 +201,17 @@ class AnswerTable {
     return state is FailedAnswerState ? state.error : null;
   }
 
+  /// One-shot: consumes and removes the entry, independent of whether a
+  /// real Finish has already removed [qid] from the normal answer state —
+  /// see [PendingAnswerState.retainForLocalLookup].
+  ResolvedAnswer? takeLocalLookupResolved(int qid) =>
+      _localLookupResolved.remove(qid);
+
+  /// One-shot counterpart of [takeLocalLookupResolved] for a failed
+  /// dispatch.
+  CapnpException? takeLocalLookupError(int qid) =>
+      _localLookupErrors.remove(qid);
+
   // ---------------------------------------------------------------------
   // Event — each method below reports a fact to this table and returns
   // whatever the caller must now do about it; this table (not the caller)
@@ -200,9 +219,10 @@ class AnswerTable {
   // ---------------------------------------------------------------------
 
   /// [retainForLocalLookup]: `true` means this same vat may itself still
-  /// need the eventual result or error later, via a `takeFromOtherQuestion`
-  /// correlation (see [getResolvedAnswerFor]/[getDispatchErrorFor]) —
-  /// today, exactly when this call was itself a forwarded tail call
+  /// need to look up the eventual result or error later, through
+  /// `takeFromOtherQuestion`/`resolveLocalAnswer` (see
+  /// [takeLocalLookupResolved]/[takeLocalLookupError]) — today, exactly
+  /// when this call was itself a forwarded tail call
   /// (`sendResultsTo=yourself`).
   void handleDispatchStarted(
     int qid,
@@ -231,11 +251,15 @@ class AnswerTable {
       case FinishedBeforeCompletionState():
         _answers.remove(qid);
         return const AnswerAlreadyFinished();
-      case PendingAnswerState(:final _dependents) when _dependents.peerFinished:
+      case PendingAnswerState(:final _dependents, :final retainForLocalLookup)
+          when _dependents.peerFinished:
         _dependents.resultExportIds = resultExportIds;
         final release = _dependents.tryTakeResultExports();
         _answers.remove(qid);
-        return AnswerRecorded(releaseResultExportsAfterSend: release);
+        if (retainForLocalLookup && resolved != null) {
+          _localLookupResolved[qid] = resolved;
+        }
+        return AnswerSettled(releaseResultExportsAfterSend: release);
       case PendingAnswerState(:final retainForLocalLookup):
         final stillNeeded =
             retainForLocalLookup ||
@@ -249,13 +273,16 @@ class AnswerTable {
         } else {
           _answers.remove(qid);
         }
-        return const AnswerRecorded();
+        if (retainForLocalLookup && resolved != null) {
+          _localLookupResolved[qid] = resolved;
+        }
+        return const AnswerSettled();
       default:
         _answers[qid] = AnsweredState(
           resolved: resolved,
           resultExportIds: resultExportIds,
         );
-        return const AnswerRecorded();
+        return const AnswerSettled();
     }
   }
 
@@ -269,14 +296,19 @@ class AnswerTable {
       case FinishedBeforeCompletionState():
         _answers.remove(qid);
         return const AnswerAlreadyFinished();
-      case PendingAnswerState(:final _dependents) when _dependents.peerFinished:
+      case PendingAnswerState(:final _dependents, :final retainForLocalLookup)
+          when _dependents.peerFinished:
         _dependents.resultExportIds = const [];
         final release = _dependents.tryTakeResultExports();
         _answers.remove(qid);
-        return AnswerRecorded(releaseResultExportsAfterSend: release);
+        if (retainForLocalLookup) {
+          _localLookupErrors[qid] = error;
+        }
+        return AnswerSettled(releaseResultExportsAfterSend: release);
       case PendingAnswerState(retainForLocalLookup: true):
         _answers[qid] = FailedAnswerState(error);
-        return const AnswerRecorded();
+        _localLookupErrors[qid] = error;
+        return const AnswerSettled();
       default:
         _answers.remove(qid);
         return const AnswerDiscarded();
@@ -344,8 +376,9 @@ class AnswerTable {
   ///
   /// Used where a dispatch's settlement is awaited directly, bypassing this
   /// table's own Return/Finish bookkeeping — today, only
-  /// `IncomingCallCoordinator.resolveLocalAnswer`'s tail-call correlation.
-  /// Without it, that caller would observe [operation] succeed from purely
+  /// `IncomingCallCoordinator.resolveLocalAnswer`, resolving a
+  /// `takeFromOtherQuestion` for a tail-called dispatch. Without it, that
+  /// caller would observe [operation] succeed from purely
   /// local state even after the connection is gone (issue #99, matching
   /// `QuestionTable.tearDown`).
   ///
@@ -369,6 +402,8 @@ class AnswerTable {
       if (state is PendingAnswerState) state.cancellation.cancel();
     }
     _answers.clear();
+    _localLookupResolved.clear();
+    _localLookupErrors.clear();
     if (_tearDownError == null) {
       _tearDownError = error;
       for (final waiter in _tearDownWaiters) {

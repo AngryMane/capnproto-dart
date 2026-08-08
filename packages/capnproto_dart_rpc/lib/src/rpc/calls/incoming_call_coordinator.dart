@@ -750,8 +750,8 @@ final class IncomingCallCoordinator {
               );
               return;
             }
-            final AnswerRecorded(:releaseResultExportsAfterSend) =
-                settlement as AnswerRecorded;
+            final AnswerSettled(:releaseResultExportsAfterSend) =
+                settlement as AnswerSettled;
             sendBytes(buildReturnResultsSentElsewhereMessage(answerId: qid));
             // No Return field exists on this variant to carry
             // releaseParamCaps, so just flush any deferred params
@@ -809,8 +809,8 @@ final class IncomingCallCoordinator {
             );
             return;
           }
-          final AnswerRecorded(:releaseResultExportsAfterSend) =
-              settlement as AnswerRecorded;
+          final AnswerSettled(:releaseResultExportsAfterSend) =
+              settlement as AnswerSettled;
           final releaseParamCaps =
               _finishParameterCapabilityDisposalTrackingAndSendReleases(
                 parameterCapabilityDisposalTicket,
@@ -865,8 +865,8 @@ final class IncomingCallCoordinator {
               _sendCanceledReturn(qid, parameterCapabilityDisposalTicket);
               return;
             }
-            final AnswerRecorded(:releaseResultExportsAfterSend) =
-                settlement as AnswerRecorded;
+            final AnswerSettled(:releaseResultExportsAfterSend) =
+                settlement as AnswerSettled;
             sendBytes(buildReturnResultsSentElsewhereMessage(answerId: qid));
             _finishParameterCapabilityDisposalTrackingAndSendReleases(
               parameterCapabilityDisposalTicket,
@@ -884,7 +884,7 @@ final class IncomingCallCoordinator {
           // (AnswerDiscarded) or a pipelined dependent had registered
           // before an early Finish arrived, in which case
           // handleDispatchFailed already resolved the dependency-tracker
-          // rendezvous on our behalf (AnswerRecorded, reached via that
+          // rendezvous on our behalf (AnswerSettled, reached via that
           // early-Finish-with-dependents branch — see that method's own
           // doc comment; never the retained-failure branch, which requires
           // retainForLocalLookup, itself only ever true for
@@ -892,7 +892,7 @@ final class IncomingCallCoordinator {
           // never carries capabilities for a failure, so noFinishNeeded is
           // unconditionally true.
           final releaseResultExportsAfterSend =
-              settlement is AnswerRecorded
+              settlement is AnswerSettled
                   ? settlement.releaseResultExportsAfterSend
                   : null;
           final releaseParamCaps =
@@ -969,12 +969,12 @@ final class IncomingCallCoordinator {
   /// closure `OutgoingCallCoordinator`'s own `resolveLocalAnswer` field is
   /// wired to (see the wiring site).
   ///
-  /// Mirrors the resolved-then-pending lookup order [_handlePipelinedCall]
-  /// already uses (see [AnswerTable.getResolvedAnswerFor]/[AnswerTable.getDispatchResultFor]),
-  /// with one extra case: failed answers are retained until Finish so a
-  /// `takeFromOtherQuestion` that races with the failure still observes
-  /// the original server exception rather than a misleading "unknown
-  /// question id".
+  /// Checks [AnswerTable.takeLocalLookupResolved]/[AnswerTable.takeLocalLookupError]
+  /// first: unlike [AnswerTable.getResolvedAnswerFor]/[AnswerTable.getDispatchErrorFor],
+  /// those survive a real Finish already having arrived for [qid] — a
+  /// Finish only removes the requester's own reference to it, not this
+  /// vat's independent need to look the answer up here (see
+  /// [AnswerTable.handleDispatchStarted]'s `retainForLocalLookup`).
   ///
   /// A still-pending dispatch is raced against connection teardown via
   /// [AnswerTable.failOnTearDown] rather than returned directly: dispatch
@@ -986,13 +986,17 @@ final class IncomingCallCoordinator {
   /// — unlike every other still-pending call on this connection (see issue
   /// #99).
   Future<ResolvedAnswer> resolveLocalAnswer(int qid) {
-    final resolved = answerTable.getResolvedAnswerFor(qid);
+    final resolved =
+        answerTable.takeLocalLookupResolved(qid) ??
+        answerTable.getResolvedAnswerFor(qid);
     if (resolved != null) return Future.value(resolved);
     final dispatchResult = answerTable.getDispatchResultFor(qid);
     if (dispatchResult != null) {
       return answerTable.failOnTearDown(dispatchResult);
     }
-    final error = answerTable.getDispatchErrorFor(qid);
+    final error =
+        answerTable.takeLocalLookupError(qid) ??
+        answerTable.getDispatchErrorFor(qid);
     if (error != null) throw error;
     throw RpcException(
       'takeFromOtherQuestion referenced unknown question id $qid',
